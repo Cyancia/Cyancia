@@ -1,0 +1,31 @@
+[workspace]
+members = ["crates/*", "examples/*"]
+resolver = "2"
+
+[workspace.dependencies]
+cyancia_graph = { version = "0.1.0", path = "crates/cyancia_graph" }
+cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
+cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
+cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
+
+iced = { version = "0.14", features = ["debug", "canvas"] }
+iced_beacon = "0.14"
+iced_core = "0.14"
+iced_debug = "0.14"
+iced_devtools = "0.14"
+iced_futures = "0.14"
+iced_graphics = { version = "0.14", features = ["geometry"] }
+iced_highlighter = "0.14"
+iced_program = "0.14"
+iced_renderer = "0.14"
+iced_runtime = "0.14"
+iced_selector = "0.14"
+iced_wgpu = { version = "0.14", features = ["geometry"] }
+iced_widget = { version = "0.14", features = ["wgpu"] }
+iced_winit = "0.14"
+uuid = { version = "1", features = ["v4"] }
+syn = "2"
+quote = "1"
+proc-macro2 = "1"
+thiserror = "2"
+num-traits = "0.2"
