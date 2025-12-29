@@ -1,0 +1,13 @@
+[package]
+name = "cyancia_graph"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+uuid.workspace = true
+cyancia_utils.workspace = true
+thiserror.workspace = true
+iced_widget.workspace = true
+iced_core.workspace = true
+iced_graphics.workspace = true
+cyancia_widgets.workspace = true
