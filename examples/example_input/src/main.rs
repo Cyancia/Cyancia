@@ -1,0 +1,32 @@
+use cyancia_assets::{
+    id::AssetId,
+    store::{AssetLoaderRegistry, AssetRegistry},
+};
+use cyancia_input::action::{
+    ActionCollection, ActionManifest, ActionManifestLoader, matching::ActionMatcher,
+};
+use iced_core::keyboard::key::Code;
+
+fn main() {
+    tracing_subscriber::fmt::init();
+
+    let mut loaders = AssetLoaderRegistry::new();
+    loaders.register::<ActionManifestLoader>();
+
+    let assets = AssetRegistry::new("assets", &loaders);
+    let manifests = assets.store::<ActionManifest>();
+    let mut matcher = ActionMatcher::new(ActionCollection::new(manifests.clone()));
+
+    matcher.key_pressed(Code::Space);
+    assert_eq!(
+        matcher.current_action(),
+        Some(AssetId::from_str("canvas_pan_action"))
+    );
+    matcher.key_pressed(Code::ControlLeft);
+    assert_eq!(
+        matcher.current_action(),
+        Some(AssetId::from_str("canvas_zoom_action"))
+    );
+    matcher.key_released(Code::Space);
+    assert_eq!(matcher.current_action(), None);
+}

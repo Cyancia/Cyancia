@@ -1,0 +1,11 @@
+[canvas_pan_action]
+ty = "Toggle"
+shortcut = [["Space"]]
+
+[canvas_rotate_action]
+ty = "Toggle"
+shortcut = [["ShiftLeft", "Space"]]
+
+[canvas_zoom_action]
+ty = "Toggle"
+shortcut = [["ControlLeft", "Space"]]
