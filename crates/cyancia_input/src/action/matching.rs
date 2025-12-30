@@ -1,6 +1,6 @@
 use std::{collections, sync::Arc, time::Instant};
 
-use cyancia_assets::id::AssetId;
+use cyancia_id::Id;
 use iced_core::keyboard::{Key, key};
 use indexmap::IndexSet;
 
@@ -11,14 +11,14 @@ use crate::{
 
 #[derive(Debug)]
 pub struct ActionChange {
-    pub finished: Option<(AssetId<Action>, Arc<Action>)>,
-    pub started: Option<(AssetId<Action>, Arc<Action>)>,
+    pub finished: Option<(Id<Action>, Arc<Action>)>,
+    pub started: Option<(Id<Action>, Arc<Action>)>,
 }
 
 pub struct ActionMatcher {
     collection: ActionCollection,
     current_keys: IndexSet<key::Code>,
-    current_action: Option<(AssetId<Action>, Arc<Action>)>,
+    current_action: Option<(Id<Action>, Arc<Action>)>,
     last_matched: Instant,
 }
 
@@ -57,7 +57,7 @@ impl ActionMatcher {
         }
     }
 
-    pub fn current_action(&self) -> Option<(AssetId<Action>, Arc<Action>)> {
+    pub fn current_action(&self) -> Option<(Id<Action>, Arc<Action>)> {
         self.current_action.clone()
     }
 
@@ -65,7 +65,7 @@ impl ActionMatcher {
         self.current_action = self.matched_action();
     }
 
-    fn matched_action(&mut self) -> Option<(AssetId<Action>, Arc<Action>)> {
+    fn matched_action(&mut self) -> Option<(Id<Action>, Arc<Action>)> {
         let keys = KeySequence::from_codes(self.current_keys.iter().cloned()).ok()?;
         let id = self.collection.get_action_id(keys)?;
         let action = self.collection.get_action(id)?.clone();

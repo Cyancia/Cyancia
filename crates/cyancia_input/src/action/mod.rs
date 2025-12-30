@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use cyancia_assets::{asset::Asset, id::AssetId, loader::AssetLoader, store::AssetStore};
+use cyancia_assets::{asset::Asset, loader::AssetLoader, store::AssetStore};
+use cyancia_id::Id;
 use serde::{Deserialize, Serialize};
 
 use crate::key::KeySequence;
@@ -84,8 +85,8 @@ impl AssetLoader for ActionManifestLoader {
 }
 
 pub struct ActionCollection {
-    shortcuts: HashMap<KeySequence, Vec<AssetId<Action>>>,
-    actions: HashMap<AssetId<Action>, Arc<Action>>,
+    shortcuts: HashMap<KeySequence, Vec<Id<Action>>>,
+    actions: HashMap<Id<Action>, Arc<Action>>,
 }
 
 impl ActionCollection {
@@ -94,10 +95,10 @@ impl ActionCollection {
             .into_map()
             .into_iter()
             .flat_map(|(_, manifest)| manifest.actions.clone())
-            .map(|action| (AssetId::from_str(&action.name), Arc::new(action)))
+            .map(|action| (Id::from_str(&action.name), Arc::new(action)))
             .collect::<HashMap<_, _>>();
         let mut shortcuts = actions.iter().fold(
-            HashMap::<KeySequence, Vec<AssetId<Action>>>::default(),
+            HashMap::<KeySequence, Vec<Id<Action>>>::default(),
             |mut acc, (id, a)| {
                 for shortcut in &a.shortcut {
                     acc.entry(*shortcut).or_default().push(*id);
@@ -115,16 +116,16 @@ impl ActionCollection {
         Self { shortcuts, actions }
     }
 
-    pub fn get_action_id(&self, shortcut: KeySequence) -> Option<AssetId<Action>> {
+    pub fn get_action_id(&self, shortcut: KeySequence) -> Option<Id<Action>> {
         let ids = self.shortcuts.get(&shortcut)?;
         ids.first().cloned()
     }
 
-    pub fn get_action(&self, id: AssetId<Action>) -> Option<Arc<Action>> {
+    pub fn get_action(&self, id: Id<Action>) -> Option<Arc<Action>> {
         self.actions.get(&id).cloned()
     }
 
-    pub fn get_all_action_ids(&self, shortcut: KeySequence) -> Option<Vec<AssetId<Action>>> {
+    pub fn get_all_action_ids(&self, shortcut: KeySequence) -> Option<Vec<Id<Action>>> {
         self.shortcuts.get(&shortcut).cloned()
     }
 }

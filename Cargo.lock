@@ -657,14 +657,13 @@ dependencies = [
 name = "cyancia_assets"
 version = "0.1.0"
 dependencies = [
+ "cyancia_id",
  "cyancia_utils",
  "downcast-rs 2.0.2",
  "log",
  "parking_lot",
  "serde",
  "thiserror 2.0.17",
- "uuid",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -691,10 +690,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_id"
+version = "0.1.0"
+dependencies = [
+ "cyancia_utils",
+ "parking_lot",
+ "serde",
+ "uuid",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "cyancia_input"
 version = "0.1.0"
 dependencies = [
  "cyancia_assets",
+ "cyancia_id",
  "iced_core",
  "indexmap",
  "serde",
@@ -884,6 +895,7 @@ name = "example_input"
 version = "0.1.0"
 dependencies = [
  "cyancia_assets",
+ "cyancia_id",
  "cyancia_input",
  "iced_core",
  "tracing-subscriber",

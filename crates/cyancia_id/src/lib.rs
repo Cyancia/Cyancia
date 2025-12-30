@@ -4,21 +4,19 @@ use cyancia_utils::Deref;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::asset::Asset;
-
 #[cfg(debug_assertions)]
 static ID_TO_NAME: std::sync::OnceLock<
     parking_lot::RwLock<std::collections::HashMap<Uuid, String>>,
 > = std::sync::OnceLock::new();
 
 #[derive(Deref)]
-pub struct AssetId<T: Asset> {
+pub struct Id<T> {
     #[deref]
     id: Uuid,
     _marker: PhantomData<T>,
 }
 
-impl<T: Asset> std::fmt::Debug for AssetId<T> {
+impl<T> std::fmt::Debug for Id<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[cfg(debug_assertions)]
         {
@@ -36,7 +34,7 @@ impl<T: Asset> std::fmt::Debug for AssetId<T> {
     }
 }
 
-impl<T: Asset> Clone for AssetId<T> {
+impl<T> Clone for Id<T> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -45,23 +43,23 @@ impl<T: Asset> Clone for AssetId<T> {
     }
 }
 
-impl<T: Asset> Copy for AssetId<T> {}
+impl<T> Copy for Id<T> {}
 
-impl<T: Asset> PartialEq for AssetId<T> {
+impl<T> PartialEq for Id<T> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl<T: Asset> Eq for AssetId<T> {}
+impl<T> Eq for Id<T> {}
 
-impl<T: Asset> std::hash::Hash for AssetId<T> {
+impl<T> std::hash::Hash for Id<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl<T: Asset> AssetId<T> {
+impl<T> Id<T> {
     pub fn random() -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -83,16 +81,18 @@ impl<T: Asset> AssetId<T> {
             _marker: PhantomData,
         }
     }
+}
 
-    pub fn untyped(self) -> UntypedAssetId {
-        UntypedAssetId {
+impl<T: 'static> Id<T> {
+    pub fn untyped(self) -> UntypedId {
+        UntypedId {
             id: self.id,
             ty: TypeId::of::<T>(),
         }
     }
 }
 
-impl<T: Asset> Serialize for AssetId<T> {
+impl<T> Serialize for Id<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -101,7 +101,7 @@ impl<T: Asset> Serialize for AssetId<T> {
     }
 }
 
-impl<'de, T: Asset> Deserialize<'de> for AssetId<T> {
+impl<'de, T> Deserialize<'de> for Id<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -115,12 +115,12 @@ impl<'de, T: Asset> Deserialize<'de> for AssetId<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct UntypedAssetId {
+pub struct UntypedId {
     id: Uuid,
     ty: TypeId,
 }
 
-impl std::fmt::Debug for UntypedAssetId {
+impl std::fmt::Debug for UntypedId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[cfg(debug_assertions)]
         {
@@ -138,12 +138,12 @@ impl std::fmt::Debug for UntypedAssetId {
     }
 }
 
-impl UntypedAssetId {
-    pub fn random_typed<T: Asset>() -> Self {
+impl UntypedId {
+    pub fn random_typed<T: 'static>() -> Self {
         Self::random(TypeId::of::<T>())
     }
 
-    pub fn from_str_typed<T: Asset>(s: &str) -> Self {
+    pub fn from_str_typed<T: 'static>(s: &str) -> Self {
         Self::from_str(s, TypeId::of::<T>())
     }
 
@@ -166,9 +166,9 @@ impl UntypedAssetId {
         Self { id, ty }
     }
 
-    pub fn typed<T: Asset>(self) -> Option<AssetId<T>> {
+    pub fn typed<T: 'static>(self) -> Option<Id<T>> {
         if self.ty == TypeId::of::<T>() {
-            Some(AssetId {
+            Some(Id {
                 id: self.id,
                 _marker: PhantomData,
             })

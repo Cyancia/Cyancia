@@ -8,3 +8,4 @@ cyancia_input.workspace = true
 cyancia_assets.workspace = true
 tracing-subscriber.workspace = true
 iced_core.workspace = true
+cyancia_id.workspace = true

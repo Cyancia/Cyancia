@@ -1,7 +1,5 @@
-use cyancia_assets::{
-    id::AssetId,
-    store::{AssetLoaderRegistry, AssetRegistry},
-};
+use cyancia_assets::store::{AssetLoaderRegistry, AssetRegistry};
+use cyancia_id::Id;
 use cyancia_input::action::{
     ActionCollection, ActionManifest, ActionManifestLoader, matching::ActionMatcher,
 };
@@ -20,12 +18,12 @@ fn main() {
     matcher.key_pressed(Code::Space);
     assert_eq!(
         matcher.current_action().map(|a| a.0),
-        Some(AssetId::from_str("canvas_pan_action"))
+        Some(Id::from_str("canvas_pan_action"))
     );
     matcher.key_pressed(Code::ControlLeft);
     assert_eq!(
         matcher.current_action().map(|a| a.0),
-        Some(AssetId::from_str("canvas_zoom_action"))
+        Some(Id::from_str("canvas_zoom_action"))
     );
     matcher.key_released(Code::Space);
     assert_eq!(matcher.current_action().map(|a| a.0), None);

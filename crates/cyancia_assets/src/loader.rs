@@ -1,8 +1,9 @@
 use std::io::Read;
 
+use cyancia_id::UntypedId;
+
 use crate::{
     asset::{Asset, ErasedAsset},
-    id::UntypedAssetId,
     store::AssetRegistry,
 };
 
@@ -15,7 +16,7 @@ pub trait AssetLoader: Send + Sync + 'static {
 
 pub trait ErasedAssetLoader: Send + Sync + 'static {
     fn read(&self, reader: &mut dyn Read) -> Result<Box<dyn Asset>, Box<dyn std::error::Error>>;
-    fn insert_asset(&self, id: UntypedAssetId, asset: Box<dyn Asset>, assets: &mut AssetRegistry);
+    fn insert_asset(&self, id: UntypedId, asset: Box<dyn Asset>, assets: &mut AssetRegistry);
 }
 
 impl<T: AssetLoader> ErasedAssetLoader for T {
@@ -26,7 +27,7 @@ impl<T: AssetLoader> ErasedAssetLoader for T {
         }
     }
 
-    fn insert_asset(&self, id: UntypedAssetId, asset: Box<dyn Asset>, assets: &mut AssetRegistry) {
+    fn insert_asset(&self, id: UntypedId, asset: Box<dyn Asset>, assets: &mut AssetRegistry) {
         assets.init_store::<<Self as AssetLoader>::Asset>();
         let id = id.typed::<T::Asset>().unwrap();
         let asset = match asset.downcast::<T::Asset>() {

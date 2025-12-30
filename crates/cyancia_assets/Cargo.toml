@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-uuid.workspace = true
-xxhash-rust.workspace = true
+cyancia_id.workspace = true
 cyancia_utils.workspace = true
 serde.workspace = true
 log.workspace = true

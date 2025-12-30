@@ -5,9 +5,10 @@ use std::{
     sync::Arc,
 };
 
+use cyancia_id::Id;
+
 use crate::{
     asset::Asset,
-    id::AssetId,
     loader::{AssetLoader, ErasedAssetLoader},
 };
 
@@ -65,7 +66,7 @@ impl AssetRegistry {
             .unwrap()
     }
 
-    pub fn asset<T: Asset>(&self, id: AssetId<T>) -> Option<Arc<T>> {
+    pub fn asset<T: Asset>(&self, id: Id<T>) -> Option<Arc<T>> {
         self.store::<T>().get(id)
     }
 
@@ -82,7 +83,7 @@ impl AssetRegistry {
 mod asset_loading {
     use std::{fs::read_dir, path::PathBuf};
 
-    use crate::id::UntypedAssetId;
+    use cyancia_id::UntypedId;
 
     use super::*;
 
@@ -169,7 +170,7 @@ mod asset_loading {
         let asset = loader
             .read(&mut file)
             .map_err(|e| LoadFileError::Loader(path.to_path_buf(), e))?;
-        loader.insert_asset(UntypedAssetId::random((*asset).type_id()), asset, assets);
+        loader.insert_asset(UntypedId::random((*asset).type_id()), asset, assets);
 
         Ok(())
     }
@@ -177,7 +178,7 @@ mod asset_loading {
 
 #[derive(Debug, Clone)]
 pub struct AssetStore<T: Asset> {
-    assets: HashMap<AssetId<T>, Arc<T>>,
+    assets: HashMap<Id<T>, Arc<T>>,
 }
 
 impl<T: Asset> AssetStore<T> {
@@ -187,15 +188,15 @@ impl<T: Asset> AssetStore<T> {
         }
     }
 
-    pub fn get(&self, id: AssetId<T>) -> Option<Arc<T>> {
+    pub fn get(&self, id: Id<T>) -> Option<Arc<T>> {
         self.assets.get(&id).cloned()
     }
 
-    pub fn insert(&mut self, id: AssetId<T>, asset: Arc<T>) {
+    pub fn insert(&mut self, id: Id<T>, asset: Arc<T>) {
         self.assets.insert(id, asset);
     }
 
-    pub fn into_map(self) -> HashMap<AssetId<T>, Arc<T>> {
+    pub fn into_map(self) -> HashMap<Id<T>, Arc<T>> {
         self.assets
     }
 }

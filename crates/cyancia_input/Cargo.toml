@@ -11,3 +11,4 @@ smallvec.workspace = true
 cyancia_assets.workspace = true
 toml.workspace = true
 indexmap.workspace = true
+cyancia_id.workspace = true

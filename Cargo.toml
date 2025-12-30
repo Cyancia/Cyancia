@@ -10,6 +10,7 @@ cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
 cyancia_input = { version = "0.1.0", path = "crates/cyancia_input" }
 cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
 cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
+cyancia_id = { version = "0.1.0", path = "crates/cyancia_id" }
 
 iced = { version = "0.14", features = ["debug", "canvas"] }
 iced_beacon = "0.14"
