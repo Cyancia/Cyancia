@@ -11,3 +11,4 @@ serde.workspace = true
 log.workspace = true
 thiserror.workspace = true
 downcast-rs.workspace = true
+parking_lot.workspace = true

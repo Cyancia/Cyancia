@@ -6,6 +6,11 @@ use uuid::Uuid;
 
 use crate::asset::Asset;
 
+#[cfg(debug_assertions)]
+static ID_TO_NAME: std::sync::OnceLock<
+    parking_lot::RwLock<std::collections::HashMap<Uuid, String>>,
+> = std::sync::OnceLock::new();
+
 #[derive(Deref)]
 pub struct AssetId<T: Asset> {
     #[deref]
@@ -15,6 +20,18 @@ pub struct AssetId<T: Asset> {
 
 impl<T: Asset> std::fmt::Debug for AssetId<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #[cfg(debug_assertions)]
+        {
+            match ID_TO_NAME
+                .get()
+                .and_then(|m| m.read().get(&self.id).cloned())
+            {
+                Some(name) => write!(f, "{} ({})", name, self.id),
+                None => self.id.fmt(f),
+            }
+        }
+
+        #[cfg(not(debug_assertions))]
         self.id.fmt(f)
     }
 }
@@ -53,8 +70,16 @@ impl<T: Asset> AssetId<T> {
     }
 
     pub fn from_str(s: &str) -> Self {
+        let id = Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(s.as_bytes()));
+        #[cfg(debug_assertions)]
+        {
+            ID_TO_NAME
+                .get_or_init(Default::default)
+                .write()
+                .insert(id, s.to_string());
+        }
         Self {
-            id: Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(s.as_bytes())),
+            id,
             _marker: PhantomData,
         }
     }
@@ -89,10 +114,28 @@ impl<'de, T: Asset> Deserialize<'de> for AssetId<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UntypedAssetId {
     id: Uuid,
     ty: TypeId,
+}
+
+impl std::fmt::Debug for UntypedAssetId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #[cfg(debug_assertions)]
+        {
+            match ID_TO_NAME
+                .get()
+                .and_then(|m| m.read().get(&self.id).cloned())
+            {
+                Some(name) => write!(f, "{} ({})", name, self.id),
+                None => self.id.fmt(f),
+            }
+        }
+
+        #[cfg(not(debug_assertions))]
+        self.id.fmt(f)
+    }
 }
 
 impl UntypedAssetId {
@@ -112,10 +155,15 @@ impl UntypedAssetId {
     }
 
     pub fn from_str(s: &str, ty: TypeId) -> Self {
-        Self {
-            id: Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(s.as_bytes())),
-            ty,
+        let id = Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(s.as_bytes()));
+        #[cfg(debug_assertions)]
+        {
+            ID_TO_NAME
+                .get_or_init(Default::default)
+                .write()
+                .insert(id, s.to_string());
         }
+        Self { id, ty }
     }
 
     pub fn typed<T: Asset>(self) -> Option<AssetId<T>> {

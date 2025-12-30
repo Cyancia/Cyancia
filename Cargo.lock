@@ -639,6 +639,7 @@ dependencies = [
  "cyancia_utils",
  "downcast-rs 2.0.2",
  "log",
+ "parking_lot",
  "serde",
  "thiserror 2.0.17",
  "uuid",
