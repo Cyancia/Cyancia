@@ -5,11 +5,15 @@ use cyancia_utils::global_instance::GlobalInstance;
 use dashmap::DashMap;
 use glam::{Mat3, UVec2};
 use iced_core::Rectangle;
+use image::{DynamicImage, RgbaImage};
+use palette::{LinSrgba, Srgb, Srgba};
 use parking_lot::RwLock;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use uuid::Uuid;
 use wgpu::{
-    Device, Extent3d, Queue, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
+    Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, Texture, TextureAspect,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+    TextureViewDescriptor, util::DeviceExt, wgt::TextureDataOrder,
 };
 
 use crate::layer::Layer;
@@ -58,7 +62,7 @@ impl GpuTileStorage {
         pile_layer: 0,
         index: UVec2::ZERO,
     };
-    pub const TILE_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+    pub const TILE_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
     pub fn calc_tile_count(image_size: UVec2) -> UVec2 {
         UVec2::new(
@@ -215,6 +219,76 @@ impl GpuTileStorage {
         self.available_slices
             .write()
             .extend((0..Self::TILES_PER_PILE as usize).map(|x| (pile_index, x)));
+    }
+
+    pub fn upload_image(&self, layer_id: Id<Layer>, img: DynamicImage) {
+        let width = img.width();
+        let height = img.height();
+
+        let img = img.into_rgba32f();
+        let data = img
+            .into_raw()
+            .par_iter()
+            .map(|x| half::f16::from_f32(*x).to_bits())
+            .collect::<Vec<_>>();
+
+        let texture = self.device.create_texture_with_data(
+            &self.queue,
+            &TextureDescriptor {
+                label: Some("temp texture"),
+                size: Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: Self::TILE_FORMAT,
+                usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            Default::default(),
+            bytemuck::cast_slice(&data),
+        );
+
+        let required_tile_count = Self::calc_tile_count(UVec2::new(width, height));
+        let target_tiles = (0..required_tile_count.x)
+            .flat_map(|x| {
+                (0..required_tile_count.y)
+                    .map(move |y| self.get_tile_mut(layer_id, UVec2::new(x, y)))
+            })
+            .collect::<Vec<_>>();
+
+        let mut ec = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("upload tile encoder"),
+            });
+
+        for tile in target_tiles {
+            let origin = tile.id.index * Self::TILE_SIZE;
+            ec.copy_texture_to_texture(
+                TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: origin.x,
+                        y: origin.y,
+                        z: 0,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                tile.view.texture().as_image_copy(),
+                Extent3d {
+                    width: Self::TILE_SIZE.min(width - origin.x),
+                    height: Self::TILE_SIZE.min(height - origin.y),
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+
+        self.queue.submit([ec.finish()]);
     }
 
     // pub fn offload_tile(&self, tile_id: TileId, callback: impl FnOnce(Vec<u8>) + Send + 'static) {

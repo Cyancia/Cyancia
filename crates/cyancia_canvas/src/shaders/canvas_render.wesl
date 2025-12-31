@@ -12,7 +12,7 @@ struct Canvas {
 @group(0) @binding(1) var tile_sampler: sampler;
 @group(0) @binding(2) var<uniform> canvas: Canvas;
 @group(0) @binding(3) var<storage, read> tile_mapper: array<u32>;
-@group(0) @binding(4) var output: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var output: texture_storage_2d<rgba16float, write>;
 
 @compute
 @workgroup_size(16, 16, 1)

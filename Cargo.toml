@@ -64,3 +64,6 @@ wesl = { version = "0.3", features = ["package"] }
 encase = "0.12"
 bytemuck = "1"
 image = "0.25"
+palette = "0.7"
+rayon = "1"
+half = "2"
