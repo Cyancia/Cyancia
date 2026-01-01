@@ -46,16 +46,8 @@ impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
         T::action()
     }
 
-    fn trigger(&mut self, shell: &mut CShell) {
+    fn trigger(&self, shell: &mut CShell) {
         let canvas = shell.canvas();
         shell.tool_proxy().switch_tool(T::tool(), &canvas);
-        self.activated = Instant::now();
-    }
-
-    fn end(&mut self, shell: &mut CShell) {
-        if self.activated.elapsed().as_millis() > 200 {
-            let canvas = shell.canvas();
-            shell.tool_proxy().switch_tool_back(&canvas);
-        }
     }
 }

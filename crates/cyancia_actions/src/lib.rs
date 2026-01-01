@@ -17,8 +17,7 @@ pub mod shell;
 
 pub trait ActionFunction: Send + Sync + 'static {
     fn id(&self) -> Id<Action>;
-    fn trigger(&mut self, shell: &mut CShell);
-    fn end(&mut self, shell: &mut CShell) {}
+    fn trigger(&self, shell: &mut CShell);
 }
 
 pub struct ActionFunctionCollection {
@@ -39,23 +38,13 @@ impl ActionFunctionCollection {
         self.functions.insert(action.id(), Box::new(action));
     }
 
-    pub fn trigger(&mut self, keys: KeySequence, shell: &mut CShell) {
+    pub fn trigger(&self, keys: KeySequence, shell: &mut CShell) {
         let Some(id) = self.actions.get_action_id(keys) else {
             return;
         };
 
-        if let Some(action) = self.functions.get_mut(&id) {
+        if let Some(action) = self.functions.get(&id) {
             action.trigger(shell);
-        }
-    }
-
-    pub fn end(&mut self, keys: KeySequence, shell: &mut CShell) {
-        let Some(id) = self.actions.get_action_id(keys) else {
-            return;
-        };
-
-        if let Some(action) = self.functions.get_mut(&id) {
-            action.end(shell);
         }
     }
 }

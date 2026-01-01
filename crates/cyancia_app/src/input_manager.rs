@@ -70,10 +70,6 @@ impl InputManager {
                 }
                 keyboard::Event::KeyReleased { physical_key, .. } => match physical_key {
                     key::Physical::Code(code) => {
-                        if let Ok(keys) = self.keyboard_state.get_sequence() {
-                            self.actions.end(keys, &mut shell);
-                        }
-
                         self.keyboard_state.release(code);
                     }
                     key::Physical::Unidentified(native_code) => {

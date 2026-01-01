@@ -17,7 +17,7 @@ impl ActionFunction for OpenFileAction {
         Id::from_str("open_file_action")
     }
 
-    fn trigger(&mut self, shell: &mut CShell) {
+    fn trigger(&self, shell: &mut CShell) {
         let Some(file) = FileDialog::new().pick_file() else {
             log::error!("Unable to get selected file path.");
             return;

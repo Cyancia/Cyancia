@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc, time::Instant};
 
 use cyancia_canvas::CCanvas;
 use cyancia_id::Id;
@@ -58,6 +58,7 @@ pub struct ToolProxy {
     last: Id<CanvasTool>,
     current: Id<CanvasTool>,
     tools: CanvasToolFunctionCollection,
+    last_switch: Instant,
 }
 
 impl ToolProxy {
@@ -66,6 +67,7 @@ impl ToolProxy {
             last: initial.clone(),
             current: initial,
             tools: collection,
+            last_switch: Instant::now(),
         }
     }
 
@@ -76,14 +78,11 @@ impl ToolProxy {
 
         self.last = self.current;
         self.current = tool;
+        self.last_switch = Instant::now();
 
         if let Some(new_tool) = self.tools.get_mut(&self.current) {
             new_tool.activate(canvas);
         }
-    }
-
-    pub fn switch_tool_back(&mut self, canvas: &CCanvas) {
-        self.switch_tool(self.last.clone(), canvas);
     }
 
     pub fn mouse_pressed(
