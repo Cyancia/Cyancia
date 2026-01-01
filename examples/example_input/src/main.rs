@@ -1,7 +1,7 @@
 use cyancia_assets::store::{AssetLoaderRegistry, AssetRegistry};
 use cyancia_id::Id;
 use cyancia_input::action::{
-    ActionCollection, ActionManifest, ActionManifestLoader, matching::ActionMatcher,
+    ActionCollection, ActionManifest, ActionManifestLoader, matcher::ActionMatcher,
 };
 use iced_core::keyboard::key::Code;
 

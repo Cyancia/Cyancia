@@ -1,31 +1,14 @@
-[canvas_pan_action]
-ty = "Hold"
-shortcut = [["Space"]]
-
-[canvas_rotate_action]
-ty = "Hold"
-shortcut = [["ShiftLeft", "Space"]]
-
-[canvas_zoom_action]
-ty = "Hold"
-shortcut = [["ControlLeft", "Space"]]
-
-[canvas_pan_tool]
-ty = "Toggle"
+[pan_tool]
 shortcut = [["KeyH"]]
 
-[canvas_rotate_tool]
-ty = "Toggle"
+[rotate_tool]
 shortcut = [["KeyR"]]
 
-[canvas_zoom_tool]
-ty = "Toggle"
+[zoom_tool]
 shortcut = [["KeyZ"]]
 
 [brush_tool]
-ty = "Toggle"
 shortcut = [["KeyB"]]
 
 [open_file_action]
-ty = "OneShot"
 shortcut = [["ControlLeft", "KeyO"]]

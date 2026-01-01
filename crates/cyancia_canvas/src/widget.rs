@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cyancia_assets::store::AssetRegistry;
 use cyancia_image::tile::GpuTileStorage;
-use cyancia_input::action::{ActionCollection, ActionManifest, matching::ActionMatcher};
+use cyancia_input::action::{ActionCollection, ActionManifest};
 use iced_core::{
     Clipboard, Element, Event, Layout, Length, Rectangle, Shell, Size, Widget,
     keyboard::{self, key},

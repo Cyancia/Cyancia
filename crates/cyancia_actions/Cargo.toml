@@ -15,3 +15,4 @@ cyancia_image.workspace = true
 image.workspace = true
 glam.workspace = true
 log.workspace = true
+cyancia_tools.workspace = true

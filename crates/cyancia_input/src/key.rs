@@ -455,6 +455,39 @@ pub mod serde_impl {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct KeyboardState {
+    pressed: SmallVec<[key::Code; 8]>,
+}
+
+impl KeyboardState {
+    pub fn press(&mut self, key: key::Code) {
+        if !self.is_pressed(key) {
+            self.pressed.push(key);
+        }
+    }
+
+    pub fn release(&mut self, key: key::Code) {
+        self.pressed.retain(|&mut c| c != key);
+    }
+
+    pub fn is_pressed(&self, key: key::Code) -> bool {
+        self.pressed.contains(&key)
+    }
+
+    pub fn has_pressed(&self) -> bool {
+        !self.pressed.is_empty()
+    }
+
+    pub fn all_pressed(&self) -> impl Iterator<Item = key::Code> + '_ {
+        self.pressed.iter().copied()
+    }
+
+    pub fn get_sequence(&self) -> Result<KeySequence, KeyParseError> {
+        KeySequence::from_codes(self.all_pressed())
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum KeyParseError {
     #[error("Multiple non-modifier keys found: {0:?}")]

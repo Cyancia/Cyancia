@@ -1,0 +1,61 @@
+use std::{marker::PhantomData, time::Instant};
+
+use cyancia_id::Id;
+use cyancia_input::action::Action;
+use cyancia_tools::CanvasTool;
+
+use crate::{ActionFunction, shell::CShell};
+
+pub trait CanvasToolAction: Send + Sync + 'static {
+    fn action() -> Id<Action>;
+    fn tool() -> Id<CanvasTool>;
+}
+
+macro_rules! canvas_tool_action {
+    ($name:ident, $action:literal, $tool: literal) => {
+        pub struct $name;
+        impl CanvasToolAction for $name {
+            fn action() -> Id<Action> {
+                Id::from_str($action)
+            }
+            fn tool() -> Id<CanvasTool> {
+                Id::from_str($tool)
+            }
+        }
+    };
+}
+canvas_tool_action!(PanToolAction, "pan_tool", "pan_tool");
+canvas_tool_action!(BrushToolAction, "brush_tool", "brush_tool");
+
+pub struct CanvasToolSwitch<T: CanvasToolAction> {
+    activated: Instant,
+    _marker: PhantomData<T>,
+}
+
+impl<T: CanvasToolAction> Default for CanvasToolSwitch<T> {
+    fn default() -> Self {
+        Self {
+            activated: Instant::now(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
+    fn id(&self) -> Id<Action> {
+        T::action()
+    }
+
+    fn trigger(&mut self, shell: &mut CShell) {
+        let canvas = shell.canvas();
+        shell.tool_proxy().switch_tool(T::tool(), &canvas);
+        self.activated = Instant::now();
+    }
+
+    fn end(&mut self, shell: &mut CShell) {
+        if self.activated.elapsed().as_millis() > 200 {
+            let canvas = shell.canvas();
+            shell.tool_proxy().switch_tool_back(&canvas);
+        }
+    }
+}

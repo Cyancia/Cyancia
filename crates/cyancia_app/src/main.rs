@@ -1,5 +1,6 @@
 use crate::main_view::MainView;
 
+mod input_manager;
 mod main_view;
 
 fn main() {

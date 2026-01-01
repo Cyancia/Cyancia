@@ -1,27 +1,31 @@
 use std::sync::Arc;
 
 use cyancia_canvas::CCanvas;
+use cyancia_id::Id;
+use cyancia_tools::{CanvasTool, ToolProxy};
 
 pub struct DestructedShell {
     pub current_canvas: Arc<CCanvas>,
     pub canvases: Vec<Arc<CCanvas>>,
 }
 
-pub struct CShell {
+pub struct CShell<'a> {
     current_canvas: Arc<CCanvas>,
     canvas_creation: Vec<Arc<CCanvas>>,
+    tool_proxy: &'a mut ToolProxy,
 }
 
-impl CShell {
-    pub fn new(current_canvas: Arc<CCanvas>) -> Self {
+impl<'a> CShell<'a> {
+    pub fn new(current_canvas: Arc<CCanvas>, tool_proxy: &'a mut ToolProxy) -> Self {
         Self {
             current_canvas,
             canvas_creation: Vec::new(),
+            tool_proxy,
         }
     }
 
-    pub fn canvas(&self) -> &CCanvas {
-        &self.current_canvas
+    pub fn canvas(&self) -> Arc<CCanvas> {
+        self.current_canvas.clone()
     }
 
     // pub fn all_canvases(&self) -> &[Arc<CCanvas>] {
@@ -42,5 +46,9 @@ impl CShell {
             current_canvas: self.current_canvas,
             canvases: self.canvas_creation,
         }
+    }
+
+    pub fn tool_proxy(&mut self) -> &mut ToolProxy {
+        self.tool_proxy
     }
 }

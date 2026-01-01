@@ -13,17 +13,11 @@ use crate::{ActionFunction, shell::CShell};
 pub struct OpenFileAction {}
 
 impl ActionFunction for OpenFileAction {
-    type State = ();
-
     fn id(&self) -> Id<Action> {
         Id::from_str("open_file_action")
     }
 
-    fn default_state(&self) -> Self::State {
-        ()
-    }
-
-    fn activate(&self, shortcut: KeySequence, shell: &mut CShell, state: &mut Self::State) {
+    fn trigger(&mut self, shell: &mut CShell) {
         let Some(file) = FileDialog::new().pick_file() else {
             log::error!("Unable to get selected file path.");
             return;

@@ -6,32 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::key::KeySequence;
 
-pub mod matching;
-
 #[derive(Debug, Clone)]
 pub struct Action {
     pub name: Arc<str>,
-    pub ty: ActionType,
     pub shortcut: Vec<KeySequence>,
     pub priority: u8,
 }
 
 impl Asset for Action {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ActionType {
-    /// A action that triggers once per shortcut activation. Like inverting a layer.
-    OneShot,
-    /// A action that triggers on shortcut activation.
-    /// If the shortcut is held for more than 0.2 seconds before deactivation,
-    /// it will deactivate on shortcut release. Otherwise it will remain active until
-    /// another shortcut is activated.
-    /// Like tools, e.g. straight line tool.
-    Toggle,
-    /// A action that only remains active while the shortcut is held down.
-    /// Like panning or zooming the canvas.
-    Hold,
-}
 
 #[derive(Debug, Clone)]
 pub struct ActionManifest {
@@ -42,7 +24,6 @@ impl Asset for ActionManifest {}
 
 #[derive(Serialize, Deserialize)]
 pub struct SerializableAction {
-    pub ty: ActionType,
     pub shortcut: Vec<KeySequence>,
     #[serde(default)]
     pub priority: Option<u8>,
@@ -75,7 +56,6 @@ impl AssetLoader for ActionManifestLoader {
             .into_iter()
             .map(|(name, a)| Action {
                 name: Arc::from(name),
-                ty: a.ty,
                 shortcut: a.shortcut,
                 priority: a.priority.unwrap_or(0),
             })

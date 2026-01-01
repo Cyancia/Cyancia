@@ -954,6 +954,7 @@ dependencies = [
  "cyancia_id",
  "cyancia_image",
  "cyancia_input",
+ "cyancia_tools",
  "futures",
  "glam 0.30.9",
  "iced_core",
@@ -1073,6 +1074,7 @@ dependencies = [
  "cyancia_id",
  "iced_core",
  "indexmap",
+ "log",
  "serde",
  "smallvec",
  "thiserror 2.0.17",
@@ -1103,11 +1105,11 @@ dependencies = [
 name = "cyancia_tools"
 version = "0.1.0"
 dependencies = [
- "cyancia_actions",
  "cyancia_canvas",
  "cyancia_id",
  "cyancia_input",
  "iced_core",
+ "parking_lot",
 ]
 
 [[package]]
