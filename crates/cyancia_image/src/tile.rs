@@ -64,7 +64,7 @@ impl GpuTileStorage {
         pile_layer: 0,
         pile_index: 0,
     };
-    pub const TILE_FORMAT: TextureFormat = TextureFormat::Rgba32Float;
+    pub const TILE_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
     pub fn calc_tile_count(image_size: UVec2) -> UVec2 {
         UVec2::new(
@@ -244,10 +244,9 @@ impl GpuTileStorage {
         let img = img.into_rgba32f();
         let data = img
             .into_raw()
-            // .par_iter()
-            // .map(|x| half::f16::from_f32(*x).to_bits())
-            // .collect::<Vec<_>>()
-            ;
+            .par_iter()
+            .map(|x| half::f16::from_f32(*x).to_bits())
+            .collect::<Vec<_>>();
 
         let texture = self.device.create_texture_with_data(
             &self.queue,
