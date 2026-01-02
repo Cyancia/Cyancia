@@ -30,13 +30,13 @@ use cyancia_tools::{
     zoom::ZoomTool,
 };
 use glam::UVec2;
-use iced::{
-    Element, Point, Renderer, Subscription, Task, Theme, event,
-    keyboard::{self, key},
-    mouse, window,
-};
+use iced_core::{Element, keyboard, mouse, window};
+use iced_runtime::{Task, futures::Subscription};
+use wgpu::{Device, Queue};
 
-use crate::input_manager::InputManager;
+use crate::{Window, WindowManagerShell, WindowView, main_view::input_manager::InputManager};
+
+pub mod input_manager;
 
 pub struct MainView {
     pub assets: AssetRegistry,
@@ -46,8 +46,14 @@ pub struct MainView {
     pub renderer_acquired: bool,
 }
 
+impl Default for MainView {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub enum MainViewMessage {
-    RendererAcquired(Arc<wgpu::Device>, Arc<wgpu::Queue>),
+    RendererAcquired(Arc<Device>, Arc<Queue>),
     WindowOpened(window::Id),
     KeyboardEvent(keyboard::Event),
     MouseEvent(mouse::Event),
@@ -67,6 +73,68 @@ impl Debug for MainViewMessage {
             Self::MouseEvent(arg0) => f.debug_tuple("MouseEvent").field(arg0).finish(),
             Self::ActionTaskCompleted(arg0) => f.debug_tuple("ActionTaskCompleted").finish(),
         }
+    }
+}
+
+impl<Theme> WindowView<Theme> for MainView {
+    type Message = MainViewMessage;
+
+    fn id(&self) -> Id<Window> {
+        Id::from_str("main_view")
+    }
+
+    fn view(&self) -> Element<'static, Self::Message, Theme, iced_wgpu::Renderer> {
+        if self.renderer_acquired {
+            self.view_internal()
+        } else {
+            Element::new(RendererAcquire {
+                on_acquire: Box::new(|device, queue| {
+                    log::info!("Renderer acquired!");
+                    MainViewMessage::RendererAcquired(Arc::new(device), Arc::new(queue))
+                }),
+            })
+        }
+    }
+
+    fn update(
+        &mut self,
+        message: Self::Message,
+        windows: &mut WindowManagerShell,
+    ) -> iced_runtime::Task<Self::Message> {
+        let mut shell = ActionShell::new(self.canvas.clone(), self.input_manager.tools.clone());
+
+        match message {
+            MainViewMessage::WindowOpened(id) => {}
+            MainViewMessage::RendererAcquired(device, queue) => {
+                if !self.renderer_acquired {
+                    self.renderer_acquired = true;
+
+                    GLOBAL_SAMPLERS.init(GlobalSamplers::new(&device));
+                    FULLSCREEN_VERTEX.init(FullscreenVertex::new(&device));
+                    GPU_TILE_STORAGE.init(GpuTileStorage::new(device.clone(), queue.clone()));
+                    RENDER_CONTEXT.init(RenderContext { device, queue });
+                }
+            }
+            MainViewMessage::KeyboardEvent(event) => {
+                self.input_manager.on_keyboard_event(event, &mut shell);
+            }
+            MainViewMessage::MouseEvent(event) => {
+                self.input_manager.on_mouse_event(event, &self.canvas);
+            }
+            MainViewMessage::ActionTaskCompleted(action_task) => {
+                action_task.apply(&mut shell);
+            }
+        }
+
+        self.apply_shell(shell.destruct())
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        iced_futures::event::listen().filter_map(|event| match event {
+            iced_core::Event::Keyboard(event) => Some(MainViewMessage::KeyboardEvent(event)),
+            iced_core::Event::Mouse(event) => Some(MainViewMessage::MouseEvent(event)),
+            _ => None,
+        })
     }
 }
 
@@ -109,62 +177,14 @@ impl MainView {
         }
     }
 
-    pub fn view(&self) -> Element<'_, MainViewMessage, Theme, iced_wgpu::Renderer> {
-        if self.renderer_acquired {
-            self.view_internal()
-        } else {
-            Element::new(RendererAcquire {
-                on_acquire: Box::new(|device, queue| {
-                    log::info!("Renderer acquired!");
-                    MainViewMessage::RendererAcquired(Arc::new(device), Arc::new(queue))
-                }),
-            })
-        }
-    }
-
-    fn view_internal(&self) -> Element<'_, MainViewMessage, Theme, iced_wgpu::Renderer> {
+    fn view_internal<Theme>(
+        &self,
+    ) -> Element<'static, MainViewMessage, Theme, iced_wgpu::Renderer> {
         CanvasWidget {
             canvas: self.canvas.clone(),
             gpu_tile_storage: GPU_TILE_STORAGE.clone_arc(),
         }
         .into()
-    }
-
-    pub fn update(&mut self, message: MainViewMessage) -> Task<MainViewMessage> {
-        let mut shell = ActionShell::new(self.canvas.clone(), self.input_manager.tools.clone());
-
-        match message {
-            MainViewMessage::WindowOpened(id) => {}
-            MainViewMessage::RendererAcquired(device, queue) => {
-                if !self.renderer_acquired {
-                    self.renderer_acquired = true;
-
-                    GLOBAL_SAMPLERS.init(GlobalSamplers::new(&device));
-                    FULLSCREEN_VERTEX.init(FullscreenVertex::new(&device));
-                    GPU_TILE_STORAGE.init(GpuTileStorage::new(device.clone(), queue.clone()));
-                    RENDER_CONTEXT.init(RenderContext { device, queue });
-                }
-            }
-            MainViewMessage::KeyboardEvent(event) => {
-                self.input_manager.on_keyboard_event(event, &mut shell);
-            }
-            MainViewMessage::MouseEvent(event) => {
-                self.input_manager.on_mouse_event(event, &self.canvas);
-            }
-            MainViewMessage::ActionTaskCompleted(action_task) => {
-                action_task.apply(&mut shell);
-            }
-        }
-
-        self.apply_shell(shell.destruct())
-    }
-
-    pub fn subscription(&self) -> Subscription<MainViewMessage> {
-        event::listen().filter_map(|event| match event {
-            iced::Event::Keyboard(event) => Some(MainViewMessage::KeyboardEvent(event)),
-            iced::Event::Mouse(event) => Some(MainViewMessage::MouseEvent(event)),
-            _ => None,
-        })
     }
 
     fn apply_shell(&mut self, shell: DestructedShell) -> Task<MainViewMessage> {

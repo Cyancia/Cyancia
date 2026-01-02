@@ -969,21 +969,9 @@ dependencies = [
 name = "cyancia_app"
 version = "0.1.0"
 dependencies = [
- "cyancia_actions",
- "cyancia_assets",
- "cyancia_canvas",
- "cyancia_id",
- "cyancia_image",
- "cyancia_input",
- "cyancia_render",
- "cyancia_tools",
- "futures",
- "glam 0.30.9",
+ "cyancia_windows",
  "iced",
- "iced_wgpu",
- "log",
  "tracing-subscriber",
- "wgpu",
 ]
 
 [[package]]
@@ -1096,6 +1084,7 @@ version = "0.1.0"
 dependencies = [
  "cyancia_utils",
  "encase",
+ "iced_renderer",
  "iced_wgpu",
  "iced_widget",
  "wesl",
@@ -1162,6 +1151,29 @@ dependencies = [
  "iced_core",
  "iced_widget",
  "num-traits",
+]
+
+[[package]]
+name = "cyancia_windows"
+version = "0.1.0"
+dependencies = [
+ "cyancia_actions",
+ "cyancia_assets",
+ "cyancia_canvas",
+ "cyancia_id",
+ "cyancia_image",
+ "cyancia_input",
+ "cyancia_render",
+ "cyancia_tools",
+ "futures",
+ "glam 0.30.9",
+ "iced_core",
+ "iced_futures",
+ "iced_renderer",
+ "iced_runtime",
+ "iced_wgpu",
+ "log",
+ "wgpu",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@ use cyancia_input::{
     mouse::{HoverMouseState, PressedMouseState},
 };
 use cyancia_tools::ToolProxy;
-use iced::{
+use iced_core::{
     Point,
     keyboard::{self, key},
     mouse,
@@ -37,11 +37,7 @@ impl InputManager {
         }
     }
 
-    pub fn on_keyboard_event(
-        &mut self,
-        event: keyboard::Event,
-        shell: &mut ActionShell,
-    ) {
+    pub fn on_keyboard_event(&mut self, event: keyboard::Event, shell: &mut ActionShell) {
         match event {
             keyboard::Event::KeyPressed {
                 physical_key,

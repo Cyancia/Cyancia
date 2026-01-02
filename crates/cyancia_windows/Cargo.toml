@@ -1,0 +1,23 @@
+[package]
+name = "cyancia_windows"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+iced_core.workspace = true
+cyancia_id.workspace = true
+iced_runtime.workspace = true
+cyancia_canvas.workspace = true
+log.workspace = true
+cyancia_assets.workspace = true
+cyancia_input.workspace = true
+futures.workspace = true
+cyancia_image.workspace = true
+glam.workspace = true
+iced_wgpu.workspace = true
+wgpu.workspace = true
+cyancia_render.workspace = true
+cyancia_actions.workspace = true
+cyancia_tools.workspace = true
+iced_futures.workspace = true
+iced_renderer.workspace = true

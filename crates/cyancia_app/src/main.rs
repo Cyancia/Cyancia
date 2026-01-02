@@ -1,13 +1,15 @@
-use crate::main_view::MainView;
-
-mod input_manager;
-mod main_view;
+use cyancia_windows::WindowManager;
+use iced::Theme;
 
 fn main() {
     tracing_subscriber::fmt().with_env_filter("info").init();
 
-    iced::application(MainView::new, MainView::update, MainView::view)
-        .subscription(MainView::subscription)
-        .run()
-        .unwrap();
+    iced::daemon(
+        WindowManager::<Theme>::boot,
+        WindowManager::update,
+        WindowManager::view,
+    )
+    .subscription(WindowManager::subscription)
+    .run()
+    .unwrap();
 }

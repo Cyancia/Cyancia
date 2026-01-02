@@ -12,3 +12,6 @@ shortcut = [["KeyB"]]
 
 [open_file_action]
 shortcut = [["ControlLeft", "KeyO"]]
+
+[open_brush_graph]
+shortcut = [["F5"]]
