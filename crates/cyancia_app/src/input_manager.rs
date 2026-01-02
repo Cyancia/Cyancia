@@ -40,7 +40,6 @@ impl InputManager {
     pub fn on_keyboard_event(
         &mut self,
         event: keyboard::Event,
-        canvas: Arc<CCanvas>,
         shell: &mut ActionShell,
     ) {
         match event {

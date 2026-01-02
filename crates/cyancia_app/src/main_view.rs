@@ -145,8 +145,7 @@ impl MainView {
                 }
             }
             MainViewMessage::KeyboardEvent(event) => {
-                self.input_manager
-                    .on_keyboard_event(event, self.canvas.clone(), &mut shell);
+                self.input_manager.on_keyboard_event(event, &mut shell);
             }
             MainViewMessage::MouseEvent(event) => {
                 self.input_manager.on_mouse_event(event, &self.canvas);
