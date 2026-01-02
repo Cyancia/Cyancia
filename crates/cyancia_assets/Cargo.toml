@@ -1,0 +1,13 @@
+[package]
+name = "cyancia_assets"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cyancia_id.workspace = true
+cyancia_utils.workspace = true
+serde.workspace = true
+log.workspace = true
+thiserror.workspace = true
+downcast-rs.workspace = true
+parking_lot.workspace = true

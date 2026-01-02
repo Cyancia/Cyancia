@@ -1,16 +1,16 @@
 #[macro_export]
 macro_rules! wrapper {
-    ($(#[$attr: meta])* $vis: vis $wrapper: ident : $original: ty) => {
+    ($(#[$attr:meta])* $vis:vis $wrapper:ident $(<$($gen:tt),*>)? : $original: ty $(where $($bounds:tt)*)?) => {
         $(#[$attr])*
-        $vis struct $wrapper($original);
+        $vis struct $wrapper $(<$($gen),*>)? ($original) $(where $($bounds)*)?;
 
-        impl $wrapper {
+        impl $(<$($gen),*>)? $wrapper $(<$($gen),*>)? $(where $($bounds)*)? {
             pub const fn new(value: $original) -> Self {
                 Self(value)
             }
         }
 
-        impl std::ops::Deref for $wrapper {
+        impl $(<$($gen),*>)? std::ops::Deref for $wrapper $(<$($gen),*>)? $(where $($bounds)*)? {
             type Target = $original;
 
             fn deref(&self) -> &Self::Target {
@@ -18,20 +18,20 @@ macro_rules! wrapper {
             }
         }
 
-        impl From<$original> for $wrapper {
+        impl $(<$($gen),*>)? From<$original> for $wrapper $(<$($gen),*>)? $(where $($bounds)*)? {
             fn from(value: $original) -> Self {
                 Self::new(value)
             }
         }
     };
 
-    ($(#[$attr: meta])* $vis: vis mut $wrapper: ident : $original: ty) => {
-        $crate::define_wrapper_ty! {
+    ($(#[$attr:meta])* $vis:vis mut $wrapper:ident $(<$($gen:tt),*>)? : $original: ty $(where $($bounds:tt)*)?) => {
+        $crate::wrapper! {
             $(#[$attr])*
-            $vis $wrapper : $original
+            $vis $wrapper $(<$($gen),*>)? : $original $(where $($bounds)*)?
         }
 
-        impl std::ops::DerefMut for $wrapper {
+        impl $(<$($gen),*>)? std::ops::DerefMut for $wrapper $(<$($gen),*>)? $(where $($bounds)*)? {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.0
             }

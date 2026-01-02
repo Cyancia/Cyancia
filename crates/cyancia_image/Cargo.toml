@@ -1,0 +1,20 @@
+[package]
+name = "cyancia_image"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dashmap.workspace = true
+cyancia_utils.workspace = true
+iced_core.workspace = true
+glam.workspace = true
+parking_lot.workspace = true
+wgpu.workspace = true
+cyancia_id.workspace = true
+uuid.workspace = true
+image.workspace = true
+bytemuck.workspace = true
+log.workspace = true
+palette.workspace = true
+rayon.workspace = true
+half.workspace = true

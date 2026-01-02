@@ -1,0 +1,8 @@
+[package]
+name = "cyancia_math"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+glam.workspace = true
+iced_core.workspace = true

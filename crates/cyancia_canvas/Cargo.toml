@@ -1,0 +1,26 @@
+[package]
+name = "cyancia_canvas"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cyancia_input.workspace = true
+iced_core.workspace = true
+cyancia_assets.workspace = true
+log.workspace = true
+cyancia_id.workspace = true
+parking_lot.workspace = true
+cyancia_utils.workspace = true
+wgpu.workspace = true
+iced_widget.workspace = true
+glam.workspace = true
+cyancia_image.workspace = true
+cyancia_render.workspace = true
+encase.workspace = true
+cyancia_math.workspace = true
+bytemuck.workspace = true
+iced_wgpu.workspace = true
+
+[build-dependencies]
+wesl.workspace = true
+cyancia_render.workspace = true

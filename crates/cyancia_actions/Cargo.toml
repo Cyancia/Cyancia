@@ -1,0 +1,19 @@
+[package]
+name = "cyancia_actions"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+parking_lot.workspace = true
+cyancia_id.workspace = true
+cyancia_input.workspace = true
+iced_core.workspace = true
+cyancia_canvas.workspace = true
+rfd.workspace = true
+futures.workspace = true
+cyancia_image.workspace = true
+image.workspace = true
+glam.workspace = true
+log.workspace = true
+cyancia_tools.workspace = true
+iced_runtime.workspace = true

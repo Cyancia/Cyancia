@@ -1,0 +1,16 @@
+[package]
+name = "cyancia_input"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde.workspace = true
+iced_core.workspace = true
+thiserror.workspace = true
+smallvec.workspace = true
+cyancia_assets.workspace = true
+toml.workspace = true
+indexmap.workspace = true
+cyancia_id.workspace = true
+bitflags.workspace = true
+log.workspace = true

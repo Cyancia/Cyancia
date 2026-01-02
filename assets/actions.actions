@@ -1,0 +1,14 @@
+[pan_tool]
+shortcut = [["KeyH"]]
+
+[rotate_tool]
+shortcut = [["KeyR"]]
+
+[zoom_tool]
+shortcut = [["KeyZ"]]
+
+[brush_tool]
+shortcut = [["KeyB"]]
+
+[open_file_action]
+shortcut = [["ControlLeft", "KeyO"]]
