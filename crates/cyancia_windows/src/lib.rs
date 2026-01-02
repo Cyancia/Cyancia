@@ -73,8 +73,9 @@ pub struct ErasedWindowMessage {
     message: Box<dyn Any + Send + Sync>,
 }
 
+#[derive(Debug)]
 pub enum WindowManagerMessage {
-    WindowOpened(window::Id, Id<Window>),
+    WindowClosed(window::Id),
     Window(ErasedWindowMessage),
 }
 
@@ -101,78 +102,97 @@ where
         self.views.insert(view.id(), Box::new(view));
     }
 
-    pub fn boot() -> (Self, Task<ErasedWindowMessage>) {
+    pub fn boot() -> (Self, Task<WindowManagerMessage>) {
         let mut instance = Self::new();
         instance.register::<main_view::MainView>();
-        let task = instance.open_window(Id::from_str("main_view"));
+        let task = instance.open_view(Id::from_str("main_view"));
         (instance, task.discard())
     }
 
     pub fn view(
         &self,
         iced_id: window::Id,
-    ) -> Element<'_, ErasedWindowMessage, Theme, iced_wgpu::Renderer> {
+    ) -> Element<'_, WindowManagerMessage, Theme, iced_wgpu::Renderer> {
         let window = self
             .windows
             .get(&iced_id)
             .expect("Window not found")
             .clone();
         let view = self.views.get(&window).expect("Window view not found");
-        view.view().map(move |msg| ErasedWindowMessage {
-            window,
-            message: msg,
+        view.view().map(move |msg| {
+            WindowManagerMessage::Window(ErasedWindowMessage {
+                window,
+                message: msg,
+            })
         })
     }
 
-    pub fn update(&mut self, message: ErasedWindowMessage) -> Task<ErasedWindowMessage> {
-        let view = self
-            .views
-            .get_mut(&message.window)
-            .expect("Window view not found");
-        let mut shell = WindowManagerShell::default();
-        let mut task =
-            view.update(message.message, &mut shell)
-                .map(move |msg| ErasedWindowMessage {
-                    window: message.window,
-                    message: msg,
-                });
+    pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
+        match message {
+            WindowManagerMessage::WindowClosed(id) => {
+                if let Some(window_id) = self.windows.remove(&id) {
+                    self.opened_views.remove(&window_id);
+                }
 
-        for view_id in shell.to_open {
-            if self.opened_views.contains_key(&view_id) {
-                continue;
+                if self.opened_views.contains_key(&Id::from_str("main_view")) {
+                    Task::none()
+                } else {
+                    iced_runtime::exit()
+                }
             }
+            WindowManagerMessage::Window(message) => {
+                let view = self
+                    .views
+                    .get_mut(&message.window)
+                    .expect("Window view not found");
+                let mut shell = WindowManagerShell::default();
+                let mut task =
+                    view.update(message.message, &mut shell)
+                        .map(move |msg| ErasedWindowMessage {
+                            window: message.window,
+                            message: msg,
+                        });
 
-            task = task.chain(self.open_window(view_id).discard());
+                for view_id in shell.to_open {
+                    if self.opened_views.contains_key(&view_id) {
+                        continue;
+                    }
+
+                    task = task.chain(self.open_view(view_id).discard());
+                }
+
+                for view_id in shell.to_close {
+                    task = task.chain(self.close_view(view_id).discard());
+                }
+
+                task.map(WindowManagerMessage::Window)
+            }
         }
-
-        for view_id in shell.to_close {
-            task = task.chain(self.close_window(view_id).discard());
-        }
-
-        task
     }
 
-    pub fn subscription(&self) -> Subscription<ErasedWindowMessage> {
-        let subscriptions = self.views.iter().map(|(id, view)| {
-            view.subscription()
-                .with(*id)
-                .map(|(window, msg)| ErasedWindowMessage {
+    pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
+        let views = self.views.iter().map(|(id, view)| {
+            view.subscription().with(*id).map(|(window, msg)| {
+                WindowManagerMessage::Window(ErasedWindowMessage {
                     window,
                     message: msg,
                 })
+            })
         });
 
-        Subscription::batch(subscriptions)
+        let manager = iced_runtime::window::close_events().map(WindowManagerMessage::WindowClosed);
+
+        Subscription::batch(views.chain([manager]))
     }
 
-    fn open_window(&mut self, view_id: Id<Window>) -> Task<()> {
+    fn open_view(&mut self, view_id: Id<Window>) -> Task<()> {
         let (window_id, task) = iced_runtime::window::open(Default::default());
         self.windows.insert(window_id, view_id);
         self.opened_views.insert(view_id, window_id);
         task.discard()
     }
 
-    fn close_window(&mut self, view_id: Id<Window>) -> Task<()> {
+    fn close_view(&mut self, view_id: Id<Window>) -> Task<()> {
         if let Some(window_id) = self.opened_views.remove(&view_id) {
             self.windows.remove(&window_id);
             iced_runtime::window::close::<()>(window_id).discard()
