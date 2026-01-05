@@ -1,7 +1,11 @@
 use cyancia_shader_graph::{
-    ShaderGraph, ShaderGraphDefaultInputSlot, ShaderGraphDefaultOutputSlot, ShaderGraphNode,
-    ShaderGraphNodeCodeGenContext, ShaderGraphRenderer, ShaderGraphTheme, ShaderGraphValueType,
-    editor::{GraphView, GraphViewMessage},
+    ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphDefaultInputSlot,
+    ShaderGraphDefaultOutputSlot, ShaderGraphNode, ShaderGraphNodeCodeGenContext,
+    ShaderGraphNodeCreator, ShaderGraphRenderer, ShaderGraphTheme, ShaderGraphValueType,
+    editor::{
+        GraphView, GraphViewMessage,
+        drawer::{NodeDrawerMessage, node_drawer},
+    },
 };
 use cyancia_utils::wrapper;
 use cyancia_widgets::{drag_field::DragField, spin_slider::SpinSlider};
@@ -21,15 +25,13 @@ fn main() {
 
 pub struct App {
     graph: ShaderGraph,
-    // creators: Vec<Box<dyn GraphNodeCreator>>,
-    // viewers: GraphSlotViewers<'static, GraphMessage, Theme, Renderer>,
+    creators: Vec<Box<dyn ErasedShaderGraphNodeCreator>>,
 }
 
 #[derive(Debug)]
 pub enum GraphMessage {
-    // NodeDrawer(NodeDrawerMessage),
-    // FloatValueChanged(f32, InputSlotId),
     View(GraphViewMessage),
+    NodeDrawer(NodeDrawerMessage),
 }
 
 impl App {
@@ -38,14 +40,10 @@ impl App {
         let add1 = graph.add_node(Point::new(0.0, 0.0), AddNode);
         let add2 = graph.add_node(Point::new(200.0, 0.0), AddNode);
         graph.connect_slots_by_index(add1, 0, add2, 0);
-        // let viewers = {
-        //     let mut v = GraphSlotViewers::new();
-        //     v.register(FloatType);
-        //     v
-        // };
 
         Self {
             graph,
+            creators: vec![Box::new(AddNode)],
             // creators: vec![Box::new(AddNodeCreator)],
             // viewers,
         }
@@ -53,25 +51,21 @@ impl App {
 
     // pub fn view(&self) -> Element<'_, GraphEditorMessage<GraphMessage>> {
     pub fn view(&self) -> Element<'_, GraphMessage, ShaderGraphTheme, ShaderGraphRenderer> {
-        Element::new(GraphView::new(&self.graph)).map(GraphMessage::View)
-        // container("content").into()
-        // row![
-        //     node_drawer(&self.creators)
-        //         .map(GraphMessage::NodeDrawer)
-        //         .map(GraphEditorMessage::Custom),
-        //     // column![
-        //     //     Text::new("test1"),
-        //     //     Text::new("test1"),
-        //     //     Text::new("test1"),
-        //     //     Text::new("test2"),
-        //     //     DragField::new(
-        //     //         Text::new("Drag me!").into()
-        //     //     ),
-        //     //     Text::new("test1"),
-        //     // ]
-        //     Element::new(GraphView::new(&self.graph, &self.viewers,))
-        // ]
-        // .into()
+        row![
+            node_drawer(&self.creators).map(GraphMessage::NodeDrawer),
+            // column![
+            //     Text::new("test1"),
+            //     Text::new("test1"),
+            //     Text::new("test1"),
+            //     Text::new("test2"),
+            //     DragField::new(
+            //         Text::new("Drag me!").into()
+            //     ),
+            //     Text::new("test1"),
+            // ]
+            Element::new(GraphView::new(&self.graph)).map(GraphMessage::View)
+        ]
+        .into()
     }
 
     pub fn update(&mut self, message: GraphMessage) {
@@ -92,33 +86,14 @@ impl App {
                     self.graph.update_literal(message);
                 }
             },
+            GraphMessage::NodeDrawer(message) => match message {
+                NodeDrawerMessage::NodeCreate(creator, point) => {
+                    self.graph
+                        .add_boxed_node(point, self.creators[creator].create());
+                }
+            },
         }
         println!("{}", self.graph.compile().unwrap());
-        // match message {
-        //     GraphEditorMessage::NodeMoved(point, node_id) => {
-        //         if let Some(node) = self.graph.nodes.get_mut(&node_id) {
-        //             node.position = point;
-        //         }
-        //     }
-        //     GraphEditorMessage::Custom(message) => match message {
-        //         GraphMessage::FloatValueChanged(x, id) => {
-        //             if let Some(slot) = self.graph.slots.inputs.get_mut(&id) {
-        //                 slot.value = ErasedSlotValue::new(x);
-        //             }
-        //         }
-        //         GraphMessage::NodeDrawer(message) => match message {
-        //             NodeDrawerMessage::NodeCreate(i, point) => {
-        //                 self.graph.add_node(point, self.creators[i].create());
-        //             }
-        //         },
-        //     },
-        //     GraphEditorMessage::EdgeCreated(from, to) => {
-        //         self.graph.connect_slot(from, to);
-        //     }
-        //     GraphEditorMessage::EdgeRemoved(to) => {
-        //         self.graph.disconnect_slot(to);
-        //     }
-        // }
     }
 }
 
@@ -167,6 +142,10 @@ impl ShaderGraphValueType for FloatType {
 
 #[derive(Default)]
 pub struct AddNode;
+
+impl ShaderGraphNodeCreator for AddNode {
+    type NodeType = Self;
+}
 
 impl ShaderGraphNode for AddNode {
     fn title(&self) -> &str {

@@ -28,10 +28,10 @@ pub struct ShaderGraph {
 }
 
 impl ShaderGraph {
-    pub fn add_node<T: ShaderGraphNode>(
+    pub fn add_boxed_node(
         &mut self,
         position: Point,
-        node: T,
+        node: Box<dyn ShaderGraphNode>,
     ) -> Id<ShaderGraphNodeData> {
         let node_id = Id::random();
         let raw_inputs = node.create_inputs();
@@ -74,11 +74,19 @@ impl ShaderGraph {
                 position,
                 inputs,
                 outputs,
-                data: Box::new(node),
+                data: node,
             },
         );
         self.invalidate_cache();
         node_id
+    }
+
+    pub fn add_node<T: ShaderGraphNode>(
+        &mut self,
+        position: Point,
+        node: T,
+    ) -> Id<ShaderGraphNodeData> {
+        self.add_boxed_node(position, Box::new(node))
     }
 
     pub fn get_node(&self, id: &Id<ShaderGraphNodeData>) -> Option<&ShaderGraphNodeData> {
@@ -284,6 +292,23 @@ impl ShaderGraphSlots {
         let input_node = self.inputs.get(input_id)?;
         let connected_id = input_node.connected.as_ref()?;
         self.outputs.get(connected_id)
+    }
+}
+
+pub trait ShaderGraphNodeCreator {
+    type NodeType: ShaderGraphNode + Default;
+    fn create(&self) -> Self::NodeType {
+        Self::NodeType::default()
+    }
+}
+
+pub trait ErasedShaderGraphNodeCreator {
+    fn create(&self) -> Box<dyn ShaderGraphNode>;
+}
+
+impl<T: ShaderGraphNodeCreator> ErasedShaderGraphNodeCreator for T {
+    fn create(&self) -> Box<dyn ShaderGraphNode> {
+        Box::new(self.create())
     }
 }
 

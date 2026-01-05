@@ -30,7 +30,7 @@ use crate::{
     editor::helpers::{SlotSide, empty_slot, valued_slot},
 };
 
-// pub mod drawer;
+pub mod drawer;
 pub mod helpers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
