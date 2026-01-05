@@ -1430,6 +1430,7 @@ dependencies = [
  "cyancia_shader_graph",
  "cyancia_utils",
  "cyancia_widgets",
+ "glam 0.30.9",
  "iced",
 ]
 

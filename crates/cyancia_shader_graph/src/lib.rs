@@ -262,6 +262,10 @@ impl ShaderGraph {
             slot.data.ty.update_literal(&mut slot.data.value, message);
         }
     }
+
+    pub fn add_caster<T: ShaderVariableCaster + Default>(&mut self) {
+        self.casters.register::<T>();
+    }
 }
 
 #[derive(Default)]
