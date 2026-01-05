@@ -237,12 +237,12 @@ impl<'a> DrawableNode<'a> {
             .map(|(slot_id, slot)| match &slot.connected {
                 Some(_) => empty_slot(
                     slot.data.ty().color(),
-                    slot.data.ty().name(),
+                    slot.name,
                     SlotSide::Left,
                 ),
                 None => valued_slot(
                     slot.data.ty().color(),
-                    slot.data.ty().name(),
+                    slot.name,
                     SlotSide::Left,
                     slot.data.ty().view_literal(*slot_id, &slot.data.value),
                 ),
@@ -254,7 +254,7 @@ impl<'a> DrawableNode<'a> {
             .map(|slot| {
                 empty_slot(
                     slot.data.ty().color(),
-                    slot.data.ty().name(),
+                    slot.name,
                     SlotSide::Right,
                 )
             });
