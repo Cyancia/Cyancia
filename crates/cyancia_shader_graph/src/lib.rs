@@ -4,7 +4,10 @@ use std::{
 };
 
 use cyancia_id::Id;
+use cyancia_utils::wrapper;
 use iced_core::{Color, Element, Point};
+
+pub mod editor;
 
 pub type ShaderGraphTheme = iced_core::Theme;
 pub type ShaderGraphRenderer = iced_wgpu::Renderer;
@@ -76,6 +79,17 @@ impl ShaderGraph {
         );
         self.invalidate_cache();
         node_id
+    }
+
+    pub fn get_node(&self, id: &Id<ShaderGraphNodeData>) -> Option<&ShaderGraphNodeData> {
+        self.nodes.get(id)
+    }
+
+    pub fn get_node_mut(
+        &mut self,
+        id: &Id<ShaderGraphNodeData>,
+    ) -> Option<&mut ShaderGraphNodeData> {
+        self.nodes.get_mut(id)
     }
 
     pub fn connect_slot(
@@ -211,12 +225,12 @@ impl ShaderGraph {
                     continue;
                 };
 
-                println!(
-                    "Visiting node {:?} from {:?} {}",
-                    node_id,
-                    from_node_id,
-                    out_degrees.get(&from_node_id).unwrap_or(&usize::MAX)
-                );
+                // println!(
+                //     "Visiting node {:?} from {:?} {}",
+                //     node_id,
+                //     from_node_id,
+                //     out_degrees.get(&from_node_id).unwrap_or(&usize::MAX)
+                // );
                 let Entry::Occupied(out_degree_of_from_node) = out_degrees.entry(from_node_id)
                 else {
                     continue;
@@ -233,6 +247,12 @@ impl ShaderGraph {
 
         run_order.reverse();
         self.cached_run_order = Some(dbg!(run_order));
+    }
+
+    pub fn update_literal(&mut self, message: ErasedShaderGraphLiteralUpdateMessage) {
+        if let Some(slot) = self.slots.inputs.get_mut(&message.id) {
+            slot.data.ty.update_literal(&mut slot.data.value, message);
+        }
     }
 }
 
@@ -274,7 +294,7 @@ pub struct ShaderGraphNodeData {
     pub outputs: Vec<Id<ShaderGraphOutputSlotData>>,
 }
 
-pub trait ShaderGraphNode: 'static {
+pub trait ShaderGraphNode: Send + Sync + 'static {
     fn title(&self) -> &str;
     fn title_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot>;
@@ -339,7 +359,7 @@ pub struct ShaderGraphInputSlotData {
 
 pub struct ShaderGraphDefaultOutputSlot {
     pub name: &'static str,
-    pub ty: Box<dyn ErasedShaderGraphSlotType>,
+    pub ty: Box<dyn ErasedShaderGraphValueType>,
 }
 
 impl ShaderGraphDefaultOutputSlot {
@@ -357,9 +377,9 @@ pub struct ShaderGraphOutputSlotData {
     pub data: ShaderVariable,
 }
 
-pub trait ShaderGraphValueType: 'static {
-    type AssociatedLiteralType;
-    type Message: 'static;
+pub trait ShaderGraphValueType: Send + Sync + 'static {
+    type AssociatedLiteralType: Send + Sync + 'static;
+    type Message: Send + Sync + 'static;
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
     fn view_literal(
@@ -370,18 +390,34 @@ pub trait ShaderGraphValueType: 'static {
     fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String;
 }
 
-pub trait ErasedShaderGraphSlotType {
+#[derive(Debug)]
+pub struct ErasedShaderGraphLiteralUpdateMessage {
+    pub inner: Box<dyn Any + Send + Sync>,
+    pub id: Id<ShaderGraphInputSlotData>,
+}
+
+pub trait ErasedShaderGraphValueType: Send + Sync + 'static {
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
     fn view_literal(
         &self,
-        data: &ShaderLiteral,
-    ) -> Element<'static, Box<dyn Any>, ShaderGraphTheme, ShaderGraphRenderer>;
-    fn update_literal(&self, data: &mut ShaderLiteral, message: Box<dyn Any>);
-    fn literal_to_string(&self, data: &Box<dyn Any>) -> String;
+        slot_id: Id<ShaderGraphInputSlotData>,
+        data: &Box<dyn Any + Send + Sync>,
+    ) -> Element<
+        'static,
+        ErasedShaderGraphLiteralUpdateMessage,
+        ShaderGraphTheme,
+        ShaderGraphRenderer,
+    >;
+    fn update_literal(
+        &self,
+        data: &mut Box<dyn Any + Send + Sync>,
+        message: ErasedShaderGraphLiteralUpdateMessage,
+    );
+    fn literal_to_string(&self, data: &Box<dyn Any + Send + Sync>) -> String;
 }
 
-impl<T: ShaderGraphValueType> ErasedShaderGraphSlotType for T {
+impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
     fn color(&self) -> Color {
         self.color()
     }
@@ -392,22 +428,40 @@ impl<T: ShaderGraphValueType> ErasedShaderGraphSlotType for T {
 
     fn view_literal(
         &self,
-        data: &ShaderLiteral,
-    ) -> Element<'static, Box<dyn Any>, ShaderGraphTheme, ShaderGraphRenderer> {
-        let literal = data.as_ref::<T::AssociatedLiteralType>();
+        slot_id: Id<ShaderGraphInputSlotData>,
+        data: &Box<dyn Any + Send + Sync>,
+    ) -> Element<
+        'static,
+        ErasedShaderGraphLiteralUpdateMessage,
+        ShaderGraphTheme,
+        ShaderGraphRenderer,
+    > {
+        let literal = data
+            .downcast_ref::<T::AssociatedLiteralType>()
+            .expect("Failed to downcast literal.");
         self.view_literal(literal)
-            .map(|msg| Box::new(msg) as Box<dyn Any>)
+            .map(move |msg| ErasedShaderGraphLiteralUpdateMessage {
+                inner: Box::new(msg),
+                id: slot_id,
+            })
     }
 
-    fn update_literal(&self, data: &mut ShaderLiteral, message: Box<dyn Any>) {
-        let literal = data.as_mut::<T::AssociatedLiteralType>();
-        let msg = *message
+    fn update_literal(
+        &self,
+        data: &mut Box<dyn Any + Send + Sync>,
+        message: ErasedShaderGraphLiteralUpdateMessage,
+    ) {
+        let literal = data
+            .downcast_mut::<T::AssociatedLiteralType>()
+            .expect("Failed to downcast literal.");
+        let msg = message
+            .inner
             .downcast::<T::Message>()
             .expect("Failed to downcast update message.");
-        self.update_literal(literal, msg);
+        self.update_literal(literal, *msg);
     }
 
-    fn literal_to_string(&self, data: &Box<dyn Any>) -> String {
+    fn literal_to_string(&self, data: &Box<dyn Any + Send + Sync>) -> String {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()
             .expect("Failed to downcast literal.");
@@ -416,8 +470,8 @@ impl<T: ShaderGraphValueType> ErasedShaderGraphSlotType for T {
 }
 
 pub struct ShaderLiteral {
-    value: Box<dyn Any>,
-    ty: Box<dyn ErasedShaderGraphSlotType>,
+    value: Box<dyn Any + Send + Sync>,
+    ty: Box<dyn ErasedShaderGraphValueType>,
 }
 
 impl ShaderLiteral {
@@ -440,7 +494,7 @@ impl ShaderLiteral {
             .expect("Failed to downcast ShaderLiteral")
     }
 
-    pub fn ty(&self) -> &dyn ErasedShaderGraphSlotType {
+    pub fn ty(&self) -> &dyn ErasedShaderGraphValueType {
         self.ty.as_ref()
     }
 
@@ -459,7 +513,7 @@ impl ShaderLiteral {
 
 pub struct ShaderVariable {
     identifier: String,
-    ty: Box<dyn ErasedShaderGraphSlotType>,
+    ty: Box<dyn ErasedShaderGraphValueType>,
 }
 
 impl ShaderVariable {
@@ -474,7 +528,7 @@ impl ShaderVariable {
         &self.identifier
     }
 
-    pub fn ty(&self) -> &dyn ErasedShaderGraphSlotType {
+    pub fn ty(&self) -> &dyn ErasedShaderGraphValueType {
         self.ty.as_ref()
     }
 }
@@ -500,7 +554,7 @@ impl ShaderGraphCasters {
     pub fn try_cast(
         &self,
         variable: &ShaderVariable,
-        to_type: &dyn ErasedShaderGraphSlotType,
+        to_type: &dyn ErasedShaderGraphValueType,
     ) -> Option<String> {
         let from_name = variable.ty().name();
         let to_name = to_type.name();

@@ -11,3 +11,6 @@ iced_core.workspace = true
 iced_wgpu.workspace = true
 log.workspace = true
 thiserror.workspace = true
+iced_widget.workspace = true
+iced_graphics.workspace = true
+cyancia_widgets.workspace = true

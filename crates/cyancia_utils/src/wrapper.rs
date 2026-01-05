@@ -8,6 +8,10 @@ macro_rules! wrapper {
             pub const fn new(value: $original) -> Self {
                 Self(value)
             }
+
+            pub fn into_inner(self) -> $original {
+                self.0
+            }
         }
 
         impl $(<$($gen),*>)? std::ops::Deref for $wrapper $(<$($gen),*>)? $(where $($bounds)*)? {

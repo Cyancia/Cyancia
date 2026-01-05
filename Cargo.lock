@@ -1108,8 +1108,11 @@ version = "0.1.0"
 dependencies = [
  "cyancia_id",
  "cyancia_utils",
+ "cyancia_widgets",
  "iced_core",
+ "iced_graphics",
  "iced_wgpu",
+ "iced_widget",
  "log",
  "thiserror 2.0.17",
  "uuid",
