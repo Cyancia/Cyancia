@@ -251,7 +251,7 @@ impl<'a> DrawableNode<'a> {
         let inputs = column(inputs).spacing(2);
         let outputs = column(outputs).spacing(2);
         let header_color = node.data.title_color();
-        let header = container(column![text(node.data.title()), text(node_id.to_string()),])
+        let header = container(text(node.data.title()))
             .style(move |_| container::Style {
                 background: Some(header_color.into()),
                 border: Border {
@@ -265,7 +265,6 @@ impl<'a> DrawableNode<'a> {
                 ..Default::default()
             })
             .width(Length::Fill)
-            .align_x(Horizontal::Center)
             .padding(5);
 
         // .on_drag(move |btn, point| {
