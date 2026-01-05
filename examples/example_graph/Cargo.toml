@@ -6,6 +6,6 @@ edition = "2024"
 [dependencies]
 iced.workspace = true
 iced.features = ["advanced"]
-cyancia_graph.workspace = true
+cyancia_shader_graph.workspace = true
 cyancia_widgets.workspace = true
 cyancia_utils.workspace = true

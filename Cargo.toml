@@ -16,6 +16,7 @@ cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
 cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
 cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
 cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
+cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
 
 iced = { version = "0.14", features = [
     "debug",

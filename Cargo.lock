@@ -1103,6 +1103,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_shader_graph"
+version = "0.1.0"
+dependencies = [
+ "cyancia_id",
+ "cyancia_utils",
+ "iced_core",
+ "iced_wgpu",
+ "log",
+ "thiserror 2.0.17",
+ "uuid",
+]
+
+[[package]]
 name = "cyancia_tools"
 version = "0.1.0"
 dependencies = [
@@ -1411,7 +1424,7 @@ dependencies = [
 name = "example_graph"
 version = "0.1.0"
 dependencies = [
- "cyancia_graph",
+ "cyancia_shader_graph",
  "cyancia_utils",
  "cyancia_widgets",
  "iced",

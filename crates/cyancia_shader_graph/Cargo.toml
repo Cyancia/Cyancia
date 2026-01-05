@@ -1,0 +1,13 @@
+[package]
+name = "cyancia_shader_graph"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+uuid.workspace = true
+cyancia_utils.workspace = true
+cyancia_id.workspace = true
+iced_core.workspace = true
+iced_wgpu.workspace = true
+log.workspace = true
+thiserror.workspace = true

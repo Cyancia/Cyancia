@@ -1,12 +1,6 @@
-use cyancia_graph::{
-    DefaultGraphSlot, ErasedSlotValue, Graph, GraphError, GraphNode, GraphNodeCreator,
-    GraphNodeSlotsContext, GraphSlotValueType, InputSlotId,
-    editor::{
-        DrawableGraph, GraphEditorMessage, GraphSlotId, GraphSlotViewer, GraphSlotViewers,
-        GraphView,
-        drawer::{NodeDrawerMessage, node_drawer},
-        helpers::{empty_slot, valued_slot},
-    },
+use cyancia_shader_graph::{
+    ShaderGraph, ShaderGraphDefaultInputSlot, ShaderGraphDefaultOutputSlot, ShaderGraphNode,
+    ShaderGraphNodeCodeGenContext, ShaderGraphRenderer, ShaderGraphTheme, ShaderGraphValueType,
 };
 use cyancia_utils::wrapper;
 use cyancia_widgets::{drag_field::DragField, spin_slider::SpinSlider};
@@ -25,169 +19,145 @@ fn main() {
 }
 
 pub struct App {
-    graph: Graph,
-    creators: Vec<Box<dyn GraphNodeCreator>>,
-    viewers: GraphSlotViewers<'static, GraphMessage, Theme, Renderer>,
+    graph: ShaderGraph,
+    // creators: Vec<Box<dyn GraphNodeCreator>>,
+    // viewers: GraphSlotViewers<'static, GraphMessage, Theme, Renderer>,
 }
 
-#[derive(Debug, Clone)]
-pub enum GraphMessage {
-    NodeDrawer(NodeDrawerMessage),
-    FloatValueChanged(f32, InputSlotId),
-}
+// #[derive(Debug, Clone)]
+// pub enum GraphMessage {
+//     NodeDrawer(NodeDrawerMessage),
+//     FloatValueChanged(f32, InputSlotId),
+// }
 
 impl App {
     pub fn new() -> Self {
-        let mut graph = Graph::new();
-        // let add1 = graph.add_node(Point::new(0.0, 0.0), AddNode);
-        // let add2 = graph.add_node(Point::new(200.0, 0.0), AddNode);
-        // graph.connect_slots_by_index(add1, 0, add2, 0);
-        let viewers = {
-            let mut v = GraphSlotViewers::new();
-            v.register(FloatType);
-            v
-        };
+        let mut graph = ShaderGraph::default();
+        let add1 = graph.add_node(Point::new(0.0, 0.0), AddNode);
+        let add2 = graph.add_node(Point::new(200.0, 0.0), AddNode);
+        graph.connect_slots_by_index(add1, 0, add2, 0);
+        println!("{}", graph.compile().unwrap());
+        // let viewers = {
+        //     let mut v = GraphSlotViewers::new();
+        //     v.register(FloatType);
+        //     v
+        // };
 
         Self {
             graph,
-            creators: vec![Box::new(AddNodeCreator)],
-            viewers,
+            // creators: vec![Box::new(AddNodeCreator)],
+            // viewers,
         }
     }
 
-    pub fn view(&self) -> Element<'_, GraphEditorMessage<GraphMessage>> {
-        row![
-            node_drawer(&self.creators)
-                .map(GraphMessage::NodeDrawer)
-                .map(GraphEditorMessage::Custom),
-            // column![
-            //     Text::new("test1"),
-            //     Text::new("test1"),
-            //     Text::new("test1"),
-            //     Text::new("test2"),
-            //     DragField::new(
-            //         Text::new("Drag me!").into()
-            //     ),
-            //     Text::new("test1"),
-            // ]
-            Element::new(GraphView::new(&self.graph, &self.viewers,))
-        ]
-        .into()
+    // pub fn view(&self) -> Element<'_, GraphEditorMessage<GraphMessage>> {
+    pub fn view(&self) -> Element<'_, ()> {
+        container("content").into()
+        // row![
+        //     node_drawer(&self.creators)
+        //         .map(GraphMessage::NodeDrawer)
+        //         .map(GraphEditorMessage::Custom),
+        //     // column![
+        //     //     Text::new("test1"),
+        //     //     Text::new("test1"),
+        //     //     Text::new("test1"),
+        //     //     Text::new("test2"),
+        //     //     DragField::new(
+        //     //         Text::new("Drag me!").into()
+        //     //     ),
+        //     //     Text::new("test1"),
+        //     // ]
+        //     Element::new(GraphView::new(&self.graph, &self.viewers,))
+        // ]
+        // .into()
     }
 
-    pub fn update(&mut self, message: GraphEditorMessage<GraphMessage>) {
-        match message {
-            GraphEditorMessage::NodeMoved(point, node_id) => {
-                if let Some(node) = self.graph.nodes.get_mut(&node_id) {
-                    node.position = point;
-                }
-            }
-            GraphEditorMessage::Custom(message) => match message {
-                GraphMessage::FloatValueChanged(x, id) => {
-                    if let Some(slot) = self.graph.slots.inputs.get_mut(&id) {
-                        slot.value = ErasedSlotValue::new(x);
-                    }
-                }
-                GraphMessage::NodeDrawer(message) => match message {
-                    NodeDrawerMessage::NodeCreate(i, point) => {
-                        self.graph.add_node(point, self.creators[i].create());
-                    }
-                },
-            },
-            GraphEditorMessage::EdgeCreated(from, to) => {
-                self.graph.connect_slot(from, to);
-            }
-            GraphEditorMessage::EdgeRemoved(to) => {
-                self.graph.disconnect_slot(to);
-            }
-        }
+    pub fn update(&mut self, message: ()) {
+        // match message {
+        //     GraphEditorMessage::NodeMoved(point, node_id) => {
+        //         if let Some(node) = self.graph.nodes.get_mut(&node_id) {
+        //             node.position = point;
+        //         }
+        //     }
+        //     GraphEditorMessage::Custom(message) => match message {
+        //         GraphMessage::FloatValueChanged(x, id) => {
+        //             if let Some(slot) = self.graph.slots.inputs.get_mut(&id) {
+        //                 slot.value = ErasedSlotValue::new(x);
+        //             }
+        //         }
+        //         GraphMessage::NodeDrawer(message) => match message {
+        //             NodeDrawerMessage::NodeCreate(i, point) => {
+        //                 self.graph.add_node(point, self.creators[i].create());
+        //             }
+        //         },
+        //     },
+        //     GraphEditorMessage::EdgeCreated(from, to) => {
+        //         self.graph.connect_slot(from, to);
+        //     }
+        //     GraphEditorMessage::EdgeRemoved(to) => {
+        //         self.graph.disconnect_slot(to);
+        //     }
+        // }
     }
 }
 
+#[derive(Default)]
 pub struct FloatType;
 
-impl GraphSlotValueType for FloatType {
+impl ShaderGraphValueType for FloatType {
+    type AssociatedLiteralType = f32;
+
+    type Message = ();
+
     fn color(&self) -> Color {
-        Color::from_rgb8(255, 0, 0)
+        Color::from_rgb8(100, 200, 100)
     }
 
-    fn type_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Float"
     }
-}
 
-impl<'a> GraphSlotViewer<'a, GraphMessage, Theme, Renderer> for FloatType {
-    fn view(
+    fn view_literal(
         &self,
-        name: &'static str,
-        value: &ErasedSlotValue,
-        slot_id: GraphSlotId,
-    ) -> Option<Element<'a, GraphMessage, Theme, Renderer>> {
-        let GraphSlotId::Input(id) = slot_id else {
-            return None;
-        };
+        data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
+        column![].into()
+    }
 
-        let x = value.as_ref::<f32>()?;
-        Some(
-            SpinSlider::new(0.0..=1f32, *x, move |val| {
-                GraphMessage::FloatValueChanged(val, id)
-            })
-            .width(Fill)
-            .step(0.01)
-            .into(),
-        )
+    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {}
+
+    fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String {
+        format!("{:.5}", data)
     }
 }
 
-pub struct AddNodeCreator;
-
-impl GraphNodeCreator for AddNodeCreator {
-    fn name(&self) -> &'static str {
-        "Add"
-    }
-
-    fn create(&self) -> Box<dyn GraphNode> {
-        Box::new(AddNode)
-    }
-}
-
+#[derive(Default)]
 pub struct AddNode;
 
-impl GraphNode for AddNode {
-    fn header_color(&self) -> Color {
-        Color::from_rgb8(0, 150, 150)
-    }
-
-    fn name(&self) -> &'static str {
+impl ShaderGraphNode for AddNode {
+    fn title(&self) -> &str {
         "Add"
     }
 
-    fn crate_inputs(&self) -> Vec<DefaultGraphSlot> {
+    fn title_color(&self) -> Color {
+        Color::from_rgb8(200, 100, 100)
+    }
+
+    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
         vec![
-            DefaultGraphSlot {
-                name: "A",
-                value_type: Box::new(FloatType),
-                value: ErasedSlotValue::new(0.0f32),
-            },
-            DefaultGraphSlot {
-                name: "B",
-                value_type: Box::new(FloatType),
-                value: ErasedSlotValue::new(0.0f32),
-            },
+            ShaderGraphDefaultInputSlot::new::<FloatType>("A", 0.0),
+            ShaderGraphDefaultInputSlot::new::<FloatType>("B", 0.0),
         ]
     }
 
-    fn crate_outputs(&self) -> Vec<DefaultGraphSlot> {
-        vec![DefaultGraphSlot {
-            name: "Result",
-            value_type: Box::new(FloatType),
-            value: ErasedSlotValue::empty::<f32>(),
-        }]
+    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
+        vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn run(&self, mut slots: GraphNodeSlotsContext<'_>) -> Result<(), GraphError> {
-        let a = slots.get_input::<0, f32>()?;
-        let b = slots.get_input::<1, f32>()?;
-        slots.set_output::<0, f32>(a + b)
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String {
+        let a = ctx.get_input::<0>().unwrap();
+        let b = ctx.get_input::<1>().unwrap();
+        let output = ctx.get_output::<0>().unwrap();
+        format!("let {} = {} + {};", output, a, b)
     }
 }
