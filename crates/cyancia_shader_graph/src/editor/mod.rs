@@ -154,18 +154,18 @@ impl<'a> DrawableGraph<'a> {
                 let style = if from_color == to_color {
                     geometry::Style::Solid(from_color)
                 } else {
-                    // let g = Linear::new(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).add_stops([
-                    //     ColorStop {
-                    //         offset: 0.0,
-                    //         color: from_color,
-                    //     },
-                    //     ColorStop {
-                    //         offset: 1.0,
-                    //         color: to_color,
-                    //     },
-                    // ]);
-                    // geometry::Style::Gradient(g.into())
-                    geometry::Style::Solid(from_color)
+                    let g = Linear::new(Point::new(0.0, 0.0), Point::new(1000.0, 1000.0))
+                        .add_stops([
+                            ColorStop {
+                                offset: 0.0,
+                                color: from_color,
+                            },
+                            ColorStop {
+                                offset: 1.0,
+                                color: to_color,
+                            },
+                        ]);
+                    geometry::Style::Gradient(g.into())
                 };
 
                 Some(((*to).into(), DrawableEdge { from, style }))
@@ -235,11 +235,7 @@ impl<'a> DrawableNode<'a> {
             .iter()
             .filter_map(|slot_id| slots.inputs.get(slot_id).map(|slot| (slot_id, slot)))
             .map(|(slot_id, slot)| match &slot.connected {
-                Some(_) => empty_slot(
-                    slot.data.ty().color(),
-                    slot.name,
-                    SlotSide::Left,
-                ),
+                Some(_) => empty_slot(slot.data.ty().color(), slot.name, SlotSide::Left),
                 None => valued_slot(
                     slot.data.ty().color(),
                     slot.name,
@@ -251,13 +247,7 @@ impl<'a> DrawableNode<'a> {
             .outputs
             .iter()
             .filter_map(|slot_id| slots.outputs.get(slot_id))
-            .map(|slot| {
-                empty_slot(
-                    slot.data.ty().color(),
-                    slot.name,
-                    SlotSide::Right,
-                )
-            });
+            .map(|slot| empty_slot(slot.data.ty().color(), slot.name, SlotSide::Right));
         let inputs = column(inputs).spacing(2);
         let outputs = column(outputs).spacing(2);
         let header_color = node.data.title_color();
@@ -654,10 +644,24 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
                 .get(&GraphSlotId::Output(edge.from));
             let to_pos = self.graph.slots_positions.get(&(*to).into());
             if let (Some(from_pos), Some(to_pos)) = (from_pos, to_pos) {
+                let style = match edge.style {
+                    geometry::Style::Solid(color) => color.into(),
+                    geometry::Style::Gradient(gradient) => match gradient {
+                        geometry::Gradient::Linear(linear) => geometry::Style::Gradient(
+                            Linear {
+                                start: *from_pos,
+                                end: *to_pos,
+                                ..linear
+                            }
+                            .into(),
+                        ),
+                    },
+                };
+
                 frame.stroke(
                     &geometry::Path::line(*from_pos, *to_pos),
                     Stroke {
-                        style: edge.style,
+                        style,
                         width: 2.0,
                         ..Default::default()
                     },

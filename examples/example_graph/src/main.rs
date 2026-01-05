@@ -96,7 +96,7 @@ impl App {
                 }
             },
         }
-        println!("{}", self.graph.compile().unwrap());
+        // println!("{}", self.graph.compile().unwrap());
     }
 }
 
