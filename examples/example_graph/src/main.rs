@@ -270,7 +270,7 @@ impl ShaderVariableCaster for Vector2DToFloatCaster {
 
     type ToType = FloatType;
 
-    fn cast(&self, variable: &ShaderVariable) -> String {
-        format!("{}.x", variable.identifier())
+    fn cast(&self, variable: &String) -> String {
+        format!("{}.x", variable)
     }
 }

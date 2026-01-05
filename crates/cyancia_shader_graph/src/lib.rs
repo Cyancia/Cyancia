@@ -588,22 +588,22 @@ impl ShaderGraphCasters {
         let from_name = variable.ty().name();
         let to_name = to_type.name();
         let caster = self.casters.get(from_name)?.get(to_name)?;
-        Some(caster.cast(variable))
+        Some(caster.cast(&variable.identifier))
     }
 }
 
 pub trait ShaderVariableCaster: 'static {
     type FromType: ShaderGraphValueType + Default;
     type ToType: ShaderGraphValueType + Default;
-    fn cast(&self, variable: &ShaderVariable) -> String;
+    fn cast(&self, variable: &String) -> String;
 }
 
 pub trait ErasedShaderVariableCaster {
-    fn cast(&self, variable: &ShaderVariable) -> String;
+    fn cast(&self, variable: &String) -> String;
 }
 
 impl<T: ShaderVariableCaster> ErasedShaderVariableCaster for T {
-    fn cast(&self, variable: &ShaderVariable) -> String {
+    fn cast(&self, variable: &String) -> String {
         self.cast(variable)
     }
 }
