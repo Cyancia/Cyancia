@@ -100,15 +100,49 @@ impl ShaderGraph {
         self.nodes.get_mut(id)
     }
 
-    pub fn connect_slot(
+    pub fn connect_slots(
         &mut self,
         from: Id<ShaderGraphOutputSlotData>,
         to: Id<ShaderGraphInputSlotData>,
     ) {
+        if !self.can_connect_slots(from, to) {
+            return;
+        }
+
         if let Some(input_slot) = self.slots.inputs.get_mut(&to) {
             input_slot.connected = Some(from);
             self.invalidate_cache();
         }
+    }
+
+    pub fn can_connect_slots(
+        &self,
+        from: Id<ShaderGraphOutputSlotData>,
+        to: Id<ShaderGraphInputSlotData>,
+    ) -> bool {
+        let from_slot = self.slots.outputs.get(&from);
+        let to_slot = self.slots.inputs.get(&to);
+
+        if let (Some(from), Some(to)) = (from_slot, to_slot) {
+            from.data.ty().name() == to.data.ty().name()
+                || self.can_cast(from.data.ty(), to.data.ty())
+        } else {
+            false
+        }
+    }
+
+    pub fn can_cast(
+        &self,
+        from: &dyn ErasedShaderGraphValueType,
+        to: &dyn ErasedShaderGraphValueType,
+    ) -> bool {
+        let from_name = from.name();
+        let to_name = to.name();
+        self.casters
+            .casters
+            .get(from_name)
+            .and_then(|map| map.get(to_name))
+            .is_some()
     }
 
     pub fn disconnect_slot(&mut self, to: Id<ShaderGraphInputSlotData>) {
@@ -137,7 +171,7 @@ impl ShaderGraph {
             .cloned();
 
         if let (Some(from), Some(to)) = (from_slot, to_slot) {
-            self.connect_slot(from, to);
+            self.connect_slots(from, to);
             self.invalidate_cache();
         }
     }

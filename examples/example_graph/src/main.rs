@@ -74,18 +74,18 @@ impl App {
     pub fn update(&mut self, message: GraphMessage) {
         match message {
             GraphMessage::View(message) => match message {
-                GraphViewMessage::NodeMoved(point, id) => {
+                GraphViewMessage::NodeMoveRequest(point, id) => {
                     if let Some(node) = self.graph.get_node_mut(&id) {
                         node.position = point;
                     }
                 }
-                GraphViewMessage::EdgeCreated(from, to) => {
-                    self.graph.connect_slot(from, to);
+                GraphViewMessage::EdgeCreateRequest(from, to) => {
+                    self.graph.connect_slots(from, to);
                 }
-                GraphViewMessage::EdgeRemoved(id) => {
+                GraphViewMessage::EdgeRemoveRequest(id) => {
                     self.graph.disconnect_slot(id);
                 }
-                GraphViewMessage::SlotValue(message) => {
+                GraphViewMessage::LiteralUpdate(message) => {
                     self.graph.update_literal(message);
                 }
             },

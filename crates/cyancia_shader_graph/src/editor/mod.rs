@@ -53,10 +53,10 @@ impl From<Id<ShaderGraphOutputSlotData>> for GraphSlotId {
 
 #[derive(Debug)]
 pub enum GraphViewMessage {
-    NodeMoved(Point, Id<ShaderGraphNodeData>),
-    EdgeCreated(Id<ShaderGraphOutputSlotData>, Id<ShaderGraphInputSlotData>),
-    EdgeRemoved(Id<ShaderGraphInputSlotData>),
-    SlotValue(ErasedShaderGraphLiteralUpdateMessage),
+    NodeMoveRequest(Point, Id<ShaderGraphNodeData>),
+    EdgeCreateRequest(Id<ShaderGraphOutputSlotData>, Id<ShaderGraphInputSlotData>),
+    EdgeRemoveRequest(Id<ShaderGraphInputSlotData>),
+    LiteralUpdate(ErasedShaderGraphLiteralUpdateMessage),
 }
 
 // impl<'a, Message, Theme, Renderer> GraphSlotViewers<'a, Message, Theme, Renderer>
@@ -438,7 +438,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
 
             child.update_slot_positions(&layout, &mut self.graph.slots_positions);
         }
-        shell.merge(children_shell, GraphViewMessage::SlotValue);
+        shell.merge(children_shell, GraphViewMessage::LiteralUpdate);
 
         if shell.is_event_captured() {
             return;
@@ -458,7 +458,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
                     if d < SLOT_PIN_SNAP {
                         let resolved_source = match slot_id {
                             GraphSlotId::Input(id) => {
-                                shell.publish(GraphViewMessage::EdgeRemoved(*id));
+                                shell.publish(GraphViewMessage::EdgeRemoveRequest(*id));
 
                                 self.graph
                                     .edges
@@ -519,7 +519,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
                     DragState::Dragging { node_index, offset } => {
                         let node_id = self.graph.nodes[node_index].node_id;
                         let relative = cursor - layout.bounds().position();
-                        shell.publish(GraphViewMessage::NodeMoved(
+                        shell.publish(GraphViewMessage::NodeMoveRequest(
                             Point::new(relative.x, relative.y) - offset,
                             node_id,
                         ));
@@ -545,10 +545,10 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
                     if let Some(end) = found {
                         match (*resolved_source, end) {
                             (GraphSlotId::Input(to), GraphSlotId::Output(from)) => {
-                                shell.publish(GraphViewMessage::EdgeCreated(from, to));
+                                shell.publish(GraphViewMessage::EdgeCreateRequest(from, to));
                             }
                             (GraphSlotId::Output(from), GraphSlotId::Input(to)) => {
-                                shell.publish(GraphViewMessage::EdgeCreated(from, to));
+                                shell.publish(GraphViewMessage::EdgeCreateRequest(from, to));
                             }
                             _ => {}
                         }
