@@ -12,6 +12,7 @@ use iced_core::{
     gradient::ColorStop,
     layout::{self, Limits, Node},
     mouse::{self, Interaction},
+    overlay,
     renderer::{self, Quad},
     widget::{Operation, Tree, tree},
 };
@@ -390,6 +391,10 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
         tree::State::new(State::default())
     }
 
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<State>()
+    }
+
     fn layout(
         &mut self,
         tree: &mut Tree,
@@ -725,6 +730,34 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
 
             renderer.draw_geometry(frame.into_geometry());
         }
+    }
+
+    fn overlay<'b>(
+        &'b mut self,
+        tree: &'b mut Tree,
+        layout: Layout<'b>,
+        renderer: &ShaderGraphRenderer,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'b, GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer>> {
+        for ((child, tree), layout) in self
+            .graph
+            .nodes
+            .iter_mut()
+            .zip(&mut tree.children)
+            .zip(layout.children())
+        {
+            if let Some(overlay) =
+                child
+                    .widget
+                    .as_widget_mut()
+                    .overlay(tree, layout, renderer, viewport, translation)
+            {
+                return Some(overlay.map(&GraphViewMessage::LiteralUpdate));
+            }
+        }
+
+        None
     }
 }
 
