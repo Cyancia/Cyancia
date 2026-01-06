@@ -28,9 +28,9 @@ use iced_widget::{
 };
 
 use crate::{
-    ErasedShaderGraphLiteralUpdateMessage, ShaderGraph, ShaderGraphInputSlotData,
-    ShaderGraphNodeData, ShaderGraphOutputSlotData, ShaderGraphRenderer, ShaderGraphSlotType,
-    ShaderGraphSlots, ShaderGraphTheme,
+    ErasedGraphLiteralUpdateMessage, Graph, GraphInputSlotData,
+    GraphNodeData, GraphOutputSlotData, GraphRenderer, GraphSlotType,
+    GraphSlots, GraphTheme,
     editor::helpers::{SlotSide, empty_slot, valued_slot, valued_slot_unconnectable},
 };
 
@@ -39,28 +39,28 @@ pub mod helpers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GraphSlotId {
-    Input(Id<ShaderGraphInputSlotData>),
-    Output(Id<ShaderGraphOutputSlotData>),
+    Input(Id<GraphInputSlotData>),
+    Output(Id<GraphOutputSlotData>),
 }
 
-impl From<Id<ShaderGraphInputSlotData>> for GraphSlotId {
-    fn from(value: Id<ShaderGraphInputSlotData>) -> Self {
+impl From<Id<GraphInputSlotData>> for GraphSlotId {
+    fn from(value: Id<GraphInputSlotData>) -> Self {
         GraphSlotId::Input(value)
     }
 }
 
-impl From<Id<ShaderGraphOutputSlotData>> for GraphSlotId {
-    fn from(value: Id<ShaderGraphOutputSlotData>) -> Self {
+impl From<Id<GraphOutputSlotData>> for GraphSlotId {
+    fn from(value: Id<GraphOutputSlotData>) -> Self {
         GraphSlotId::Output(value)
     }
 }
 
 #[derive(Debug)]
 pub enum GraphViewMessage {
-    NodeMoveRequest(Point, Id<ShaderGraphNodeData>),
-    EdgeCreateRequest(Id<ShaderGraphOutputSlotData>, Id<ShaderGraphInputSlotData>),
-    EdgeRemoveRequest(Id<ShaderGraphInputSlotData>),
-    LiteralUpdate(ErasedShaderGraphLiteralUpdateMessage),
+    NodeMoveRequest(Point, Id<GraphNodeData>),
+    EdgeCreateRequest(Id<GraphOutputSlotData>, Id<GraphInputSlotData>),
+    EdgeRemoveRequest(Id<GraphInputSlotData>),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
 }
 
 // impl<'a, Message, Theme, Renderer> GraphSlotViewers<'a, Message, Theme, Renderer>
@@ -115,7 +115,7 @@ pub struct GraphView<'a> {
 }
 
 impl<'a> GraphView<'a> {
-    pub fn new(graph: &'a ShaderGraph) -> Self {
+    pub fn new(graph: &'a Graph) -> Self {
         Self {
             graph: DrawableGraph::new(graph),
         }
@@ -137,7 +137,7 @@ pub struct DrawableGraph<'a> {
 }
 
 impl<'a> DrawableGraph<'a> {
-    pub fn new(graph: &'a ShaderGraph) -> Self {
+    pub fn new(graph: &'a Graph) -> Self {
         let mut nodes = Vec::with_capacity(graph.nodes.len());
         let mut node_indices = HashMap::with_capacity(graph.nodes.len());
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
@@ -212,25 +212,25 @@ pub struct SlotData {
 }
 
 pub struct DrawableEdge {
-    from: Id<ShaderGraphOutputSlotData>,
+    from: Id<GraphOutputSlotData>,
     style: geometry::Style,
 }
 
 pub struct DrawableNode<'a> {
-    pub node_id: Id<ShaderGraphNodeData>,
+    pub node_id: Id<GraphNodeData>,
     pub position: Point,
     pub widget:
-        Element<'a, ErasedShaderGraphLiteralUpdateMessage, ShaderGraphTheme, ShaderGraphRenderer>,
-    pub input_slots: Vec<Id<ShaderGraphInputSlotData>>,
-    pub output_slots: Vec<Id<ShaderGraphOutputSlotData>>,
-    pub unconnectable_slots: HashSet<Id<ShaderGraphInputSlotData>>,
+        Element<'a, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>,
+    pub input_slots: Vec<Id<GraphInputSlotData>>,
+    pub output_slots: Vec<Id<GraphOutputSlotData>>,
+    pub unconnectable_slots: HashSet<Id<GraphInputSlotData>>,
 }
 
 impl<'a> DrawableNode<'a> {
     pub fn new(
-        node_id: Id<ShaderGraphNodeData>,
-        node: &'a ShaderGraphNodeData,
-        slots: &ShaderGraphSlots,
+        node_id: Id<GraphNodeData>,
+        node: &'a GraphNodeData,
+        slots: &GraphSlots,
     ) -> Self {
         const NODE_WIDTH: f32 = 170.0;
         const NODE_BORDER_RADIUS: f32 = 5.0;
@@ -246,18 +246,18 @@ impl<'a> DrawableNode<'a> {
                     SlotSide::Left,
                 )),
                 None => match slot.slot_type {
-                    ShaderGraphSlotType::Normal => Some(valued_slot(
+                    GraphSlotType::Normal => Some(valued_slot(
                         slot.data.ty().color(),
                         slot.name,
                         SlotSide::Left,
                         slot.data.ty().view_literal(*slot_id, &slot.data.value),
                     )),
-                    ShaderGraphSlotType::Unconnectable => Some(valued_slot_unconnectable(
+                    GraphSlotType::Unconnectable => Some(valued_slot_unconnectable(
                         slot.name,
                         SlotSide::Left,
                         slot.data.ty().view_literal(*slot_id, &slot.data.value),
                     )),
-                    ShaderGraphSlotType::Hidden => None,
+                    GraphSlotType::Hidden => None,
                 },
             });
         let outputs = node
@@ -291,7 +291,7 @@ impl<'a> DrawableNode<'a> {
             .filter(|(_, slot)| {
                 matches!(
                     slot.slot_type,
-                    ShaderGraphSlotType::Unconnectable | ShaderGraphSlotType::Hidden
+                    GraphSlotType::Unconnectable | GraphSlotType::Hidden
                 )
             })
             .map(|(slot_id, _)| *slot_id)
@@ -363,7 +363,7 @@ impl<'a> DrawableNode<'a> {
     }
 }
 
-impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for GraphView<'a> {
+impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
     fn children(&self) -> Vec<Tree> {
         self.graph
             .nodes
@@ -398,7 +398,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
     fn layout(
         &mut self,
         tree: &mut Tree,
-        renderer: &ShaderGraphRenderer,
+        renderer: &GraphRenderer,
         limits: &layout::Limits,
     ) -> Node {
         let children = self
@@ -423,7 +423,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
         &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
-        renderer: &ShaderGraphRenderer,
+        renderer: &GraphRenderer,
         operation: &mut dyn Operation,
     ) {
         operation.container(None, layout.bounds());
@@ -448,7 +448,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
         event: &Event,
         layout: Layout<'_>,
         cursor: iced_core::mouse::Cursor,
-        renderer: &ShaderGraphRenderer,
+        renderer: &GraphRenderer,
         clipboard: &mut dyn iced_core::Clipboard,
         shell: &mut iced_core::Shell<'_, GraphViewMessage>,
         viewport: &Rectangle,
@@ -611,7 +611,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
         layout: Layout<'_>,
         cursor: Cursor,
         viewport: &Rectangle,
-        renderer: &ShaderGraphRenderer,
+        renderer: &GraphRenderer,
     ) -> Interaction {
         let state = tree.state.downcast_ref::<State>();
 
@@ -639,7 +639,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
     fn draw(
         &self,
         tree: &Tree,
-        renderer: &mut ShaderGraphRenderer,
+        renderer: &mut GraphRenderer,
         theme: &iced_core::Theme,
         style: &renderer::Style,
         layout: Layout<'_>,
@@ -736,10 +736,10 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
         &'b mut self,
         tree: &'b mut Tree,
         layout: Layout<'b>,
-        renderer: &ShaderGraphRenderer,
+        renderer: &GraphRenderer,
         viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer>> {
+    ) -> Option<overlay::Element<'b, GraphViewMessage, GraphTheme, GraphRenderer>> {
         for ((child, tree), layout) in self
             .graph
             .nodes
@@ -762,7 +762,7 @@ impl<'a> Widget<GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer> for Gra
 }
 
 impl<'a> From<GraphView<'a>>
-    for Element<'a, GraphViewMessage, ShaderGraphTheme, ShaderGraphRenderer>
+    for Element<'a, GraphViewMessage, GraphTheme, GraphRenderer>
 {
     fn from(value: GraphView<'a>) -> Self {
         Element::new(value)

@@ -3,7 +3,7 @@ use iced_core::{Color, Element, Length, Point, Shadow, Theme, Vector};
 use iced_widget::{Column, Text, column, container, text};
 use std::rc::Rc;
 
-use crate::ErasedShaderGraphNodeCreator;
+use crate::ErasedGraphNodeCreator;
 
 #[derive(Debug, Clone)]
 pub enum NodeDrawerMessage {
@@ -11,7 +11,7 @@ pub enum NodeDrawerMessage {
 }
 
 pub fn node_drawer<'a, Renderer>(
-    creators: &'a [Box<dyn ErasedShaderGraphNodeCreator>],
+    creators: &'a [Box<dyn ErasedGraphNodeCreator>],
 ) -> Element<'a, NodeDrawerMessage, Theme, Renderer>
 where
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,

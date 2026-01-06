@@ -1,30 +1,28 @@
 use std::{
     any::Any,
     collections::{HashMap, VecDeque, hash_map::Entry},
-    io::Write,
 };
 
 use cyancia_id::Id;
-use cyancia_utils::wrapper;
 use iced_core::{Color, Element, Point};
 
 pub mod editor;
 
-pub type ShaderGraphTheme = iced_core::Theme;
-pub type ShaderGraphRenderer = iced_wgpu::Renderer;
+pub type GraphTheme = iced_core::Theme;
+pub type GraphRenderer = iced_wgpu::Renderer;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ShaderGraphCompileError {
+pub enum GraphCompileError {
     #[error("Invalid function signature")]
     InvalidFunctionSignature,
     #[error("{0}")]
-    NodeCodeGenError(ContextualShaderGraphNodeCodeGenError),
+    NodeCodeGenError(ContextualGraphNodeCodeGenError),
     #[error(transparent)]
     CustomError(anyhow::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum ShaderGraphNodeCodeGenError {
+pub enum GraphNodeCodeGenError {
     #[error("Input slot index out of bounds")]
     SlotIndexOutOfBounds,
     #[error("Missing input slot")]
@@ -40,14 +38,14 @@ pub enum ShaderGraphNodeCodeGenError {
 }
 
 #[derive(Debug)]
-pub struct ContextualShaderGraphNodeCodeGenError {
-    pub node_id: Id<ShaderGraphNodeData>,
+pub struct ContextualGraphNodeCodeGenError {
+    pub node_id: Id<GraphNodeData>,
     pub node_title: String,
-    pub err: ShaderGraphNodeCodeGenError,
+    pub err: GraphNodeCodeGenError,
     pub code: String,
 }
 
-impl std::fmt::Display for ContextualShaderGraphNodeCodeGenError {
+impl std::fmt::Display for ContextualGraphNodeCodeGenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -57,22 +55,22 @@ impl std::fmt::Display for ContextualShaderGraphNodeCodeGenError {
     }
 }
 
-pub struct ShaderGraph {
-    nodes: HashMap<Id<ShaderGraphNodeData>, ShaderGraphNodeData>,
-    slots: ShaderGraphSlots,
-    casters: ShaderGraphCasters,
-    ident_generator: ShaderGraphIdentifierGenerator,
-    signature: ShaderGraphFunctionSignature,
-    cached_run_order: Option<Vec<Id<ShaderGraphNodeData>>>,
+pub struct Graph {
+    nodes: HashMap<Id<GraphNodeData>, GraphNodeData>,
+    slots: GraphSlots,
+    casters: GraphTypeCasters,
+    ident_generator: GraphVarIdentGenerator,
+    signature: GraphFunctionSignature,
+    cached_run_order: Option<Vec<Id<GraphNodeData>>>,
 }
 
-impl ShaderGraph {
-    pub fn new(signature: ShaderGraphFunctionSignature) -> Self {
+impl Graph {
+    pub fn new(signature: GraphFunctionSignature) -> Self {
         Self {
             nodes: HashMap::new(),
-            slots: ShaderGraphSlots::default(),
-            casters: ShaderGraphCasters::default(),
-            ident_generator: ShaderGraphIdentifierGenerator::default(),
+            slots: GraphSlots::default(),
+            casters: GraphTypeCasters::default(),
+            ident_generator: GraphVarIdentGenerator::default(),
             signature,
             cached_run_order: None,
         }
@@ -81,8 +79,8 @@ impl ShaderGraph {
     pub fn add_boxed_node(
         &mut self,
         position: Point,
-        node: Box<dyn ShaderGraphNode>,
-    ) -> Id<ShaderGraphNodeData> {
+        node: Box<dyn GraphNode>,
+    ) -> Id<GraphNodeData> {
         let node_id = Id::random();
         let raw_inputs = node.create_inputs();
         let mut inputs = Vec::with_capacity(raw_inputs.len());
@@ -90,7 +88,7 @@ impl ShaderGraph {
             let slot_id = Id::random();
             self.slots.inputs.insert(
                 slot_id,
-                ShaderGraphInputSlotData {
+                GraphInputSlotData {
                     node_id,
                     name: slot.name,
                     data: slot.value,
@@ -107,10 +105,10 @@ impl ShaderGraph {
             let slot_id = Id::random();
             self.slots.outputs.insert(
                 slot_id,
-                ShaderGraphOutputSlotData {
+                GraphOutputSlotData {
                     node_id,
                     name: slot.name,
-                    data: ShaderVariable {
+                    data: GraphVariable {
                         identifier: self.ident_generator.next_output(),
                         ty: slot.ty,
                     },
@@ -121,7 +119,7 @@ impl ShaderGraph {
 
         self.nodes.insert(
             node_id,
-            ShaderGraphNodeData {
+            GraphNodeData {
                 position,
                 inputs,
                 outputs,
@@ -132,30 +130,19 @@ impl ShaderGraph {
         node_id
     }
 
-    pub fn add_node<T: ShaderGraphNode>(
-        &mut self,
-        position: Point,
-        node: T,
-    ) -> Id<ShaderGraphNodeData> {
+    pub fn add_node<T: GraphNode>(&mut self, position: Point, node: T) -> Id<GraphNodeData> {
         self.add_boxed_node(position, Box::new(node))
     }
 
-    pub fn get_node(&self, id: &Id<ShaderGraphNodeData>) -> Option<&ShaderGraphNodeData> {
+    pub fn get_node(&self, id: &Id<GraphNodeData>) -> Option<&GraphNodeData> {
         self.nodes.get(id)
     }
 
-    pub fn get_node_mut(
-        &mut self,
-        id: &Id<ShaderGraphNodeData>,
-    ) -> Option<&mut ShaderGraphNodeData> {
+    pub fn get_node_mut(&mut self, id: &Id<GraphNodeData>) -> Option<&mut GraphNodeData> {
         self.nodes.get_mut(id)
     }
 
-    pub fn connect_slots(
-        &mut self,
-        from: Id<ShaderGraphOutputSlotData>,
-        to: Id<ShaderGraphInputSlotData>,
-    ) {
+    pub fn connect_slots(&mut self, from: Id<GraphOutputSlotData>, to: Id<GraphInputSlotData>) {
         if !self.can_connect_slots(from, to) {
             return;
         }
@@ -168,8 +155,8 @@ impl ShaderGraph {
 
     pub fn can_connect_slots(
         &self,
-        from: Id<ShaderGraphOutputSlotData>,
-        to: Id<ShaderGraphInputSlotData>,
+        from: Id<GraphOutputSlotData>,
+        to: Id<GraphInputSlotData>,
     ) -> bool {
         let from_slot = self.slots.outputs.get(&from);
         let to_slot = self.slots.inputs.get(&to);
@@ -182,11 +169,7 @@ impl ShaderGraph {
         }
     }
 
-    pub fn can_cast(
-        &self,
-        from: &dyn ErasedShaderGraphValueType,
-        to: &dyn ErasedShaderGraphValueType,
-    ) -> bool {
+    pub fn can_cast(&self, from: &dyn ErasedGraphValueType, to: &dyn ErasedGraphValueType) -> bool {
         let from_name = from.name();
         let to_name = to.name();
         self.casters
@@ -196,7 +179,7 @@ impl ShaderGraph {
             .is_some()
     }
 
-    pub fn disconnect_slot(&mut self, to: Id<ShaderGraphInputSlotData>) {
+    pub fn disconnect_slot(&mut self, to: Id<GraphInputSlotData>) {
         if let Some(input_slot) = self.slots.inputs.get_mut(&to) {
             input_slot.connected = None;
             self.invalidate_cache();
@@ -205,9 +188,9 @@ impl ShaderGraph {
 
     pub fn connect_slots_by_index(
         &mut self,
-        from_node: Id<ShaderGraphNodeData>,
+        from_node: Id<GraphNodeData>,
         from_output_index: usize,
-        to_node: Id<ShaderGraphNodeData>,
+        to_node: Id<GraphNodeData>,
         to_input_index: usize,
     ) {
         let from_slot = self
@@ -227,11 +210,7 @@ impl ShaderGraph {
         }
     }
 
-    pub fn disconnect_slots_by_index(
-        &mut self,
-        to_node: Id<ShaderGraphNodeData>,
-        to_input_index: usize,
-    ) {
+    pub fn disconnect_slots_by_index(&mut self, to_node: Id<GraphNodeData>, to_input_index: usize) {
         let to_slot = self
             .nodes
             .get(&to_node)
@@ -244,7 +223,7 @@ impl ShaderGraph {
         }
     }
 
-    pub fn compile(&mut self) -> Result<String, ShaderGraphCompileError> {
+    pub fn compile(&mut self) -> Result<String, GraphCompileError> {
         if self.cached_run_order.is_none() {
             self.update_cache();
         }
@@ -253,7 +232,7 @@ impl ShaderGraph {
         let mut code = String::new();
         for node_id in run_order.clone() {
             let node = self.nodes.get(&node_id).unwrap();
-            let context = ShaderGraphNodeCodeGenContext {
+            let context = GraphNodeCodeGenContext {
                 inputs: &node.inputs,
                 outputs: &node.outputs,
                 graph_slots: &mut self.slots,
@@ -263,8 +242,8 @@ impl ShaderGraph {
             match node.data.generate_code(context) {
                 Ok(node_code) => code.push_str(&node_code),
                 Err(err) => {
-                    return Err(ShaderGraphCompileError::NodeCodeGenError(
-                        ContextualShaderGraphNodeCodeGenError {
+                    return Err(GraphCompileError::NodeCodeGenError(
+                        ContextualGraphNodeCodeGenError {
                             node_id,
                             node_title: node.data.title().to_string(),
                             err,
@@ -276,7 +255,7 @@ impl ShaderGraph {
         }
         self.signature
             .compile(code)
-            .ok_or(ShaderGraphCompileError::InvalidFunctionSignature)
+            .ok_or(GraphCompileError::InvalidFunctionSignature)
     }
 
     pub fn invalidate_cache(&mut self) {
@@ -349,56 +328,47 @@ impl ShaderGraph {
         self.cached_run_order = Some(dbg!(run_order));
     }
 
-    pub fn update_literal(&mut self, message: ErasedShaderGraphLiteralUpdateMessage) {
+    pub fn update_literal(&mut self, message: ErasedGraphLiteralUpdateMessage) {
         if let Some(slot) = self.slots.inputs.get_mut(&message.id) {
             slot.data.ty.update_literal(&mut slot.data.value, message);
         }
     }
 
-    pub fn add_caster<T: ShaderVariableCaster + Default>(&mut self) {
+    pub fn add_caster<T: GraphVariableCaster + Default>(&mut self) {
         self.casters.register::<T>();
     }
 }
 
 #[derive(Default)]
-pub struct ShaderGraphSlots {
-    inputs: HashMap<Id<ShaderGraphInputSlotData>, ShaderGraphInputSlotData>,
-    outputs: HashMap<Id<ShaderGraphOutputSlotData>, ShaderGraphOutputSlotData>,
+pub struct GraphSlots {
+    inputs: HashMap<Id<GraphInputSlotData>, GraphInputSlotData>,
+    outputs: HashMap<Id<GraphOutputSlotData>, GraphOutputSlotData>,
 }
 
-impl ShaderGraphSlots {
-    pub fn get_input(
-        &self,
-        id: &Id<ShaderGraphInputSlotData>,
-    ) -> Option<&ShaderGraphInputSlotData> {
+impl GraphSlots {
+    pub fn get_input(&self, id: &Id<GraphInputSlotData>) -> Option<&GraphInputSlotData> {
         self.inputs.get(id)
     }
 
-    pub fn get_output(
-        &self,
-        id: &Id<ShaderGraphOutputSlotData>,
-    ) -> Option<&ShaderGraphOutputSlotData> {
+    pub fn get_output(&self, id: &Id<GraphOutputSlotData>) -> Option<&GraphOutputSlotData> {
         self.outputs.get(id)
     }
 
-    pub fn get_connected(
-        &self,
-        input_id: &Id<ShaderGraphInputSlotData>,
-    ) -> Option<&ShaderGraphOutputSlotData> {
+    pub fn get_connected(&self, input_id: &Id<GraphInputSlotData>) -> Option<&GraphOutputSlotData> {
         let input_node = self.inputs.get(input_id)?;
         let connected_id = input_node.connected.as_ref()?;
         self.outputs.get(connected_id)
     }
 }
 
-pub struct ShaderGraphFunctionSignature {
+pub struct GraphFunctionSignature {
     name: String,
-    ret_type: Box<dyn ErasedShaderGraphValueType>,
-    params: Vec<ShaderVariable>,
+    ret_type: Box<dyn ErasedGraphValueType>,
+    params: Vec<GraphVariable>,
 }
 
-impl ShaderGraphFunctionSignature {
-    pub fn new<T: ShaderGraphValueType>(name: String, ret_type: T) -> Self {
+impl GraphFunctionSignature {
+    pub fn new<T: GraphValueType>(name: String, ret_type: T) -> Self {
         Self {
             name,
             ret_type: Box::new(ret_type),
@@ -406,8 +376,8 @@ impl ShaderGraphFunctionSignature {
         }
     }
 
-    pub fn with_param<T: ShaderGraphValueType + Default>(mut self, identifier: String) -> Self {
-        self.params.push(ShaderVariable::new::<T>(identifier));
+    pub fn with_param<T: GraphValueType + Default>(mut self, identifier: String) -> Self {
+        self.params.push(GraphVariable::new::<T>(identifier));
         self
     }
 
@@ -438,184 +408,179 @@ impl ShaderGraphFunctionSignature {
     }
 }
 
-pub trait ShaderGraphNodeCreator {
-    type NodeType: ShaderGraphNode;
+pub trait GraphNodeCreator {
+    type NodeType: GraphNode;
     fn create(&self) -> Self::NodeType;
 }
 
-pub trait ErasedShaderGraphNodeCreator {
-    fn create(&self) -> Box<dyn ShaderGraphNode>;
+pub trait ErasedGraphNodeCreator {
+    fn create(&self) -> Box<dyn GraphNode>;
 }
 
-impl<T: ShaderGraphNodeCreator> ErasedShaderGraphNodeCreator for T {
-    fn create(&self) -> Box<dyn ShaderGraphNode> {
+impl<T: GraphNodeCreator> ErasedGraphNodeCreator for T {
+    fn create(&self) -> Box<dyn GraphNode> {
         Box::new(self.create())
     }
 }
 
-pub struct ShaderGraphNodeData {
+pub struct GraphNodeData {
     pub position: Point,
-    pub data: Box<dyn ShaderGraphNode>,
-    pub inputs: Vec<Id<ShaderGraphInputSlotData>>,
-    pub outputs: Vec<Id<ShaderGraphOutputSlotData>>,
+    pub data: Box<dyn GraphNode>,
+    pub inputs: Vec<Id<GraphInputSlotData>>,
+    pub outputs: Vec<Id<GraphOutputSlotData>>,
 }
 
-pub trait ShaderGraphNode: Send + Sync + 'static {
+pub trait GraphNode: Send + Sync + 'static {
     fn title(&self) -> &str;
     fn title_color(&self) -> Color;
-    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot>;
-    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot>;
-    fn generate_code(
-        &self,
-        ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphNodeCodeGenError>;
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError>;
 }
 
-pub struct ShaderGraphNodeCodeGenContext<'a> {
-    pub inputs: &'a [Id<ShaderGraphInputSlotData>],
-    pub outputs: &'a [Id<ShaderGraphOutputSlotData>],
-    pub graph_slots: &'a mut ShaderGraphSlots,
-    pub casters: &'a ShaderGraphCasters,
+pub struct GraphNodeCodeGenContext<'a> {
+    pub inputs: &'a [Id<GraphInputSlotData>],
+    pub outputs: &'a [Id<GraphOutputSlotData>],
+    pub graph_slots: &'a mut GraphSlots,
+    pub casters: &'a GraphTypeCasters,
 }
 
-impl ShaderGraphNodeCodeGenContext<'_> {
-    pub fn get_input<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenError> {
+impl GraphNodeCodeGenContext<'_> {
+    pub fn get_input<const N: usize>(&self) -> Result<String, GraphNodeCodeGenError> {
         let slot_id = self
             .inputs
             .get(N)
-            .ok_or(ShaderGraphNodeCodeGenError::SlotIndexOutOfBounds)?;
+            .ok_or(GraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
             .graph_slots
             .get_input(slot_id)
-            .ok_or(ShaderGraphNodeCodeGenError::MissingInputSlot)?;
+            .ok_or(GraphNodeCodeGenError::MissingInputSlot)?;
 
         let Some(connected) = slot.connected else {
             // Literal value should always has the same type as the slot type.
             return slot
                 .data
                 .to_code()
-                .ok_or(ShaderGraphNodeCodeGenError::LiteralToCodeFailed);
+                .ok_or(GraphNodeCodeGenError::LiteralToCodeFailed);
         };
 
         let output_slot = self
             .graph_slots
             .get_output(&connected)
-            .ok_or(ShaderGraphNodeCodeGenError::MissingOutputSlot)?;
+            .ok_or(GraphNodeCodeGenError::MissingOutputSlot)?;
 
         if output_slot.data.ty().name() != slot.data.ty().name() {
             self.casters
                 .try_cast(&output_slot.data, slot.data.ty())
-                .ok_or(ShaderGraphNodeCodeGenError::FailedToCastVariable)
+                .ok_or(GraphNodeCodeGenError::FailedToCastVariable)
         } else {
             Ok(output_slot.data.identifier.clone())
         }
     }
 
-    pub fn get_input_raw<const N: usize, T: 'static>(
-        &self,
-    ) -> Result<&T, ShaderGraphNodeCodeGenError> {
+    pub fn get_input_raw<const N: usize, T: 'static>(&self) -> Result<&T, GraphNodeCodeGenError> {
         let slot_id = self
             .inputs
             .get(N)
-            .ok_or(ShaderGraphNodeCodeGenError::SlotIndexOutOfBounds)?;
+            .ok_or(GraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
             .graph_slots
             .get_input(slot_id)
-            .ok_or(ShaderGraphNodeCodeGenError::MissingInputSlot)?;
+            .ok_or(GraphNodeCodeGenError::MissingInputSlot)?;
 
         Ok(slot.data.as_ref::<T>())
     }
 
-    pub fn get_output<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenError> {
+    pub fn get_output<const N: usize>(&self) -> Result<String, GraphNodeCodeGenError> {
         let slot_id = self
             .outputs
             .get(N)
-            .ok_or(ShaderGraphNodeCodeGenError::SlotIndexOutOfBounds)?;
+            .ok_or(GraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
             .graph_slots
             .get_output(slot_id)
-            .ok_or(ShaderGraphNodeCodeGenError::MissingOutputSlot)?;
+            .ok_or(GraphNodeCodeGenError::MissingOutputSlot)?;
 
         Ok(slot.data.identifier.clone())
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShaderGraphSlotType {
+pub enum GraphSlotType {
     Normal,
     Unconnectable,
     Hidden,
 }
 
-pub struct ShaderGraphDefaultInputSlot {
+pub struct GraphDefaultInputSlot {
     pub name: &'static str,
-    pub value: ShaderLiteral,
-    pub slot_type: ShaderGraphSlotType,
+    pub value: Literal,
+    pub slot_type: GraphSlotType,
 }
 
-impl ShaderGraphDefaultInputSlot {
-    pub fn new<T: ShaderGraphValueType + Default>(
+impl GraphDefaultInputSlot {
+    pub fn new<T: GraphValueType + Default>(
         name: &'static str,
         value: T::AssociatedLiteralType,
     ) -> Self {
         Self {
             name,
-            value: ShaderLiteral::new::<T>(value),
-            slot_type: ShaderGraphSlotType::Normal,
+            value: Literal::new::<T>(value),
+            slot_type: GraphSlotType::Normal,
         }
     }
 
-    pub fn unconnectable<T: ShaderGraphValueType + Default>(
+    pub fn unconnectable<T: GraphValueType + Default>(
         name: &'static str,
         value: T::AssociatedLiteralType,
     ) -> Self {
         Self {
             name,
-            value: ShaderLiteral::new::<T>(value),
-            slot_type: ShaderGraphSlotType::Unconnectable,
+            value: Literal::new::<T>(value),
+            slot_type: GraphSlotType::Unconnectable,
         }
     }
 
-    pub fn hidden<T: ShaderGraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
+    pub fn hidden<T: GraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
         Self {
             name: Default::default(),
-            value: ShaderLiteral::new::<T>(value),
-            slot_type: ShaderGraphSlotType::Hidden,
+            value: Literal::new::<T>(value),
+            slot_type: GraphSlotType::Hidden,
         }
     }
 
-    pub fn new_non_default<T: ShaderGraphValueType>(
+    pub fn new_non_default<T: GraphValueType>(
         name: &'static str,
         value: T::AssociatedLiteralType,
         ty: T,
-        slot_type: ShaderGraphSlotType,
+        slot_type: GraphSlotType,
     ) -> Self {
         Self {
             name,
-            value: ShaderLiteral::new_non_default::<T>(value, ty),
+            value: Literal::new_non_default::<T>(value, ty),
             slot_type,
         }
     }
 }
 
-pub struct ShaderGraphInputSlotData {
-    pub node_id: Id<ShaderGraphNodeData>,
+pub struct GraphInputSlotData {
+    pub node_id: Id<GraphNodeData>,
     pub name: &'static str,
-    pub data: ShaderLiteral,
-    pub connected: Option<Id<ShaderGraphOutputSlotData>>,
-    pub slot_type: ShaderGraphSlotType,
+    pub data: Literal,
+    pub connected: Option<Id<GraphOutputSlotData>>,
+    pub slot_type: GraphSlotType,
 }
 
-pub struct ShaderGraphDefaultOutputSlot {
+pub struct GraphDefaultOutputSlot {
     pub name: &'static str,
-    pub ty: Box<dyn ErasedShaderGraphValueType>,
+    pub ty: Box<dyn ErasedGraphValueType>,
 }
 
-impl ShaderGraphDefaultOutputSlot {
-    pub fn new<T: ShaderGraphValueType + Default>(name: &'static str) -> Self {
+impl GraphDefaultOutputSlot {
+    pub fn new<T: GraphValueType + Default>(name: &'static str) -> Self {
         Self {
             name,
             ty: Box::new(T::default()),
@@ -623,13 +588,13 @@ impl ShaderGraphDefaultOutputSlot {
     }
 }
 
-pub struct ShaderGraphOutputSlotData {
-    pub node_id: Id<ShaderGraphNodeData>,
+pub struct GraphOutputSlotData {
+    pub node_id: Id<GraphNodeData>,
     pub name: &'static str,
-    pub data: ShaderVariable,
+    pub data: GraphVariable,
 }
 
-pub trait ShaderGraphValueType: Send + Sync + 'static {
+pub trait GraphValueType: Send + Sync + 'static {
     type AssociatedLiteralType: Send + Sync + 'static;
     type Message: Send + Sync + 'static;
     fn color(&self) -> Color;
@@ -638,40 +603,35 @@ pub trait ShaderGraphValueType: Send + Sync + 'static {
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer>;
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer>;
     fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message);
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String>;
 }
 
 #[derive(Debug)]
-pub struct ErasedShaderGraphLiteralUpdateMessage {
+pub struct ErasedGraphLiteralUpdateMessage {
     pub inner: Box<dyn Any + Send + Sync>,
-    pub id: Id<ShaderGraphInputSlotData>,
+    pub id: Id<GraphInputSlotData>,
 }
 
-pub trait ErasedShaderGraphValueType: Send + Sync + 'static {
+pub trait ErasedGraphValueType: Send + Sync + 'static {
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
     fn wgsl_type(&self) -> Option<&'static str>;
     fn view_literal(
         &self,
-        slot_id: Id<ShaderGraphInputSlotData>,
+        slot_id: Id<GraphInputSlotData>,
         data: &Box<dyn Any + Send + Sync>,
-    ) -> Element<
-        'static,
-        ErasedShaderGraphLiteralUpdateMessage,
-        ShaderGraphTheme,
-        ShaderGraphRenderer,
-    >;
+    ) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>;
     fn update_literal(
         &self,
         data: &mut Box<dyn Any + Send + Sync>,
-        message: ErasedShaderGraphLiteralUpdateMessage,
+        message: ErasedGraphLiteralUpdateMessage,
     );
     fn literal_to_code(&self, data: &Box<dyn Any + Send + Sync>) -> Option<String>;
 }
 
-impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
+impl<T: GraphValueType> ErasedGraphValueType for T {
     fn color(&self) -> Color {
         self.color()
     }
@@ -686,19 +646,14 @@ impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
 
     fn view_literal(
         &self,
-        slot_id: Id<ShaderGraphInputSlotData>,
+        slot_id: Id<GraphInputSlotData>,
         data: &Box<dyn Any + Send + Sync>,
-    ) -> Element<
-        'static,
-        ErasedShaderGraphLiteralUpdateMessage,
-        ShaderGraphTheme,
-        ShaderGraphRenderer,
-    > {
+    ) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()
             .expect("Failed to downcast literal.");
         self.view_literal(literal)
-            .map(move |msg| ErasedShaderGraphLiteralUpdateMessage {
+            .map(move |msg| ErasedGraphLiteralUpdateMessage {
                 inner: Box::new(msg),
                 id: slot_id,
             })
@@ -707,7 +662,7 @@ impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
     fn update_literal(
         &self,
         data: &mut Box<dyn Any + Send + Sync>,
-        message: ErasedShaderGraphLiteralUpdateMessage,
+        message: ErasedGraphLiteralUpdateMessage,
     ) {
         let literal = data
             .downcast_mut::<T::AssociatedLiteralType>()
@@ -727,23 +682,20 @@ impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
     }
 }
 
-pub struct ShaderLiteral {
+pub struct Literal {
     value: Box<dyn Any + Send + Sync>,
-    ty: Box<dyn ErasedShaderGraphValueType>,
+    ty: Box<dyn ErasedGraphValueType>,
 }
 
-impl ShaderLiteral {
-    pub fn new<T: ShaderGraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
+impl Literal {
+    pub fn new<T: GraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
         Self {
             value: Box::new(value),
             ty: Box::new(T::default()),
         }
     }
 
-    pub fn new_non_default<T: ShaderGraphValueType>(
-        value: T::AssociatedLiteralType,
-        ty: T,
-    ) -> Self {
+    pub fn new_non_default<T: GraphValueType>(value: T::AssociatedLiteralType, ty: T) -> Self {
         Self {
             value: Box::new(value),
             ty: Box::new(ty),
@@ -753,16 +705,16 @@ impl ShaderLiteral {
     pub fn as_ref<T: 'static>(&self) -> &T {
         self.value
             .downcast_ref::<T>()
-            .expect("Failed to downcast ShaderLiteral")
+            .expect("Failed to downcast Literal")
     }
 
     pub fn as_mut<T: 'static>(&mut self) -> &mut T {
         self.value
             .downcast_mut::<T>()
-            .expect("Failed to downcast ShaderLiteral")
+            .expect("Failed to downcast Literal")
     }
 
-    pub fn ty(&self) -> &dyn ErasedShaderGraphValueType {
+    pub fn ty(&self) -> &dyn ErasedGraphValueType {
         self.ty.as_ref()
     }
 
@@ -770,7 +722,7 @@ impl ShaderLiteral {
         if let Some(x) = self.value.downcast_mut() {
             *x = value;
         } else {
-            log::error!("Setting a ShaderLiteral with a different type");
+            log::error!("Setting a Literal with a different type");
         }
     }
 
@@ -779,13 +731,13 @@ impl ShaderLiteral {
     }
 }
 
-pub struct ShaderVariable {
+pub struct GraphVariable {
     identifier: String,
-    ty: Box<dyn ErasedShaderGraphValueType>,
+    ty: Box<dyn ErasedGraphValueType>,
 }
 
-impl ShaderVariable {
-    pub fn new<T: ShaderGraphValueType + Default>(identifier: String) -> Self {
+impl GraphVariable {
+    pub fn new<T: GraphValueType + Default>(identifier: String) -> Self {
         Self {
             identifier,
             ty: Box::new(T::default()),
@@ -796,23 +748,23 @@ impl ShaderVariable {
         &self.identifier
     }
 
-    pub fn ty(&self) -> &dyn ErasedShaderGraphValueType {
+    pub fn ty(&self) -> &dyn ErasedGraphValueType {
         self.ty.as_ref()
     }
 }
 
 #[derive(Default)]
-pub struct ShaderGraphCasters {
-    casters: HashMap<&'static str, HashMap<&'static str, Box<dyn ErasedShaderVariableCaster>>>,
+pub struct GraphTypeCasters {
+    casters: HashMap<&'static str, HashMap<&'static str, Box<dyn ErasedGraphVariableCaster>>>,
 }
 
-impl ShaderGraphCasters {
-    pub fn register<T: ShaderVariableCaster + Default>(&mut self) {
+impl GraphTypeCasters {
+    pub fn register<T: GraphVariableCaster + Default>(&mut self) {
         let from = T::FromType::default();
         let to = T::ToType::default();
-        let from_name = <T::FromType as ShaderGraphValueType>::name(&from);
-        let to_name = <T::ToType as ShaderGraphValueType>::name(&to);
-        let caster: Box<dyn ErasedShaderVariableCaster> = Box::new(T::default());
+        let from_name = <T::FromType as GraphValueType>::name(&from);
+        let to_name = <T::ToType as GraphValueType>::name(&to);
+        let caster: Box<dyn ErasedGraphVariableCaster> = Box::new(T::default());
         self.casters
             .entry(from_name)
             .or_default()
@@ -821,8 +773,8 @@ impl ShaderGraphCasters {
 
     pub fn try_cast(
         &self,
-        variable: &ShaderVariable,
-        to_type: &dyn ErasedShaderGraphValueType,
+        variable: &GraphVariable,
+        to_type: &dyn ErasedGraphValueType,
     ) -> Option<String> {
         let from_name = variable.ty().name();
         let to_name = to_type.name();
@@ -831,28 +783,28 @@ impl ShaderGraphCasters {
     }
 }
 
-pub trait ShaderVariableCaster: 'static {
-    type FromType: ShaderGraphValueType + Default;
-    type ToType: ShaderGraphValueType + Default;
+pub trait GraphVariableCaster: 'static {
+    type FromType: GraphValueType + Default;
+    type ToType: GraphValueType + Default;
     fn cast(&self, variable: &String) -> String;
 }
 
-pub trait ErasedShaderVariableCaster {
+pub trait ErasedGraphVariableCaster {
     fn cast(&self, variable: &String) -> String;
 }
 
-impl<T: ShaderVariableCaster> ErasedShaderVariableCaster for T {
+impl<T: GraphVariableCaster> ErasedGraphVariableCaster for T {
     fn cast(&self, variable: &String) -> String {
         self.cast(variable)
     }
 }
 
 #[derive(Default)]
-pub struct ShaderGraphIdentifierGenerator {
+pub struct GraphVarIdentGenerator {
     counter: usize,
 }
 
-impl ShaderGraphIdentifierGenerator {
+impl GraphVarIdentGenerator {
     pub fn next_output(&mut self) -> String {
         let ident = format!("output_{}", self.counter);
         self.counter += 1;

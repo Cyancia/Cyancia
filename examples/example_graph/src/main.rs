@@ -2,11 +2,11 @@ use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, 
 
 use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
-    ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphCompileError,
-    ShaderGraphDefaultInputSlot, ShaderGraphDefaultOutputSlot, ShaderGraphFunctionSignature,
-    ShaderGraphNode, ShaderGraphNodeCodeGenContext, ShaderGraphNodeCodeGenError,
-    ShaderGraphNodeCreator, ShaderGraphRenderer, ShaderGraphSlotType, ShaderGraphTheme,
-    ShaderGraphValueType, ShaderLiteral, ShaderVariable, ShaderVariableCaster,
+    ErasedGraphNodeCreator, Graph, GraphCompileError,
+    GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphFunctionSignature,
+    GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError,
+    GraphNodeCreator, GraphRenderer, GraphSlotType, GraphTheme,
+    GraphValueType, Literal, GraphVariable, GraphVariableCaster,
     editor::{
         GraphView, GraphViewMessage,
         drawer::{NodeDrawerMessage, node_drawer},
@@ -31,8 +31,8 @@ fn main() {
 }
 
 pub struct App {
-    graph: ShaderGraph,
-    creators: Vec<Box<dyn ErasedShaderGraphNodeCreator>>,
+    graph: Graph,
+    creators: Vec<Box<dyn ErasedGraphNodeCreator>>,
 }
 
 #[derive(Debug)]
@@ -43,8 +43,8 @@ pub enum GraphMessage {
 
 impl App {
     pub fn new() -> Self {
-        let mut graph = ShaderGraph::new(
-            ShaderGraphFunctionSignature::new("test".into(), FloatType)
+        let mut graph = Graph::new(
+            GraphFunctionSignature::new("test".into(), FloatType)
                 .with_param::<FloatType>("input1".into()),
         );
         let add1 = graph.add_node(Point::new(0.0, 0.0), AddNode);
@@ -54,7 +54,7 @@ impl App {
         let storage = Arc::new(ExternalDataStorage::default());
         storage.insert::<FloatType>(ExternalLiteral {
             name: "MyFloat".to_string(),
-            value: ShaderLiteral::new::<FloatType>(0.5),
+            value: Literal::new::<FloatType>(0.5),
         });
 
         Self {
@@ -75,7 +75,7 @@ impl App {
     }
 
     // pub fn view(&self) -> Element<'_, GraphEditorMessage<GraphMessage>> {
-    pub fn view(&self) -> Element<'_, GraphMessage, ShaderGraphTheme, ShaderGraphRenderer> {
+    pub fn view(&self) -> Element<'_, GraphMessage, GraphTheme, GraphRenderer> {
         row![
             node_drawer(&self.creators).map(GraphMessage::NodeDrawer),
             // column![
@@ -129,7 +129,7 @@ impl App {
 #[derive(Default)]
 pub struct FloatType;
 
-impl ShaderGraphValueType for FloatType {
+impl GraphValueType for FloatType {
     type AssociatedLiteralType = f32;
 
     type Message = f32;
@@ -149,7 +149,7 @@ impl ShaderGraphValueType for FloatType {
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         SpinSlider::new(0.0..=1.0, *data, |x| x).step(0.01).into()
     }
 
@@ -171,7 +171,7 @@ pub enum Vector2DTypeMessage {
     YChanged(f32),
 }
 
-impl ShaderGraphValueType for Vector2DType {
+impl GraphValueType for Vector2DType {
     type AssociatedLiteralType = Vec2;
 
     type Message = Vector2DTypeMessage;
@@ -191,7 +191,7 @@ impl ShaderGraphValueType for Vector2DType {
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         column![
             SpinSlider::new(0.0..=1.0, data.x, |x| Vector2DTypeMessage::XChanged(x)).step(0.01),
             SpinSlider::new(0.0..=1.0, data.y, |x| Vector2DTypeMessage::YChanged(x)).step(0.01)
@@ -218,7 +218,7 @@ impl ShaderGraphValueType for Vector2DType {
 #[derive(Default)]
 pub struct AddNode;
 
-impl ShaderGraphNodeCreator for AddNode {
+impl GraphNodeCreator for AddNode {
     type NodeType = Self;
 
     fn create(&self) -> Self::NodeType {
@@ -226,7 +226,7 @@ impl ShaderGraphNodeCreator for AddNode {
     }
 }
 
-impl ShaderGraphNode for AddNode {
+impl GraphNode for AddNode {
     fn title(&self) -> &str {
         "Add"
     }
@@ -235,21 +235,21 @@ impl ShaderGraphNode for AddNode {
         Color::from_rgb8(200, 100, 100)
     }
 
-    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
         vec![
-            ShaderGraphDefaultInputSlot::new::<FloatType>("A", 0.0),
-            ShaderGraphDefaultInputSlot::new::<FloatType>("B", 0.0),
+            GraphDefaultInputSlot::new::<FloatType>("A", 0.0),
+            GraphDefaultInputSlot::new::<FloatType>("B", 0.0),
         ]
     }
 
-    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
-        vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
     fn generate_code(
         &self,
-        ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphNodeCodeGenError> {
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
@@ -260,7 +260,7 @@ impl ShaderGraphNode for AddNode {
 #[derive(Default)]
 pub struct Vector2DAddNode;
 
-impl ShaderGraphNodeCreator for Vector2DAddNode {
+impl GraphNodeCreator for Vector2DAddNode {
     type NodeType = Self;
 
     fn create(&self) -> Self::NodeType {
@@ -268,7 +268,7 @@ impl ShaderGraphNodeCreator for Vector2DAddNode {
     }
 }
 
-impl ShaderGraphNode for Vector2DAddNode {
+impl GraphNode for Vector2DAddNode {
     fn title(&self) -> &str {
         "Vector2D Add"
     }
@@ -277,21 +277,21 @@ impl ShaderGraphNode for Vector2DAddNode {
         Color::from_rgb8(100, 100, 200)
     }
 
-    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
         vec![
-            ShaderGraphDefaultInputSlot::new::<Vector2DType>("A", Vec2::ZERO),
-            ShaderGraphDefaultInputSlot::new::<Vector2DType>("B", Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vector2DType>("A", Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vector2DType>("B", Vec2::ZERO),
         ]
     }
 
-    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
-        vec![ShaderGraphDefaultOutputSlot::new::<Vector2DType>("Result")]
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<Vector2DType>("Result")]
     }
 
     fn generate_code(
         &self,
-        ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphNodeCodeGenError> {
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
@@ -302,7 +302,7 @@ impl ShaderGraphNode for Vector2DAddNode {
 #[derive(Default)]
 pub struct Vector2DToFloatCaster;
 
-impl ShaderVariableCaster for Vector2DToFloatCaster {
+impl GraphVariableCaster for Vector2DToFloatCaster {
     type FromType = Vector2DType;
 
     type ToType = FloatType;
@@ -335,7 +335,7 @@ impl Display for MathNodeMode {
     }
 }
 
-impl ShaderGraphValueType for MathNodeMode {
+impl GraphValueType for MathNodeMode {
     type AssociatedLiteralType = MathNodeMode;
 
     type Message = MathNodeMode;
@@ -355,7 +355,7 @@ impl ShaderGraphValueType for MathNodeMode {
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         pick_list(
             vec![
                 MathNodeMode::Add,
@@ -378,7 +378,7 @@ impl ShaderGraphValueType for MathNodeMode {
     }
 }
 
-impl ShaderGraphNodeCreator for MathNode {
+impl GraphNodeCreator for MathNode {
     type NodeType = Self;
 
     fn create(&self) -> Self::NodeType {
@@ -386,7 +386,7 @@ impl ShaderGraphNodeCreator for MathNode {
     }
 }
 
-impl ShaderGraphNode for MathNode {
+impl GraphNode for MathNode {
     fn title(&self) -> &str {
         "Math"
     }
@@ -395,22 +395,22 @@ impl ShaderGraphNode for MathNode {
         Color::from_rgb8(200, 200, 100)
     }
 
-    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
         vec![
-            ShaderGraphDefaultInputSlot::new::<FloatType>("A", 0.0),
-            ShaderGraphDefaultInputSlot::new::<FloatType>("B", 0.0),
-            ShaderGraphDefaultInputSlot::unconnectable::<MathNodeMode>("Mode", MathNodeMode::Add),
+            GraphDefaultInputSlot::new::<FloatType>("A", 0.0),
+            GraphDefaultInputSlot::new::<FloatType>("B", 0.0),
+            GraphDefaultInputSlot::unconnectable::<MathNodeMode>("Mode", MathNodeMode::Add),
         ]
     }
 
-    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
-        vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
     fn generate_code(
         &self,
-        ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphNodeCodeGenError> {
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let mode = ctx.get_input_raw::<2, MathNodeMode>()?;
@@ -437,7 +437,7 @@ impl ToString for ExternalLiteralId {
 
 pub struct ExternalLiteral {
     pub name: String,
-    pub value: ShaderLiteral,
+    pub value: Literal,
 }
 
 #[derive(Default)]
@@ -447,7 +447,7 @@ pub struct ExternalDataStorage {
 }
 
 impl ExternalDataStorage {
-    pub fn insert<T: ShaderGraphValueType>(&self, value: ExternalLiteral) {
+    pub fn insert<T: GraphValueType>(&self, value: ExternalLiteral) {
         let mut contents = self.contents.write();
         let mut types = self.types.write();
         let id = ExternalLiteralId {
@@ -458,14 +458,14 @@ impl ExternalDataStorage {
         types.entry(TypeId::of::<T>()).or_default().push(id);
     }
 
-    pub fn get<T: ShaderGraphValueType>(
+    pub fn get<T: GraphValueType>(
         &self,
         id: &ExternalLiteralId,
     ) -> Option<Arc<ExternalLiteral>> {
         self.contents.read().get(&id).cloned()
     }
 
-    pub fn all_of_type<T: ShaderGraphValueType>(&self) -> Vec<ExternalLiteralId> {
+    pub fn all_of_type<T: GraphValueType>(&self) -> Vec<ExternalLiteralId> {
         self.types
             .read()
             .get(&TypeId::of::<T>())
@@ -493,7 +493,7 @@ pub struct ExternalLiteralType<T> {
     marker: PhantomData<T>,
 }
 
-impl<T: ShaderGraphValueType> ShaderGraphValueType for ExternalLiteralType<T> {
+impl<T: GraphValueType> GraphValueType for ExternalLiteralType<T> {
     type AssociatedLiteralType = ExternalLiteralValue<T>;
 
     type Message = ExternalLiteralId;
@@ -516,7 +516,7 @@ impl<T: ShaderGraphValueType> ShaderGraphValueType for ExternalLiteralType<T> {
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         let options = self.storage.all_of_type::<T>();
         pick_list(options, data.id.clone(), |msg| msg).into()
     }
@@ -545,7 +545,7 @@ pub struct ExternalNode<T> {
     marker: PhantomData<T>,
 }
 
-impl<T: ShaderGraphValueType + Default> ShaderGraphNodeCreator for ExternalNodeCreator<T> {
+impl<T: GraphValueType + Default> GraphNodeCreator for ExternalNodeCreator<T> {
     type NodeType = ExternalNode<T>;
 
     fn create(&self) -> Self::NodeType {
@@ -556,7 +556,7 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNodeCreator for ExternalNodeC
     }
 }
 
-impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
+impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
     fn title(&self) -> &str {
         "External"
     }
@@ -565,8 +565,8 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
         Color::from_rgb8(150, 150, 250)
     }
 
-    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
-        vec![ShaderGraphDefaultInputSlot::new_non_default::<
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new_non_default::<
             ExternalLiteralType<T>,
         >(
             "Id",
@@ -578,18 +578,18 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
                 storage: self.storage.clone(),
                 marker: PhantomData,
             },
-            ShaderGraphSlotType::Unconnectable,
+            GraphSlotType::Unconnectable,
         )]
     }
 
-    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
-        vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Value")]
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<FloatType>("Value")]
     }
 
     fn generate_code(
         &self,
-        ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphNodeCodeGenError> {
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input = ctx.get_input::<0>()?;
         let output = ctx.get_output::<0>()?;
         Ok(format!("let {} = {};\n", output, input))
@@ -599,7 +599,7 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
 #[derive(Default)]
 pub struct DummyOutputNode;
 
-impl ShaderGraphNodeCreator for DummyOutputNode {
+impl GraphNodeCreator for DummyOutputNode {
     type NodeType = Self;
 
     fn create(&self) -> Self::NodeType {
@@ -607,7 +607,7 @@ impl ShaderGraphNodeCreator for DummyOutputNode {
     }
 }
 
-impl ShaderGraphNode for DummyOutputNode {
+impl GraphNode for DummyOutputNode {
     fn title(&self) -> &str {
         "Output"
     }
@@ -616,18 +616,18 @@ impl ShaderGraphNode for DummyOutputNode {
         Color::from_rgb8(100, 200, 200)
     }
 
-    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
-        vec![ShaderGraphDefaultInputSlot::new::<FloatType>("Input", 0.0)]
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<FloatType>("Input", 0.0)]
     }
 
-    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
 
     fn generate_code(
         &self,
-        ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphNodeCodeGenError> {
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input = ctx.get_input::<0>()?;
         Ok(format!("return {};", input))
     }
