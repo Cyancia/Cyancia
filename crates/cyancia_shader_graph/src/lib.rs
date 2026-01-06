@@ -45,6 +45,7 @@ impl ShaderGraph {
                     name: slot.name,
                     data: slot.value,
                     connected: None,
+                    slot_type: slot.slot_type,
                 },
             );
             inputs.push(slot_id);
@@ -389,6 +390,12 @@ impl ShaderGraphNodeCodeGenContext<'_> {
         }
     }
 
+    pub fn get_input_raw<const N: usize, T: 'static>(&self) -> Option<&T> {
+        let slot_id = self.inputs.get(N)?;
+        let slot = self.graph_slots.get_input(slot_id)?;
+        Some(slot.data.as_ref::<T>())
+    }
+
     pub fn get_output<const N: usize>(&self) -> Option<String> {
         let slot_id = self.outputs.get(N)?;
         let slot = self.graph_slots.get_output(slot_id)?;
@@ -396,9 +403,17 @@ impl ShaderGraphNodeCodeGenContext<'_> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShaderGraphSlotType {
+    Normal,
+    Unconnectable,
+    Hidden,
+}
+
 pub struct ShaderGraphDefaultInputSlot {
     pub name: &'static str,
     pub value: ShaderLiteral,
+    pub slot_type: ShaderGraphSlotType,
 }
 
 impl ShaderGraphDefaultInputSlot {
@@ -409,6 +424,29 @@ impl ShaderGraphDefaultInputSlot {
         Self {
             name,
             value: ShaderLiteral::new::<T>(value),
+            slot_type: ShaderGraphSlotType::Normal,
+        }
+    }
+
+    pub fn unconnectable<T: ShaderGraphValueType + Default>(
+        name: &'static str,
+        value: T::AssociatedLiteralType,
+    ) -> Self {
+        Self {
+            name,
+            value: ShaderLiteral::new::<T>(value),
+            slot_type: ShaderGraphSlotType::Unconnectable,
+        }
+    }
+
+    pub fn hidden<T: ShaderGraphValueType + Default>(
+        name: &'static str,
+        value: T::AssociatedLiteralType,
+    ) -> Self {
+        Self {
+            name,
+            value: ShaderLiteral::new::<T>(value),
+            slot_type: ShaderGraphSlotType::Hidden,
         }
     }
 }
@@ -418,6 +456,7 @@ pub struct ShaderGraphInputSlotData {
     pub name: &'static str,
     pub data: ShaderLiteral,
     pub connected: Option<Id<ShaderGraphOutputSlotData>>,
+    pub slot_type: ShaderGraphSlotType,
 }
 
 pub struct ShaderGraphDefaultOutputSlot {

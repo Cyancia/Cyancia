@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use cyancia_shader_graph::{
     ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphDefaultInputSlot,
     ShaderGraphDefaultOutputSlot, ShaderGraphNode, ShaderGraphNodeCodeGenContext,
@@ -16,7 +18,7 @@ use iced::{
     Length::Fill,
     Point, Renderer, Theme,
     advanced::{Widget, layout},
-    widget::{Text, column, container, row, sensor},
+    widget::{Text, column, combo_box, container, pick_list, row, sensor},
 };
 
 fn main() {
@@ -46,7 +48,11 @@ impl App {
 
         Self {
             graph,
-            creators: vec![Box::new(AddNode), Box::new(Vector2DAddNode)],
+            creators: vec![
+                Box::new(AddNode),
+                Box::new(Vector2DAddNode),
+                Box::new(MathNode),
+            ],
             // creators: vec![Box::new(AddNodeCreator)],
             // viewers,
         }
@@ -96,22 +102,17 @@ impl App {
                 }
             },
         }
-        // println!("{}", self.graph.compile().unwrap());
+        println!("{}", self.graph.compile().unwrap());
     }
 }
 
 #[derive(Default)]
 pub struct FloatType;
 
-#[derive(Debug, Clone)]
-pub enum FloatTypeMessage {
-    ValueChanged(f32),
-}
-
 impl ShaderGraphValueType for FloatType {
     type AssociatedLiteralType = f32;
 
-    type Message = FloatTypeMessage;
+    type Message = f32;
 
     fn color(&self) -> Color {
         Color::from_rgb8(100, 200, 100)
@@ -125,17 +126,11 @@ impl ShaderGraphValueType for FloatType {
         &self,
         data: &Self::AssociatedLiteralType,
     ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
-        SpinSlider::new(0.0..=1.0, *data, |x| FloatTypeMessage::ValueChanged(x))
-            .step(0.01)
-            .into()
+        SpinSlider::new(0.0..=1.0, *data, |x| x).step(0.01).into()
     }
 
     fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
-        match message {
-            FloatTypeMessage::ValueChanged(x) => {
-                *data = x;
-            }
-        }
+        *data = message;
     }
 
     fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String {
@@ -272,5 +267,106 @@ impl ShaderVariableCaster for Vector2DToFloatCaster {
 
     fn cast(&self, variable: &String) -> String {
         format!("{}.x", variable)
+    }
+}
+
+#[derive(Default)]
+pub struct MathNode;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MathNodeMode {
+    #[default]
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+impl Display for MathNodeMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MathNodeMode::Add => write!(f, "Add"),
+            MathNodeMode::Subtract => write!(f, "Subtract"),
+            MathNodeMode::Multiply => write!(f, "Multiply"),
+            MathNodeMode::Divide => write!(f, "Divide"),
+        }
+    }
+}
+
+impl ShaderGraphValueType for MathNodeMode {
+    type AssociatedLiteralType = MathNodeMode;
+
+    type Message = MathNodeMode;
+
+    fn color(&self) -> Color {
+        Color::TRANSPARENT
+    }
+
+    fn name(&self) -> &'static str {
+        "Math Node Mode"
+    }
+
+    fn view_literal(
+        &self,
+        data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
+        pick_list(
+            vec![
+                MathNodeMode::Add,
+                MathNodeMode::Subtract,
+                MathNodeMode::Multiply,
+                MathNodeMode::Divide,
+            ],
+            Some(*data),
+            |mode| mode,
+        )
+        .into()
+    }
+
+    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
+        *data = message;
+    }
+
+    fn literal_to_string(&self, _data: &Self::AssociatedLiteralType) -> String {
+        panic!("This doesn't make sense and should never be called.")
+    }
+}
+
+impl ShaderGraphNodeCreator for MathNode {
+    type NodeType = Self;
+}
+
+impl ShaderGraphNode for MathNode {
+    fn title(&self) -> &str {
+        "Math"
+    }
+
+    fn title_color(&self) -> Color {
+        Color::from_rgb8(200, 200, 100)
+    }
+
+    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
+        vec![
+            ShaderGraphDefaultInputSlot::new::<FloatType>("A", 0.0),
+            ShaderGraphDefaultInputSlot::new::<FloatType>("B", 0.0),
+            ShaderGraphDefaultInputSlot::unconnectable::<MathNodeMode>("Mode", MathNodeMode::Add),
+        ]
+    }
+
+    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
+        vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
+    }
+
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String {
+        let a = ctx.get_input::<0>().unwrap();
+        let b = ctx.get_input::<1>().unwrap();
+        let mode = ctx.get_input_raw::<2, MathNodeMode>().unwrap();
+        let output = ctx.get_output::<0>().unwrap();
+        match mode {
+            MathNodeMode::Add => format!("let {} = {} + {};", output, a, b),
+            MathNodeMode::Subtract => format!("let {} = {} - {};", output, a, b),
+            MathNodeMode::Multiply => format!("let {} = {} * {};", output, a, b),
+            MathNodeMode::Divide => format!("let {} = {} / {};", output, a, b),
+        }
     }
 }

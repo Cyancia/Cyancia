@@ -1,4 +1,7 @@
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 use cyancia_id::{Id, UntypedId};
 use cyancia_widgets::drag_field::DragField;
@@ -25,9 +28,9 @@ use iced_widget::{
 
 use crate::{
     ErasedShaderGraphLiteralUpdateMessage, ShaderGraph, ShaderGraphInputSlotData,
-    ShaderGraphNodeData, ShaderGraphOutputSlotData, ShaderGraphRenderer, ShaderGraphSlots,
-    ShaderGraphTheme,
-    editor::helpers::{SlotSide, empty_slot, valued_slot},
+    ShaderGraphNodeData, ShaderGraphOutputSlotData, ShaderGraphRenderer, ShaderGraphSlotType,
+    ShaderGraphSlots, ShaderGraphTheme,
+    editor::helpers::{SlotSide, empty_slot, valued_slot, valued_slot_unconnectable},
 };
 
 pub mod drawer;
@@ -219,6 +222,7 @@ pub struct DrawableNode<'a> {
         Element<'a, ErasedShaderGraphLiteralUpdateMessage, ShaderGraphTheme, ShaderGraphRenderer>,
     pub input_slots: Vec<Id<ShaderGraphInputSlotData>>,
     pub output_slots: Vec<Id<ShaderGraphOutputSlotData>>,
+    pub unconnectable_slots: HashSet<Id<ShaderGraphInputSlotData>>,
 }
 
 impl<'a> DrawableNode<'a> {
@@ -234,14 +238,26 @@ impl<'a> DrawableNode<'a> {
             .inputs
             .iter()
             .filter_map(|slot_id| slots.inputs.get(slot_id).map(|slot| (slot_id, slot)))
-            .map(|(slot_id, slot)| match &slot.connected {
-                Some(_) => empty_slot(slot.data.ty().color(), slot.name, SlotSide::Left),
-                None => valued_slot(
+            .filter_map(|(slot_id, slot)| match &slot.connected {
+                Some(_) => Some(empty_slot(
                     slot.data.ty().color(),
                     slot.name,
                     SlotSide::Left,
-                    slot.data.ty().view_literal(*slot_id, &slot.data.value),
-                ),
+                )),
+                None => match slot.slot_type {
+                    ShaderGraphSlotType::Normal => Some(valued_slot(
+                        slot.data.ty().color(),
+                        slot.name,
+                        SlotSide::Left,
+                        slot.data.ty().view_literal(*slot_id, &slot.data.value),
+                    )),
+                    ShaderGraphSlotType::Unconnectable => Some(valued_slot_unconnectable(
+                        slot.name,
+                        SlotSide::Left,
+                        slot.data.ty().view_literal(*slot_id, &slot.data.value),
+                    )),
+                    ShaderGraphSlotType::Hidden => None,
+                },
             });
         let outputs = node
             .outputs
@@ -266,6 +282,19 @@ impl<'a> DrawableNode<'a> {
             })
             .width(Length::Fill)
             .padding(5);
+
+        let unconnectable_slots = node
+            .inputs
+            .iter()
+            .filter_map(|slot_id| slots.inputs.get(slot_id).map(|slot| (slot_id, slot)))
+            .filter(|(_, slot)| {
+                matches!(
+                    slot.slot_type,
+                    ShaderGraphSlotType::Unconnectable | ShaderGraphSlotType::Hidden
+                )
+            })
+            .map(|(slot_id, _)| *slot_id)
+            .collect();
 
         // .on_drag(move |btn, point| {
         //     if btn == mouse::Button::Left
@@ -300,6 +329,7 @@ impl<'a> DrawableNode<'a> {
             widget: Element::new(widget),
             input_slots: node.inputs.clone(),
             output_slots: node.outputs.clone(),
+            unconnectable_slots,
         }
     }
 
@@ -313,6 +343,9 @@ impl<'a> DrawableNode<'a> {
         let outputs = slots.child(1).child(1).children();
 
         for (slot_id, layout) in self.input_slots.iter().zip(inputs) {
+            if self.unconnectable_slots.contains(slot_id) {
+                continue;
+            }
             let pin = &layout.children().next().unwrap();
             slot_positions.insert(
                 (*slot_id).into(),

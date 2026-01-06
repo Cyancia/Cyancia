@@ -26,6 +26,30 @@ where
     }
 }
 
+pub fn valued_slot_unconnectable<'a, Message, Theme, Renderer>(
+    name: &'a str,
+    slot_side: SlotSide,
+    widget: Element<'a, Message, Theme, Renderer>,
+) -> Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a,
+    Theme: text::Catalog + 'a,
+    Renderer: iced_core::renderer::Renderer + iced_core::text::Renderer + 'a,
+{
+    let text = text(name);
+
+    match slot_side {
+        SlotSide::Left => row![text, widget]
+            .align_y(Vertical::Center)
+            .spacing(4)
+            .into(),
+        SlotSide::Right => row![widget, text]
+            .align_y(Vertical::Center)
+            .spacing(4)
+            .into(),
+    }
+}
+
 pub fn valued_slot<'a, Message, Theme, Renderer>(
     color: Color,
     name: &'a str,
