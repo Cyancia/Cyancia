@@ -4,9 +4,9 @@ use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
     ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphCompileError,
     ShaderGraphDefaultInputSlot, ShaderGraphDefaultOutputSlot, ShaderGraphFunctionSignature,
-    ShaderGraphNode, ShaderGraphNodeCodeGenContext, ShaderGraphNodeCreator, ShaderGraphRenderer,
-    ShaderGraphSlotType, ShaderGraphTheme, ShaderGraphValueType, ShaderLiteral, ShaderVariable,
-    ShaderVariableCaster,
+    ShaderGraphNode, ShaderGraphNodeCodeGenContext, ShaderGraphNodeCodeGenError,
+    ShaderGraphNodeCreator, ShaderGraphRenderer, ShaderGraphSlotType, ShaderGraphTheme,
+    ShaderGraphValueType, ShaderLiteral, ShaderVariable, ShaderVariableCaster,
     editor::{
         GraphView, GraphViewMessage,
         drawer::{NodeDrawerMessage, node_drawer},
@@ -249,7 +249,7 @@ impl ShaderGraphNode for AddNode {
     fn generate_code(
         &self,
         ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphCompileError> {
+    ) -> Result<String, ShaderGraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
@@ -291,7 +291,7 @@ impl ShaderGraphNode for Vector2DAddNode {
     fn generate_code(
         &self,
         ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphCompileError> {
+    ) -> Result<String, ShaderGraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
@@ -410,7 +410,7 @@ impl ShaderGraphNode for MathNode {
     fn generate_code(
         &self,
         ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphCompileError> {
+    ) -> Result<String, ShaderGraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let mode = ctx.get_input_raw::<2, MathNodeMode>()?;
@@ -589,7 +589,7 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
     fn generate_code(
         &self,
         ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphCompileError> {
+    ) -> Result<String, ShaderGraphNodeCodeGenError> {
         let input = ctx.get_input::<0>()?;
         let output = ctx.get_output::<0>()?;
         Ok(format!("let {} = {};\n", output, input))
@@ -627,7 +627,7 @@ impl ShaderGraphNode for DummyOutputNode {
     fn generate_code(
         &self,
         ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphCompileError> {
+    ) -> Result<String, ShaderGraphNodeCodeGenError> {
         let input = ctx.get_input::<0>()?;
         Ok(format!("return {};", input))
     }

@@ -17,10 +17,44 @@ pub type ShaderGraphRenderer = iced_wgpu::Renderer;
 pub enum ShaderGraphCompileError {
     #[error("Invalid function signature")]
     InvalidFunctionSignature,
-    #[error("Node code generation error: {0}")]
-    NodeCodeGenError(#[from] ShaderGraphNodeCodeGenContextError),
+    #[error("{0}")]
+    NodeCodeGenError(ContextualShaderGraphNodeCodeGenError),
     #[error(transparent)]
     CustomError(anyhow::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ShaderGraphNodeCodeGenError {
+    #[error("Input slot index out of bounds")]
+    SlotIndexOutOfBounds,
+    #[error("Missing input slot")]
+    MissingInputSlot,
+    #[error("Missing output slot")]
+    MissingOutputSlot,
+    #[error("Failed to cast variable")]
+    FailedToCastVariable,
+    #[error("Failed to convert literal to code")]
+    LiteralToCodeFailed,
+    #[error(transparent)]
+    Custom(#[from] anyhow::Error),
+}
+
+#[derive(Debug)]
+pub struct ContextualShaderGraphNodeCodeGenError {
+    pub node_id: Id<ShaderGraphNodeData>,
+    pub node_title: String,
+    pub err: ShaderGraphNodeCodeGenError,
+    pub code: String,
+}
+
+impl std::fmt::Display for ContextualShaderGraphNodeCodeGenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Error in node {:?} of type {}: {}\nCode already generated:\n{}",
+            self.node_id, self.node_title, self.err, self.code
+        )
+    }
 }
 
 pub struct ShaderGraph {
@@ -226,7 +260,19 @@ impl ShaderGraph {
                 casters: &self.casters,
             };
 
-            code.push_str(&node.data.generate_code(context)?);
+            match node.data.generate_code(context) {
+                Ok(node_code) => code.push_str(&node_code),
+                Err(err) => {
+                    return Err(ShaderGraphCompileError::NodeCodeGenError(
+                        ContextualShaderGraphNodeCodeGenError {
+                            node_id,
+                            node_title: node.data.title().to_string(),
+                            err,
+                            code: code.clone(),
+                        },
+                    ));
+                }
+            }
         }
         self.signature
             .compile(code)
@@ -422,21 +468,7 @@ pub trait ShaderGraphNode: Send + Sync + 'static {
     fn generate_code(
         &self,
         ctx: ShaderGraphNodeCodeGenContext,
-    ) -> Result<String, ShaderGraphCompileError>;
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ShaderGraphNodeCodeGenContextError {
-    #[error("Input slot index out of bounds")]
-    SlotIndexOutOfBounds,
-    #[error("Missing input slot")]
-    MissingInputSlot,
-    #[error("Missing output slot")]
-    MissingOutputSlot,
-    #[error("Failed to cast variable")]
-    FailedToCastVariable,
-    #[error("Failed to convert literal to code")]
-    LiteralToCodeFailed,
+    ) -> Result<String, ShaderGraphNodeCodeGenError>;
 }
 
 pub struct ShaderGraphNodeCodeGenContext<'a> {
@@ -447,34 +479,34 @@ pub struct ShaderGraphNodeCodeGenContext<'a> {
 }
 
 impl ShaderGraphNodeCodeGenContext<'_> {
-    pub fn get_input<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenContextError> {
+    pub fn get_input<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenError> {
         let slot_id = self
             .inputs
             .get(N)
-            .ok_or(ShaderGraphNodeCodeGenContextError::SlotIndexOutOfBounds)?;
+            .ok_or(ShaderGraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
             .graph_slots
             .get_input(slot_id)
-            .ok_or(ShaderGraphNodeCodeGenContextError::MissingInputSlot)?;
+            .ok_or(ShaderGraphNodeCodeGenError::MissingInputSlot)?;
 
         let Some(connected) = slot.connected else {
             // Literal value should always has the same type as the slot type.
             return slot
                 .data
                 .to_code()
-                .ok_or(ShaderGraphNodeCodeGenContextError::LiteralToCodeFailed);
+                .ok_or(ShaderGraphNodeCodeGenError::LiteralToCodeFailed);
         };
 
         let output_slot = self
             .graph_slots
             .get_output(&connected)
-            .ok_or(ShaderGraphNodeCodeGenContextError::MissingOutputSlot)?;
+            .ok_or(ShaderGraphNodeCodeGenError::MissingOutputSlot)?;
 
         if output_slot.data.ty().name() != slot.data.ty().name() {
             self.casters
                 .try_cast(&output_slot.data, slot.data.ty())
-                .ok_or(ShaderGraphNodeCodeGenContextError::FailedToCastVariable)
+                .ok_or(ShaderGraphNodeCodeGenError::FailedToCastVariable)
         } else {
             Ok(output_slot.data.identifier.clone())
         }
@@ -482,30 +514,30 @@ impl ShaderGraphNodeCodeGenContext<'_> {
 
     pub fn get_input_raw<const N: usize, T: 'static>(
         &self,
-    ) -> Result<&T, ShaderGraphNodeCodeGenContextError> {
+    ) -> Result<&T, ShaderGraphNodeCodeGenError> {
         let slot_id = self
             .inputs
             .get(N)
-            .ok_or(ShaderGraphNodeCodeGenContextError::SlotIndexOutOfBounds)?;
+            .ok_or(ShaderGraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
             .graph_slots
             .get_input(slot_id)
-            .ok_or(ShaderGraphNodeCodeGenContextError::MissingInputSlot)?;
+            .ok_or(ShaderGraphNodeCodeGenError::MissingInputSlot)?;
 
         Ok(slot.data.as_ref::<T>())
     }
 
-    pub fn get_output<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenContextError> {
+    pub fn get_output<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenError> {
         let slot_id = self
             .outputs
             .get(N)
-            .ok_or(ShaderGraphNodeCodeGenContextError::SlotIndexOutOfBounds)?;
+            .ok_or(ShaderGraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
             .graph_slots
             .get_output(slot_id)
-            .ok_or(ShaderGraphNodeCodeGenContextError::MissingOutputSlot)?;
+            .ok_or(ShaderGraphNodeCodeGenError::MissingOutputSlot)?;
 
         Ok(slot.data.identifier.clone())
     }
