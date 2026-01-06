@@ -1427,11 +1427,13 @@ dependencies = [
 name = "example_graph"
 version = "0.1.0"
 dependencies = [
+ "cyancia_id",
  "cyancia_shader_graph",
  "cyancia_utils",
  "cyancia_widgets",
  "glam 0.30.9",
  "iced",
+ "parking_lot",
 ]
 
 [[package]]

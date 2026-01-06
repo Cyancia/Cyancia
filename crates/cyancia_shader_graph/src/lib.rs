@@ -335,10 +335,8 @@ impl ShaderGraphSlots {
 }
 
 pub trait ShaderGraphNodeCreator {
-    type NodeType: ShaderGraphNode + Default;
-    fn create(&self) -> Self::NodeType {
-        Self::NodeType::default()
-    }
+    type NodeType: ShaderGraphNode;
+    fn create(&self) -> Self::NodeType;
 }
 
 pub trait ErasedShaderGraphNodeCreator {
@@ -439,14 +437,24 @@ impl ShaderGraphDefaultInputSlot {
         }
     }
 
-    pub fn hidden<T: ShaderGraphValueType + Default>(
+    pub fn hidden<T: ShaderGraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
+        Self {
+            name: Default::default(),
+            value: ShaderLiteral::new::<T>(value),
+            slot_type: ShaderGraphSlotType::Hidden,
+        }
+    }
+
+    pub fn new_non_default<T: ShaderGraphValueType>(
         name: &'static str,
         value: T::AssociatedLiteralType,
+        ty: T,
+        slot_type: ShaderGraphSlotType,
     ) -> Self {
         Self {
             name,
-            value: ShaderLiteral::new::<T>(value),
-            slot_type: ShaderGraphSlotType::Hidden,
+            value: ShaderLiteral::new_non_default::<T>(value, ty),
+            slot_type,
         }
     }
 }
@@ -581,6 +589,16 @@ impl ShaderLiteral {
         Self {
             value: Box::new(value),
             ty: Box::new(T::default()),
+        }
+    }
+
+    pub fn new_non_default<T: ShaderGraphValueType>(
+        value: T::AssociatedLiteralType,
+        ty: T,
+    ) -> Self {
+        Self {
+            value: Box::new(value),
+            ty: Box::new(ty),
         }
     }
 

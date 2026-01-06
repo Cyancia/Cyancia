@@ -1,10 +1,11 @@
-use std::fmt::Display;
+use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
 
+use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
     ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphDefaultInputSlot,
     ShaderGraphDefaultOutputSlot, ShaderGraphNode, ShaderGraphNodeCodeGenContext,
-    ShaderGraphNodeCreator, ShaderGraphRenderer, ShaderGraphTheme, ShaderGraphValueType,
-    ShaderVariable, ShaderVariableCaster,
+    ShaderGraphNodeCreator, ShaderGraphRenderer, ShaderGraphSlotType, ShaderGraphTheme,
+    ShaderGraphValueType, ShaderLiteral, ShaderVariable, ShaderVariableCaster,
     editor::{
         GraphView, GraphViewMessage,
         drawer::{NodeDrawerMessage, node_drawer},
@@ -20,6 +21,7 @@ use iced::{
     advanced::{Widget, layout},
     widget::{Text, column, combo_box, container, pick_list, row, sensor},
 };
+use parking_lot::RwLock;
 
 fn main() {
     iced::application(App::new, App::update, App::view)
@@ -45,6 +47,11 @@ impl App {
         let add2 = graph.add_node(Point::new(200.0, 0.0), AddNode);
         graph.connect_slots_by_index(add1, 0, add2, 0);
         graph.add_caster::<Vector2DToFloatCaster>();
+        let storage = Arc::new(ExternalDataStorage::default());
+        storage.insert::<FloatType>(ExternalLiteral {
+            name: "MyFloat".to_string(),
+            value: ShaderLiteral::new::<FloatType>(0.5),
+        });
 
         Self {
             graph,
@@ -52,6 +59,10 @@ impl App {
                 Box::new(AddNode),
                 Box::new(Vector2DAddNode),
                 Box::new(MathNode),
+                Box::new(ExternalNodeCreator::<FloatType> {
+                    storage: storage.clone(),
+                    marker: PhantomData,
+                }),
             ],
             // creators: vec![Box::new(AddNodeCreator)],
             // viewers,
@@ -192,6 +203,10 @@ pub struct AddNode;
 
 impl ShaderGraphNodeCreator for AddNode {
     type NodeType = Self;
+
+    fn create(&self) -> Self::NodeType {
+        AddNode
+    }
 }
 
 impl ShaderGraphNode for AddNode {
@@ -227,6 +242,10 @@ pub struct Vector2DAddNode;
 
 impl ShaderGraphNodeCreator for Vector2DAddNode {
     type NodeType = Self;
+
+    fn create(&self) -> Self::NodeType {
+        Vector2DAddNode
+    }
 }
 
 impl ShaderGraphNode for Vector2DAddNode {
@@ -334,6 +353,10 @@ impl ShaderGraphValueType for MathNodeMode {
 
 impl ShaderGraphNodeCreator for MathNode {
     type NodeType = Self;
+
+    fn create(&self) -> Self::NodeType {
+        MathNode
+    }
 }
 
 impl ShaderGraphNode for MathNode {
@@ -368,5 +391,168 @@ impl ShaderGraphNode for MathNode {
             MathNodeMode::Multiply => format!("let {} = {} * {};", output, a, b),
             MathNodeMode::Divide => format!("let {} = {} / {};", output, a, b),
         }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct ExternalLiteralId {
+    pub name: String,
+}
+
+impl ToString for ExternalLiteralId {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+pub struct ExternalLiteral {
+    pub name: String,
+    pub value: ShaderLiteral,
+}
+
+#[derive(Default)]
+pub struct ExternalDataStorage {
+    contents: RwLock<HashMap<ExternalLiteralId, Arc<ExternalLiteral>>>,
+    types: RwLock<HashMap<TypeId, Vec<ExternalLiteralId>>>,
+}
+
+impl ExternalDataStorage {
+    pub fn insert<T: ShaderGraphValueType>(&self, value: ExternalLiteral) {
+        let mut contents = self.contents.write();
+        let mut types = self.types.write();
+        let id = ExternalLiteralId {
+            name: value.name.clone(),
+        };
+
+        contents.insert(id.clone(), Arc::new(value));
+        types.entry(TypeId::of::<T>()).or_default().push(id);
+    }
+
+    pub fn get<T: ShaderGraphValueType>(
+        &self,
+        id: &ExternalLiteralId,
+    ) -> Option<Arc<ExternalLiteral>> {
+        self.contents.read().get(&id).cloned()
+    }
+
+    pub fn all_of_type<T: ShaderGraphValueType>(&self) -> Vec<ExternalLiteralId> {
+        self.types
+            .read()
+            .get(&TypeId::of::<T>())
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+pub struct ExternalLiteralValue<T> {
+    id: Option<ExternalLiteralId>,
+    marker: PhantomData<T>,
+}
+
+impl<T> Clone for ExternalLiteralValue<T> {
+    fn clone(&self) -> Self {
+        ExternalLiteralValue {
+            id: self.id.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+pub struct ExternalLiteralType<T> {
+    storage: Arc<ExternalDataStorage>,
+    marker: PhantomData<T>,
+}
+
+impl<T: ShaderGraphValueType> ShaderGraphValueType for ExternalLiteralType<T> {
+    type AssociatedLiteralType = ExternalLiteralValue<T>;
+
+    type Message = ExternalLiteralId;
+
+    fn color(&self) -> Color {
+        Color::from_rgb8(200, 100, 200)
+    }
+
+    fn name(&self) -> &'static str {
+        "External Data"
+    }
+
+    fn view_literal(
+        &self,
+        data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer> {
+        let options = self.storage.all_of_type::<T>();
+        pick_list(options, data.id.clone(), |msg| msg).into()
+    }
+
+    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
+        *data = ExternalLiteralValue {
+            id: Some(message),
+            marker: PhantomData,
+        };
+    }
+
+    fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String {
+        data.id
+            .as_ref()
+            .and_then(|id| self.storage.get::<T>(id).map(|data| data.value.to_string()))
+            .unwrap_or_default()
+    }
+}
+
+pub struct ExternalNodeCreator<T> {
+    pub storage: Arc<ExternalDataStorage>,
+    pub marker: PhantomData<T>,
+}
+
+pub struct ExternalNode<T> {
+    storage: Arc<ExternalDataStorage>,
+    marker: PhantomData<T>,
+}
+
+impl<T: ShaderGraphValueType + Default> ShaderGraphNodeCreator for ExternalNodeCreator<T> {
+    type NodeType = ExternalNode<T>;
+
+    fn create(&self) -> Self::NodeType {
+        ExternalNode {
+            storage: self.storage.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
+    fn title(&self) -> &str {
+        "External"
+    }
+
+    fn title_color(&self) -> Color {
+        Color::from_rgb8(150, 150, 250)
+    }
+
+    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
+        vec![ShaderGraphDefaultInputSlot::new_non_default::<
+            ExternalLiteralType<T>,
+        >(
+            "Id",
+            ExternalLiteralValue {
+                id: None,
+                marker: PhantomData,
+            },
+            ExternalLiteralType {
+                storage: self.storage.clone(),
+                marker: PhantomData,
+            },
+            ShaderGraphSlotType::Unconnectable,
+        )]
+    }
+
+    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
+        vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Value")]
+    }
+
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String {
+        let input = ctx.get_input::<0>().unwrap();
+        let output = ctx.get_output::<0>().unwrap();
+        format!("let {} = {};", output, input)
     }
 }

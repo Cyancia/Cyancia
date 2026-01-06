@@ -10,3 +10,5 @@ cyancia_shader_graph.workspace = true
 cyancia_widgets.workspace = true
 cyancia_utils.workspace = true
 glam.workspace = true
+cyancia_id.workspace = true
+parking_lot.workspace = true

@@ -187,4 +187,8 @@ impl UntypedId {
             None
         }
     }
+
+    pub fn type_id(&self) -> TypeId {
+        self.ty
+    }
 }
