@@ -2,9 +2,9 @@ use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, 
 
 use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
-    ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphDefaultInputSlot,
-    ShaderGraphDefaultOutputSlot, ShaderGraphFunctionSignature, ShaderGraphNode,
-    ShaderGraphNodeCodeGenContext, ShaderGraphNodeCreator, ShaderGraphRenderer,
+    ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphCompileError,
+    ShaderGraphDefaultInputSlot, ShaderGraphDefaultOutputSlot, ShaderGraphFunctionSignature,
+    ShaderGraphNode, ShaderGraphNodeCodeGenContext, ShaderGraphNodeCreator, ShaderGraphRenderer,
     ShaderGraphSlotType, ShaderGraphTheme, ShaderGraphValueType, ShaderLiteral, ShaderVariable,
     ShaderVariableCaster,
     editor::{
@@ -120,8 +120,8 @@ impl App {
         }
 
         match self.graph.compile() {
-            Some(code) => println!("{}", code),
-            None => println!("Code generation failed"),
+            Ok(code) => println!("{}", code),
+            Err(e) => println!("Code generation failed: {}", e),
         }
     }
 }
@@ -246,11 +246,14 @@ impl ShaderGraphNode for AddNode {
         vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+    fn generate_code(
+        &self,
+        ctx: ShaderGraphNodeCodeGenContext,
+    ) -> Result<String, ShaderGraphCompileError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
-        Some(format!("let {} = {} + {};", output, a, b))
+        Ok(format!("let {} = {} + {};", output, a, b))
     }
 }
 
@@ -285,11 +288,14 @@ impl ShaderGraphNode for Vector2DAddNode {
         vec![ShaderGraphDefaultOutputSlot::new::<Vector2DType>("Result")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+    fn generate_code(
+        &self,
+        ctx: ShaderGraphNodeCodeGenContext,
+    ) -> Result<String, ShaderGraphCompileError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
-        Some(format!("let {} = {} + {};", output, a, b))
+        Ok(format!("let {} = {} + {};", output, a, b))
     }
 }
 
@@ -401,12 +407,15 @@ impl ShaderGraphNode for MathNode {
         vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+    fn generate_code(
+        &self,
+        ctx: ShaderGraphNodeCodeGenContext,
+    ) -> Result<String, ShaderGraphCompileError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let mode = ctx.get_input_raw::<2, MathNodeMode>()?;
         let output = ctx.get_output::<0>()?;
-        Some(match mode {
+        Ok(match mode {
             MathNodeMode::Add => format!("let {} = {} + {};", output, a, b),
             MathNodeMode::Subtract => format!("let {} = {} - {};", output, a, b),
             MathNodeMode::Multiply => format!("let {} = {} * {};", output, a, b),
@@ -577,10 +586,13 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
         vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Value")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+    fn generate_code(
+        &self,
+        ctx: ShaderGraphNodeCodeGenContext,
+    ) -> Result<String, ShaderGraphCompileError> {
         let input = ctx.get_input::<0>()?;
         let output = ctx.get_output::<0>()?;
-        Some(format!("let {} = {};", output, input))
+        Ok(format!("let {} = {};", output, input))
     }
 }
 
@@ -612,8 +624,11 @@ impl ShaderGraphNode for DummyOutputNode {
         vec![]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+    fn generate_code(
+        &self,
+        ctx: ShaderGraphNodeCodeGenContext,
+    ) -> Result<String, ShaderGraphCompileError> {
         let input = ctx.get_input::<0>()?;
-        Some(format!("return {};", input))
+        Ok(format!("return {};", input))
     }
 }

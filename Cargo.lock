@@ -1106,6 +1106,7 @@ dependencies = [
 name = "cyancia_shader_graph"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cyancia_id",
  "cyancia_utils",
  "cyancia_widgets",

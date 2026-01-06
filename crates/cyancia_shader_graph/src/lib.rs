@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     collections::{HashMap, VecDeque, hash_map::Entry},
+    io::Write,
 };
 
 use cyancia_id::Id;
@@ -11,6 +12,16 @@ pub mod editor;
 
 pub type ShaderGraphTheme = iced_core::Theme;
 pub type ShaderGraphRenderer = iced_wgpu::Renderer;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ShaderGraphCompileError {
+    #[error("Invalid function signature")]
+    InvalidFunctionSignature,
+    #[error("Node code generation error: {0}")]
+    NodeCodeGenError(#[from] ShaderGraphNodeCodeGenContextError),
+    #[error(transparent)]
+    CustomError(anyhow::Error),
+}
 
 pub struct ShaderGraph {
     nodes: HashMap<Id<ShaderGraphNodeData>, ShaderGraphNodeData>,
@@ -199,7 +210,7 @@ impl ShaderGraph {
         }
     }
 
-    pub fn compile(&mut self) -> Option<String> {
+    pub fn compile(&mut self) -> Result<String, ShaderGraphCompileError> {
         if self.cached_run_order.is_none() {
             self.update_cache();
         }
@@ -207,22 +218,19 @@ impl ShaderGraph {
         let run_order = self.cached_run_order.as_ref().unwrap();
         let mut code = String::new();
         for node_id in run_order.clone() {
-            let node_code = self.run_node(node_id)?;
-            code.push_str(&node_code);
-            code.push('\n');
-        }
-        self.signature.compile(code)
-    }
+            let node = self.nodes.get(&node_id).unwrap();
+            let context = ShaderGraphNodeCodeGenContext {
+                inputs: &node.inputs,
+                outputs: &node.outputs,
+                graph_slots: &mut self.slots,
+                casters: &self.casters,
+            };
 
-    pub fn run_node(&mut self, id: Id<ShaderGraphNodeData>) -> Option<String> {
-        let node = self.nodes.get(&id)?;
-        let context = ShaderGraphNodeCodeGenContext {
-            inputs: &node.inputs,
-            outputs: &node.outputs,
-            graph_slots: &mut self.slots,
-            casters: &self.casters,
-        };
-        node.data.generate_code(context)
+            code.push_str(&node.data.generate_code(context)?);
+        }
+        self.signature
+            .compile(code)
+            .ok_or(ShaderGraphCompileError::InvalidFunctionSignature)
     }
 
     pub fn invalidate_cache(&mut self) {
@@ -411,7 +419,24 @@ pub trait ShaderGraphNode: Send + Sync + 'static {
     fn title_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot>;
     fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot>;
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String>;
+    fn generate_code(
+        &self,
+        ctx: ShaderGraphNodeCodeGenContext,
+    ) -> Result<String, ShaderGraphCompileError>;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ShaderGraphNodeCodeGenContextError {
+    #[error("Input slot index out of bounds")]
+    SlotIndexOutOfBounds,
+    #[error("Missing input slot")]
+    MissingInputSlot,
+    #[error("Missing output slot")]
+    MissingOutputSlot,
+    #[error("Failed to cast variable")]
+    FailedToCastVariable,
+    #[error("Failed to convert literal to code")]
+    LiteralToCodeFailed,
 }
 
 pub struct ShaderGraphNodeCodeGenContext<'a> {
@@ -422,32 +447,67 @@ pub struct ShaderGraphNodeCodeGenContext<'a> {
 }
 
 impl ShaderGraphNodeCodeGenContext<'_> {
-    pub fn get_input<const N: usize>(&self) -> Option<String> {
-        let slot_id = self.inputs.get(N)?;
-        let slot = self.graph_slots.get_input(slot_id)?;
+    pub fn get_input<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenContextError> {
+        let slot_id = self
+            .inputs
+            .get(N)
+            .ok_or(ShaderGraphNodeCodeGenContextError::SlotIndexOutOfBounds)?;
+
+        let slot = self
+            .graph_slots
+            .get_input(slot_id)
+            .ok_or(ShaderGraphNodeCodeGenContextError::MissingInputSlot)?;
+
         let Some(connected) = slot.connected else {
             // Literal value should always has the same type as the slot type.
-            return slot.data.to_code();
+            return slot
+                .data
+                .to_code()
+                .ok_or(ShaderGraphNodeCodeGenContextError::LiteralToCodeFailed);
         };
 
-        let output_slot = self.graph_slots.get_output(&connected)?;
+        let output_slot = self
+            .graph_slots
+            .get_output(&connected)
+            .ok_or(ShaderGraphNodeCodeGenContextError::MissingOutputSlot)?;
+
         if output_slot.data.ty().name() != slot.data.ty().name() {
-            self.casters.try_cast(&output_slot.data, slot.data.ty())
+            self.casters
+                .try_cast(&output_slot.data, slot.data.ty())
+                .ok_or(ShaderGraphNodeCodeGenContextError::FailedToCastVariable)
         } else {
-            Some(output_slot.data.identifier.clone())
+            Ok(output_slot.data.identifier.clone())
         }
     }
 
-    pub fn get_input_raw<const N: usize, T: 'static>(&self) -> Option<&T> {
-        let slot_id = self.inputs.get(N)?;
-        let slot = self.graph_slots.get_input(slot_id)?;
-        Some(slot.data.as_ref::<T>())
+    pub fn get_input_raw<const N: usize, T: 'static>(
+        &self,
+    ) -> Result<&T, ShaderGraphNodeCodeGenContextError> {
+        let slot_id = self
+            .inputs
+            .get(N)
+            .ok_or(ShaderGraphNodeCodeGenContextError::SlotIndexOutOfBounds)?;
+
+        let slot = self
+            .graph_slots
+            .get_input(slot_id)
+            .ok_or(ShaderGraphNodeCodeGenContextError::MissingInputSlot)?;
+
+        Ok(slot.data.as_ref::<T>())
     }
 
-    pub fn get_output<const N: usize>(&self) -> Option<String> {
-        let slot_id = self.outputs.get(N)?;
-        let slot = self.graph_slots.get_output(slot_id)?;
-        Some(slot.data.identifier.clone())
+    pub fn get_output<const N: usize>(&self) -> Result<String, ShaderGraphNodeCodeGenContextError> {
+        let slot_id = self
+            .outputs
+            .get(N)
+            .ok_or(ShaderGraphNodeCodeGenContextError::SlotIndexOutOfBounds)?;
+
+        let slot = self
+            .graph_slots
+            .get_output(slot_id)
+            .ok_or(ShaderGraphNodeCodeGenContextError::MissingOutputSlot)?;
+
+        Ok(slot.data.identifier.clone())
     }
 }
 

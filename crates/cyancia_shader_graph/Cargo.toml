@@ -14,3 +14,4 @@ thiserror.workspace = true
 iced_widget.workspace = true
 iced_graphics.workspace = true
 cyancia_widgets.workspace = true
+anyhow.workspace = true
