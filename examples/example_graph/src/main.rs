@@ -63,6 +63,7 @@ impl App {
                     storage: storage.clone(),
                     marker: PhantomData,
                 }),
+                Box::new(DummyOutputNode),
             ],
             // creators: vec![Box::new(AddNodeCreator)],
             // viewers,
@@ -557,5 +558,38 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
         let input = ctx.get_input::<0>()?;
         let output = ctx.get_output::<0>()?;
         Some(format!("let {} = {};", output, input))
+    }
+}
+
+#[derive(Default)]
+pub struct DummyOutputNode;
+
+impl ShaderGraphNodeCreator for DummyOutputNode {
+    type NodeType = Self;
+
+    fn create(&self) -> Self::NodeType {
+        DummyOutputNode
+    }
+}
+
+impl ShaderGraphNode for DummyOutputNode {
+    fn title(&self) -> &str {
+        "Output"
+    }
+
+    fn title_color(&self) -> Color {
+        Color::from_rgb8(100, 200, 200)
+    }
+
+    fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot> {
+        vec![ShaderGraphDefaultInputSlot::new::<FloatType>("Input", 0.0)]
+    }
+
+    fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot> {
+        vec![]
+    }
+
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+        Some("".to_string())
     }
 }

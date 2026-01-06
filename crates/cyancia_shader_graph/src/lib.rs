@@ -240,9 +240,10 @@ impl ShaderGraph {
             .collect::<HashMap<_, _>>();
 
         let mut run_order = Vec::with_capacity(self.nodes.len());
-        let mut ready_nodes = out_degrees
+        let mut ready_nodes = self
+            .nodes
             .iter()
-            .filter(|(_, deg)| **deg == 0)
+            .filter(|(_, node)| node.outputs.len() == 0)
             .map(|(node_id, _)| *node_id)
             .collect::<VecDeque<_>>();
 
