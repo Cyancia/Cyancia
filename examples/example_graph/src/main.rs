@@ -253,7 +253,7 @@ impl ShaderGraphNode for AddNode {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
-        Ok(format!("let {} = {} + {};", output, a, b))
+        Ok(format!("let {} = {} + {};\n", output, a, b))
     }
 }
 
@@ -295,7 +295,7 @@ impl ShaderGraphNode for Vector2DAddNode {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
-        Ok(format!("let {} = {} + {};", output, a, b))
+        Ok(format!("let {} = {} + {};\n", output, a, b))
     }
 }
 
@@ -416,10 +416,10 @@ impl ShaderGraphNode for MathNode {
         let mode = ctx.get_input_raw::<2, MathNodeMode>()?;
         let output = ctx.get_output::<0>()?;
         Ok(match mode {
-            MathNodeMode::Add => format!("let {} = {} + {};", output, a, b),
-            MathNodeMode::Subtract => format!("let {} = {} - {};", output, a, b),
-            MathNodeMode::Multiply => format!("let {} = {} * {};", output, a, b),
-            MathNodeMode::Divide => format!("let {} = {} / {};", output, a, b),
+            MathNodeMode::Add => format!("let {} = {} + {};\n", output, a, b),
+            MathNodeMode::Subtract => format!("let {} = {} - {};\n", output, a, b),
+            MathNodeMode::Multiply => format!("let {} = {} * {};\n", output, a, b),
+            MathNodeMode::Divide => format!("let {} = {} / {};\n", output, a, b),
         })
     }
 }
@@ -592,7 +592,7 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
     ) -> Result<String, ShaderGraphCompileError> {
         let input = ctx.get_input::<0>()?;
         let output = ctx.get_output::<0>()?;
-        Ok(format!("let {} = {};", output, input))
+        Ok(format!("let {} = {};\n", output, input))
     }
 }
 
