@@ -12,16 +12,27 @@ pub mod editor;
 pub type ShaderGraphTheme = iced_core::Theme;
 pub type ShaderGraphRenderer = iced_wgpu::Renderer;
 
-#[derive(Default)]
 pub struct ShaderGraph {
     nodes: HashMap<Id<ShaderGraphNodeData>, ShaderGraphNodeData>,
     slots: ShaderGraphSlots,
     casters: ShaderGraphCasters,
     ident_generator: ShaderGraphIdentifierGenerator,
+    signature: ShaderGraphFunctionSignature,
     cached_run_order: Option<Vec<Id<ShaderGraphNodeData>>>,
 }
 
 impl ShaderGraph {
+    pub fn new(signature: ShaderGraphFunctionSignature) -> Self {
+        Self {
+            nodes: HashMap::new(),
+            slots: ShaderGraphSlots::default(),
+            casters: ShaderGraphCasters::default(),
+            ident_generator: ShaderGraphIdentifierGenerator::default(),
+            signature,
+            cached_run_order: None,
+        }
+    }
+
     pub fn add_boxed_node(
         &mut self,
         position: Point,
@@ -200,7 +211,7 @@ impl ShaderGraph {
             code.push_str(&node_code);
             code.push('\n');
         }
-        Some(code)
+        self.signature.compile(code)
     }
 
     pub fn run_node(&mut self, id: Id<ShaderGraphNodeData>) -> Option<String> {
@@ -323,6 +334,53 @@ impl ShaderGraphSlots {
         let input_node = self.inputs.get(input_id)?;
         let connected_id = input_node.connected.as_ref()?;
         self.outputs.get(connected_id)
+    }
+}
+
+pub struct ShaderGraphFunctionSignature {
+    name: String,
+    ret_type: Box<dyn ErasedShaderGraphValueType>,
+    params: Vec<ShaderVariable>,
+}
+
+impl ShaderGraphFunctionSignature {
+    pub fn new<T: ShaderGraphValueType>(name: String, ret_type: T) -> Self {
+        Self {
+            name,
+            ret_type: Box::new(ret_type),
+            params: Vec::new(),
+        }
+    }
+
+    pub fn with_param<T: ShaderGraphValueType + Default>(mut self, identifier: String) -> Self {
+        self.params.push(ShaderVariable::new::<T>(identifier));
+        self
+    }
+
+    pub fn compile(&self, body: String) -> Option<String> {
+        let ret_ty = self.ret_type.wgsl_type()?;
+
+        let params = self
+            .params
+            .iter()
+            .filter_map(|param| {
+                param
+                    .ty()
+                    .wgsl_type()
+                    .map(|ty| format!("{}: {}", param.identifier(), ty))
+            })
+            .collect::<Vec<_>>();
+        if params.len() != self.params.len() {
+            return None;
+        }
+
+        Some(format!(
+            "fn {}({}) -> {} {{\n{}\n}}",
+            self.name,
+            params.join(", "),
+            ret_ty,
+            body
+        ))
     }
 }
 
@@ -484,6 +542,7 @@ pub trait ShaderGraphValueType: Send + Sync + 'static {
     type Message: Send + Sync + 'static;
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
+    fn wgsl_type(&self) -> Option<&'static str>;
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
@@ -501,6 +560,7 @@ pub struct ErasedShaderGraphLiteralUpdateMessage {
 pub trait ErasedShaderGraphValueType: Send + Sync + 'static {
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
+    fn wgsl_type(&self) -> Option<&'static str>;
     fn view_literal(
         &self,
         slot_id: Id<ShaderGraphInputSlotData>,
@@ -526,6 +586,10 @@ impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
 
     fn name(&self) -> &'static str {
         self.name()
+    }
+
+    fn wgsl_type(&self) -> Option<&'static str> {
+        self.wgsl_type()
     }
 
     fn view_literal(

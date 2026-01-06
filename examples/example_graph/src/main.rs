@@ -3,9 +3,10 @@ use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, 
 use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
     ErasedShaderGraphNodeCreator, ShaderGraph, ShaderGraphDefaultInputSlot,
-    ShaderGraphDefaultOutputSlot, ShaderGraphNode, ShaderGraphNodeCodeGenContext,
-    ShaderGraphNodeCreator, ShaderGraphRenderer, ShaderGraphSlotType, ShaderGraphTheme,
-    ShaderGraphValueType, ShaderLiteral, ShaderVariable, ShaderVariableCaster,
+    ShaderGraphDefaultOutputSlot, ShaderGraphFunctionSignature, ShaderGraphNode,
+    ShaderGraphNodeCodeGenContext, ShaderGraphNodeCreator, ShaderGraphRenderer,
+    ShaderGraphSlotType, ShaderGraphTheme, ShaderGraphValueType, ShaderLiteral, ShaderVariable,
+    ShaderVariableCaster,
     editor::{
         GraphView, GraphViewMessage,
         drawer::{NodeDrawerMessage, node_drawer},
@@ -42,7 +43,10 @@ pub enum GraphMessage {
 
 impl App {
     pub fn new() -> Self {
-        let mut graph = ShaderGraph::default();
+        let mut graph = ShaderGraph::new(
+            ShaderGraphFunctionSignature::new("test".into(), FloatType)
+                .with_param::<FloatType>("input1".into()),
+        );
         let add1 = graph.add_node(Point::new(0.0, 0.0), AddNode);
         let add2 = graph.add_node(Point::new(200.0, 0.0), AddNode);
         graph.connect_slots_by_index(add1, 0, add2, 0);
@@ -138,6 +142,10 @@ impl ShaderGraphValueType for FloatType {
         "Float"
     }
 
+    fn wgsl_type(&self) -> Option<&'static str> {
+        Some("f32")
+    }
+
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
@@ -174,6 +182,10 @@ impl ShaderGraphValueType for Vector2DType {
 
     fn name(&self) -> &'static str {
         "Vector2D"
+    }
+
+    fn wgsl_type(&self) -> Option<&'static str> {
+        Some("vec2f")
     }
 
     fn view_literal(
@@ -330,6 +342,10 @@ impl ShaderGraphValueType for MathNodeMode {
         "Math Node Mode"
     }
 
+    fn wgsl_type(&self) -> Option<&'static str> {
+        None
+    }
+
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
@@ -481,6 +497,13 @@ impl<T: ShaderGraphValueType> ShaderGraphValueType for ExternalLiteralType<T> {
         "External Data"
     }
 
+    fn wgsl_type(&self) -> Option<&'static str> {
+        let literal = self
+            .storage
+            .get::<T>(&self.storage.all_of_type::<T>().get(0)?.clone())?;
+        literal.value.ty().wgsl_type()
+    }
+
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
@@ -590,6 +613,7 @@ impl ShaderGraphNode for DummyOutputNode {
     }
 
     fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
-        Some("".to_string())
+        let input = ctx.get_input::<0>()?;
+        Some(format!("return {};", input))
     }
 }
