@@ -12,12 +12,6 @@ pub mod editor;
 pub type ShaderGraphTheme = iced_core::Theme;
 pub type ShaderGraphRenderer = iced_wgpu::Renderer;
 
-#[derive(Debug, thiserror::Error)]
-pub enum ShaderGraphError {
-    #[error("Node not found: {0:?}")]
-    NodeNotFound(Id<ShaderGraphNodeData>),
-}
-
 #[derive(Default)]
 pub struct ShaderGraph {
     nodes: HashMap<Id<ShaderGraphNodeData>, ShaderGraphNodeData>,
@@ -194,7 +188,7 @@ impl ShaderGraph {
         }
     }
 
-    pub fn compile(&mut self) -> Result<String, ShaderGraphError> {
+    pub fn compile(&mut self) -> Option<String> {
         if self.cached_run_order.is_none() {
             self.update_cache();
         }
@@ -206,21 +200,18 @@ impl ShaderGraph {
             code.push_str(&node_code);
             code.push('\n');
         }
-        Ok(code)
+        Some(code)
     }
 
-    pub fn run_node(&mut self, id: Id<ShaderGraphNodeData>) -> Result<String, ShaderGraphError> {
-        let node = self
-            .nodes
-            .get(&id)
-            .ok_or(ShaderGraphError::NodeNotFound(id))?;
+    pub fn run_node(&mut self, id: Id<ShaderGraphNodeData>) -> Option<String> {
+        let node = self.nodes.get(&id)?;
         let context = ShaderGraphNodeCodeGenContext {
             inputs: &node.inputs,
             outputs: &node.outputs,
             graph_slots: &mut self.slots,
             casters: &self.casters,
         };
-        Ok(node.data.generate_code(context))
+        node.data.generate_code(context)
     }
 
     pub fn invalidate_cache(&mut self) {
@@ -361,7 +352,7 @@ pub trait ShaderGraphNode: Send + Sync + 'static {
     fn title_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<ShaderGraphDefaultInputSlot>;
     fn create_outputs(&self) -> Vec<ShaderGraphDefaultOutputSlot>;
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String;
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String>;
 }
 
 pub struct ShaderGraphNodeCodeGenContext<'a> {
@@ -377,7 +368,7 @@ impl ShaderGraphNodeCodeGenContext<'_> {
         let slot = self.graph_slots.get_input(slot_id)?;
         let Some(connected) = slot.connected else {
             // Literal value should always has the same type as the slot type.
-            return Some(slot.data.to_string());
+            return slot.data.to_code();
         };
 
         let output_slot = self.graph_slots.get_output(&connected)?;
@@ -497,7 +488,7 @@ pub trait ShaderGraphValueType: Send + Sync + 'static {
         data: &Self::AssociatedLiteralType,
     ) -> Element<'static, Self::Message, ShaderGraphTheme, ShaderGraphRenderer>;
     fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message);
-    fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String;
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String>;
 }
 
 #[derive(Debug)]
@@ -524,7 +515,7 @@ pub trait ErasedShaderGraphValueType: Send + Sync + 'static {
         data: &mut Box<dyn Any + Send + Sync>,
         message: ErasedShaderGraphLiteralUpdateMessage,
     );
-    fn literal_to_string(&self, data: &Box<dyn Any + Send + Sync>) -> String;
+    fn literal_to_code(&self, data: &Box<dyn Any + Send + Sync>) -> Option<String>;
 }
 
 impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
@@ -571,11 +562,11 @@ impl<T: ShaderGraphValueType> ErasedShaderGraphValueType for T {
         self.update_literal(literal, *msg);
     }
 
-    fn literal_to_string(&self, data: &Box<dyn Any + Send + Sync>) -> String {
+    fn literal_to_code(&self, data: &Box<dyn Any + Send + Sync>) -> Option<String> {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()
             .expect("Failed to downcast literal.");
-        self.literal_to_string(literal)
+        self.literal_to_code(literal)
     }
 }
 
@@ -626,8 +617,8 @@ impl ShaderLiteral {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        self.ty.literal_to_string(&self.value)
+    pub fn to_code(&self) -> Option<String> {
+        self.ty.literal_to_code(&self.value)
     }
 }
 

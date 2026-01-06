@@ -113,7 +113,11 @@ impl App {
                 }
             },
         }
-        println!("{}", self.graph.compile().unwrap());
+
+        match self.graph.compile() {
+            Some(code) => println!("{}", code),
+            None => println!("Code generation failed"),
+        }
     }
 }
 
@@ -144,8 +148,8 @@ impl ShaderGraphValueType for FloatType {
         *data = message;
     }
 
-    fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String {
-        format!("{:.5}", data)
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        Some(format!("{:.5}", data))
     }
 }
 
@@ -193,8 +197,8 @@ impl ShaderGraphValueType for Vector2DType {
         }
     }
 
-    fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String {
-        format!("vec2f({:.2}, {:.2})", data.x, data.y)
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        Some(format!("vec2f({:.2}, {:.2})", data.x, data.y))
     }
 }
 
@@ -229,11 +233,11 @@ impl ShaderGraphNode for AddNode {
         vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String {
-        let a = ctx.get_input::<0>().unwrap();
-        let b = ctx.get_input::<1>().unwrap();
-        let output = ctx.get_output::<0>().unwrap();
-        format!("let {} = {} + {};", output, a, b)
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+        let a = ctx.get_input::<0>()?;
+        let b = ctx.get_input::<1>()?;
+        let output = ctx.get_output::<0>()?;
+        Some(format!("let {} = {} + {};", output, a, b))
     }
 }
 
@@ -268,11 +272,11 @@ impl ShaderGraphNode for Vector2DAddNode {
         vec![ShaderGraphDefaultOutputSlot::new::<Vector2DType>("Result")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String {
-        let a = ctx.get_input::<0>().unwrap();
-        let b = ctx.get_input::<1>().unwrap();
-        let output = ctx.get_output::<0>().unwrap();
-        format!("let {} = {} + {};", output, a, b)
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+        let a = ctx.get_input::<0>()?;
+        let b = ctx.get_input::<1>()?;
+        let output = ctx.get_output::<0>()?;
+        Some(format!("let {} = {} + {};", output, a, b))
     }
 }
 
@@ -346,8 +350,8 @@ impl ShaderGraphValueType for MathNodeMode {
         *data = message;
     }
 
-    fn literal_to_string(&self, _data: &Self::AssociatedLiteralType) -> String {
-        panic!("This doesn't make sense and should never be called.")
+    fn literal_to_code(&self, _data: &Self::AssociatedLiteralType) -> Option<String> {
+        None
     }
 }
 
@@ -380,17 +384,17 @@ impl ShaderGraphNode for MathNode {
         vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String {
-        let a = ctx.get_input::<0>().unwrap();
-        let b = ctx.get_input::<1>().unwrap();
-        let mode = ctx.get_input_raw::<2, MathNodeMode>().unwrap();
-        let output = ctx.get_output::<0>().unwrap();
-        match mode {
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+        let a = ctx.get_input::<0>()?;
+        let b = ctx.get_input::<1>()?;
+        let mode = ctx.get_input_raw::<2, MathNodeMode>()?;
+        let output = ctx.get_output::<0>()?;
+        Some(match mode {
             MathNodeMode::Add => format!("let {} = {} + {};", output, a, b),
             MathNodeMode::Subtract => format!("let {} = {} - {};", output, a, b),
             MathNodeMode::Multiply => format!("let {} = {} * {};", output, a, b),
             MathNodeMode::Divide => format!("let {} = {} / {};", output, a, b),
-        }
+        })
     }
 }
 
@@ -491,11 +495,10 @@ impl<T: ShaderGraphValueType> ShaderGraphValueType for ExternalLiteralType<T> {
         };
     }
 
-    fn literal_to_string(&self, data: &Self::AssociatedLiteralType) -> String {
-        data.id
-            .as_ref()
-            .and_then(|id| self.storage.get::<T>(id).map(|data| data.value.to_string()))
-            .unwrap_or_default()
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        let id = data.id.as_ref()?;
+        let literal = self.storage.get::<T>(id)?;
+        literal.value.to_code()
     }
 }
 
@@ -550,9 +553,9 @@ impl<T: ShaderGraphValueType + Default> ShaderGraphNode for ExternalNode<T> {
         vec![ShaderGraphDefaultOutputSlot::new::<FloatType>("Value")]
     }
 
-    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> String {
-        let input = ctx.get_input::<0>().unwrap();
-        let output = ctx.get_output::<0>().unwrap();
-        format!("let {} = {};", output, input)
+    fn generate_code(&self, ctx: ShaderGraphNodeCodeGenContext) -> Option<String> {
+        let input = ctx.get_input::<0>()?;
+        let output = ctx.get_output::<0>()?;
+        Some(format!("let {} = {};", output, input))
     }
 }
