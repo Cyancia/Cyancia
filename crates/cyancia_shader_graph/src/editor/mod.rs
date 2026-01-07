@@ -610,11 +610,17 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     shell.capture_event();
                     shell.request_redraw();
                     return;
+                } else {
+                    state.edge_connect = EdgeConnectState::Idle;
                 }
 
-                if let DragNodeState::Dragging { .. } = state.drag {
-                    state.drag = DragNodeState::Idle;
-                    shell.capture_event();
+                match &state.drag {
+                    DragNodeState::Idle => {}
+                    DragNodeState::Grabbed { .. } | DragNodeState::Dragging { .. } => {
+                        state.drag = DragNodeState::Idle;
+                        shell.capture_event();
+                        return;
+                    }
                 }
 
                 if let DragSelectionState::Dragging { origin } = state.selection.state {
@@ -639,6 +645,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     state.selection.state = DragSelectionState::Idle;
                     shell.request_redraw();
                     shell.capture_event();
+                    return;
                 }
             }
             Event::Keyboard(keyboard::Event::KeyPressed {
