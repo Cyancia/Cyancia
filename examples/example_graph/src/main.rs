@@ -6,10 +6,7 @@ use cyancia_shader_graph::{
     GraphDefaultOutputSlot, GraphDynamicInstancesStorage, GraphFunctionSignature, GraphLiteral,
     GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator, GraphRenderer,
     GraphSlotType, GraphTheme, GraphValueType, GraphVariable, GraphVariableCaster,
-    editor::{
-        GraphView, GraphViewMessage,
-        drawer::{NodeDrawerMessage, node_drawer},
-    },
+    editor::{GraphView, GraphViewMessage},
     serde::SerializableGraph,
 };
 use cyancia_utils::wrapper;
@@ -40,7 +37,6 @@ pub struct App {
 pub enum GraphMessage {
     Keyboard(keyboard::Event),
     View(GraphViewMessage),
-    NodeDrawer(NodeDrawerMessage),
 }
 
 impl App {
@@ -86,7 +82,6 @@ impl App {
     // pub fn view(&self) -> Element<'_, GraphEditorMessage<GraphMessage>> {
     pub fn view(&self) -> Element<'_, GraphMessage, GraphTheme, GraphRenderer> {
         row![
-            node_drawer(self.graph.storage().creators.all().values()).map(GraphMessage::NodeDrawer),
             // column![
             //     Text::new("test1"),
             //     Text::new("test1"),
@@ -122,12 +117,8 @@ impl App {
                 GraphViewMessage::NodeDeleteRequest(id) => {
                     self.graph.delete_node(&id);
                 }
-            },
-            GraphMessage::NodeDrawer(message) => match message {
-                NodeDrawerMessage::NodeCreate(creator, point) => {
-                    let creators = &self.graph.storage().creators;
-                    let (_, creator) = creators.all().get_index(creator).unwrap();
-                    self.graph.add_boxed_node(point, creator.create());
+                GraphViewMessage::NodeCreateRequest(point, node) => {
+                    self.graph.add_boxed_node(point, node);
                 }
             },
             GraphMessage::Keyboard(keyboard::Event::KeyPressed {

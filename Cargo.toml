@@ -72,3 +72,20 @@ half = "2"
 rfd = "0.16"
 anyhow = "1"
 dyn-clone = "1"
+
+# [patch."https://github.com/443eb9/iced.git"]
+# iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }
+# iced_beacon = { path = "D:/iced_fork/beacon" }
+# iced_core = { path = "D:/iced_fork/core" }
+# iced_debug = { path = "D:/iced_fork/debug" }
+# iced_devtools = { path = "D:/iced_fork/devtools" }
+# iced_futures = { path = "D:/iced_fork/futures" }
+# iced_graphics = { path = "D:/iced_fork/graphics", features = ["geometry"] }
+# iced_highlighter = { path = "D:/iced_fork/highlighter" }
+# iced_program = { path = "D:/iced_fork/program" }
+# iced_renderer = { path = "D:/iced_fork/renderer" }
+# iced_runtime = { path = "D:/iced_fork/runtime" }
+# iced_selector = { path = "D:/iced_fork/selector" }
+# iced_wgpu = { path = "D:/iced_fork/wgpu", features = ["geometry"] }
+# iced_widget = { path = "D:/iced_fork/widget", features = ["wgpu"] }
+# iced_winit = { path = "D:/iced_fork/winit" }

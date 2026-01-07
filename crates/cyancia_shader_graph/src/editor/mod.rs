@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
+    sync::Arc,
 };
 
 use cyancia_id::{Id, UntypedId};
@@ -26,17 +27,18 @@ use iced_graphics::{
 use iced_widget::{
     Renderer, column, container,
     core::{Rectangle, Widget, mouse::Cursor},
+    overlay::menu,
     row, text,
 };
 use indexmap::IndexMap;
 
 use crate::{
-    ErasedGraphLiteralUpdateMessage, Graph, GraphInputSlotData, GraphNodeData, GraphOutputSlotData,
-    GraphRenderer, GraphSlotType, GraphSlots, GraphTheme,
+    ErasedGraphLiteralUpdateMessage, Graph, GraphDynamicInstancesStorage, GraphInputSlotData,
+    GraphNode, GraphNodeData, GraphOutputSlotData, GraphRenderer, GraphSlotType, GraphSlots,
+    GraphTheme,
     editor::helpers::{SlotSide, empty_slot, valued_slot, valued_slot_unconnectable},
 };
 
-pub mod drawer;
 pub mod helpers;
 
 const NODE_WIDTH: f32 = 170.0;
@@ -60,13 +62,40 @@ impl From<Id<GraphOutputSlotData>> for GraphSlotId {
     }
 }
 
-#[derive(Debug)]
 pub enum GraphViewMessage {
+    NodeCreateRequest(Point, Box<dyn GraphNode>),
     NodeMoveRequest(Point, Id<GraphNodeData>),
     NodeDeleteRequest(Id<GraphNodeData>),
     EdgeCreateRequest(Id<GraphOutputSlotData>, Id<GraphInputSlotData>),
     EdgeRemoveRequest(Id<GraphInputSlotData>),
     LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
+impl std::fmt::Debug for GraphViewMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NodeCreateRequest(arg0, arg1) => {
+                f.debug_tuple("NodeCreateRequest").field(arg0).finish()
+            }
+            Self::NodeMoveRequest(arg0, arg1) => f
+                .debug_tuple("NodeMoveRequest")
+                .field(arg0)
+                .field(arg1)
+                .finish(),
+            Self::NodeDeleteRequest(arg0) => {
+                f.debug_tuple("NodeDeleteRequest").field(arg0).finish()
+            }
+            Self::EdgeCreateRequest(arg0, arg1) => f
+                .debug_tuple("EdgeCreateRequest")
+                .field(arg0)
+                .field(arg1)
+                .finish(),
+            Self::EdgeRemoveRequest(arg0) => {
+                f.debug_tuple("EdgeRemoveRequest").field(arg0).finish()
+            }
+            Self::LiteralUpdate(arg0) => f.debug_tuple("LiteralUpdate").field(arg0).finish(),
+        }
+    }
 }
 
 // impl<'a, Message, Theme, Renderer> GraphSlotViewers<'a, Message, Theme, Renderer>
@@ -118,13 +147,38 @@ pub enum GraphViewMessage {
 
 pub struct GraphView<'a> {
     graph: DrawableGraph<'a>,
+    storage: Arc<GraphDynamicInstancesStorage>,
+    node_creation_menu_items: Vec<NodeCreationMenuItem>,
+    node_creation_menu_class: <GraphTheme as menu::Catalog>::Class<'a>,
 }
 
 impl<'a> GraphView<'a> {
     pub fn new(graph: &'a Graph) -> Self {
         Self {
             graph: DrawableGraph::new(graph),
+            storage: graph.storage().clone(),
+            node_creation_menu_items: graph
+                .storage()
+                .creators
+                .all()
+                .keys()
+                .map(|title| NodeCreationMenuItem {
+                    node_title: title.to_string(),
+                })
+                .collect(),
+            node_creation_menu_class: <GraphTheme as menu::Catalog>::default(),
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeCreationMenuItem {
+    pub node_title: String,
+}
+
+impl ToString for NodeCreationMenuItem {
+    fn to_string(&self) -> String {
+        self.node_title.clone()
     }
 }
 
@@ -463,6 +517,8 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     shell.capture_event();
                     return;
                 }
+
+                state.node_creation_menu.position = None;
             }
             _ => {}
         }
@@ -724,6 +780,9 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                             };
                         }
                     }
+                    key::Code::KeyA if modifiers.contains(keyboard::Modifiers::SHIFT) => {
+                        state.node_creation_menu.position = cursor.position();
+                    }
                     _ => {}
                 }
             }
@@ -923,6 +982,33 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             }
         }
 
+        let state = tree.state.downcast_mut::<State>();
+        if let Some(menu_position) = state.node_creation_menu.position {
+            let menu = menu::Menu::new(
+                &mut state.node_creation_menu.state,
+                &self.node_creation_menu_items,
+                &mut state.node_creation_menu.hovered,
+                |name| {
+                    let position = state.node_creation_menu.position.unwrap();
+                    state.node_creation_menu.position = None;
+                    GraphViewMessage::NodeCreateRequest(
+                        position - state.view_translation,
+                        self.storage
+                            .creators
+                            .get(&name.node_title)
+                            .unwrap()
+                            .create(),
+                    )
+                },
+                None,
+                &self.node_creation_menu_class,
+            )
+            .width(200.0)
+            .padding(2);
+
+            return Some(menu.overlay(menu_position, *viewport, 0.0, Length::Shrink));
+        }
+
         None
     }
 }
@@ -937,10 +1023,18 @@ impl<'a> From<GraphView<'a>> for Element<'a, GraphViewMessage, GraphTheme, Graph
 struct State {
     view_translation: Vector,
 
+    node_creation_menu: NodeCreationMenuState,
     node_drag: DragNodeState,
     view_drag: ViewDragState,
     edge_connect: EdgeConnectState,
     selection: NodeSelectionState,
+}
+
+#[derive(Default)]
+struct NodeCreationMenuState {
+    position: Option<Point>,
+    state: menu::State,
+    hovered: Option<usize>,
 }
 
 #[derive(Default)]
