@@ -667,7 +667,9 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                         }
                     }
                     key::Code::KeyG => {
-                        if let Some(cursor) = cursor.position() {
+                        if let Some(cursor) = cursor.position()
+                            && !state.selection.selected_nodes.is_empty()
+                        {
                             state.drag = DragNodeState::Dragging {
                                 origin: cursor,
                                 node_origin: state
