@@ -451,6 +451,18 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         shell: &mut Shell<'_, GraphViewMessage>,
         viewport: &Rectangle,
     ) {
+        let state = tree.state.downcast_mut::<State>();
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if let DragNodeState::Dragging { .. } = state.drag {
+                    state.drag = DragNodeState::Idle;
+                    shell.capture_event();
+                    return;
+                }
+            }
+            _ => {}
+        }
+
         let mut messages = Vec::new();
         let mut children_shell = Shell::new(&mut messages);
         for ((child, tree), layout) in self
@@ -476,19 +488,8 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         shell.merge(children_shell, GraphViewMessage::LiteralUpdate);
 
         if shell.is_event_captured() {
-            if matches!(
-                event,
-                // We may dragging some nodes, if returned here while the cursor is above an interactable
-                // widget, it will stuck.
-                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
-            ) {
-                // Don't return.
-            } else {
-                return;
-            }
+            return;
         }
-
-        let state = tree.state.downcast_mut::<State>();
 
         const SLOT_PIN_SNAP: f32 = 3.0 * 3.0;
         match event {
@@ -496,12 +497,6 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 let Some(cursor) = cursor.position() else {
                     return;
                 };
-
-                if let DragNodeState::Dragging { .. } = state.drag {
-                    state.drag = DragNodeState::Idle;
-                    shell.capture_event();
-                    return;
-                }
 
                 for (slot_id, slot_pos) in &self.graph.slots_positions {
                     let d = slot_pos.distance(cursor);
