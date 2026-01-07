@@ -476,7 +476,16 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         shell.merge(children_shell, GraphViewMessage::LiteralUpdate);
 
         if shell.is_event_captured() {
-            return;
+            if matches!(
+                event,
+                // We may dragging some nodes, if returned here while the cursor is above an interactable
+                // widget, it will stuck.
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+            ) {
+                // Don't return.
+            } else {
+                return;
+            }
         }
 
         let state = tree.state.downcast_mut::<State>();
@@ -552,18 +561,21 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     return;
                 };
 
-                match state.drag {
+                match &state.drag {
                     DragNodeState::Idle => {}
-                    DragNodeState::Dragging { origin } => {
+                    DragNodeState::Dragging {
+                        origin,
+                        node_origin,
+                    } => {
                         for selected in &state.selection.selected_nodes {
-                            if let Some(node) = self.graph.nodes.get(selected) {
+                            if let Some(node_origin) = node_origin.get(selected) {
                                 shell.publish(GraphViewMessage::NodeMoveRequest(
-                                    node.position + (cursor - origin),
+                                    *node_origin + (cursor - *origin)
+                                        - Vector::new(layout.position().x, layout.position().y),
                                     *selected,
                                 ));
                             }
                         }
-                        state.drag = DragNodeState::Dragging { origin: cursor };
                         shell.capture_event();
                     }
                 }
@@ -659,7 +671,18 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     }
                     key::Code::KeyG => {
                         if let Some(cursor) = cursor.position() {
-                            state.drag = DragNodeState::Dragging { origin: cursor };
+                            state.drag = DragNodeState::Dragging {
+                                origin: cursor,
+                                node_origin: state
+                                    .selection
+                                    .selected_nodes
+                                    .iter()
+                                    .filter_map(|id| {
+                                        self.graph.nodes.get_index_of(id).map(|index| (id, index))
+                                    })
+                                    .map(|(id, index)| (*id, layout.child(index).position()))
+                                    .collect(),
+                            };
                         }
                     }
                     _ => {}
@@ -722,7 +745,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         }
 
         for selected in state.selection.selected_nodes.iter() {
-            if let Some((index, _, node)) = self.graph.nodes.get_full(selected) {
+            if let Some(index) = self.graph.nodes.get_index_of(selected) {
                 use iced_core::Renderer;
                 let layout = layout.child(index);
                 renderer.fill_quad(
@@ -884,6 +907,7 @@ enum DragNodeState {
     Idle,
     Dragging {
         origin: Point,
+        node_origin: HashMap<Id<GraphNodeData>, Point>,
     },
 }
 
