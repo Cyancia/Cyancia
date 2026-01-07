@@ -6,10 +6,12 @@ use std::{
 use cyancia_id::{Id, UntypedId};
 use cyancia_widgets::drag_field::DragField;
 use iced_core::{
-    Background, Border, Color, Element, Event, Layout, Length, Point, Shadow, Shell, Size, Vector,
+    Background, Border, Clipboard, Color, Element, Event, Layout, Length, Point, Shadow, Shell,
+    Size, Vector,
     alignment::Horizontal,
     border::{self, Radius},
     gradient::ColorStop,
+    keyboard::{self, key},
     layout::{self, Limits, Node},
     mouse::{self, Interaction},
     overlay,
@@ -28,14 +30,16 @@ use iced_widget::{
 };
 
 use crate::{
-    ErasedGraphLiteralUpdateMessage, Graph, GraphInputSlotData,
-    GraphNodeData, GraphOutputSlotData, GraphRenderer, GraphSlotType,
-    GraphSlots, GraphTheme,
+    ErasedGraphLiteralUpdateMessage, Graph, GraphInputSlotData, GraphNodeData, GraphOutputSlotData,
+    GraphRenderer, GraphSlotType, GraphSlots, GraphTheme,
     editor::helpers::{SlotSide, empty_slot, valued_slot, valued_slot_unconnectable},
 };
 
 pub mod drawer;
 pub mod helpers;
+
+const NODE_WIDTH: f32 = 170.0;
+const NODE_BORDER_RADIUS: f32 = 5.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GraphSlotId {
@@ -58,6 +62,7 @@ impl From<Id<GraphOutputSlotData>> for GraphSlotId {
 #[derive(Debug)]
 pub enum GraphViewMessage {
     NodeMoveRequest(Point, Id<GraphNodeData>),
+    NodeDeleteRequest(Id<GraphNodeData>),
     EdgeCreateRequest(Id<GraphOutputSlotData>, Id<GraphInputSlotData>),
     EdgeRemoveRequest(Id<GraphInputSlotData>),
     LiteralUpdate(ErasedGraphLiteralUpdateMessage),
@@ -219,22 +224,14 @@ pub struct DrawableEdge {
 pub struct DrawableNode<'a> {
     pub node_id: Id<GraphNodeData>,
     pub position: Point,
-    pub widget:
-        Element<'a, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>,
+    pub widget: Element<'a, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>,
     pub input_slots: Vec<Id<GraphInputSlotData>>,
     pub output_slots: Vec<Id<GraphOutputSlotData>>,
     pub unconnectable_slots: HashSet<Id<GraphInputSlotData>>,
 }
 
 impl<'a> DrawableNode<'a> {
-    pub fn new(
-        node_id: Id<GraphNodeData>,
-        node: &'a GraphNodeData,
-        slots: &GraphSlots,
-    ) -> Self {
-        const NODE_WIDTH: f32 = 170.0;
-        const NODE_BORDER_RADIUS: f32 = 5.0;
-
+    pub fn new(node_id: Id<GraphNodeData>, node: &'a GraphNodeData, slots: &GraphSlots) -> Self {
         let inputs = node
             .inputs
             .iter()
@@ -447,10 +444,10 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         tree: &mut Tree,
         event: &Event,
         layout: Layout<'_>,
-        cursor: iced_core::mouse::Cursor,
+        cursor: mouse::Cursor,
         renderer: &GraphRenderer,
-        clipboard: &mut dyn iced_core::Clipboard,
-        shell: &mut iced_core::Shell<'_, GraphViewMessage>,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, GraphViewMessage>,
         viewport: &Rectangle,
     ) {
         let mut messages = Vec::new();
@@ -520,20 +517,29 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
 
                 for (node_index, layout) in layout.children().enumerate() {
                     if layout.bounds().contains(cursor) {
-                        state.drag = DragState::Grabbed {
+                        state.drag = DragNodeState::Grabbed {
                             node_index,
                             origin: cursor,
                         };
+                        state.selection.selected_nodes.clear();
+                        state
+                            .selection
+                            .selected_nodes
+                            .insert(self.graph.nodes[node_index].node_id);
                         shell.capture_event();
                         return;
                     }
                 }
+
+                state.selection.state = DragSelectionState::Dragging { origin: cursor };
+                shell.capture_event();
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 match &state.edge_connect {
                     EdgeConnectState::Idle => {}
                     EdgeConnectState::Dragging { .. } => {
                         shell.request_redraw();
+                        shell.capture_event();
                         return;
                     }
                 }
@@ -543,23 +549,33 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 };
 
                 match state.drag {
-                    DragState::Idle => {}
-                    DragState::Grabbed { node_index, origin } => {
+                    DragNodeState::Idle => {}
+                    DragNodeState::Grabbed { node_index, origin } => {
                         if origin.distance(cursor) > 5.0 {
-                            state.drag = DragState::Dragging {
+                            state.drag = DragNodeState::Dragging {
                                 node_index: node_index,
                                 offset: origin - layout.child(node_index).bounds().position(),
                             };
                             shell.capture_event();
                         }
                     }
-                    DragState::Dragging { node_index, offset } => {
+                    DragNodeState::Dragging { node_index, offset } => {
                         let node_id = self.graph.nodes[node_index].node_id;
                         let relative = cursor - layout.bounds().position();
                         shell.publish(GraphViewMessage::NodeMoveRequest(
                             Point::new(relative.x, relative.y) - offset,
                             node_id,
                         ));
+                        shell.capture_event();
+                    }
+                }
+
+                match state.selection.state {
+                    DragSelectionState::Idle => {}
+                    DragSelectionState::Dragging { .. } => {
+                        shell.request_redraw();
+                        shell.capture_event();
+                        return;
                     }
                 }
             }
@@ -596,9 +612,58 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     return;
                 }
 
-                if let DragState::Dragging { .. } = state.drag {
-                    state.drag = DragState::Idle;
+                if let DragNodeState::Dragging { .. } = state.drag {
+                    state.drag = DragNodeState::Idle;
                     shell.capture_event();
+                }
+
+                if let DragSelectionState::Dragging { origin } = state.selection.state {
+                    state.selection.state = DragSelectionState::Idle;
+                    let Some(cursor) = cursor.position() else {
+                        return;
+                    };
+                    let selection_rect = Rectangle {
+                        x: origin.x.min(cursor.x),
+                        y: origin.y.min(cursor.y),
+                        width: (origin.x - cursor.x).abs(),
+                        height: (origin.y - cursor.y).abs(),
+                    };
+
+                    state.selection.selected_nodes.clear();
+                    for (node, layout) in self.graph.nodes.iter().zip(layout.children()) {
+                        if selection_rect.intersects(&layout.bounds()) {
+                            state.selection.selected_nodes.insert(node.node_id);
+                        }
+                    }
+
+                    state.selection.state = DragSelectionState::Idle;
+                    shell.request_redraw();
+                    shell.capture_event();
+                }
+            }
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key,
+                modified_key,
+                physical_key,
+                location,
+                modifiers,
+                text,
+                repeat,
+            }) => {
+                if *repeat {
+                    return;
+                }
+                let key::Physical::Code(key) = *physical_key else {
+                    return;
+                };
+
+                match key {
+                    key::Code::Delete => {
+                        for node_id in &state.selection.selected_nodes {
+                            shell.publish(GraphViewMessage::NodeDeleteRequest(*node_id));
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ => {}
@@ -616,7 +681,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         let state = tree.state.downcast_ref::<State>();
 
         match state.drag {
-            DragState::Idle => self
+            DragNodeState::Idle => self
                 .graph
                 .nodes
                 .iter()
@@ -630,7 +695,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 })
                 .max()
                 .unwrap_or_default(),
-            DragState::Grabbed { .. } | DragState::Dragging { .. } => {
+            DragNodeState::Grabbed { .. } | DragNodeState::Dragging { .. } => {
                 return mouse::Interaction::Grabbing;
             }
         }
@@ -657,6 +722,26 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 },
                 theme.extended_palette().background.base.color,
             );
+        }
+
+        for selected in state.selection.selected_nodes.iter() {
+            if let Some((_, layout)) = self
+                .graph
+                .nodes
+                .iter()
+                .zip(layout.children())
+                .find(|(n, _)| &n.node_id == selected)
+            {
+                use iced_core::Renderer;
+                renderer.fill_quad(
+                    Quad {
+                        bounds: layout.bounds().expand(2.0),
+                        border: Border::default().rounded(NODE_BORDER_RADIUS),
+                        ..Default::default()
+                    },
+                    Color::WHITE,
+                );
+            }
         }
 
         for ((child, tree), layout) in self
@@ -730,6 +815,33 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
 
             renderer.draw_geometry(frame.into_geometry());
         }
+
+        if let DragSelectionState::Dragging { origin } = state.selection.state {
+            let Some(cursor_pos) = cursor.position() else {
+                return;
+            };
+            use iced_core::Renderer;
+            renderer.fill_quad(
+                Quad {
+                    bounds: Rectangle {
+                        x: origin.x.min(cursor_pos.x),
+                        y: origin.y.min(cursor_pos.y),
+                        width: (origin.x - cursor_pos.x).abs(),
+                        height: (origin.y - cursor_pos.y).abs(),
+                    },
+                    border: Border::default().width(2.0).color(
+                        theme
+                            .extended_palette()
+                            .primary
+                            .strong
+                            .color
+                            .scale_alpha(0.5),
+                    ),
+                    ..Default::default()
+                },
+                theme.extended_palette().primary.base.color.scale_alpha(0.3),
+            );
+        }
     }
 
     fn overlay<'b>(
@@ -761,9 +873,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
     }
 }
 
-impl<'a> From<GraphView<'a>>
-    for Element<'a, GraphViewMessage, GraphTheme, GraphRenderer>
-{
+impl<'a> From<GraphView<'a>> for Element<'a, GraphViewMessage, GraphTheme, GraphRenderer> {
     fn from(value: GraphView<'a>) -> Self {
         Element::new(value)
     }
@@ -771,12 +881,13 @@ impl<'a> From<GraphView<'a>>
 
 #[derive(Default)]
 struct State {
-    drag: DragState,
+    drag: DragNodeState,
     edge_connect: EdgeConnectState,
+    selection: NodeSelectionState,
 }
 
 #[derive(Default)]
-enum DragState {
+enum DragNodeState {
     #[default]
     Idle,
     Grabbed {
@@ -796,5 +907,20 @@ enum EdgeConnectState {
     Dragging {
         resolved_source: GraphSlotId,
         color: Color,
+    },
+}
+
+#[derive(Default)]
+struct NodeSelectionState {
+    selected_nodes: HashSet<Id<GraphNodeData>>,
+    state: DragSelectionState,
+}
+
+#[derive(Default)]
+enum DragSelectionState {
+    #[default]
+    Idle,
+    Dragging {
+        origin: Point,
     },
 }

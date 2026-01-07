@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet, hash_map::Entry},
+    sync::Arc,
+};
 
 use cyancia_id::Id;
 use serde::{Deserialize, Serialize};
@@ -234,6 +237,8 @@ impl SerializableGraph {
                             identifier: slot.variable_name.clone(),
                             ty: default.ty,
                         },
+                        // Will be done later
+                        connected: HashSet::new(),
                     },
                 );
             }
@@ -252,15 +257,20 @@ impl SerializableGraph {
         }
 
         for (input_id, input) in &mut inputs {
-            if let Some(connected_id) = input.connected
-                && !outputs.contains_key(&connected_id)
-            {
-                errors.push(GraphDeserializeError::MissingConnectedSlot(
-                    input.node_id,
-                    *input_id,
-                    connected_id,
-                ));
-                input.connected = None;
+            if let Some(connected_id) = input.connected {
+                match outputs.entry(connected_id) {
+                    Entry::Occupied(mut e) => {
+                        e.get_mut().connected.insert(*input_id);
+                    }
+                    Entry::Vacant(_) => {
+                        errors.push(GraphDeserializeError::MissingConnectedSlot(
+                            input.node_id,
+                            *input_id,
+                            connected_id,
+                        ));
+                        input.connected = None;
+                    }
+                }
             }
         }
 

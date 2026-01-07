@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::{HashMap, VecDeque, hash_map::Entry},
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
     sync::Arc,
 };
 
@@ -119,6 +119,7 @@ impl Graph {
                         identifier: self.ident_generator.next_output(),
                         ty: slot.ty,
                     },
+                    connected: HashSet::new(),
                 },
             );
             outputs.push(slot_id);
@@ -141,6 +142,31 @@ impl Graph {
         self.add_boxed_node(position, Box::new(node))
     }
 
+    pub fn delete_node(&mut self, id: &Id<GraphNodeData>) {
+        if let Some(node) = self.nodes.remove(id) {
+            for input_slot_id in node.inputs {
+                if let Some(input_slot) = self.slots.inputs.remove(&input_slot_id) {
+                    if let Some(connected) = input_slot
+                        .connected
+                        .and_then(|id| self.slots.outputs.get_mut(&id))
+                    {
+                        connected.connected.remove(&input_slot_id);
+                    }
+                }
+            }
+            for output_slot_id in node.outputs {
+                if let Some(output_slot) = self.slots.outputs.remove(&output_slot_id) {
+                    for connected_id in output_slot.connected {
+                        if let Some(connected_slot) = self.slots.inputs.get_mut(&connected_id) {
+                            connected_slot.connected = None;
+                        }
+                    }
+                }
+            }
+            self.invalidate_cache();
+        }
+    }
+
     pub fn get_node(&self, id: &Id<GraphNodeData>) -> Option<&GraphNodeData> {
         self.nodes.get(id)
     }
@@ -154,8 +180,11 @@ impl Graph {
             return;
         }
 
-        if let Some(input_slot) = self.slots.inputs.get_mut(&to) {
+        if let Some(input_slot) = self.slots.inputs.get_mut(&to)
+            && let Some(output_slot) = self.slots.outputs.get_mut(&from)
+        {
             input_slot.connected = Some(from);
+            output_slot.connected.insert(to);
             self.invalidate_cache();
         }
     }
@@ -177,8 +206,13 @@ impl Graph {
     }
 
     pub fn disconnect_slot(&mut self, to: Id<GraphInputSlotData>) {
-        if let Some(input_slot) = self.slots.inputs.get_mut(&to) {
+        if let Some(input_slot) = self.slots.inputs.get_mut(&to)
+            && let Some(output_slot) = input_slot
+                .connected
+                .and_then(|output_id| self.slots.outputs.get_mut(&output_id))
+        {
             input_slot.connected = None;
+            output_slot.connected.remove(&to);
             self.invalidate_cache();
         }
     }
@@ -596,6 +630,7 @@ pub struct GraphOutputSlotData {
     pub node_id: Id<GraphNodeData>,
     pub name: &'static str,
     pub data: GraphVariable,
+    pub connected: HashSet<Id<GraphInputSlotData>>,
 }
 
 pub trait GraphValueType: Send + Sync + 'static + DynClone {

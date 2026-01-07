@@ -119,6 +119,9 @@ impl App {
                 GraphViewMessage::LiteralUpdate(message) => {
                     self.graph.update_literal(message);
                 }
+                GraphViewMessage::NodeDeleteRequest(id) => {
+                    self.graph.delete_node(&id);
+                }
             },
             GraphMessage::NodeDrawer(message) => match message {
                 NodeDrawerMessage::NodeCreate(creator, point) => {
