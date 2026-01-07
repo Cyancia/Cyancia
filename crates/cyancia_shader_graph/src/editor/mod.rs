@@ -454,6 +454,8 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         let state = tree.state.downcast_mut::<State>();
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                // We need to handle it before children, otherwise, if the drag is started on a interactable child,
+                // the event will get captured and unable to be identified below, and will stuck.
                 if let DragNodeState::Dragging { .. } = state.drag {
                     state.drag = DragNodeState::Idle;
                     shell.capture_event();
