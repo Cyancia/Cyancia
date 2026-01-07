@@ -12,3 +12,4 @@ cyancia_utils.workspace = true
 glam.workspace = true
 cyancia_id.workspace = true
 parking_lot.workspace = true
+toml.workspace = true

@@ -1,12 +1,16 @@
 use std::{
     any::Any,
     collections::{HashMap, VecDeque, hash_map::Entry},
+    sync::Arc,
 };
 
 use cyancia_id::Id;
+use dyn_clone::DynClone;
 use iced_core::{Color, Element, Point};
+use indexmap::IndexMap;
 
 pub mod editor;
+pub mod serde;
 
 pub type GraphTheme = iced_core::Theme;
 pub type GraphRenderer = iced_wgpu::Renderer;
@@ -58,20 +62,23 @@ impl std::fmt::Display for ContextualGraphNodeCodeGenError {
 pub struct Graph {
     nodes: HashMap<Id<GraphNodeData>, GraphNodeData>,
     slots: GraphSlots,
-    casters: GraphTypeCasters,
     ident_generator: GraphVarIdentGenerator,
     signature: GraphFunctionSignature,
     cached_run_order: Option<Vec<Id<GraphNodeData>>>,
+    storage: Arc<GraphDynamicInstancesStorage>,
 }
 
 impl Graph {
-    pub fn new(signature: GraphFunctionSignature) -> Self {
+    pub fn new(
+        signature: GraphFunctionSignature,
+        storage: Arc<GraphDynamicInstancesStorage>,
+    ) -> Self {
         Self {
             nodes: HashMap::new(),
             slots: GraphSlots::default(),
-            casters: GraphTypeCasters::default(),
             ident_generator: GraphVarIdentGenerator::default(),
             signature,
+            storage,
             cached_run_order: None,
         }
     }
@@ -163,20 +170,10 @@ impl Graph {
 
         if let (Some(from), Some(to)) = (from_slot, to_slot) {
             from.data.ty().name() == to.data.ty().name()
-                || self.can_cast(from.data.ty(), to.data.ty())
+                || self.storage.casters.can_cast(from.data.ty(), to.data.ty())
         } else {
             false
         }
-    }
-
-    pub fn can_cast(&self, from: &dyn ErasedGraphValueType, to: &dyn ErasedGraphValueType) -> bool {
-        let from_name = from.name();
-        let to_name = to.name();
-        self.casters
-            .casters
-            .get(from_name)
-            .and_then(|map| map.get(to_name))
-            .is_some()
     }
 
     pub fn disconnect_slot(&mut self, to: Id<GraphInputSlotData>) {
@@ -236,7 +233,7 @@ impl Graph {
                 inputs: &node.inputs,
                 outputs: &node.outputs,
                 graph_slots: &mut self.slots,
-                casters: &self.casters,
+                casters: &self.storage.casters,
             };
 
             match node.data.generate_code(context) {
@@ -245,7 +242,7 @@ impl Graph {
                     return Err(GraphCompileError::NodeCodeGenError(
                         ContextualGraphNodeCodeGenError {
                             node_id,
-                            node_title: node.data.title().to_string(),
+                            node_title: node.data.name().to_string(),
                             err,
                             code: code.clone(),
                         },
@@ -334,9 +331,16 @@ impl Graph {
         }
     }
 
-    pub fn add_caster<T: GraphVariableCaster + Default>(&mut self) {
-        self.casters.register::<T>();
+    pub fn storage(&self) -> &Arc<GraphDynamicInstancesStorage> {
+        &self.storage
     }
+}
+
+#[derive(Default)]
+pub struct GraphDynamicInstancesStorage {
+    pub creators: GraphNodeCreatorStorage,
+    pub types: GraphValueTypeStorage,
+    pub casters: GraphTypeCastersStorage,
 }
 
 #[derive(Default)]
@@ -408,12 +412,12 @@ impl GraphFunctionSignature {
     }
 }
 
-pub trait GraphNodeCreator {
+pub trait GraphNodeCreator: 'static {
     type NodeType: GraphNode;
     fn create(&self) -> Self::NodeType;
 }
 
-pub trait ErasedGraphNodeCreator {
+pub trait ErasedGraphNodeCreator: 'static {
     fn create(&self) -> Box<dyn GraphNode>;
 }
 
@@ -431,8 +435,8 @@ pub struct GraphNodeData {
 }
 
 pub trait GraphNode: Send + Sync + 'static {
-    fn title(&self) -> &str;
-    fn title_color(&self) -> Color;
+    fn name(&self) -> &'static str;
+    fn header_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError>;
@@ -442,7 +446,7 @@ pub struct GraphNodeCodeGenContext<'a> {
     pub inputs: &'a [Id<GraphInputSlotData>],
     pub outputs: &'a [Id<GraphOutputSlotData>],
     pub graph_slots: &'a mut GraphSlots,
-    pub casters: &'a GraphTypeCasters,
+    pub casters: &'a GraphTypeCastersStorage,
 }
 
 impl GraphNodeCodeGenContext<'_> {
@@ -517,7 +521,7 @@ pub enum GraphSlotType {
 
 pub struct GraphDefaultInputSlot {
     pub name: &'static str,
-    pub value: Literal,
+    pub value: GraphLiteral,
     pub slot_type: GraphSlotType,
 }
 
@@ -528,7 +532,7 @@ impl GraphDefaultInputSlot {
     ) -> Self {
         Self {
             name,
-            value: Literal::new::<T>(value),
+            value: GraphLiteral::new::<T>(value),
             slot_type: GraphSlotType::Normal,
         }
     }
@@ -539,7 +543,7 @@ impl GraphDefaultInputSlot {
     ) -> Self {
         Self {
             name,
-            value: Literal::new::<T>(value),
+            value: GraphLiteral::new::<T>(value),
             slot_type: GraphSlotType::Unconnectable,
         }
     }
@@ -547,7 +551,7 @@ impl GraphDefaultInputSlot {
     pub fn hidden<T: GraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
         Self {
             name: Default::default(),
-            value: Literal::new::<T>(value),
+            value: GraphLiteral::new::<T>(value),
             slot_type: GraphSlotType::Hidden,
         }
     }
@@ -560,7 +564,7 @@ impl GraphDefaultInputSlot {
     ) -> Self {
         Self {
             name,
-            value: Literal::new_non_default::<T>(value, ty),
+            value: GraphLiteral::new_non_default::<T>(value, ty),
             slot_type,
         }
     }
@@ -569,7 +573,7 @@ impl GraphDefaultInputSlot {
 pub struct GraphInputSlotData {
     pub node_id: Id<GraphNodeData>,
     pub name: &'static str,
-    pub data: Literal,
+    pub data: GraphLiteral,
     pub connected: Option<Id<GraphOutputSlotData>>,
     pub slot_type: GraphSlotType,
 }
@@ -594,7 +598,7 @@ pub struct GraphOutputSlotData {
     pub data: GraphVariable,
 }
 
-pub trait GraphValueType: Send + Sync + 'static {
+pub trait GraphValueType: Send + Sync + 'static + DynClone {
     type AssociatedLiteralType: Send + Sync + 'static;
     type Message: Send + Sync + 'static;
     fn color(&self) -> Color;
@@ -614,7 +618,7 @@ pub struct ErasedGraphLiteralUpdateMessage {
     pub id: Id<GraphInputSlotData>,
 }
 
-pub trait ErasedGraphValueType: Send + Sync + 'static {
+pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
     fn wgsl_type(&self) -> Option<&'static str>;
@@ -682,12 +686,12 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
     }
 }
 
-pub struct Literal {
+pub struct GraphLiteral {
     value: Box<dyn Any + Send + Sync>,
     ty: Box<dyn ErasedGraphValueType>,
 }
 
-impl Literal {
+impl GraphLiteral {
     pub fn new<T: GraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
         Self {
             value: Box::new(value),
@@ -754,11 +758,62 @@ impl GraphVariable {
 }
 
 #[derive(Default)]
-pub struct GraphTypeCasters {
+pub struct GraphNodeCreatorStorage {
+    creators: IndexMap<&'static str, Box<dyn ErasedGraphNodeCreator>>,
+}
+
+impl GraphNodeCreatorStorage {
+    pub fn register<T: GraphNodeCreator + Default>(&mut self) {
+        let node = T::default().create();
+        let creator = Box::new(T::default());
+        self.creators.insert(node.name(), creator);
+    }
+
+    pub fn register_non_default<T: GraphNodeCreator>(&mut self, creator: T) {
+        let node = creator.create();
+        let creator = Box::new(creator);
+        self.creators.insert(node.name(), creator);
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Box<dyn ErasedGraphNodeCreator>> {
+        self.creators.get(name)
+    }
+
+    pub fn all(&self) -> &IndexMap<&'static str, Box<dyn ErasedGraphNodeCreator>> {
+        &self.creators
+    }
+}
+
+#[derive(Default)]
+pub struct GraphValueTypeStorage {
+    types: HashMap<&'static str, Box<dyn ErasedGraphValueType>>,
+}
+
+impl GraphValueTypeStorage {
+    pub fn register<T: GraphValueType + Default>(&mut self) {
+        let ty = T::default();
+        self.types.insert(ty.name(), Box::new(ty));
+    }
+
+    pub fn register_non_default<T: GraphValueType>(&mut self, ty: T) {
+        self.types.insert(ty.name(), Box::new(ty));
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Box<dyn ErasedGraphValueType>> {
+        self.types.get(name)
+    }
+
+    pub fn all(&self) -> &HashMap<&'static str, Box<dyn ErasedGraphValueType>> {
+        &self.types
+    }
+}
+
+#[derive(Default)]
+pub struct GraphTypeCastersStorage {
     casters: HashMap<&'static str, HashMap<&'static str, Box<dyn ErasedGraphVariableCaster>>>,
 }
 
-impl GraphTypeCasters {
+impl GraphTypeCastersStorage {
     pub fn register<T: GraphVariableCaster + Default>(&mut self) {
         let from = T::FromType::default();
         let to = T::ToType::default();
@@ -780,6 +835,21 @@ impl GraphTypeCasters {
         let to_name = to_type.name();
         let caster = self.casters.get(from_name)?.get(to_name)?;
         Some(caster.cast(&variable.identifier))
+    }
+
+    pub fn can_cast(&self, from: &dyn ErasedGraphValueType, to: &dyn ErasedGraphValueType) -> bool {
+        let from_name = from.name();
+        let to_name = to.name();
+        self.casters
+            .get(from_name)
+            .and_then(|map| map.get(to_name))
+            .is_some()
+    }
+
+    pub fn all(
+        &self,
+    ) -> &HashMap<&'static str, HashMap<&'static str, Box<dyn ErasedGraphVariableCaster>>> {
+        &self.casters
     }
 }
 

@@ -2,15 +2,15 @@ use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, 
 
 use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
-    ErasedGraphNodeCreator, Graph, GraphCompileError,
-    GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphFunctionSignature,
-    GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError,
-    GraphNodeCreator, GraphRenderer, GraphSlotType, GraphTheme,
-    GraphValueType, Literal, GraphVariable, GraphVariableCaster,
+    ErasedGraphNodeCreator, Graph, GraphCompileError, GraphDefaultInputSlot,
+    GraphDefaultOutputSlot, GraphDynamicInstancesStorage, GraphFunctionSignature, GraphLiteral,
+    GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator, GraphRenderer,
+    GraphSlotType, GraphTheme, GraphValueType, GraphVariable, GraphVariableCaster,
     editor::{
         GraphView, GraphViewMessage,
         drawer::{NodeDrawerMessage, node_drawer},
     },
+    serde::SerializableGraph,
 };
 use cyancia_utils::wrapper;
 use cyancia_widgets::{drag_field::DragField, spin_slider::SpinSlider};
@@ -18,57 +18,66 @@ use glam::Vec2;
 use iced::{
     Color, Element,
     Length::Fill,
-    Point, Renderer, Theme,
+    Point, Renderer, Subscription, Theme,
     advanced::{Widget, layout},
+    keyboard::{self, key},
     widget::{Text, column, combo_box, container, pick_list, row, sensor},
 };
 use parking_lot::RwLock;
 
 fn main() {
     iced::application(App::new, App::update, App::view)
+        .subscription(App::subscription)
         .run()
         .unwrap();
 }
 
 pub struct App {
     graph: Graph,
-    creators: Vec<Box<dyn ErasedGraphNodeCreator>>,
 }
 
 #[derive(Debug)]
 pub enum GraphMessage {
+    Keyboard(keyboard::Event),
     View(GraphViewMessage),
     NodeDrawer(NodeDrawerMessage),
 }
 
 impl App {
     pub fn new() -> Self {
+        let external_data = Arc::new(ExternalDataStorage::default());
+        external_data.insert::<FloatType>(ExternalLiteral {
+            name: "MyFloat".to_string(),
+            value: GraphLiteral::new::<FloatType>(0.5),
+        });
+
+        let mut storage = GraphDynamicInstancesStorage::default();
+        storage.types.register::<FloatType>();
+        storage.types.register::<Vector2DType>();
+        storage.creators.register::<AddNode>();
+        storage.creators.register::<Vector2DAddNode>();
+        storage.creators.register::<MathNode>();
+        storage
+            .creators
+            .register_non_default(ExternalNodeCreator::<FloatType> {
+                storage: external_data.clone(),
+                marker: PhantomData,
+            });
+        storage.creators.register::<DummyOutputNode>();
+        storage.casters.register::<Vector2DToFloatCaster>();
+        let storage = Arc::new(storage);
+
         let mut graph = Graph::new(
             GraphFunctionSignature::new("test".into(), FloatType)
                 .with_param::<FloatType>("input1".into()),
+            storage,
         );
         let add1 = graph.add_node(Point::new(0.0, 0.0), AddNode);
         let add2 = graph.add_node(Point::new(200.0, 0.0), AddNode);
         graph.connect_slots_by_index(add1, 0, add2, 0);
-        graph.add_caster::<Vector2DToFloatCaster>();
-        let storage = Arc::new(ExternalDataStorage::default());
-        storage.insert::<FloatType>(ExternalLiteral {
-            name: "MyFloat".to_string(),
-            value: Literal::new::<FloatType>(0.5),
-        });
 
         Self {
             graph,
-            creators: vec![
-                Box::new(AddNode),
-                Box::new(Vector2DAddNode),
-                Box::new(MathNode),
-                Box::new(ExternalNodeCreator::<FloatType> {
-                    storage: storage.clone(),
-                    marker: PhantomData,
-                }),
-                Box::new(DummyOutputNode),
-            ],
             // creators: vec![Box::new(AddNodeCreator)],
             // viewers,
         }
@@ -77,7 +86,7 @@ impl App {
     // pub fn view(&self) -> Element<'_, GraphEditorMessage<GraphMessage>> {
     pub fn view(&self) -> Element<'_, GraphMessage, GraphTheme, GraphRenderer> {
         row![
-            node_drawer(&self.creators).map(GraphMessage::NodeDrawer),
+            node_drawer(self.graph.storage().creators.all().values()).map(GraphMessage::NodeDrawer),
             // column![
             //     Text::new("test1"),
             //     Text::new("test1"),
@@ -113,10 +122,44 @@ impl App {
             },
             GraphMessage::NodeDrawer(message) => match message {
                 NodeDrawerMessage::NodeCreate(creator, point) => {
-                    self.graph
-                        .add_boxed_node(point, self.creators[creator].create());
+                    let creators = &self.graph.storage().creators;
+                    let (_, creator) = creators.all().get_index(creator).unwrap();
+                    self.graph.add_boxed_node(point, creator.create());
                 }
             },
+            GraphMessage::Keyboard(keyboard::Event::KeyPressed {
+                key,
+                modified_key,
+                physical_key,
+                location,
+                modifiers,
+                text,
+                repeat,
+            }) => {
+                if repeat {
+                    return;
+                }
+
+                if modifiers.control() {
+                    if physical_key == key::Physical::Code(key::Code::KeyS) {
+                        let s =
+                            toml::to_string(&SerializableGraph::from_graph(&self.graph)).unwrap();
+                        std::fs::write("test.toml", s).unwrap();
+                    }
+                    if physical_key == key::Physical::Code(key::Code::KeyL) {
+                        let s = std::fs::read_to_string("test.toml").unwrap();
+                        let ser: SerializableGraph = toml::from_str(&s).unwrap();
+                        let (graph, errors) = ser.into_graph(self.graph.storage().clone());
+                        for error in errors {
+                            println!("Deserialization error: {}", error);
+                        }
+                        if let Some(graph) = graph {
+                            self.graph = graph;
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
 
         match self.graph.compile() {
@@ -124,9 +167,13 @@ impl App {
             Err(e) => println!("Code generation failed: {}", e),
         }
     }
+
+    pub fn subscription(&self) -> Subscription<GraphMessage> {
+        keyboard::listen().map(GraphMessage::Keyboard)
+    }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct FloatType;
 
 impl GraphValueType for FloatType {
@@ -162,7 +209,7 @@ impl GraphValueType for FloatType {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Vector2DType;
 
 #[derive(Clone)]
@@ -227,11 +274,11 @@ impl GraphNodeCreator for AddNode {
 }
 
 impl GraphNode for AddNode {
-    fn title(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Add"
     }
 
-    fn title_color(&self) -> Color {
+    fn header_color(&self) -> Color {
         Color::from_rgb8(200, 100, 100)
     }
 
@@ -246,10 +293,7 @@ impl GraphNode for AddNode {
         vec![GraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn generate_code(
-        &self,
-        ctx: GraphNodeCodeGenContext,
-    ) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
@@ -269,11 +313,11 @@ impl GraphNodeCreator for Vector2DAddNode {
 }
 
 impl GraphNode for Vector2DAddNode {
-    fn title(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Vector2D Add"
     }
 
-    fn title_color(&self) -> Color {
+    fn header_color(&self) -> Color {
         Color::from_rgb8(100, 100, 200)
     }
 
@@ -288,10 +332,7 @@ impl GraphNode for Vector2DAddNode {
         vec![GraphDefaultOutputSlot::new::<Vector2DType>("Result")]
     }
 
-    fn generate_code(
-        &self,
-        ctx: GraphNodeCodeGenContext,
-    ) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let output = ctx.get_output::<0>()?;
@@ -299,7 +340,7 @@ impl GraphNode for Vector2DAddNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Vector2DToFloatCaster;
 
 impl GraphVariableCaster for Vector2DToFloatCaster {
@@ -387,11 +428,11 @@ impl GraphNodeCreator for MathNode {
 }
 
 impl GraphNode for MathNode {
-    fn title(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Math"
     }
 
-    fn title_color(&self) -> Color {
+    fn header_color(&self) -> Color {
         Color::from_rgb8(200, 200, 100)
     }
 
@@ -407,10 +448,7 @@ impl GraphNode for MathNode {
         vec![GraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn generate_code(
-        &self,
-        ctx: GraphNodeCodeGenContext,
-    ) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
         let mode = ctx.get_input_raw::<2, MathNodeMode>()?;
@@ -437,7 +475,7 @@ impl ToString for ExternalLiteralId {
 
 pub struct ExternalLiteral {
     pub name: String,
-    pub value: Literal,
+    pub value: GraphLiteral,
 }
 
 #[derive(Default)]
@@ -458,10 +496,7 @@ impl ExternalDataStorage {
         types.entry(TypeId::of::<T>()).or_default().push(id);
     }
 
-    pub fn get<T: GraphValueType>(
-        &self,
-        id: &ExternalLiteralId,
-    ) -> Option<Arc<ExternalLiteral>> {
+    pub fn get<T: GraphValueType>(&self, id: &ExternalLiteralId) -> Option<Arc<ExternalLiteral>> {
         self.contents.read().get(&id).cloned()
     }
 
@@ -491,6 +526,15 @@ impl<T> Clone for ExternalLiteralValue<T> {
 pub struct ExternalLiteralType<T> {
     storage: Arc<ExternalDataStorage>,
     marker: PhantomData<T>,
+}
+
+impl<T> Clone for ExternalLiteralType<T> {
+    fn clone(&self) -> Self {
+        ExternalLiteralType {
+            storage: self.storage.clone(),
+            marker: PhantomData,
+        }
+    }
 }
 
 impl<T: GraphValueType> GraphValueType for ExternalLiteralType<T> {
@@ -557,11 +601,11 @@ impl<T: GraphValueType + Default> GraphNodeCreator for ExternalNodeCreator<T> {
 }
 
 impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
-    fn title(&self) -> &str {
+    fn name(&self) -> &'static str {
         "External"
     }
 
-    fn title_color(&self) -> Color {
+    fn header_color(&self) -> Color {
         Color::from_rgb8(150, 150, 250)
     }
 
@@ -586,10 +630,7 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
         vec![GraphDefaultOutputSlot::new::<FloatType>("Value")]
     }
 
-    fn generate_code(
-        &self,
-        ctx: GraphNodeCodeGenContext,
-    ) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let input = ctx.get_input::<0>()?;
         let output = ctx.get_output::<0>()?;
         Ok(format!("let {} = {};\n", output, input))
@@ -608,11 +649,11 @@ impl GraphNodeCreator for DummyOutputNode {
 }
 
 impl GraphNode for DummyOutputNode {
-    fn title(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Output"
     }
 
-    fn title_color(&self) -> Color {
+    fn header_color(&self) -> Color {
         Color::from_rgb8(100, 200, 200)
     }
 
@@ -624,10 +665,7 @@ impl GraphNode for DummyOutputNode {
         vec![]
     }
 
-    fn generate_code(
-        &self,
-        ctx: GraphNodeCodeGenContext,
-    ) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let input = ctx.get_input::<0>()?;
         Ok(format!("return {};", input))
     }

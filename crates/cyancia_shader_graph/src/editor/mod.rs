@@ -267,8 +267,8 @@ impl<'a> DrawableNode<'a> {
             .map(|slot| empty_slot(slot.data.ty().color(), slot.name, SlotSide::Right));
         let inputs = column(inputs).spacing(2);
         let outputs = column(outputs).spacing(2);
-        let header_color = node.data.title_color();
-        let header = container(text(node.data.title()))
+        let header_color = node.data.header_color();
+        let header = container(text(node.data.name()))
             .style(move |_| container::Style {
                 background: Some(header_color.into()),
                 border: Border {

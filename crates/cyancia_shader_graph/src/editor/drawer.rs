@@ -1,7 +1,7 @@
 use cyancia_widgets::{drag_drop_column::DragDropColumn, drag_field::DragField};
 use iced_core::{Color, Element, Length, Point, Shadow, Theme, Vector};
 use iced_widget::{Column, Text, column, container, text};
-use std::rc::Rc;
+use std::{borrow::Borrow, rc::Rc};
 
 use crate::ErasedGraphNodeCreator;
 
@@ -11,14 +11,14 @@ pub enum NodeDrawerMessage {
 }
 
 pub fn node_drawer<'a, Renderer>(
-    creators: &'a [Box<dyn ErasedGraphNodeCreator>],
+    creators: impl Iterator<Item = impl Borrow<Box<dyn ErasedGraphNodeCreator>>> + 'a,
 ) -> Element<'a, NodeDrawerMessage, Theme, Renderer>
 where
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
 {
     container(
-        DragDropColumn::with_children(creators.iter().map(|c| {
-            Text::new(c.create().title().to_string())
+        DragDropColumn::with_children(creators.map(|c| {
+            Text::new(c.borrow().create().name().to_string())
                 .width(Length::Fill)
                 .into()
         }))
