@@ -28,6 +28,7 @@ use iced_widget::{
     core::{Rectangle, Widget, mouse::Cursor},
     row, text,
 };
+use indexmap::IndexMap;
 
 use crate::{
     ErasedGraphLiteralUpdateMessage, Graph, GraphInputSlotData, GraphNodeData, GraphOutputSlotData,
@@ -135,7 +136,7 @@ pub struct GraphNodeStyle {
 }
 
 pub struct DrawableGraph<'a> {
-    pub nodes: Vec<DrawableNode<'a>>,
+    pub nodes: IndexMap<Id<GraphNodeData>, DrawableNode<'a>>,
     pub slots_positions: HashMap<GraphSlotId, Point>,
     pub slots: HashMap<GraphSlotId, SlotData>,
     pub edges: HashMap<GraphSlotId, DrawableEdge>,
@@ -143,10 +144,10 @@ pub struct DrawableGraph<'a> {
 
 impl<'a> DrawableGraph<'a> {
     pub fn new(graph: &'a Graph) -> Self {
-        let mut nodes = Vec::with_capacity(graph.nodes.len());
+        let mut nodes = IndexMap::with_capacity(graph.nodes.len());
         let mut node_indices = HashMap::with_capacity(graph.nodes.len());
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
-            nodes.push(DrawableNode::new(*id, node, &graph.slots));
+            nodes.insert(*id, DrawableNode::new(*id, node, &graph.slots));
             node_indices.insert(*id, index);
         }
 
@@ -364,7 +365,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
     fn children(&self) -> Vec<Tree> {
         self.graph
             .nodes
-            .iter()
+            .values()
             .map(|node| Tree::new(&node.widget))
             .collect()
     }
@@ -374,7 +375,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             &self
                 .graph
                 .nodes
-                .iter()
+                .values()
                 .map(|n| &n.widget)
                 .collect::<Vec<_>>(),
         );
@@ -401,7 +402,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         let children = self
             .graph
             .nodes
-            .iter_mut()
+            .values_mut()
             .zip(&mut tree.children)
             .map(|(node, tree)| {
                 node.widget
@@ -427,7 +428,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         operation.traverse(&mut |operation| {
             self.graph
                 .nodes
-                .iter_mut()
+                .values_mut()
                 .zip(&mut tree.children)
                 .zip(layout.children())
                 .for_each(|((child, state), layout)| {
@@ -455,7 +456,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         for ((child, tree), layout) in self
             .graph
             .nodes
-            .iter_mut()
+            .values_mut()
             .zip(&mut tree.children)
             .zip(layout.children())
         {
@@ -487,6 +488,12 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     return;
                 };
 
+                if let DragNodeState::Dragging { .. } = state.drag {
+                    state.drag = DragNodeState::Idle;
+                    shell.capture_event();
+                    return;
+                }
+
                 for (slot_id, slot_pos) in &self.graph.slots_positions {
                     let d = slot_pos.distance(cursor);
                     if d < SLOT_PIN_SNAP {
@@ -517,15 +524,12 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
 
                 for (node_index, layout) in layout.children().enumerate() {
                     if layout.bounds().contains(cursor) {
-                        state.drag = DragNodeState::Grabbed {
-                            node_index,
-                            origin: cursor,
-                        };
                         state.selection.selected_nodes.clear();
                         state
                             .selection
                             .selected_nodes
                             .insert(self.graph.nodes[node_index].node_id);
+                        shell.request_redraw();
                         shell.capture_event();
                         return;
                     }
@@ -550,22 +554,16 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
 
                 match state.drag {
                     DragNodeState::Idle => {}
-                    DragNodeState::Grabbed { node_index, origin } => {
-                        if origin.distance(cursor) > 5.0 {
-                            state.drag = DragNodeState::Dragging {
-                                node_index: node_index,
-                                offset: origin - layout.child(node_index).bounds().position(),
-                            };
-                            shell.capture_event();
+                    DragNodeState::Dragging { origin } => {
+                        for selected in &state.selection.selected_nodes {
+                            if let Some(node) = self.graph.nodes.get(selected) {
+                                shell.publish(GraphViewMessage::NodeMoveRequest(
+                                    node.position + (cursor - origin),
+                                    *selected,
+                                ));
+                            }
                         }
-                    }
-                    DragNodeState::Dragging { node_index, offset } => {
-                        let node_id = self.graph.nodes[node_index].node_id;
-                        let relative = cursor - layout.bounds().position();
-                        shell.publish(GraphViewMessage::NodeMoveRequest(
-                            Point::new(relative.x, relative.y) - offset,
-                            node_id,
-                        ));
+                        state.drag = DragNodeState::Dragging { origin: cursor };
                         shell.capture_event();
                     }
                 }
@@ -610,17 +608,6 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     shell.capture_event();
                     shell.request_redraw();
                     return;
-                } else {
-                    state.edge_connect = EdgeConnectState::Idle;
-                }
-
-                match &state.drag {
-                    DragNodeState::Idle => {}
-                    DragNodeState::Grabbed { .. } | DragNodeState::Dragging { .. } => {
-                        state.drag = DragNodeState::Idle;
-                        shell.capture_event();
-                        return;
-                    }
                 }
 
                 if let DragSelectionState::Dragging { origin } = state.selection.state {
@@ -636,9 +623,9 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     };
 
                     state.selection.selected_nodes.clear();
-                    for (node, layout) in self.graph.nodes.iter().zip(layout.children()) {
+                    for (node, layout) in self.graph.nodes.keys().zip(layout.children()) {
                         if selection_rect.intersects(&layout.bounds()) {
-                            state.selection.selected_nodes.insert(node.node_id);
+                            state.selection.selected_nodes.insert(*node);
                         }
                     }
 
@@ -670,6 +657,11 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                             shell.publish(GraphViewMessage::NodeDeleteRequest(*node_id));
                         }
                     }
+                    key::Code::KeyG => {
+                        if let Some(cursor) = cursor.position() {
+                            state.drag = DragNodeState::Dragging { origin: cursor };
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -691,7 +683,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             DragNodeState::Idle => self
                 .graph
                 .nodes
-                .iter()
+                .values()
                 .zip(&tree.children)
                 .zip(layout.children())
                 .map(|((child, tree), layout)| {
@@ -702,9 +694,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 })
                 .max()
                 .unwrap_or_default(),
-            DragNodeState::Grabbed { .. } | DragNodeState::Dragging { .. } => {
-                return mouse::Interaction::Grabbing;
-            }
+            DragNodeState::Dragging { .. } => mouse::Interaction::Hidden,
         }
     }
 
@@ -732,14 +722,9 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         }
 
         for selected in state.selection.selected_nodes.iter() {
-            if let Some((_, layout)) = self
-                .graph
-                .nodes
-                .iter()
-                .zip(layout.children())
-                .find(|(n, _)| &n.node_id == selected)
-            {
+            if let Some((index, _, node)) = self.graph.nodes.get_full(selected) {
                 use iced_core::Renderer;
+                let layout = layout.child(index);
                 renderer.fill_quad(
                     Quad {
                         bounds: layout.bounds().expand(2.0),
@@ -754,7 +739,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         for ((child, tree), layout) in self
             .graph
             .nodes
-            .iter()
+            .values()
             .zip(&tree.children)
             .zip(layout.children())
             .filter(|(_, layout)| layout.bounds().intersects(viewport))
@@ -862,7 +847,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         for ((child, tree), layout) in self
             .graph
             .nodes
-            .iter_mut()
+            .values_mut()
             .zip(&mut tree.children)
             .zip(layout.children())
         {
@@ -897,13 +882,8 @@ struct State {
 enum DragNodeState {
     #[default]
     Idle,
-    Grabbed {
-        node_index: usize,
-        origin: Point,
-    },
     Dragging {
-        node_index: usize,
-        offset: Vector,
+        origin: Point,
     },
 }
 
