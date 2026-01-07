@@ -399,6 +399,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         renderer: &GraphRenderer,
         limits: &layout::Limits,
     ) -> Node {
+        let state = tree.state.downcast_ref::<State>();
         let children = self
             .graph
             .nodes
@@ -409,6 +410,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     .as_widget_mut()
                     .layout(tree, renderer, &Limits::NONE)
                     .translate(Vector::new(node.position.x, node.position.y))
+                    .translate(state.view_translation)
             })
             .collect();
         Node::with_children(
@@ -456,8 +458,8 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 // We need to handle it before children, otherwise, if the drag is started on a interactable child,
                 // the event will get captured and unable to be identified below, and will stuck.
-                if let DragNodeState::Dragging { .. } = state.drag {
-                    state.drag = DragNodeState::Idle;
+                if let DragNodeState::Dragging { .. } = state.node_drag {
+                    state.node_drag = DragNodeState::Idle;
                     shell.capture_event();
                     return;
                 }
@@ -495,6 +497,25 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
 
         const SLOT_PIN_SNAP: f32 = 3.0 * 3.0;
         match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle)) => {
+                let Some(cursor) = cursor.position() else {
+                    return;
+                };
+
+                state.view_drag = ViewDragState::Dragging {
+                    cursor_origin: cursor,
+                    translation_origin: state.view_translation,
+                };
+                shell.capture_event();
+                return;
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Middle)) => {
+                if let ViewDragState::Dragging { .. } = state.view_drag {
+                    state.view_drag = ViewDragState::Idle;
+                    shell.capture_event();
+                    return;
+                }
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 let Some(cursor) = cursor.position() else {
                     return;
@@ -541,50 +562,10 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     }
                 }
 
-                state.selection.state = DragSelectionState::Dragging { origin: cursor };
-                shell.capture_event();
-            }
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                match &state.edge_connect {
-                    EdgeConnectState::Idle => {}
-                    EdgeConnectState::Dragging { .. } => {
-                        shell.request_redraw();
-                        shell.capture_event();
-                        return;
-                    }
-                }
-
-                let Some(cursor) = cursor.position() else {
-                    return;
+                state.selection.state = DragSelectionState::Dragging {
+                    cursor_origin: cursor,
                 };
-
-                match &state.drag {
-                    DragNodeState::Idle => {}
-                    DragNodeState::Dragging {
-                        origin,
-                        node_origin,
-                    } => {
-                        for selected in &state.selection.selected_nodes {
-                            if let Some(node_origin) = node_origin.get(selected) {
-                                shell.publish(GraphViewMessage::NodeMoveRequest(
-                                    *node_origin + (cursor - *origin)
-                                        - Vector::new(layout.position().x, layout.position().y),
-                                    *selected,
-                                ));
-                            }
-                        }
-                        shell.capture_event();
-                    }
-                }
-
-                match state.selection.state {
-                    DragSelectionState::Idle => {}
-                    DragSelectionState::Dragging { .. } => {
-                        shell.request_redraw();
-                        shell.capture_event();
-                        return;
-                    }
-                }
+                shell.capture_event();
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 if let EdgeConnectState::Dragging {
@@ -619,16 +600,16 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     return;
                 }
 
-                if let DragSelectionState::Dragging { origin } = state.selection.state {
+                if let DragSelectionState::Dragging { cursor_origin } = state.selection.state {
                     state.selection.state = DragSelectionState::Idle;
                     let Some(cursor) = cursor.position() else {
                         return;
                     };
                     let selection_rect = Rectangle {
-                        x: origin.x.min(cursor.x),
-                        y: origin.y.min(cursor.y),
-                        width: (origin.x - cursor.x).abs(),
-                        height: (origin.y - cursor.y).abs(),
+                        x: cursor_origin.x.min(cursor.x),
+                        y: cursor_origin.y.min(cursor.y),
+                        width: (cursor_origin.x - cursor.x).abs(),
+                        height: (cursor_origin.y - cursor.y).abs(),
                     };
 
                     state.selection.selected_nodes.clear();
@@ -642,6 +623,64 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     shell.request_redraw();
                     shell.capture_event();
                     return;
+                }
+            }
+            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                match &state.edge_connect {
+                    EdgeConnectState::Idle => {}
+                    EdgeConnectState::Dragging { .. } => {
+                        shell.request_redraw();
+                        shell.capture_event();
+                        return;
+                    }
+                }
+
+                let Some(cursor) = cursor.position() else {
+                    return;
+                };
+
+                match &state.node_drag {
+                    DragNodeState::Idle => {}
+                    DragNodeState::Dragging {
+                        cursor_origin: origin,
+                        node_origin,
+                    } => {
+                        for selected in &state.selection.selected_nodes {
+                            if let Some(node_origin) = node_origin.get(selected) {
+                                shell.publish(GraphViewMessage::NodeMoveRequest(
+                                    *node_origin + (cursor - *origin)
+                                        - Vector::new(layout.position().x, layout.position().y)
+                                        - state.view_translation,
+                                    *selected,
+                                ));
+                            }
+                        }
+                        shell.capture_event();
+                        return;
+                    }
+                }
+
+                match state.selection.state {
+                    DragSelectionState::Idle => {}
+                    DragSelectionState::Dragging { .. } => {
+                        shell.request_redraw();
+                        shell.capture_event();
+                        return;
+                    }
+                }
+
+                match &state.view_drag {
+                    ViewDragState::Idle => {}
+                    ViewDragState::Dragging {
+                        cursor_origin,
+                        translation_origin,
+                    } => {
+                        state.view_translation = *translation_origin + (cursor - *cursor_origin);
+                        shell.capture_event();
+                        shell.invalidate_layout();
+                        shell.request_redraw();
+                        return;
+                    }
                 }
             }
             Event::Keyboard(keyboard::Event::KeyPressed {
@@ -660,6 +699,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     return;
                 };
 
+                // TODO: make them configurable
                 match key {
                     key::Code::Delete => {
                         for node_id in &state.selection.selected_nodes {
@@ -670,8 +710,8 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                         if let Some(cursor) = cursor.position()
                             && !state.selection.selected_nodes.is_empty()
                         {
-                            state.drag = DragNodeState::Dragging {
-                                origin: cursor,
+                            state.node_drag = DragNodeState::Dragging {
+                                cursor_origin: cursor,
                                 node_origin: state
                                     .selection
                                     .selected_nodes
@@ -701,7 +741,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
     ) -> Interaction {
         let state = tree.state.downcast_ref::<State>();
 
-        match state.drag {
+        match state.node_drag {
             DragNodeState::Idle => self
                 .graph
                 .nodes
@@ -830,7 +870,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             renderer.draw_geometry(frame.into_geometry());
         }
 
-        if let DragSelectionState::Dragging { origin } = state.selection.state {
+        if let DragSelectionState::Dragging { cursor_origin } = state.selection.state {
             let Some(cursor_pos) = cursor.position() else {
                 return;
             };
@@ -838,10 +878,10 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             renderer.fill_quad(
                 Quad {
                     bounds: Rectangle {
-                        x: origin.x.min(cursor_pos.x),
-                        y: origin.y.min(cursor_pos.y),
-                        width: (origin.x - cursor_pos.x).abs(),
-                        height: (origin.y - cursor_pos.y).abs(),
+                        x: cursor_origin.x.min(cursor_pos.x),
+                        y: cursor_origin.y.min(cursor_pos.y),
+                        width: (cursor_origin.x - cursor_pos.x).abs(),
+                        height: (cursor_origin.y - cursor_pos.y).abs(),
                     },
                     border: Border::default().width(2.0).color(
                         theme
@@ -895,7 +935,10 @@ impl<'a> From<GraphView<'a>> for Element<'a, GraphViewMessage, GraphTheme, Graph
 
 #[derive(Default)]
 struct State {
-    drag: DragNodeState,
+    view_translation: Vector,
+
+    node_drag: DragNodeState,
+    view_drag: ViewDragState,
     edge_connect: EdgeConnectState,
     selection: NodeSelectionState,
 }
@@ -905,7 +948,7 @@ enum DragNodeState {
     #[default]
     Idle,
     Dragging {
-        origin: Point,
+        cursor_origin: Point,
         node_origin: HashMap<Id<GraphNodeData>, Point>,
     },
 }
@@ -931,6 +974,16 @@ enum DragSelectionState {
     #[default]
     Idle,
     Dragging {
-        origin: Point,
+        cursor_origin: Point,
+    },
+}
+
+#[derive(Default)]
+enum ViewDragState {
+    #[default]
+    Idle,
+    Dragging {
+        cursor_origin: Point,
+        translation_origin: Vector,
     },
 }
