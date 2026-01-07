@@ -758,7 +758,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 .draw(tree, renderer, theme, style, layout, cursor, viewport);
         }
 
-        let mut frame = Frame::new(renderer, layout.bounds().size());
+        let mut frame = Frame::with_bounds(renderer, layout.bounds());
         for (to, edge) in &self.graph.edges {
             let from_pos = self
                 .graph
