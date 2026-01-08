@@ -60,7 +60,7 @@ parking_lot = "0.12"
 futures = "0.3"
 bitflags = "2"
 wgpu = "27"
-glam = { version = "0.30", features = ["encase"] }
+glam = { version = "0.30", features = ["encase", "serde"] }
 dashmap = "6"
 wesl = { version = "0.3", features = ["package"] }
 encase = "0.12"

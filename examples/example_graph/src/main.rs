@@ -3,11 +3,12 @@ use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, 
 use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
     ErasedGraphNodeCreator, Graph, GraphCompileError, GraphDefaultInputSlot,
-    GraphDefaultOutputSlot, GraphDynamicInstancesStorage, GraphFunctionSignature, GraphLiteral,
-    GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator, GraphRenderer,
-    GraphSlotType, GraphTheme, GraphValueType, GraphVariable, GraphVariableCaster,
+    GraphDefaultOutputSlot, GraphDeserializer, GraphDynamicInstancesStorage,
+    GraphFunctionSignature, GraphLiteral, GraphNode, GraphNodeCodeGenContext,
+    GraphNodeCodeGenError, GraphNodeCreator, GraphRenderer, GraphSerializer, GraphSlotType,
+    GraphTheme, GraphValueType, GraphVariable, GraphVariableCaster,
     editor::{GraphView, GraphViewMessage},
-    serde::SerializableGraph,
+    save::SerializableGraph,
 };
 use cyancia_utils::wrapper;
 use cyancia_widgets::{drag_field::DragField, spin_slider::SpinSlider};
@@ -21,6 +22,7 @@ use iced::{
     widget::{Text, column, combo_box, container, pick_list, row, sensor},
 };
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 
 fn main() {
     iced::application(App::new, App::update, App::view)
@@ -50,6 +52,13 @@ impl App {
         let mut storage = GraphDynamicInstancesStorage::default();
         storage.types.register::<FloatType>();
         storage.types.register::<Vector2DType>();
+        storage.types.register::<MathNodeMode>();
+        storage
+            .types
+            .register_non_default(ExternalLiteralType::<FloatType> {
+                storage: external_data.clone(),
+                marker: PhantomData,
+            });
         storage.creators.register::<AddNode>();
         storage.creators.register::<Vector2DAddNode>();
         storage.creators.register::<MathNode>();
@@ -136,14 +145,11 @@ impl App {
 
                 if modifiers.control() {
                     if physical_key == key::Physical::Code(key::Code::KeyS) {
-                        let s =
-                            toml::to_string(&SerializableGraph::from_graph(&self.graph)).unwrap();
-                        std::fs::write("test.toml", s).unwrap();
+                        std::fs::write("test.toml", self.graph.to_toml().unwrap()).unwrap();
                     }
                     if physical_key == key::Physical::Code(key::Code::KeyL) {
                         let s = std::fs::read_to_string("test.toml").unwrap();
-                        let ser: SerializableGraph = toml::from_str(&s).unwrap();
-                        let (graph, errors) = ser.into_graph(self.graph.storage().clone());
+                        let (graph, errors) = Graph::from_toml(self.graph.storage().clone(), &s);
                         for error in errors {
                             println!("Deserialization error: {}", error);
                         }
@@ -350,7 +356,7 @@ impl GraphVariableCaster for Vector2DToFloatCaster {
 #[derive(Default)]
 pub struct MathNode;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum MathNodeMode {
     #[default]
     Add,
@@ -456,7 +462,7 @@ impl GraphNode for MathNode {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ExternalLiteralId {
     pub name: String,
 }
@@ -508,6 +514,28 @@ pub struct ExternalLiteralValue<T> {
     marker: PhantomData<T>,
 }
 
+impl<T> Serialize for ExternalLiteralValue<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.id.serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for ExternalLiteralValue<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let id = Option::<ExternalLiteralId>::deserialize(deserializer)?;
+        Ok(ExternalLiteralValue {
+            id,
+            marker: PhantomData,
+        })
+    }
+}
+
 impl<T> Clone for ExternalLiteralValue<T> {
     fn clone(&self) -> Self {
         ExternalLiteralValue {
@@ -541,7 +569,8 @@ impl<T: GraphValueType> GraphValueType for ExternalLiteralType<T> {
     }
 
     fn name(&self) -> &'static str {
-        "External Data"
+        // TODO make this constant.
+        Box::leak(format!("External {}", std::any::type_name::<T>()).into_boxed_str())
     }
 
     fn wgsl_type(&self) -> Option<&'static str> {

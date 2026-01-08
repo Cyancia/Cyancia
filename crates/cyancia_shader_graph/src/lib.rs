@@ -8,12 +8,15 @@ use cyancia_id::Id;
 use dyn_clone::DynClone;
 use iced_core::{Color, Element, Point};
 use indexmap::IndexMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
 
 pub mod editor;
-pub mod serde;
+pub mod save;
 
 pub type GraphTheme = iced_core::Theme;
 pub type GraphRenderer = iced_wgpu::Renderer;
+pub type GraphSerializer<'a> = toml::Serializer<'a>;
+pub type GraphDeserializer<'a> = toml::de::Deserializer<'a>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GraphCompileError {
@@ -634,7 +637,7 @@ pub struct GraphOutputSlotData {
 }
 
 pub trait GraphValueType: Send + Sync + 'static + DynClone {
-    type AssociatedLiteralType: Send + Sync + 'static;
+    type AssociatedLiteralType: Send + Sync + 'static + Serialize + DeserializeOwned;
     type Message: Send + Sync + 'static;
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
@@ -645,6 +648,18 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer>;
     fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message);
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String>;
+    fn serialize_literal<'a>(
+        &self,
+        data: &Self::AssociatedLiteralType,
+    ) -> Result<toml::Value, toml::ser::Error> {
+        toml::Value::try_from(data)
+    }
+    fn deserialize_literal<'a>(
+        &self,
+        deserializer: toml::Value,
+    ) -> Result<Self::AssociatedLiteralType, <toml::Value as Deserializer<'a>>::Error> {
+        Self::AssociatedLiteralType::deserialize(deserializer)
+    }
 }
 
 #[derive(Debug)]
@@ -668,6 +683,14 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
         message: ErasedGraphLiteralUpdateMessage,
     );
     fn literal_to_code(&self, data: &Box<dyn Any + Send + Sync>) -> Option<String>;
+    fn serialize_literal<'a>(
+        &self,
+        data: &Box<dyn Any + Send + Sync>,
+    ) -> Result<toml::Value, toml::ser::Error>;
+    fn deserialize_literal<'a>(
+        &self,
+        deserializer: toml::Value,
+    ) -> Result<Box<dyn Any + Send + Sync>, <toml::Value as Deserializer<'a>>::Error>;
 }
 
 impl<T: GraphValueType> ErasedGraphValueType for T {
@@ -719,6 +742,24 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
             .expect("Failed to downcast literal.");
         self.literal_to_code(literal)
     }
+
+    fn serialize_literal<'a>(
+        &self,
+        data: &Box<dyn Any + Send + Sync>,
+    ) -> Result<toml::Value, toml::ser::Error> {
+        let literal = data
+            .downcast_ref::<T::AssociatedLiteralType>()
+            .expect("Failed to downcast literal.");
+        self.serialize_literal(literal)
+    }
+
+    fn deserialize_literal<'a>(
+        &self,
+        deserializer: toml::Value,
+    ) -> Result<Box<dyn Any + Send + Sync>, <toml::Value as Deserializer<'a>>::Error> {
+        let literal = self.deserialize_literal(deserializer)?;
+        Ok(Box::new(literal))
+    }
 }
 
 pub struct GraphLiteral {
@@ -730,7 +771,7 @@ impl GraphLiteral {
     pub fn new<T: GraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
         Self {
             value: Box::new(value),
-            ty: Box::new(T::default()),
+            ty: Box::new(T::default()) as Box<dyn ErasedGraphValueType>,
         }
     }
 
@@ -779,7 +820,7 @@ impl GraphVariable {
     pub fn new<T: GraphValueType + Default>(identifier: String) -> Self {
         Self {
             identifier,
-            ty: Box::new(T::default()),
+            ty: Box::new(T::default()) as Box<dyn ErasedGraphValueType>,
         }
     }
 

@@ -3,13 +3,15 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::Ok;
 use cyancia_id::Id;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::IntoDeserializer};
+use toml::ser::Buffer;
 
 use crate::{
     ErasedGraphNodeCreator, ErasedGraphValueType, Graph, GraphDynamicInstancesStorage,
-    GraphFunctionSignature, GraphInputSlotData, GraphNodeData, GraphOutputSlotData, GraphSlots,
-    GraphTypeCastersStorage, GraphVarIdentGenerator, GraphVariable,
+    GraphFunctionSignature, GraphInputSlotData, GraphLiteral, GraphNodeData, GraphOutputSlotData,
+    GraphSerializer, GraphSlots, GraphTypeCastersStorage, GraphVarIdentGenerator, GraphVariable,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -40,20 +42,34 @@ pub enum GraphDeserializeError {
         Id<GraphInputSlotData>,
         Id<GraphOutputSlotData>,
     ),
+    #[error("Failed to deserialize literal data: {0}")]
+    LiteralDeserializeError(toml::de::Error),
+    #[error("Deserialization error: {0}")]
+    DeserializerError(toml::de::Error),
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct SerializableGraph {
-    pub nodes: Vec<SerializableNodeData>,
-    pub inputs: HashMap<Id<GraphInputSlotData>, SerializableInputSlotData>,
-    pub outputs: HashMap<Id<GraphOutputSlotData>, SerializableOutputSlotData>,
-    pub signature: SerializableGraphFunctionSignature,
-    pub ident_generator: SerializableGraphIdentGenerator,
-}
+impl Graph {
+    pub fn to_toml(&self) -> Result<String, anyhow::Error> {
+        let mut buf = Buffer::new();
+        self.serialize(&mut buf)?;
+        Ok(buf.to_string())
+    }
 
-impl SerializableGraph {
-    pub fn from_graph(graph: &Graph) -> Self {
-        let nodes = graph
+    pub fn from_toml(
+        storage: Arc<GraphDynamicInstancesStorage>,
+        s: &str,
+    ) -> (Option<Self>, Vec<GraphDeserializeError>) {
+        let deserializer = match toml::Deserializer::parse(s) {
+            Result::Ok(x) => x,
+            Err(e) => {
+                return (None, vec![GraphDeserializeError::DeserializerError(e)]);
+            }
+        };
+        Self::deserialize(storage, deserializer)
+    }
+
+    pub fn serialize<'a>(&self, buf: &mut Buffer) -> Result<(), anyhow::Error> {
+        let nodes = self
             .nodes
             .iter()
             .map(|(node_id, node)| SerializableNodeData {
@@ -67,21 +83,23 @@ impl SerializableGraph {
             })
             .collect();
 
-        let inputs = graph
-            .slots
-            .inputs
-            .iter()
-            .map(|(id, slot)| {
-                (
-                    *id,
-                    SerializableInputSlotData {
-                        connected: slot.connected,
-                    },
-                )
-            })
-            .collect();
+        let inputs =
+            self.slots
+                .inputs
+                .iter()
+                .try_fold(HashMap::default(), |mut acc, (id, slot)| {
+                    acc.insert(
+                        *id,
+                        SerializableInputSlotData {
+                            connected: slot.connected,
+                            data: slot.data.ty().serialize_literal(&slot.data.value)?,
+                        },
+                    );
 
-        let outputs = graph
+                    Result::<_, anyhow::Error>::Ok(acc)
+                })?;
+
+        let outputs = self
             .slots
             .outputs
             .iter()
@@ -96,11 +114,11 @@ impl SerializableGraph {
             .collect();
 
         let signature = SerializableGraphFunctionSignature {
-            name: graph.signature.name.clone(),
+            name: self.signature.name.clone(),
             ret_type: GraphValueTypeId {
-                name: graph.signature.ret_type.name().to_string(),
+                name: self.signature.ret_type.name().to_string(),
             },
-            params: graph
+            params: self
                 .signature
                 .params
                 .iter()
@@ -114,26 +132,44 @@ impl SerializableGraph {
         };
 
         let ident_generator = SerializableGraphIdentGenerator {
-            counter: graph.ident_generator.counter,
+            counter: self.ident_generator.counter,
         };
 
-        Self {
+        let sg = SerializableGraph {
             nodes,
             inputs,
             outputs,
             signature,
             ident_generator,
-        }
+        };
+
+        let serializer = GraphSerializer::new(buf);
+        sg.serialize(serializer)?;
+        Ok(())
     }
 
-    pub fn into_graph(
-        self,
+    pub fn deserialize<'de>(
         storage: Arc<GraphDynamicInstancesStorage>,
-    ) -> (Option<Graph>, Vec<GraphDeserializeError>) {
-        let mut errors = Vec::new();
+        deserializer: toml::Deserializer<'de>,
+    ) -> (Option<Self>, Vec<GraphDeserializeError>) {
+        let mut rs = (None, Vec::new());
+        let errs = &mut rs.1;
+        let SerializableGraph {
+            nodes,
+            inputs,
+            outputs,
+            signature,
+            ident_generator,
+        } = match SerializableGraph::deserialize(deserializer) {
+            Result::Ok(x) => x,
+            Err(e) => {
+                errs.push(GraphDeserializeError::DeserializerError(e));
+                return rs;
+            }
+        };
 
-        let mut signature_params = Vec::with_capacity(self.signature.params.len());
-        for param in self.signature.params {
+        let mut signature_params = Vec::with_capacity(signature.params.len());
+        for param in signature.params {
             match storage.types.get(&param.ty.name) {
                 Some(t) => {
                     signature_params.push(GraphVariable {
@@ -142,49 +178,43 @@ impl SerializableGraph {
                     });
                 }
                 None => {
-                    return (
-                        None,
-                        with_error(
-                            errors,
-                            GraphDeserializeError::TypeNotFound(param.ty.name.clone()),
-                        ),
-                    );
+                    errs.push(GraphDeserializeError::TypeNotFound(param.ty.name.clone()));
+                    return rs;
                 }
             }
         }
 
+        let ret_type = match storage.types.get(&signature.ret_type.name) {
+            Some(t) => dyn_clone::clone_box(&**t),
+            None => {
+                errs.push(GraphDeserializeError::TypeNotFound(
+                    signature.ret_type.name.clone(),
+                ));
+                return rs;
+            }
+        };
+
         let signature = GraphFunctionSignature {
-            name: self.signature.name,
-            ret_type: match storage.types.get(&self.signature.ret_type.name) {
-                Some(t) => dyn_clone::clone_box(&**t),
-                None => {
-                    return (
-                        None,
-                        with_error(
-                            errors,
-                            GraphDeserializeError::TypeNotFound(
-                                self.signature.ret_type.name.clone(),
-                            ),
-                        ),
-                    );
-                }
-            },
+            name: signature.name,
+            ret_type,
             params: signature_params,
         };
-        let mut inputs = HashMap::with_capacity(self.inputs.len());
-        let mut outputs = HashMap::with_capacity(self.outputs.len());
 
-        let mut nodes = HashMap::with_capacity(self.nodes.len());
-        'node_loop: for node in self.nodes {
+        let mut graph_nodes = HashMap::with_capacity(nodes.len());
+        let mut graph_inputs = HashMap::with_capacity(inputs.len());
+        let mut graph_outputs = HashMap::with_capacity(outputs.len());
+
+        'node_loop: for node in nodes {
             let Some(creator) = storage.creators.get(&node.data.name) else {
-                errors.push(GraphDeserializeError::NodeNotFound(node.data.name.clone()));
+                errs.push(GraphDeserializeError::NodeNotFound(node.data.name.clone()));
                 continue;
             };
 
-            let data = creator.create();
-            let raw_inputs = data.create_inputs();
+            let node_inst = creator.create();
+
+            let raw_inputs = node_inst.create_inputs();
             if raw_inputs.len() != node.inputs.len() {
-                errors.push(GraphDeserializeError::UnmatchedInputSlotCount {
+                errs.push(GraphDeserializeError::UnmatchedInputSlotCount {
                     node: node.id,
                     expected: raw_inputs.len(),
                     found: node.inputs.len(),
@@ -192,11 +222,29 @@ impl SerializableGraph {
                 continue;
             }
             let mut node_inputs = HashMap::with_capacity(raw_inputs.len());
+
             for (index, default) in raw_inputs.into_iter().enumerate() {
                 let id = node.inputs[index];
-                let Some(slot) = self.inputs.get(&id) else {
-                    errors.push(GraphDeserializeError::MissingInputSlot(node.id, id));
+                let Some(slot) = inputs.get(&id) else {
+                    errs.push(GraphDeserializeError::MissingInputSlot(node.id, id));
                     continue 'node_loop;
+                };
+
+                let type_name = default.value.ty().name();
+                let value_type_obj = match storage.types.get(type_name) {
+                    Some(t) => t,
+                    None => {
+                        errs.push(GraphDeserializeError::TypeNotFound(type_name.to_string()));
+                        continue 'node_loop;
+                    }
+                };
+
+                let literal_value = match value_type_obj.deserialize_literal(slot.data.clone()) {
+                    Result::Ok(val) => val,
+                    Err(e) => {
+                        errs.push(GraphDeserializeError::LiteralDeserializeError(e));
+                        continue 'node_loop;
+                    }
                 };
 
                 node_inputs.insert(
@@ -204,16 +252,19 @@ impl SerializableGraph {
                     GraphInputSlotData {
                         node_id: node.id,
                         name: default.name,
-                        data: default.value,
+                        data: GraphLiteral {
+                            value: literal_value,
+                            ty: dyn_clone::clone_box(&**value_type_obj),
+                        },
                         connected: slot.connected,
                         slot_type: default.slot_type,
                     },
                 );
             }
 
-            let raw_outputs = data.create_outputs();
+            let raw_outputs = node_inst.create_outputs();
             if raw_outputs.len() != node.outputs.len() {
-                errors.push(GraphDeserializeError::UnmatchedOutputSlotCount {
+                errs.push(GraphDeserializeError::UnmatchedOutputSlotCount {
                     node: node.id,
                     expected: raw_outputs.len(),
                     found: node.outputs.len(),
@@ -221,10 +272,11 @@ impl SerializableGraph {
                 continue;
             }
             let mut node_outputs = HashMap::with_capacity(raw_outputs.len());
+
             for (index, default) in raw_outputs.into_iter().enumerate() {
                 let id = node.outputs[index];
-                let Some(slot) = self.outputs.get(&id) else {
-                    errors.push(GraphDeserializeError::MissingOutputSlot(node.id, id));
+                let Some(slot) = outputs.get(&id) else {
+                    errs.push(GraphDeserializeError::MissingOutputSlot(node.id, id));
                     continue 'node_loop;
                 };
 
@@ -237,33 +289,32 @@ impl SerializableGraph {
                             identifier: slot.variable_name.clone(),
                             ty: default.ty,
                         },
-                        // Will be done later
                         connected: HashSet::new(),
                     },
                 );
             }
 
-            nodes.insert(
+            graph_nodes.insert(
                 node.id,
                 GraphNodeData {
                     position: node.position.into(),
-                    data,
+                    data: node_inst,
                     inputs: node.inputs.clone(),
                     outputs: node.outputs.clone(),
                 },
             );
-            inputs.extend(node_inputs);
-            outputs.extend(node_outputs);
+            graph_inputs.extend(node_inputs);
+            graph_outputs.extend(node_outputs);
         }
 
-        for (input_id, input) in &mut inputs {
+        for (input_id, input) in &mut graph_inputs {
             if let Some(connected_id) = input.connected {
-                match outputs.entry(connected_id) {
+                match graph_outputs.entry(connected_id) {
                     Entry::Occupied(mut e) => {
                         e.get_mut().connected.insert(*input_id);
                     }
                     Entry::Vacant(_) => {
-                        errors.push(GraphDeserializeError::MissingConnectedSlot(
+                        errs.push(GraphDeserializeError::MissingConnectedSlot(
                             input.node_id,
                             *input_id,
                             connected_id,
@@ -274,29 +325,31 @@ impl SerializableGraph {
             }
         }
 
-        let ident_generator = GraphVarIdentGenerator {
-            counter: self.ident_generator.counter,
-        };
-
-        let graph = Graph {
-            nodes,
-            slots: GraphSlots { inputs, outputs },
+        rs.0 = Some(Graph {
+            nodes: graph_nodes,
+            slots: GraphSlots {
+                inputs: graph_inputs,
+                outputs: graph_outputs,
+            },
             storage,
-            ident_generator,
+            ident_generator: GraphVarIdentGenerator {
+                counter: ident_generator.counter,
+            },
             signature,
             cached_run_order: None,
-        };
+        });
 
-        (Some(graph), errors)
+        return rs;
     }
 }
 
-fn with_error(
-    mut errors: Vec<GraphDeserializeError>,
-    error: GraphDeserializeError,
-) -> Vec<GraphDeserializeError> {
-    errors.push(error);
-    errors
+#[derive(Serialize, Deserialize)]
+pub struct SerializableGraph {
+    pub nodes: Vec<SerializableNodeData>,
+    pub inputs: HashMap<Id<GraphInputSlotData>, SerializableInputSlotData>,
+    pub outputs: HashMap<Id<GraphOutputSlotData>, SerializableOutputSlotData>,
+    pub signature: SerializableGraphFunctionSignature,
+    pub ident_generator: SerializableGraphIdentGenerator,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -321,6 +374,7 @@ pub struct SerializableNodeData {
 #[derive(Serialize, Deserialize)]
 pub struct SerializableInputSlotData {
     pub connected: Option<Id<GraphOutputSlotData>>,
+    pub data: toml::Value,
 }
 
 #[derive(Serialize, Deserialize)]
