@@ -12,6 +12,7 @@ use crate::{
     ErasedGraphNodeCreator, ErasedGraphValueType, Graph, GraphDynamicInstancesStorage,
     GraphFunctionSignature, GraphInputSlotData, GraphLiteral, GraphNodeData, GraphOutputSlotData,
     GraphSerializer, GraphSlots, GraphTypeCastersStorage, GraphVarIdentGenerator, GraphVariable,
+    StatefulGraphNode,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -298,7 +299,7 @@ impl Graph {
                 node.id,
                 GraphNodeData {
                     position: node.position.into(),
-                    data: node_inst,
+                    data: StatefulGraphNode::new(node_inst),
                     inputs: node.inputs.clone(),
                     outputs: node.outputs.clone(),
                 },

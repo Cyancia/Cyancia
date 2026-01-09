@@ -28,18 +28,23 @@ use iced_widget::{
     Renderer, column, container,
     core::{Rectangle, Widget, mouse::Cursor},
     overlay::menu,
-    row, text,
+    row, space, text,
 };
 use indexmap::IndexMap;
 
 use crate::{
-    ErasedGraphLiteralUpdateMessage, Graph, GraphDynamicInstancesStorage, GraphInputSlotData,
-    GraphNode, GraphNodeData, GraphOutputSlotData, GraphRenderer, GraphSlotType, GraphSlots,
+    ErasedGraphLiteralUpdateMessage, ErasedGraphNode, ErasedGraphNodeMessage, Graph,
+    GraphDynamicInstancesStorage, GraphInputSlotData, GraphNode, GraphNodeData,
+    GraphNodeViewContext, GraphOutputSlotData, GraphRenderer, GraphSlotType, GraphSlots,
     GraphTheme,
-    editor::helpers::{SlotSide, empty_slot, valued_slot, valued_slot_unconnectable},
+    editor::{
+        helpers::{SlotSide, empty_slot, output_slot, valued_slot, valued_slot_unconnectable},
+        slot_pin::GraphSlotPinPositionCollection,
+    },
 };
 
 pub mod helpers;
+pub mod slot_pin;
 
 const NODE_WIDTH: f32 = 170.0;
 const NODE_BORDER_RADIUS: f32 = 5.0;
@@ -63,12 +68,12 @@ impl From<Id<GraphOutputSlotData>> for GraphSlotId {
 }
 
 pub enum GraphViewMessage {
-    NodeCreateRequest(Point, Box<dyn GraphNode>),
+    NodeCreateRequest(Point, Box<dyn ErasedGraphNode>),
     NodeMoveRequest(Point, Id<GraphNodeData>),
     NodeDeleteRequest(Id<GraphNodeData>),
     EdgeCreateRequest(Id<GraphOutputSlotData>, Id<GraphInputSlotData>),
     EdgeRemoveRequest(Id<GraphInputSlotData>),
-    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+    NodeUpdate(ErasedGraphNodeMessage),
 }
 
 impl std::fmt::Debug for GraphViewMessage {
@@ -93,7 +98,7 @@ impl std::fmt::Debug for GraphViewMessage {
             Self::EdgeRemoveRequest(arg0) => {
                 f.debug_tuple("EdgeRemoveRequest").field(arg0).finish()
             }
-            Self::LiteralUpdate(arg0) => f.debug_tuple("LiteralUpdate").field(arg0).finish(),
+            Self::NodeUpdate(arg0) => f.debug_tuple("NodeUpdate").finish(),
         }
     }
 }
@@ -191,9 +196,8 @@ pub struct GraphNodeStyle {
 
 pub struct DrawableGraph<'a> {
     pub nodes: IndexMap<Id<GraphNodeData>, DrawableNode<'a>>,
-    pub slots_positions: HashMap<GraphSlotId, Point>,
     pub slots: HashMap<GraphSlotId, SlotData>,
-    pub edges: HashMap<GraphSlotId, DrawableEdge>,
+    pub edges: HashMap<Id<GraphInputSlotData>, DrawableEdge>,
 }
 
 impl<'a> DrawableGraph<'a> {
@@ -232,7 +236,7 @@ impl<'a> DrawableGraph<'a> {
                     geometry::Style::Gradient(g.into())
                 };
 
-                Some(((*to).into(), DrawableEdge { from, style }))
+                Some((*to, DrawableEdge { from, style }))
             })
             .collect();
 
@@ -260,7 +264,6 @@ impl<'a> DrawableGraph<'a> {
 
         Self {
             nodes,
-            slots_positions: HashMap::default(),
             edges,
             slots,
         }
@@ -279,7 +282,7 @@ pub struct DrawableEdge {
 pub struct DrawableNode<'a> {
     pub node_id: Id<GraphNodeData>,
     pub position: Point,
-    pub widget: Element<'a, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>,
+    pub widget: Element<'a, GraphViewMessage, GraphTheme, GraphRenderer>,
     pub input_slots: Vec<Id<GraphInputSlotData>>,
     pub output_slots: Vec<Id<GraphOutputSlotData>>,
     pub unconnectable_slots: HashSet<Id<GraphInputSlotData>>,
@@ -287,38 +290,39 @@ pub struct DrawableNode<'a> {
 
 impl<'a> DrawableNode<'a> {
     pub fn new(node_id: Id<GraphNodeData>, node: &'a GraphNodeData, slots: &GraphSlots) -> Self {
-        let inputs = node
-            .inputs
-            .iter()
-            .filter_map(|slot_id| slots.inputs.get(slot_id).map(|slot| (slot_id, slot)))
-            .filter_map(|(slot_id, slot)| match &slot.connected {
-                Some(_) => Some(empty_slot(
-                    slot.data.ty().color(),
-                    slot.name,
-                    SlotSide::Left,
-                )),
-                None => match slot.slot_type {
-                    GraphSlotType::Normal => Some(valued_slot(
-                        slot.data.ty().color(),
-                        slot.name,
-                        SlotSide::Left,
-                        slot.data.ty().view_literal(*slot_id, &slot.data.value),
-                    )),
-                    GraphSlotType::Unconnectable => Some(valued_slot_unconnectable(
-                        slot.name,
-                        SlotSide::Left,
-                        slot.data.ty().view_literal(*slot_id, &slot.data.value),
-                    )),
-                    GraphSlotType::Hidden => None,
-                },
-            });
-        let outputs = node
-            .outputs
-            .iter()
-            .filter_map(|slot_id| slots.outputs.get(slot_id))
-            .map(|slot| empty_slot(slot.data.ty().color(), slot.name, SlotSide::Right));
-        let inputs = column(inputs).spacing(2);
-        let outputs = column(outputs).spacing(2);
+        // let inputs = node
+        //     .inputs
+        //     .iter()
+        //     .filter_map(|slot_id| slots.inputs.get(slot_id).map(|slot| (slot_id, slot)))
+        //     .filter_map(|(slot_id, slot)| match &slot.connected {
+        //         Some(_) => Some(empty_slot(
+        //             slot.data.ty().color(),
+        //             slot.name,
+        //             SlotSide::Left,
+        //         )),
+        //         None => match slot.slot_type {
+        //             GraphSlotType::Normal => Some(valued_slot(
+        //                 slot.data.ty().color(),
+        //                 slot.name,
+        //                 SlotSide::Left,
+        //                 slot.data.ty().view_literal(*slot_id, &slot.data.value),
+        //             )),
+        //             GraphSlotType::Unconnectable => Some(valued_slot_unconnectable(
+        //                 slot.name,
+        //                 SlotSide::Left,
+        //                 slot.data.ty().view_literal(*slot_id, &slot.data.value),
+        //             )),
+        //             GraphSlotType::Hidden => None,
+        //         },
+        //     });
+        let outputs = column(
+            node.outputs
+                .iter()
+                .filter_map(|slot_id| slots.outputs.get(slot_id).map(|slot| (slot_id, slot)))
+                .map(|(slot_id, slot)| output_slot(*slot_id, slot)),
+        )
+        .spacing(2);
+        // let inputs = column(inputs).spacing(2);
         let header_color = node.data.header_color();
         let header = container(text(node.data.name()))
             .style(move |_| container::Style {
@@ -349,24 +353,14 @@ impl<'a> DrawableNode<'a> {
             .map(|(slot_id, _)| *slot_id)
             .collect();
 
-        // .on_drag(move |btn, point| {
-        //     if btn == mouse::Button::Left
-        //         && let Some(p) = point
-        //     {
-        //         Some(GraphEditorMessage::NodeMoved(p, node_id))
-        //     } else {
-        //         None
-        //     }
-        // });
-
         let widget = container(
             column![
                 header,
-                column![
-                    inputs.width(NODE_WIDTH - 20.0),
-                    row![row![].width(Length::Fill), outputs]
-                ]
-                .padding(5)
+                column!(
+                    node.view(node_id, slots).map(GraphViewMessage::NodeUpdate),
+                    row![space().width(Length::Fill), outputs],
+                )
+                .padding(2),
             ]
             .width(NODE_WIDTH),
         )
@@ -383,34 +377,6 @@ impl<'a> DrawableNode<'a> {
             input_slots: node.inputs.clone(),
             output_slots: node.outputs.clone(),
             unconnectable_slots,
-        }
-    }
-
-    pub fn update_slot_positions(
-        &mut self,
-        node: &Layout<'_>,
-        slot_positions: &mut HashMap<GraphSlotId, Point>,
-    ) {
-        let slots = &node.child(0).child(1);
-        let inputs = slots.child(0).children();
-        let outputs = slots.child(1).child(1).children();
-
-        for (slot_id, layout) in self.input_slots.iter().zip(inputs) {
-            if self.unconnectable_slots.contains(slot_id) {
-                continue;
-            }
-            let pin = &layout.children().next().unwrap();
-            slot_positions.insert(
-                (*slot_id).into(),
-                Point::new(pin.bounds().center_x(), pin.bounds().center_y()),
-            );
-        }
-        for (slot_id, layout) in self.output_slots.iter().zip(outputs) {
-            let pin = &layout.children().rev().next().unwrap();
-            slot_positions.insert(
-                (*slot_id).into(),
-                Point::new(pin.bounds().center_x(), pin.bounds().center_y()),
-            );
         }
     }
 }
@@ -523,6 +489,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             _ => {}
         }
 
+        state.slot_pins.clear();
         let mut messages = Vec::new();
         let mut children_shell = Shell::new(&mut messages);
         for ((child, tree), layout) in self
@@ -543,9 +510,12 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 viewport,
             );
 
-            child.update_slot_positions(&layout, &mut self.graph.slots_positions);
+            child
+                .widget
+                .as_widget_mut()
+                .operate(tree, layout, renderer, &mut state.slot_pins);
         }
-        shell.merge(children_shell, GraphViewMessage::LiteralUpdate);
+        shell.merge(children_shell, |m| m);
 
         if shell.is_event_captured() {
             return;
@@ -577,7 +547,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     return;
                 };
 
-                for (slot_id, slot_pos) in &self.graph.slots_positions {
+                for (slot_id, slot_pos) in state.slot_pins.all() {
                     let d = slot_pos.distance(cursor);
                     if d < SLOT_PIN_SNAP {
                         let resolved_source = match slot_id {
@@ -630,7 +600,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 } = &state.edge_connect
                 {
                     let mut found = None;
-                    for (slot_id, slot_pos) in &self.graph.slots_positions {
+                    for (slot_id, slot_pos) in state.slot_pins.all() {
                         let cursor = cursor.position().unwrap();
                         let d = slot_pos.distance(cursor);
                         if d < SLOT_PIN_SNAP {
@@ -873,11 +843,8 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
 
         let mut frame = Frame::with_bounds(renderer, layout.bounds());
         for (to, edge) in &self.graph.edges {
-            let from_pos = self
-                .graph
-                .slots_positions
-                .get(&GraphSlotId::Output(edge.from));
-            let to_pos = self.graph.slots_positions.get(&(*to).into());
+            let from_pos = state.slot_pins.get_output(&edge.from);
+            let to_pos = state.slot_pins.get_input(to);
             if let (Some(from_pos), Some(to_pos)) = (from_pos, to_pos) {
                 let style = match edge.style {
                     geometry::Style::Solid(color) => color.into(),
@@ -911,7 +878,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             },
             Some(cursor_pos),
         ) = (&state.edge_connect, cursor.position())
-            && let Some(start_pos) = self.graph.slots_positions.get(&resolved_source)
+            && let Some(start_pos) = state.slot_pins.get(&resolved_source)
         {
             frame.stroke(
                 &geometry::Path::line(*start_pos, cursor_pos),
@@ -978,7 +945,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     .as_widget_mut()
                     .overlay(tree, layout, renderer, viewport, translation)
             {
-                return Some(overlay.map(&GraphViewMessage::LiteralUpdate));
+                return Some(overlay);
             }
         }
 
@@ -1028,6 +995,7 @@ struct State {
     view_drag: ViewDragState,
     edge_connect: EdgeConnectState,
     selection: NodeSelectionState,
+    slot_pins: GraphSlotPinPositionCollection,
 }
 
 #[derive(Default)]

@@ -5,10 +5,14 @@ use std::{
 };
 
 use cyancia_id::Id;
+use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 use iced_core::{Color, Element, Point};
+use iced_widget::Column;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
+
+use crate::editor::helpers::input_slot;
 
 pub mod editor;
 pub mod save;
@@ -89,7 +93,7 @@ impl Graph {
     pub fn add_boxed_node(
         &mut self,
         position: Point,
-        node: Box<dyn GraphNode>,
+        node: Box<dyn ErasedGraphNode>,
     ) -> Id<GraphNodeData> {
         let node_id = Id::random();
         let raw_inputs = node.create_inputs();
@@ -134,7 +138,7 @@ impl Graph {
                 position,
                 inputs,
                 outputs,
-                data: node,
+                data: StatefulGraphNode::new(node),
             },
         );
         self.invalidate_cache();
@@ -362,9 +366,9 @@ impl Graph {
         self.cached_run_order = Some(dbg!(run_order));
     }
 
-    pub fn update_literal(&mut self, message: ErasedGraphLiteralUpdateMessage) {
-        if let Some(slot) = self.slots.inputs.get_mut(&message.id) {
-            slot.data.ty.update_literal(&mut slot.data.value, message);
+    pub fn update_node(&mut self, message: ErasedGraphNodeMessage) {
+        if let Some(node) = self.nodes.get_mut(&message.id) {
+            node.update(message, &mut self.slots);
         }
     }
 
@@ -455,28 +459,330 @@ pub trait GraphNodeCreator: 'static {
 }
 
 pub trait ErasedGraphNodeCreator: 'static {
-    fn create(&self) -> Box<dyn GraphNode>;
+    fn create(&self) -> Box<dyn ErasedGraphNode>;
 }
 
 impl<T: GraphNodeCreator> ErasedGraphNodeCreator for T {
-    fn create(&self) -> Box<dyn GraphNode> {
+    fn create(&self) -> Box<dyn ErasedGraphNode> {
         Box::new(self.create())
+    }
+}
+
+pub struct StatefulGraphNode {
+    state: Box<dyn Any + Send + Sync>,
+    data: Box<dyn ErasedGraphNode>,
+}
+
+impl StatefulGraphNode {
+    pub fn new(node: Box<dyn ErasedGraphNode>) -> Self {
+        Self {
+            state: node.default_state(),
+            data: node,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.data.name()
+    }
+
+    pub fn header_color(&self) -> Color {
+        self.data.header_color()
+    }
+
+    pub fn view(
+        &self,
+        node_id: Id<GraphNodeData>,
+        ctx: GraphNodeViewContext,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
+        self.data.view(node_id, &*self.state, ctx)
+    }
+
+    pub fn update(&mut self, message: ErasedGraphNodeMessage, ctx: GraphNodeUpdateContext) {
+        self.data.update(&mut *self.state, message, ctx);
+    }
+
+    pub fn generate_code(
+        &self,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        self.data.generate_code(&*self.state, ctx)
     }
 }
 
 pub struct GraphNodeData {
     pub position: Point,
-    pub data: Box<dyn GraphNode>,
+    pub data: StatefulGraphNode,
     pub inputs: Vec<Id<GraphInputSlotData>>,
     pub outputs: Vec<Id<GraphOutputSlotData>>,
 }
 
+impl GraphNodeData {
+    pub fn view(
+        &self,
+        node_id: Id<GraphNodeData>,
+        slots: &GraphSlots,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
+        self.data.view(
+            node_id,
+            GraphNodeViewContext {
+                inputs: &self.inputs,
+                slots,
+            },
+        )
+    }
+
+    pub fn update(&mut self, message: ErasedGraphNodeMessage, slots: &mut GraphSlots) {
+        self.data.update(
+            message,
+            GraphNodeUpdateContext {
+                inputs: &self.inputs,
+                slots,
+            },
+        );
+    }
+}
+
+pub struct GraphNodeViewContext<'a> {
+    inputs: &'a [Id<GraphInputSlotData>],
+    slots: &'a GraphSlots,
+}
+
+impl GraphNodeViewContext<'_> {
+    pub fn get_input(&self, index: usize) -> Option<&GraphInputSlotData> {
+        let slot_id = self.inputs.get(index)?;
+        self.slots.get_input(slot_id)
+    }
+
+    pub fn view_input(
+        &self,
+        index: usize,
+    ) -> Option<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
+        let slot_id = self.inputs.get(index)?;
+        let slot = self.slots.get_input(slot_id)?;
+        Some(input_slot(*slot_id, slot))
+    }
+
+    pub fn view_all_inputs(
+        &self,
+    ) -> Vec<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
+        let mut e = Vec::with_capacity(self.inputs.len());
+        for id in self.inputs {
+            if let Some(slot) = self.slots.get_input(id) {
+                e.push(input_slot(*id, slot));
+            }
+        }
+        e
+    }
+
+    pub fn input_len(&self) -> usize {
+        self.inputs.len()
+    }
+}
+pub struct GraphNodeUpdateContext<'a> {
+    inputs: &'a [Id<GraphInputSlotData>],
+    slots: &'a mut GraphSlots,
+}
+
+impl GraphNodeUpdateContext<'_> {
+    pub fn get_input(&self, index: usize) -> Option<&GraphInputSlotData> {
+        let slot_id = self.inputs.get(index)?;
+        self.slots.get_input(slot_id)
+    }
+
+    pub fn get_input_mut(&mut self, index: usize) -> Option<&mut GraphInputSlotData> {
+        let slot_id = self.inputs.get(index)?;
+        self.slots.inputs.get_mut(slot_id)
+    }
+
+    pub fn update_literal(&mut self, message: ErasedGraphLiteralUpdateMessage) {
+        let Some(slot) = self.slots.inputs.get_mut(&message.id) else {
+            return;
+        };
+
+        slot.data.ty.update_literal(&mut slot.data.value, message);
+    }
+}
+
 pub trait GraphNode: Send + Sync + 'static {
+    type State: Send + Sync + 'static;
+    type Message: Send + Sync + 'static;
+    fn name(&self) -> &'static str;
+    fn default_state(&self) -> Self::State;
+    fn header_color(&self) -> Color;
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
+    fn view_body(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer>;
+    fn update_body(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        ctx: GraphNodeUpdateContext,
+    );
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError>;
+}
+
+pub trait StatelessCommonGraphNode: Send + Sync + 'static {
     fn name(&self) -> &'static str;
     fn header_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError>;
+}
+
+impl<T: StatelessCommonGraphNode> GraphNode for T {
+    type State = ();
+
+    type Message = ErasedGraphLiteralUpdateMessage;
+
+    fn name(&self) -> &'static str {
+        self.name()
+    }
+
+    fn default_state(&self) -> Self::State {
+        ()
+    }
+
+    fn header_color(&self) -> Color {
+        self.header_color()
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        self.create_inputs()
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        self.create_outputs()
+    }
+
+    fn view_body(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_inputs())
+            .spacing(2)
+            .into()
+    }
+
+    fn update_body(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        ctx.update_literal(message);
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        self.generate_code(ctx)
+    }
+}
+
+pub struct ErasedGraphNodeMessage {
+    pub inner: Box<dyn Any + Send + Sync>,
+    pub id: Id<GraphNodeData>,
+}
+
+pub trait ErasedGraphNode: Send + Sync + 'static {
+    fn name(&self) -> &'static str;
+    fn default_state(&self) -> Box<dyn Any + Send + Sync>;
+    fn header_color(&self) -> Color;
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
+    fn view(
+        &self,
+        node_id: Id<GraphNodeData>,
+        state: &dyn Any,
+        ctx: GraphNodeViewContext,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer>;
+    fn update(
+        &self,
+        state: &mut dyn Any,
+        message: ErasedGraphNodeMessage,
+        ctx: GraphNodeUpdateContext,
+    );
+    fn generate_code(
+        &self,
+        state: &dyn Any,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError>;
+}
+
+impl<T: GraphNode> ErasedGraphNode for T {
+    fn name(&self) -> &'static str {
+        self.name()
+    }
+
+    fn default_state(&self) -> Box<dyn Any + Send + Sync> {
+        Box::new(self.default_state())
+    }
+
+    fn header_color(&self) -> Color {
+        self.header_color()
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        self.create_inputs()
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        self.create_outputs()
+    }
+
+    fn view(
+        &self,
+        node_id: Id<GraphNodeData>,
+        state: &dyn Any,
+        ctx: GraphNodeViewContext,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
+        let state = state
+            .downcast_ref::<T::State>()
+            .expect("Failed to downcast node state.");
+        self.view_body(state, ctx)
+            .map(move |msg| ErasedGraphNodeMessage {
+                inner: Box::new(msg),
+                id: node_id,
+            })
+    }
+
+    fn update(
+        &self,
+        state: &mut dyn Any,
+        message: ErasedGraphNodeMessage,
+        ctx: GraphNodeUpdateContext,
+    ) {
+        let state = state
+            .downcast_mut::<T::State>()
+            .expect("Failed to downcast node state.");
+        let msg = message
+            .inner
+            .downcast::<T::Message>()
+            .expect("Failed to downcast node message.");
+        self.update_body(state, *msg, ctx);
+    }
+
+    fn generate_code(
+        &self,
+        state: &dyn Any,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let state = state
+            .downcast_ref::<T::State>()
+            .expect("Failed to downcast node state.");
+        self.generate_code(state, ctx)
+    }
 }
 
 pub struct GraphNodeCodeGenContext<'a> {
@@ -638,7 +944,7 @@ pub struct GraphOutputSlotData {
 
 pub trait GraphValueType: Send + Sync + 'static + DynClone {
     type AssociatedLiteralType: Send + Sync + 'static + Serialize + DeserializeOwned;
-    type Message: Send + Sync + 'static;
+    type Message: GraphLiteralUpdateMessage;
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
     fn wgsl_type(&self) -> Option<&'static str>;
@@ -662,10 +968,31 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
     }
 }
 
-#[derive(Debug)]
+pub trait GraphLiteralUpdateMessage: DynClone + Send + Sync + 'static + Downcast {}
+
+impl<T: DynClone + Send + Sync + 'static> GraphLiteralUpdateMessage for T {}
+downcast_rs::impl_downcast!(GraphLiteralUpdateMessage);
+
 pub struct ErasedGraphLiteralUpdateMessage {
-    pub inner: Box<dyn Any + Send + Sync>,
+    pub inner: Box<dyn GraphLiteralUpdateMessage>,
     pub id: Id<GraphInputSlotData>,
+}
+
+impl std::fmt::Debug for ErasedGraphLiteralUpdateMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ErasedGraphLiteralUpdateMessage")
+            .field("id", &self.id)
+            .finish()
+    }
+}
+
+impl Clone for ErasedGraphLiteralUpdateMessage {
+    fn clone(&self) -> Self {
+        Self {
+            inner: dyn_clone::clone_box(&*self.inner),
+            id: self.id.clone(),
+        }
+    }
 }
 
 pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
@@ -729,10 +1056,12 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
         let literal = data
             .downcast_mut::<T::AssociatedLiteralType>()
             .expect("Failed to downcast literal.");
-        let msg = message
-            .inner
-            .downcast::<T::Message>()
-            .expect("Failed to downcast update message.");
+        let msg = match message.inner.downcast::<T::Message>() {
+            Ok(m) => m,
+            Err(_) => {
+                unreachable!("Failed to downcast literal update message.");
+            }
+        };
         self.update_literal(literal, *msg);
     }
 
@@ -842,13 +1171,13 @@ impl GraphNodeCreatorStorage {
     pub fn register<T: GraphNodeCreator + Default>(&mut self) {
         let node = T::default().create();
         let creator = Box::new(T::default());
-        self.creators.insert(node.name(), creator);
+        self.creators.insert(GraphNode::name(&node), creator);
     }
 
     pub fn register_non_default<T: GraphNodeCreator>(&mut self, creator: T) {
         let node = creator.create();
         let creator = Box::new(creator);
-        self.creators.insert(node.name(), creator);
+        self.creators.insert(GraphNode::name(&node), creator);
     }
 
     pub fn get(&self, name: &str) -> Option<&Box<dyn ErasedGraphNodeCreator>> {

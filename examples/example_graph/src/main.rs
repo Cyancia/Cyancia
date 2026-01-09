@@ -1,12 +1,14 @@
 use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
 
+use anyhow::anyhow;
 use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
-    ErasedGraphNodeCreator, Graph, GraphCompileError, GraphDefaultInputSlot,
-    GraphDefaultOutputSlot, GraphDeserializer, GraphDynamicInstancesStorage,
+    ErasedGraphLiteralUpdateMessage, ErasedGraphNodeCreator, Graph, GraphCompileError,
+    GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphDeserializer, GraphDynamicInstancesStorage,
     GraphFunctionSignature, GraphLiteral, GraphNode, GraphNodeCodeGenContext,
-    GraphNodeCodeGenError, GraphNodeCreator, GraphRenderer, GraphSerializer, GraphSlotType,
-    GraphTheme, GraphValueType, GraphVariable, GraphVariableCaster,
+    GraphNodeCodeGenError, GraphNodeCreator, GraphNodeUpdateContext, GraphNodeViewContext,
+    GraphRenderer, GraphSerializer, GraphSlotType, GraphTheme, GraphValueType, GraphVariable,
+    GraphVariableCaster, StatelessCommonGraphNode,
     editor::{GraphView, GraphViewMessage},
     save::SerializableGraph,
 };
@@ -120,14 +122,14 @@ impl App {
                 GraphViewMessage::EdgeRemoveRequest(id) => {
                     self.graph.disconnect_slot(id);
                 }
-                GraphViewMessage::LiteralUpdate(message) => {
-                    self.graph.update_literal(message);
-                }
                 GraphViewMessage::NodeDeleteRequest(id) => {
                     self.graph.delete_node(&id);
                 }
                 GraphViewMessage::NodeCreateRequest(point, node) => {
                     self.graph.add_boxed_node(point, node);
+                }
+                GraphViewMessage::NodeUpdate(message) => {
+                    self.graph.update_node(message);
                 }
             },
             GraphMessage::Keyboard(keyboard::Event::KeyPressed {
@@ -273,7 +275,7 @@ impl GraphNodeCreator for AddNode {
     }
 }
 
-impl GraphNode for AddNode {
+impl StatelessCommonGraphNode for AddNode {
     fn name(&self) -> &'static str {
         "Add"
     }
@@ -312,7 +314,7 @@ impl GraphNodeCreator for Vector2DAddNode {
     }
 }
 
-impl GraphNode for Vector2DAddNode {
+impl StatelessCommonGraphNode for Vector2DAddNode {
     fn name(&self) -> &'static str {
         "Vector2D Add"
     }
@@ -427,7 +429,17 @@ impl GraphNodeCreator for MathNode {
     }
 }
 
+#[derive(Clone)]
+pub enum MathNodeMessage {
+    ModeChanged(MathNodeMode),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
 impl GraphNode for MathNode {
+    type State = MathNodeMode;
+
+    type Message = MathNodeMessage;
+
     fn name(&self) -> &'static str {
         "Math"
     }
@@ -440,7 +452,6 @@ impl GraphNode for MathNode {
         vec![
             GraphDefaultInputSlot::new::<FloatType>("A", 0.0),
             GraphDefaultInputSlot::new::<FloatType>("B", 0.0),
-            GraphDefaultInputSlot::unconnectable::<MathNodeMode>("Mode", MathNodeMode::Add),
         ]
     }
 
@@ -448,17 +459,65 @@ impl GraphNode for MathNode {
         vec![GraphDefaultOutputSlot::new::<FloatType>("Result")]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let a = ctx.get_input::<0>()?;
         let b = ctx.get_input::<1>()?;
-        let mode = ctx.get_input_raw::<2, MathNodeMode>()?;
         let output = ctx.get_output::<0>()?;
-        Ok(match mode {
+        Ok(match state {
             MathNodeMode::Add => format!("let {} = {} + {};\n", output, a, b),
             MathNodeMode::Subtract => format!("let {} = {} - {};\n", output, a, b),
             MathNodeMode::Multiply => format!("let {} = {} * {};\n", output, a, b),
             MathNodeMode::Divide => format!("let {} = {} / {};\n", output, a, b),
         })
+    }
+
+    fn default_state(&self) -> Self::State {
+        MathNodeMode::Add
+    }
+
+    fn view_body(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = column![];
+
+        column = column.push(pick_list(
+            vec![
+                MathNodeMode::Add,
+                MathNodeMode::Subtract,
+                MathNodeMode::Multiply,
+                MathNodeMode::Divide,
+            ],
+            Some(*state),
+            |mode| MathNodeMessage::ModeChanged(mode),
+        ));
+
+        column
+            .extend(
+                ctx.view_all_inputs()
+                    .into_iter()
+                    .map(|e| e.map(|m| MathNodeMessage::LiteralUpdate(m))),
+            )
+            .into()
+    }
+
+    fn update_body(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            MathNodeMessage::ModeChanged(mode) => *state = mode,
+            MathNodeMessage::LiteralUpdate(m) => {
+                ctx.update_literal(m);
+            }
+        }
     }
 }
 
@@ -623,7 +682,17 @@ impl<T: GraphValueType + Default> GraphNodeCreator for ExternalNodeCreator<T> {
     }
 }
 
+#[derive(Clone)]
+pub enum ExternalNodeMessage {
+    IdChanged(ExternalLiteralId),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
 impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
+    type State = ExternalLiteralValue<T>;
+
+    type Message = ExternalNodeMessage;
+
     fn name(&self) -> &'static str {
         "External"
     }
@@ -633,30 +702,75 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
     }
 
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new_non_default::<
-            ExternalLiteralType<T>,
-        >(
-            "Id",
-            ExternalLiteralValue {
-                id: None,
-                marker: PhantomData,
-            },
-            ExternalLiteralType {
-                storage: self.storage.clone(),
-                marker: PhantomData,
-            },
-            GraphSlotType::Unconnectable,
-        )]
+        vec![]
     }
 
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<FloatType>("Value")]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
-        let input = ctx.get_input::<0>()?;
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let id = state
+            .id
+            .as_ref()
+            .ok_or(anyhow!("No external literal selected"))?;
+        let literal = self
+            .storage
+            .get::<T>(id)
+            .ok_or(anyhow!("External literal not found"))?;
+        let code = literal
+            .value
+            .to_code()
+            .ok_or(anyhow!("Cannot convert literal to code"))?;
         let output = ctx.get_output::<0>()?;
-        Ok(format!("let {} = {};\n", output, input))
+        Ok(format!("let {} = {};\n", output, code))
+    }
+
+    fn default_state(&self) -> Self::State {
+        ExternalLiteralValue {
+            id: None,
+            marker: PhantomData,
+        }
+    }
+
+    fn view_body(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = column![];
+
+        column = column.push(pick_list(
+            self.storage.all_of_type::<T>(),
+            state.id.clone(),
+            |id| ExternalNodeMessage::IdChanged(id),
+        ));
+
+        column
+            .extend(
+                ctx.view_all_inputs()
+                    .into_iter()
+                    .map(|e| e.map(|m| ExternalNodeMessage::LiteralUpdate(m))),
+            )
+            .into()
+    }
+
+    fn update_body(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            ExternalNodeMessage::IdChanged(id) => state.id = Some(id),
+            ExternalNodeMessage::LiteralUpdate(m) => {
+                ctx.update_literal(m);
+            }
+        }
     }
 }
 
@@ -671,7 +785,7 @@ impl GraphNodeCreator for DummyOutputNode {
     }
 }
 
-impl GraphNode for DummyOutputNode {
+impl StatelessCommonGraphNode for DummyOutputNode {
     fn name(&self) -> &'static str {
         "Output"
     }

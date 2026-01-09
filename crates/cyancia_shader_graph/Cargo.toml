@@ -19,3 +19,4 @@ serde.workspace = true
 dyn-clone.workspace = true
 indexmap.workspace = true
 toml.workspace = true
+downcast-rs.workspace = true

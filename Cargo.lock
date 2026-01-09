@@ -1110,6 +1110,7 @@ dependencies = [
  "cyancia_id",
  "cyancia_utils",
  "cyancia_widgets",
+ "downcast-rs 2.0.2",
  "dyn-clone",
  "iced_core",
  "iced_graphics",
@@ -1438,6 +1439,7 @@ dependencies = [
 name = "example_graph"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cyancia_id",
  "cyancia_shader_graph",
  "cyancia_utils",
@@ -2072,8 +2074,17 @@ dependencies = [
  "bytes",
  "iced_core",
  "iced_futures",
+ "iced_selector",
  "raw-window-handle",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "iced_selector"
+version = "0.14.0"
+source = "git+https://github.com/443eb9/iced.git?branch=0.14#5fb9e9eea6664062ef4e644653ba339926ff01f5"
+dependencies = [
+ "iced_core",
 ]
 
 [[package]]
