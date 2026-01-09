@@ -45,6 +45,8 @@ pub enum GraphDeserializeError {
     ),
     #[error("Failed to deserialize literal data: {0}")]
     LiteralDeserializeError(toml::de::Error),
+    #[error("Failed to deserialize node state: {0}")]
+    NodeStateDeserializeError(toml::de::Error),
     #[error("Deserialization error: {0}")]
     DeserializerError(toml::de::Error),
 }
@@ -73,16 +75,20 @@ impl Graph {
         let nodes = self
             .nodes
             .iter()
-            .map(|(node_id, node)| SerializableNodeData {
-                id: *node_id,
-                position: node.position.into(),
-                inputs: node.inputs.clone(),
-                outputs: node.outputs.clone(),
-                data: GraphNodeTypeId {
-                    name: node.data.name().to_string(),
-                },
-            })
-            .collect();
+            .try_fold(Vec::new(), |mut acc, (node_id, node)| {
+                acc.push(SerializableNodeData {
+                    id: *node_id,
+                    position: node.position.into(),
+                    inputs: node.inputs.clone(),
+                    outputs: node.outputs.clone(),
+                    data: GraphNodeTypeId {
+                        name: node.data.name().to_string(),
+                    },
+                    state: node.data.serialize_state()?,
+                });
+
+                Ok(acc)
+            })?;
 
         let inputs =
             self.slots
@@ -295,11 +301,20 @@ impl Graph {
                 );
             }
 
+            let mut data = StatefulGraphNode::new(node_inst);
+            match data.deserialize_state(node.state) {
+                Result::Ok(_) => {}
+                Err(e) => {
+                    errs.push(GraphDeserializeError::NodeStateDeserializeError(e));
+                    continue 'node_loop;
+                }
+            }
+
             graph_nodes.insert(
                 node.id,
                 GraphNodeData {
                     position: node.position.into(),
-                    data: StatefulGraphNode::new(node_inst),
+                    data,
                     inputs: node.inputs.clone(),
                     outputs: node.outputs.clone(),
                 },
@@ -370,6 +385,7 @@ pub struct SerializableNodeData {
     pub position: [f32; 2],
     pub inputs: Vec<Id<GraphInputSlotData>>,
     pub outputs: Vec<Id<GraphOutputSlotData>>,
+    pub state: toml::Value,
 }
 
 #[derive(Serialize, Deserialize)]

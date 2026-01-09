@@ -507,6 +507,16 @@ impl StatefulGraphNode {
     ) -> Result<String, GraphNodeCodeGenError> {
         self.data.generate_code(&*self.state, ctx)
     }
+
+    pub fn serialize_state(&self) -> Result<toml::Value, toml::ser::Error> {
+        self.data.serialize_state(&*self.state)
+    }
+
+    pub fn deserialize_state(&mut self, value: toml::Value) -> Result<(), toml::de::Error> {
+        let state = self.data.deserialize_state(value)?;
+        self.state = state;
+        Ok(())
+    }
 }
 
 pub struct GraphNodeData {
@@ -604,7 +614,7 @@ impl GraphNodeUpdateContext<'_> {
 }
 
 pub trait GraphNode: Send + Sync + 'static {
-    type State: Send + Sync + 'static;
+    type State: Send + Sync + 'static + Serialize + DeserializeOwned;
     type Message: Send + Sync + 'static;
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Self::State;
@@ -627,6 +637,18 @@ pub trait GraphNode: Send + Sync + 'static {
         state: &Self::State,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError>;
+    fn serialize_state(&self, state: &Self::State) -> Result<toml::Value, toml::ser::Error> {
+        toml::Value::try_from(state)
+    }
+    fn deserialize_state(&self, value: toml::Value) -> Result<Self::State, toml::de::Error> {
+        Self::State::deserialize(value)
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct StatelessState {
+    #[serde(skip)]
+    _private: (),
 }
 
 pub trait StatelessCommonGraphNode: Send + Sync + 'static {
@@ -638,7 +660,7 @@ pub trait StatelessCommonGraphNode: Send + Sync + 'static {
 }
 
 impl<T: StatelessCommonGraphNode> GraphNode for T {
-    type State = ();
+    type State = StatelessState;
 
     type Message = ErasedGraphLiteralUpdateMessage;
 
@@ -647,7 +669,7 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
     }
 
     fn default_state(&self) -> Self::State {
-        ()
+        StatelessState::default()
     }
 
     fn header_color(&self) -> Color {
@@ -718,6 +740,11 @@ pub trait ErasedGraphNode: Send + Sync + 'static {
         state: &dyn Any,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError>;
+    fn serialize_state(&self, state: &dyn Any) -> Result<toml::Value, toml::ser::Error>;
+    fn deserialize_state(
+        &self,
+        value: toml::Value,
+    ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error>;
 }
 
 impl<T: GraphNode> ErasedGraphNode for T {
@@ -782,6 +809,21 @@ impl<T: GraphNode> ErasedGraphNode for T {
             .downcast_ref::<T::State>()
             .expect("Failed to downcast node state.");
         self.generate_code(state, ctx)
+    }
+
+    fn serialize_state(&self, state: &dyn Any) -> Result<toml::Value, toml::ser::Error> {
+        let state = state
+            .downcast_ref::<T::State>()
+            .expect("Failed to downcast node state.");
+        self.serialize_state(state)
+    }
+
+    fn deserialize_state(
+        &self,
+        value: toml::Value,
+    ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error> {
+        let state = self.deserialize_state(value)?;
+        Ok(Box::new(state))
     }
 }
 
