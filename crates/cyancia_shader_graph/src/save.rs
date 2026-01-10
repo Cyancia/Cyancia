@@ -9,10 +9,13 @@ use serde::{Deserialize, Serialize, de::IntoDeserializer};
 use toml::ser::Buffer;
 
 use crate::{
-    ErasedGraphNodeCreator, ErasedGraphValueType, Graph, GraphDynamicInstancesStorage,
-    GraphFunctionSignature, GraphInputSlotData, GraphLiteral, GraphNodeData, GraphOutputSlotData,
-    GraphSerializer, GraphSlots, GraphTypeCastersStorage, GraphVarIdentGenerator, GraphVariable,
-    StatefulGraphNode,
+    GraphSerializer,
+    graph::{
+        Graph, GraphDynamicInstancesStorage, GraphFunctionSignature,
+        node::{GraphNodeData, StatefulGraphNode},
+        slot::{GraphInputSlotData, GraphOutputSlotData, GraphSlots},
+        variable::{GraphLiteral, GraphVarIdentGenerator, GraphVariable},
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -99,7 +102,7 @@ impl Graph {
                         *id,
                         SerializableInputSlotData {
                             connected: slot.connected,
-                            data: slot.data.ty().serialize_literal(&slot.data.value)?,
+                            data: slot.data.ty().serialize_literal(slot.data.value())?,
                         },
                     );
 
@@ -121,13 +124,13 @@ impl Graph {
             .collect();
 
         let signature = SerializableGraphFunctionSignature {
-            name: self.signature.name.clone(),
+            name: self.signature.name().to_string(),
             ret_type: GraphValueTypeId {
-                name: self.signature.ret_type.name().to_string(),
+                name: self.signature.ret_type().name().to_string(),
             },
             params: self
                 .signature
-                .params
+                .params()
                 .iter()
                 .map(|param| SerializableGraphVariable {
                     identifier: param.identifier().to_string(),
@@ -139,7 +142,7 @@ impl Graph {
         };
 
         let ident_generator = SerializableGraphIdentGenerator {
-            counter: self.ident_generator.counter,
+            counter: self.ident_generator.counter(),
         };
 
         let sg = SerializableGraph {
@@ -179,10 +182,10 @@ impl Graph {
         for param in signature.params {
             match storage.types.get(&param.ty.name) {
                 Some(t) => {
-                    signature_params.push(GraphVariable {
-                        identifier: param.identifier.clone(),
-                        ty: dyn_clone::clone_box(&**t),
-                    });
+                    signature_params.push(GraphVariable::new_boxed(
+                        param.identifier.clone(),
+                        dyn_clone::clone_box(&**t),
+                    ));
                 }
                 None => {
                     errs.push(GraphDeserializeError::TypeNotFound(param.ty.name.clone()));
@@ -201,11 +204,8 @@ impl Graph {
             }
         };
 
-        let signature = GraphFunctionSignature {
-            name: signature.name,
-            ret_type,
-            params: signature_params,
-        };
+        let signature =
+            GraphFunctionSignature::new_full(signature.name, ret_type, signature_params);
 
         let mut graph_nodes = HashMap::with_capacity(nodes.len());
         let mut graph_inputs = HashMap::with_capacity(inputs.len());
@@ -259,10 +259,10 @@ impl Graph {
                     GraphInputSlotData {
                         node_id: node.id,
                         name: default.name,
-                        data: GraphLiteral {
-                            value: literal_value,
-                            ty: dyn_clone::clone_box(&**value_type_obj),
-                        },
+                        data: GraphLiteral::new_boxed(
+                            literal_value,
+                            dyn_clone::clone_box(&**value_type_obj),
+                        ),
                         connected: slot.connected,
                         slot_type: default.slot_type,
                     },
@@ -292,10 +292,7 @@ impl Graph {
                     GraphOutputSlotData {
                         node_id: node.id,
                         name: default.name,
-                        data: GraphVariable {
-                            identifier: slot.variable_name.clone(),
-                            ty: default.ty,
-                        },
+                        data: GraphVariable::new_boxed(slot.variable_name.clone(), default.ty),
                         connected: HashSet::new(),
                     },
                 );
@@ -348,9 +345,7 @@ impl Graph {
                 outputs: graph_outputs,
             },
             storage,
-            ident_generator: GraphVarIdentGenerator {
-                counter: ident_generator.counter,
-            },
+            ident_generator: GraphVarIdentGenerator::new(ident_generator.counter),
             signature,
             cached_run_order: None,
         });

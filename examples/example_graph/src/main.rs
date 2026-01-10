@@ -3,14 +3,20 @@ use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, 
 use anyhow::anyhow;
 use cyancia_id::{Id, UntypedId};
 use cyancia_shader_graph::{
-    ErasedGraphLiteralUpdateMessage, ErasedGraphNodeCreator, Graph, GraphCompileError,
-    GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphDeserializer, GraphDynamicInstancesStorage,
-    GraphFunctionSignature, GraphLiteral, GraphNode, GraphNodeCodeGenContext,
-    GraphNodeCodeGenError, GraphNodeCreator, GraphNodeUpdateContext, GraphNodeViewContext,
-    GraphRenderer, GraphSerializer, GraphSlotType, GraphTheme, GraphValueType, GraphVariable,
-    GraphVariableCaster, StatelessCommonGraphNode,
+    GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
-    save::SerializableGraph,
+    graph::{
+        Graph, GraphDynamicInstancesStorage, GraphFunctionSignature,
+        node::{
+            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator,
+            GraphNodeUpdateContext, GraphNodeViewContext, StatelessCommonGraphNode,
+        },
+        slot::{
+            ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
+            GraphValueType,
+        },
+        variable::{GraphLiteral, GraphVariableCaster},
+    },
 };
 use cyancia_utils::wrapper;
 use cyancia_widgets::{drag_field::DragField, spin_slider::SpinSlider};

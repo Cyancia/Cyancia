@@ -33,39 +33,22 @@ use iced_widget::{
 use indexmap::IndexMap;
 
 use crate::{
-    ErasedGraphLiteralUpdateMessage, ErasedGraphNode, ErasedGraphNodeMessage, Graph,
-    GraphDynamicInstancesStorage, GraphInputSlotData, GraphNode, GraphNodeData,
-    GraphNodeViewContext, GraphOutputSlotData, GraphRenderer, GraphSlotType, GraphSlots,
-    GraphTheme,
-    editor::{
-        helpers::{SlotSide, empty_slot, output_slot, valued_slot, valued_slot_unconnectable},
-        slot_pin::GraphSlotPinPositionCollection,
+    GraphRenderer, GraphTheme,
+    editor::slot::{
+        GraphSlotId, GraphSlotPinPositionCollection, SlotSide, empty_slot, output_slot,
+        valued_slot, valued_slot_unconnectable,
+    },
+    graph::{
+        Graph, GraphDynamicInstancesStorage,
+        node::{ErasedGraphNode, ErasedGraphNodeMessage, GraphNodeData},
+        slot::{GraphInputSlotData, GraphOutputSlotData, GraphSlotType, GraphSlots},
     },
 };
 
-pub mod helpers;
-pub mod slot_pin;
+pub mod slot;
 
 const NODE_WIDTH: f32 = 170.0;
 const NODE_BORDER_RADIUS: f32 = 5.0;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GraphSlotId {
-    Input(Id<GraphInputSlotData>),
-    Output(Id<GraphOutputSlotData>),
-}
-
-impl From<Id<GraphInputSlotData>> for GraphSlotId {
-    fn from(value: Id<GraphInputSlotData>) -> Self {
-        GraphSlotId::Input(value)
-    }
-}
-
-impl From<Id<GraphOutputSlotData>> for GraphSlotId {
-    fn from(value: Id<GraphOutputSlotData>) -> Self {
-        GraphSlotId::Output(value)
-    }
-}
 
 pub enum GraphViewMessage {
     NodeCreateRequest(Point, Box<dyn ErasedGraphNode>),
