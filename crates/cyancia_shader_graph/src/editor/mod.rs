@@ -268,8 +268,8 @@ pub struct DrawableNode<'a> {
     pub node_id: Id<GraphNodeData>,
     pub position: Point,
     pub widget: Element<'a, GraphViewMessage, GraphTheme, GraphRenderer>,
-    pub input_slots: Vec<Id<GraphInputSlotData>>,
-    pub output_slots: Vec<Id<GraphOutputSlotData>>,
+    pub input_slots: Arc<[Id<GraphInputSlotData>]>,
+    pub output_slots: Arc<[Id<GraphOutputSlotData>]>,
 }
 
 impl<'a> DrawableNode<'a> {

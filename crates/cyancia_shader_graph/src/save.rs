@@ -311,8 +311,8 @@ impl Graph {
                 GraphNodeData {
                     position: node.position.into(),
                     data,
-                    inputs: node.inputs.clone(),
-                    outputs: node.outputs.clone(),
+                    inputs: node.inputs,
+                    outputs: node.outputs,
                 },
             );
             graph_inputs.extend(node_inputs);
@@ -377,8 +377,8 @@ pub struct SerializableNodeData {
     pub id: Id<GraphNodeData>,
     pub data: GraphNodeTypeId,
     pub position: [f32; 2],
-    pub inputs: Vec<Id<GraphInputSlotData>>,
-    pub outputs: Vec<Id<GraphOutputSlotData>>,
+    pub inputs: Arc<[Id<GraphInputSlotData>]>,
+    pub outputs: Arc<[Id<GraphOutputSlotData>]>,
     pub state: toml::Value,
 }
 

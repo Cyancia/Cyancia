@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, sync::Arc};
 
 use cyancia_id::Id;
 use iced_core::{Color, Element, Point};
@@ -286,8 +286,8 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
 pub struct GraphNodeData {
     pub position: Point,
     pub data: StatefulGraphNode,
-    pub inputs: Vec<Id<GraphInputSlotData>>,
-    pub outputs: Vec<Id<GraphOutputSlotData>>,
+    pub inputs: Arc<[Id<GraphInputSlotData>]>,
+    pub outputs: Arc<[Id<GraphOutputSlotData>]>,
 }
 
 impl GraphNodeData {

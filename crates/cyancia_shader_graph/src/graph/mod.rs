@@ -99,8 +99,8 @@ impl Graph {
             node_id,
             GraphNodeData {
                 position,
-                inputs,
-                outputs,
+                inputs: inputs.into(),
+                outputs: outputs.into(),
                 data: StatefulGraphNode::new(node),
             },
         );
@@ -114,8 +114,8 @@ impl Graph {
 
     pub fn delete_node(&mut self, id: &Id<GraphNodeData>) {
         if let Some(node) = self.nodes.remove(id) {
-            for input_slot_id in node.inputs {
-                if let Some(input_slot) = self.slots.inputs.remove(&input_slot_id) {
+            for input_slot_id in node.inputs.iter() {
+                if let Some(input_slot) = self.slots.inputs.remove(input_slot_id) {
                     if let Some(connected) = input_slot
                         .connected
                         .and_then(|id| self.slots.outputs.get_mut(&id))
@@ -124,8 +124,8 @@ impl Graph {
                     }
                 }
             }
-            for output_slot_id in node.outputs {
-                if let Some(output_slot) = self.slots.outputs.remove(&output_slot_id) {
+            for output_slot_id in node.outputs.iter() {
+                if let Some(output_slot) = self.slots.outputs.remove(output_slot_id) {
                     for connected_id in output_slot.connected {
                         if let Some(connected_slot) = self.slots.inputs.get_mut(&connected_id) {
                             connected_slot.connected = None;
@@ -296,7 +296,7 @@ impl Graph {
             run_order.push(node_id);
             let node = self.nodes.get(&node_id).unwrap();
 
-            for input_slot_id in &node.inputs {
+            for input_slot_id in node.inputs.iter() {
                 let Some(from_node_id) = self
                     .slots
                     .get_connected(input_slot_id)
@@ -362,7 +362,7 @@ impl Graph {
         stack.push(node_id);
 
         if let Some(node) = self.nodes.get(&node_id) {
-            for output_slot_id in &node.outputs {
+            for output_slot_id in node.outputs.iter() {
                 for input_slot_id in self
                     .slots
                     .outputs
