@@ -17,6 +17,8 @@ use crate::{
     wgsl_std::types::{F32Type, Vec2FType},
 };
 
+pub mod external;
+
 macro_rules! unary_math {
     (
         $mode_name:ident, $node_name:ident, $message_name:ident, $slot_ty:ty, $slot_default:expr, $color:expr, $title:expr ;

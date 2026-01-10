@@ -1,8 +1,12 @@
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
-    graph::{Graph, GraphFunctionSignature},
-    wgsl_std::{self, types::F32Type},
+    graph::{Graph, GraphFunctionSignature, variable::GraphLiteral},
+    wgsl_std::{
+        self,
+        nodes::external::{ExternalDataStorage, ExternalLiteralId, ExternalNodeCreator},
+        types::F32Type,
+    },
 };
 use iced::{
     Element, Subscription,
@@ -29,10 +33,19 @@ pub enum GraphMessage {
 
 impl App {
     pub fn new() -> Self {
+        let mut storage = wgsl_std::create_storage();
+        let ext_storage = ExternalDataStorage::default();
+        ext_storage.insert(
+            ExternalLiteralId::<F32Type>::new("MyExternalValue".into()),
+            GraphLiteral::new::<F32Type>(0.0),
+        );
+        storage
+            .creators
+            .register_non_default(ExternalNodeCreator::<F32Type>::new(ext_storage.into()));
         Self {
             graph: Graph::new(
                 GraphFunctionSignature::new("testtt".into(), F32Type),
-                wgsl_std::create_storage().into(),
+                storage.into(),
             ),
         }
     }
