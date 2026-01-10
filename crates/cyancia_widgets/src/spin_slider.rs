@@ -441,7 +441,7 @@ where
         _tree: &Tree,
         renderer: &mut Renderer,
         theme: &Theme,
-        _style: &renderer::Style,
+        renderer_style: &renderer::Style,
         layout: Layout<'_>,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
@@ -514,7 +514,7 @@ where
                 x: bounds.x + bounds.width * 0.5,
                 y: bounds.y + bounds.height * 0.5,
             },
-            Color::BLACK,
+            style.text_color.unwrap_or(renderer_style.text_color),
             bounds,
         );
     }
@@ -586,6 +586,7 @@ pub enum Status {
 pub struct Style {
     pub background: Background,
     pub value_bar: Background,
+    pub text_color: Option<Color>,
 }
 
 /// The shape of the handle of a slider.
@@ -645,5 +646,6 @@ pub fn default(theme: &Theme, status: Status) -> Style {
     Style {
         background: Background::Color(palette.background.base.color),
         value_bar: Background::Color(color),
+        text_color: None,
     }
 }
