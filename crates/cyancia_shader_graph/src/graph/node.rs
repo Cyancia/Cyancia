@@ -351,6 +351,14 @@ impl GraphNodeViewContext<'_> {
     pub fn input_len(&self) -> usize {
         self.inputs.len()
     }
+
+    pub fn all_inputs(
+        &self,
+    ) -> impl Iterator<Item = (&Id<GraphInputSlotData>, &GraphInputSlotData)> {
+        self.inputs
+            .iter()
+            .filter_map(move |id| self.slots.get_input(id).map(|slot| (id, slot)))
+    }
 }
 
 pub struct GraphNodeUpdateContext<'a> {

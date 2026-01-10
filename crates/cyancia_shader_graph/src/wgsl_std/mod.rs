@@ -11,6 +11,8 @@ pub fn create_storage() -> GraphDynamicInstancesStorage {
 
     storage.creators.register::<UnaryScalarMathNode>();
     storage.creators.register::<UnaryVectorMathNode>();
+    storage.creators.register::<BinaryScalarMathNode>();
+    storage.creators.register::<BinaryVectorMathNode>();
 
     storage.types.register::<F32Type>();
     storage.types.register::<I32Type>();
