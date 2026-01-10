@@ -386,10 +386,10 @@ pub struct GraphNodeCodeGenContext<'a> {
 }
 
 impl GraphNodeCodeGenContext<'_> {
-    pub fn get_input<const N: usize>(&self) -> Result<String, GraphNodeCodeGenError> {
+    pub fn get_input(&self, index: usize) -> Result<String, GraphNodeCodeGenError> {
         let slot_id = self
             .inputs
-            .get(N)
+            .get(index)
             .ok_or(GraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
@@ -419,10 +419,10 @@ impl GraphNodeCodeGenContext<'_> {
         }
     }
 
-    pub fn get_input_raw<const N: usize, T: 'static>(&self) -> Result<&T, GraphNodeCodeGenError> {
+    pub fn get_input_raw<T: 'static>(&self, index: usize) -> Result<&T, GraphNodeCodeGenError> {
         let slot_id = self
             .inputs
-            .get(N)
+            .get(index)
             .ok_or(GraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self
@@ -433,10 +433,10 @@ impl GraphNodeCodeGenContext<'_> {
         Ok(slot.data.as_ref::<T>())
     }
 
-    pub fn get_output<const N: usize>(&self) -> Result<String, GraphNodeCodeGenError> {
+    pub fn get_output(&self, index: usize) -> Result<String, GraphNodeCodeGenError> {
         let slot_id = self
             .outputs
-            .get(N)
+            .get(index)
             .ok_or(GraphNodeCodeGenError::SlotIndexOutOfBounds)?;
 
         let slot = self

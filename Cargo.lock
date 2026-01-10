@@ -1112,6 +1112,7 @@ dependencies = [
  "cyancia_widgets",
  "downcast-rs 2.0.2",
  "dyn-clone",
+ "glam 0.30.9",
  "iced_core",
  "iced_graphics",
  "iced_wgpu",
@@ -5329,6 +5330,16 @@ dependencies = [
  "half",
  "itertools",
  "num-traits",
+]
+
+[[package]]
+name = "wgsl_std"
+version = "0.1.0"
+dependencies = [
+ "cyancia_shader_graph",
+ "iced",
+ "serde",
+ "toml",
 ]
 
 [[package]]

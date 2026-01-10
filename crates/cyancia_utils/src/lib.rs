@@ -1,3 +1,4 @@
+pub mod count;
 pub mod global_instance;
 pub mod include_shader;
 pub mod wrapper;

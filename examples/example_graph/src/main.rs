@@ -302,9 +302,9 @@ impl StatelessCommonGraphNode for AddNode {
     }
 
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
-        let a = ctx.get_input::<0>()?;
-        let b = ctx.get_input::<1>()?;
-        let output = ctx.get_output::<0>()?;
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+        let output = ctx.get_output(0)?;
         Ok(format!("let {} = {} + {};\n", output, a, b))
     }
 }
@@ -341,9 +341,9 @@ impl StatelessCommonGraphNode for Vector2DAddNode {
     }
 
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
-        let a = ctx.get_input::<0>()?;
-        let b = ctx.get_input::<1>()?;
-        let output = ctx.get_output::<0>()?;
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+        let output = ctx.get_output(0)?;
         Ok(format!("let {} = {} + {};\n", output, a, b))
     }
 }
@@ -470,9 +470,9 @@ impl GraphNode for MathNode {
         state: &Self::State,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        let a = ctx.get_input::<0>()?;
-        let b = ctx.get_input::<1>()?;
-        let output = ctx.get_output::<0>()?;
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+        let output = ctx.get_output(0)?;
         Ok(match state {
             MathNodeMode::Add => format!("let {} = {} + {};\n", output, a, b),
             MathNodeMode::Subtract => format!("let {} = {} - {};\n", output, a, b),
@@ -732,7 +732,7 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
             .value
             .to_code()
             .ok_or(anyhow!("Cannot convert literal to code"))?;
-        let output = ctx.get_output::<0>()?;
+        let output = ctx.get_output(0)?;
         Ok(format!("let {} = {};\n", output, code))
     }
 
@@ -809,7 +809,7 @@ impl StatelessCommonGraphNode for DummyOutputNode {
     }
 
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
-        let input = ctx.get_input::<0>()?;
+        let input = ctx.get_input(0)?;
         Ok(format!("return {};", input))
     }
 }
