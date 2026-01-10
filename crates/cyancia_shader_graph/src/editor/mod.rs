@@ -558,13 +558,25 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     }
                 }
 
-                for (node_index, layout) in layout.children().enumerate() {
-                    if layout.bounds().contains(cursor) {
-                        state.selection.selected_nodes.clear();
-                        state
-                            .selection
-                            .selected_nodes
-                            .insert(self.graph.nodes[node_index].node_id);
+                for (node_index, node_layout) in layout.children().enumerate() {
+                    if node_layout.bounds().contains(cursor) {
+                        let node_id = self.graph.nodes[node_index].node_id;
+                        if !state.selection.selected_nodes.contains(&node_id) {
+                            state.selection.selected_nodes.clear();
+                            state.selection.selected_nodes.insert(node_id);
+                        }
+                        state.node_drag = DragNodeState::Dragging {
+                            cursor_origin: cursor,
+                            node_origin: state
+                                .selection
+                                .selected_nodes
+                                .iter()
+                                .filter_map(|id| {
+                                    self.graph.nodes.get_index_of(id).map(|index| (id, index))
+                                })
+                                .map(|(id, index)| (*id, layout.child(index).position()))
+                                .collect(),
+                        };
                         shell.request_redraw();
                         shell.capture_event();
                         return;
@@ -577,6 +589,12 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 shell.capture_event();
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                if let DragNodeState::Dragging { .. } = &state.node_drag {
+                    state.node_drag = DragNodeState::Idle;
+                    shell.capture_event();
+                    return;
+                }
+
                 if let EdgeConnectState::Dragging {
                     resolved_source,
                     color,
@@ -715,24 +733,6 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                             shell.publish(GraphViewMessage::NodeDeleteRequest(*node_id));
                         }
                     }
-                    key::Code::KeyG => {
-                        if let Some(cursor) = cursor.position()
-                            && !state.selection.selected_nodes.is_empty()
-                        {
-                            state.node_drag = DragNodeState::Dragging {
-                                cursor_origin: cursor,
-                                node_origin: state
-                                    .selection
-                                    .selected_nodes
-                                    .iter()
-                                    .filter_map(|id| {
-                                        self.graph.nodes.get_index_of(id).map(|index| (id, index))
-                                    })
-                                    .map(|(id, index)| (*id, layout.child(index).position()))
-                                    .collect(),
-                            };
-                        }
-                    }
                     key::Code::KeyA if modifiers.contains(keyboard::Modifiers::SHIFT) => {
                         state.node_creation_menu.position = cursor.position();
                     }
@@ -768,7 +768,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 })
                 .max()
                 .unwrap_or_default(),
-            DragNodeState::Dragging { .. } => mouse::Interaction::Hidden,
+            DragNodeState::Dragging { .. } => mouse::Interaction::Grabbing,
         }
     }
 
