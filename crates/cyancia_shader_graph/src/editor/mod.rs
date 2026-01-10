@@ -782,35 +782,6 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             );
         }
 
-        for selected in state.selection.selected_nodes.iter() {
-            if let Some(index) = self.graph.nodes.get_index_of(selected) {
-                use iced_core::Renderer;
-                let layout = layout.child(index);
-                renderer.fill_quad(
-                    Quad {
-                        bounds: layout.bounds().expand(2.0),
-                        border: Border::default().rounded(NODE_BORDER_RADIUS),
-                        ..Default::default()
-                    },
-                    Color::WHITE,
-                );
-            }
-        }
-
-        for ((child, tree), layout) in self
-            .graph
-            .nodes
-            .values()
-            .zip(&tree.children)
-            .zip(layout.children())
-            .filter(|(_, layout)| layout.bounds().intersects(viewport))
-        {
-            child
-                .widget
-                .as_widget()
-                .draw(tree, renderer, theme, style, layout, cursor, viewport);
-        }
-
         let mut frame = Frame::with_bounds(renderer, layout.bounds());
         for (to, edge) in &self.graph.edges {
             let from_pos = state.slot_pins.get_output(&edge.from);
@@ -841,6 +812,57 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             }
         }
 
+        {
+            use iced_core::Renderer;
+
+            renderer.with_layer(layout.bounds(), |renderer| {
+                use iced_graphics::geometry::Renderer;
+                renderer.draw_geometry(frame.into_geometry());
+            });
+        }
+
+        for ((child, node_tree), node_layout) in self
+            .graph
+            .nodes
+            .values()
+            .zip(&tree.children)
+            .zip(layout.children())
+            .filter(|(_, layout)| layout.bounds().intersects(viewport))
+        {
+            use iced_core::Renderer;
+            renderer.with_layer(layout.bounds(), |renderer| {
+                if state.selection.selected_nodes.contains(&child.node_id) {
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: node_layout.bounds().expand(2.0),
+                            border: Border::default().rounded(NODE_BORDER_RADIUS),
+                            ..Default::default()
+                        },
+                        Color::WHITE,
+                    );
+                }
+                child.widget.as_widget().draw(
+                    node_tree,
+                    renderer,
+                    theme,
+                    style,
+                    node_layout,
+                    cursor,
+                    viewport,
+                );
+                if self.graph.vert_in_loop.contains(&child.node_id) {
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: node_layout.bounds(),
+                            border: Border::default().rounded(NODE_BORDER_RADIUS),
+                            ..Default::default()
+                        },
+                        Color::from_rgb8(255, 0, 0).scale_alpha(0.3),
+                    );
+                }
+            });
+        }
+
         if let (
             EdgeConnectState::Dragging {
                 resolved_source,
@@ -850,6 +872,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         ) = (&state.edge_connect, cursor.position())
             && let Some(start_pos) = state.slot_pins.get(&resolved_source)
         {
+            let mut frame = Frame::with_bounds(renderer, layout.bounds());
             frame.stroke(
                 &geometry::Path::line(*start_pos, cursor_pos),
                 Stroke {
@@ -858,54 +881,41 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     ..Default::default()
                 },
             );
+
+            use iced_core::Renderer;
+            renderer.with_layer(layout.bounds(), |renderer| {
+                use iced_graphics::geometry::Renderer;
+                renderer.draw_geometry(frame.into_geometry());
+            });
         };
-
-        {
-            use iced_graphics::geometry::Renderer;
-
-            renderer.draw_geometry(frame.into_geometry());
-        }
-
-        for looped in &self.graph.vert_in_loop {
-            if let Some(index) = self.graph.nodes.get_index_of(looped) {
-                use iced_core::Renderer;
-                let layout = layout.child(index);
-                renderer.fill_quad(
-                    Quad {
-                        bounds: layout.bounds(),
-                        border: Border::default().rounded(NODE_BORDER_RADIUS),
-                        ..Default::default()
-                    },
-                    Color::from_rgb8(255, 0, 0).scale_alpha(0.3),
-                );
-            }
-        }
 
         if let DragSelectionState::Dragging { cursor_origin } = state.selection.state {
             let Some(cursor_pos) = cursor.position() else {
                 return;
             };
             use iced_core::Renderer;
-            renderer.fill_quad(
-                Quad {
-                    bounds: Rectangle {
-                        x: cursor_origin.x.min(cursor_pos.x),
-                        y: cursor_origin.y.min(cursor_pos.y),
-                        width: (cursor_origin.x - cursor_pos.x).abs(),
-                        height: (cursor_origin.y - cursor_pos.y).abs(),
+            renderer.with_layer(layout.bounds(), |renderer| {
+                renderer.fill_quad(
+                    Quad {
+                        bounds: Rectangle {
+                            x: cursor_origin.x.min(cursor_pos.x),
+                            y: cursor_origin.y.min(cursor_pos.y),
+                            width: (cursor_origin.x - cursor_pos.x).abs(),
+                            height: (cursor_origin.y - cursor_pos.y).abs(),
+                        },
+                        border: Border::default().width(2.0).color(
+                            theme
+                                .extended_palette()
+                                .primary
+                                .strong
+                                .color
+                                .scale_alpha(0.5),
+                        ),
+                        ..Default::default()
                     },
-                    border: Border::default().width(2.0).color(
-                        theme
-                            .extended_palette()
-                            .primary
-                            .strong
-                            .color
-                            .scale_alpha(0.5),
-                    ),
-                    ..Default::default()
-                },
-                theme.extended_palette().primary.base.color.scale_alpha(0.3),
-            );
+                    theme.extended_palette().primary.base.color.scale_alpha(0.3),
+                );
+            });
         }
     }
 
