@@ -74,7 +74,6 @@ impl Graph {
                     name: slot.name,
                     data: slot.value,
                     connected: None,
-                    slot_type: slot.slot_type,
                 },
             );
             inputs.push(slot_id);

@@ -41,7 +41,7 @@ use crate::{
     graph::{
         Graph, GraphDynamicInstancesStorage,
         node::{ErasedGraphNode, ErasedGraphNodeMessage, GraphNodeData},
-        slot::{GraphInputSlotData, GraphOutputSlotData, GraphSlotType, GraphSlots},
+        slot::{GraphInputSlotData, GraphOutputSlotData, GraphSlots},
     },
 };
 
@@ -268,7 +268,6 @@ pub struct DrawableNode<'a> {
     pub widget: Element<'a, GraphViewMessage, GraphTheme, GraphRenderer>,
     pub input_slots: Vec<Id<GraphInputSlotData>>,
     pub output_slots: Vec<Id<GraphOutputSlotData>>,
-    pub unconnectable_slots: HashSet<Id<GraphInputSlotData>>,
 }
 
 impl<'a> DrawableNode<'a> {
@@ -323,19 +322,6 @@ impl<'a> DrawableNode<'a> {
             .width(Length::Fill)
             .padding(5);
 
-        let unconnectable_slots = node
-            .inputs
-            .iter()
-            .filter_map(|slot_id| slots.inputs.get(slot_id).map(|slot| (slot_id, slot)))
-            .filter(|(_, slot)| {
-                matches!(
-                    slot.slot_type,
-                    GraphSlotType::Unconnectable | GraphSlotType::Hidden
-                )
-            })
-            .map(|(slot_id, _)| *slot_id)
-            .collect();
-
         let widget = container(
             column![
                 header,
@@ -359,7 +345,6 @@ impl<'a> DrawableNode<'a> {
             widget: Element::new(widget),
             input_slots: node.inputs.clone(),
             output_slots: node.outputs.clone(),
-            unconnectable_slots,
         }
     }
 }

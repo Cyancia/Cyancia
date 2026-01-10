@@ -264,7 +264,6 @@ impl Graph {
                             dyn_clone::clone_box(&**value_type_obj),
                         ),
                         connected: slot.connected,
-                        slot_type: default.slot_type,
                     },
                 );
             }

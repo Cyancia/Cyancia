@@ -38,17 +38,10 @@ impl GraphSlots {
         self.outputs.get(connected_id)
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GraphSlotType {
-    Normal,
-    Unconnectable,
-    Hidden,
-}
 
 pub struct GraphDefaultInputSlot {
     pub name: &'static str,
     pub value: GraphLiteral,
-    pub slot_type: GraphSlotType,
 }
 
 impl GraphDefaultInputSlot {
@@ -59,26 +52,6 @@ impl GraphDefaultInputSlot {
         Self {
             name,
             value: GraphLiteral::new::<T>(value),
-            slot_type: GraphSlotType::Normal,
-        }
-    }
-
-    pub fn unconnectable<T: GraphValueType + Default>(
-        name: &'static str,
-        value: T::AssociatedLiteralType,
-    ) -> Self {
-        Self {
-            name,
-            value: GraphLiteral::new::<T>(value),
-            slot_type: GraphSlotType::Unconnectable,
-        }
-    }
-
-    pub fn hidden<T: GraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
-        Self {
-            name: Default::default(),
-            value: GraphLiteral::new::<T>(value),
-            slot_type: GraphSlotType::Hidden,
         }
     }
 
@@ -86,12 +59,10 @@ impl GraphDefaultInputSlot {
         name: &'static str,
         value: T::AssociatedLiteralType,
         ty: T,
-        slot_type: GraphSlotType,
     ) -> Self {
         Self {
             name,
             value: GraphLiteral::new_non_default::<T>(value, ty),
-            slot_type,
         }
     }
 }
@@ -101,7 +72,6 @@ pub struct GraphInputSlotData {
     pub name: &'static str,
     pub data: GraphLiteral,
     pub connected: Option<Id<GraphOutputSlotData>>,
-    pub slot_type: GraphSlotType,
 }
 
 pub struct GraphDefaultOutputSlot {
