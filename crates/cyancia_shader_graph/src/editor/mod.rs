@@ -35,8 +35,7 @@ use indexmap::IndexMap;
 use crate::{
     GraphRenderer, GraphTheme,
     editor::slot::{
-        GraphSlotId, GraphSlotPinPositionCollection, SlotSide, empty_slot, output_slot,
-        valued_slot, valued_slot_unconnectable,
+        GraphSlotId, GraphSlotPinPositionCollection, SlotSide, empty_slot, output_slot, valued_slot,
     },
     graph::{
         Graph, GraphDynamicInstancesStorage,
