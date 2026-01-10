@@ -96,6 +96,7 @@ where
     on_release: Option<Message>,
     width: Length,
     height: f32,
+    rounded: f32,
     class: Theme::Class<'a>,
     status: Option<Status>,
     font: Option<Renderer::Font>,
@@ -109,7 +110,7 @@ where
     Renderer: iced_core::Renderer + iced_core::text::Renderer,
 {
     /// The default height of a [`Slider`].
-    pub const DEFAULT_HEIGHT: f32 = 16.0;
+    pub const DEFAULT_HEIGHT: f32 = 20.0;
 
     /// Creates a new [`Slider`].
     ///
@@ -145,6 +146,7 @@ where
             on_release: None,
             width: Length::Fill,
             height: Self::DEFAULT_HEIGHT,
+            rounded: 2.0,
             class: Theme::default(),
             status: None,
             font: None,
@@ -179,6 +181,11 @@ where
     /// Sets the height of the [`Slider`].
     pub fn height(mut self, height: impl Into<Pixels>) -> Self {
         self.height = height.into().0;
+        self
+    }
+
+    pub fn rounded(mut self, rounded: f32) -> Self {
+        self.rounded = rounded;
         self
     }
 
@@ -464,6 +471,7 @@ where
                     width: bounds.width,
                     height: bounds.height,
                 },
+                border: Border::default().rounded(self.rounded),
                 ..renderer::Quad::default()
             },
             style.background,
@@ -477,6 +485,14 @@ where
                     width: offset,
                     height: bounds.height,
                 },
+                border: Border {
+                    radius: border::Radius {
+                        top_left: self.rounded,
+                        bottom_left: self.rounded,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
                 ..renderer::Quad::default()
             },
             style.value_bar,
@@ -486,7 +502,7 @@ where
             Text {
                 content: format!("{:.2}", value),
                 bounds: bounds.size(),
-                size: Pixels(self.height),
+                size: Pixels(self.height * 0.8),
                 line_height: LineHeight::Relative(1.0),
                 font: self.font.unwrap_or_else(|| renderer.default_font()),
                 align_x: Alignment::Center,
