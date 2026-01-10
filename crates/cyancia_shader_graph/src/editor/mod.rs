@@ -181,6 +181,7 @@ pub struct DrawableGraph<'a> {
     pub nodes: IndexMap<Id<GraphNodeData>, DrawableNode<'a>>,
     pub slots: HashMap<GraphSlotId, SlotData>,
     pub edges: HashMap<Id<GraphInputSlotData>, DrawableEdge>,
+    pub vert_in_loop: HashSet<Id<GraphNodeData>>,
 }
 
 impl<'a> DrawableGraph<'a> {
@@ -249,6 +250,7 @@ impl<'a> DrawableGraph<'a> {
             nodes,
             edges,
             slots,
+            vert_in_loop: graph.find_loops().into_iter().flatten().collect(),
         }
     }
 }
@@ -862,6 +864,21 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
             use iced_graphics::geometry::Renderer;
 
             renderer.draw_geometry(frame.into_geometry());
+        }
+
+        for looped in &self.graph.vert_in_loop {
+            if let Some(index) = self.graph.nodes.get_index_of(looped) {
+                use iced_core::Renderer;
+                let layout = layout.child(index);
+                renderer.fill_quad(
+                    Quad {
+                        bounds: layout.bounds(),
+                        border: Border::default().rounded(NODE_BORDER_RADIUS),
+                        ..Default::default()
+                    },
+                    Color::from_rgb8(255, 0, 0).scale_alpha(0.3),
+                );
+            }
         }
 
         if let DragSelectionState::Dragging { cursor_origin } = state.selection.state {

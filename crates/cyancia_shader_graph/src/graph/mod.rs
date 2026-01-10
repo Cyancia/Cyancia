@@ -329,6 +329,63 @@ impl Graph {
         self.cached_run_order = Some(dbg!(run_order));
     }
 
+    pub fn find_loops(&self) -> Vec<Vec<Id<GraphNodeData>>> {
+        let mut visited = HashSet::new();
+        let mut stack = Vec::new();
+        let mut loops = Vec::new();
+
+        for node_id in self.nodes.keys() {
+            self.find_loops_dfs(*node_id, &mut visited, &mut stack, &mut loops);
+        }
+
+        loops
+    }
+
+    fn find_loops_dfs(
+        &self,
+        node_id: Id<GraphNodeData>,
+        visited: &mut HashSet<Id<GraphNodeData>>,
+        stack: &mut Vec<Id<GraphNodeData>>,
+        loops: &mut Vec<Vec<Id<GraphNodeData>>>,
+    ) {
+        if stack.contains(&node_id) {
+            let loop_start_index = stack.iter().position(|&id| id == node_id).unwrap();
+            let loop_nodes = stack[loop_start_index..].to_vec();
+            loops.push(loop_nodes);
+            return;
+        }
+
+        if !visited.insert(node_id) {
+            return;
+        }
+
+        stack.push(node_id);
+
+        if let Some(node) = self.nodes.get(&node_id) {
+            for output_slot_id in &node.outputs {
+                for input_slot_id in self
+                    .slots
+                    .outputs
+                    .get(output_slot_id)
+                    .map(|slot| &slot.connected)
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(connected_node_id) = self
+                        .slots
+                        .inputs
+                        .get(input_slot_id)
+                        .map(|slot| slot.node_id)
+                    {
+                        self.find_loops_dfs(connected_node_id, visited, stack, loops);
+                    }
+                }
+            }
+        }
+
+        stack.pop();
+    }
+
     pub fn update_node(&mut self, message: ErasedGraphNodeMessage) {
         if let Some(node) = self.nodes.get_mut(&message.id) {
             node.update(message, &mut self.slots);
