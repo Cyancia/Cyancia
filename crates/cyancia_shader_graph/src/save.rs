@@ -258,7 +258,6 @@ impl Graph {
                     id,
                     GraphInputSlotData {
                         node_id: node.id,
-                        name: default.name,
                         data: GraphLiteral::new_boxed(
                             literal_value,
                             dyn_clone::clone_box(&**value_type_obj),
@@ -290,7 +289,6 @@ impl Graph {
                     id,
                     GraphOutputSlotData {
                         node_id: node.id,
-                        name: default.name,
                         data: GraphVariable::new_boxed(slot.variable_name.clone(), default.ty),
                         connected: HashSet::new(),
                     },

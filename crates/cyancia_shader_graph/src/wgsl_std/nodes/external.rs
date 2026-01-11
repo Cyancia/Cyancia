@@ -2,7 +2,7 @@ use std::{any::TypeId, collections::HashMap, marker::PhantomData, sync::Arc};
 
 use anyhow::anyhow;
 use iced_core::{Color, Element, color};
-use iced_widget::{column, pick_list};
+use iced_widget::{Column, column, pick_list};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ use crate::{
     graph::{
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator,
-            GraphNodeUpdateContext, GraphNodeViewContext,
+            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeUpdateContext,
         },
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
@@ -208,7 +208,7 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
     }
 
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
-        vec![GraphDefaultOutputSlot::new::<T>("Value")]
+        vec![GraphDefaultOutputSlot::new::<T>()]
     }
 
     fn generate_code(
@@ -234,10 +234,10 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
         None
     }
 
-    fn view_body(
+    fn view_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeViewContext,
+        ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         let mut column = column![];
 
@@ -249,14 +249,27 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
 
         column
             .extend(
-                ctx.view_all_inputs()
+                ctx.view_all_inputs(&["Var"])
                     .into_iter()
                     .map(|e| e.map(|m| ExternalNodeMessage::LiteralUpdate(m))),
             )
             .into()
     }
 
-    fn update_body(
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(
+            ctx.view_all_outputs(&["Value"])
+                .into_iter()
+                .map(|e| e.map(|m| ExternalNodeMessage::<T>::LiteralUpdate(m))),
+        )
+        .into()
+    }
+
+    fn update(
         &self,
         state: &mut Self::State,
         message: Self::Message,

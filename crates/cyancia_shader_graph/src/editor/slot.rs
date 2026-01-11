@@ -138,19 +138,20 @@ pub enum SlotSide {
 
 pub fn input_slot(
     slot_id: Id<GraphInputSlotData>,
+    slot_name: &'static str,
     slot: &GraphInputSlotData,
 ) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
     match slot.connected {
         Some(_) => empty_slot(
             slot_id.into(),
             slot.data.ty().color(),
-            slot.name,
+            slot_name,
             SlotSide::Left,
         ),
         None => valued_slot(
             slot_id.into(),
             slot.data.ty().color(),
-            slot.name,
+            slot_name,
             SlotSide::Left,
             slot.data.ty().view_literal(slot_id, slot.data.value()),
         ),
@@ -159,6 +160,7 @@ pub fn input_slot(
 
 pub fn output_slot<'a, Message>(
     slot_id: Id<GraphOutputSlotData>,
+    slot_name: &'a str,
     slot: &GraphOutputSlotData,
 ) -> Element<'a, Message, GraphTheme, GraphRenderer>
 where
@@ -167,7 +169,7 @@ where
     empty_slot(
         slot_id.into(),
         slot.data.ty().color(),
-        slot.name,
+        slot_name,
         SlotSide::Right,
     )
 }

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     GraphRenderer, GraphTheme,
-    editor::slot::input_slot,
+    editor::slot::{input_slot, output_slot},
     graph::{
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
@@ -26,17 +26,17 @@ pub trait GraphNode: Send + Sync + 'static {
     fn header_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
-    fn view_body(
+    fn view_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeViewContext,
+        ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer>;
-    fn update_body(
+    fn view_outputs(
         &self,
-        state: &mut Self::State,
-        message: Self::Message,
-        ctx: GraphNodeUpdateContext,
-    );
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer>;
+    fn update(&self, state: &mut Self::State, message: Self::Message, ctx: GraphNodeUpdateContext);
     fn generate_code(
         &self,
         state: &Self::State,
@@ -61,11 +61,11 @@ pub trait ErasedGraphNode: Send + Sync + 'static {
     fn header_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
-    fn view(
+    fn view_inputs(
         &self,
         node_id: Id<GraphNodeData>,
         state: &dyn Any,
-        ctx: GraphNodeViewContext,
+        ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer>;
     fn update(
         &self,
@@ -73,6 +73,12 @@ pub trait ErasedGraphNode: Send + Sync + 'static {
         message: ErasedGraphNodeMessage,
         ctx: GraphNodeUpdateContext,
     );
+    fn view_outputs(
+        &self,
+        node_id: Id<GraphNodeData>,
+        state: &dyn Any,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer>;
     fn generate_code(
         &self,
         state: &dyn Any,
@@ -106,16 +112,32 @@ impl<T: GraphNode> ErasedGraphNode for T {
         self.create_outputs()
     }
 
-    fn view(
+    fn view_inputs(
         &self,
         node_id: Id<GraphNodeData>,
         state: &dyn Any,
-        ctx: GraphNodeViewContext,
+        ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         let state = state
             .downcast_ref::<T::State>()
             .expect("Failed to downcast node state.");
-        self.view_body(state, ctx)
+        self.view_inputs(state, ctx)
+            .map(move |msg| ErasedGraphNodeMessage {
+                inner: Box::new(msg),
+                id: node_id,
+            })
+    }
+
+    fn view_outputs(
+        &self,
+        node_id: Id<GraphNodeData>,
+        state: &dyn Any,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
+        let state = state
+            .downcast_ref::<T::State>()
+            .expect("Failed to downcast node state.");
+        self.view_outputs(state, ctx)
             .map(move |msg| ErasedGraphNodeMessage {
                 inner: Box::new(msg),
                 id: node_id,
@@ -135,7 +157,7 @@ impl<T: GraphNode> ErasedGraphNode for T {
             .inner
             .downcast::<T::Message>()
             .expect("Failed to downcast node message.");
-        self.update_body(state, *msg, ctx);
+        self.update(state, *msg, ctx);
     }
 
     fn generate_code(
@@ -186,12 +208,20 @@ impl StatefulGraphNode {
         self.data.header_color()
     }
 
-    pub fn view(
+    pub fn view_inputs(
         &self,
         node_id: Id<GraphNodeData>,
-        ctx: GraphNodeViewContext,
+        ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
-        self.data.view(node_id, &*self.state, ctx)
+        self.data.view_inputs(node_id, &*self.state, ctx)
+    }
+
+    fn view_outputs(
+        &self,
+        node_id: Id<GraphNodeData>,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
+        self.data.view_outputs(node_id, &*self.state, ctx)
     }
 
     pub fn update(&mut self, message: ErasedGraphNodeMessage, ctx: GraphNodeUpdateContext) {
@@ -224,6 +254,8 @@ pub struct StatelessState {
 
 pub trait StatelessCommonGraphNode: Send + Sync + 'static {
     fn name(&self) -> &'static str;
+    fn input_slot_names(&self) -> &[&'static str];
+    fn output_slot_names(&self) -> &[&'static str];
     fn header_color(&self) -> Color;
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
@@ -255,17 +287,27 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
         self.create_outputs()
     }
 
-    fn view_body(
+    fn view_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeViewContext,
+        ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        Column::with_children(ctx.view_all_inputs())
+        Column::with_children(ctx.view_all_inputs(self.input_slot_names()))
             .spacing(2)
             .into()
     }
 
-    fn update_body(
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(self.output_slot_names()))
+            .spacing(2)
+            .into()
+    }
+
+    fn update(
         &self,
         state: &mut Self::State,
         message: Self::Message,
@@ -291,15 +333,29 @@ pub struct GraphNodeData {
 }
 
 impl GraphNodeData {
-    pub fn view(
+    pub fn view_inputs(
         &self,
         node_id: Id<GraphNodeData>,
         slots: &GraphSlots,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
-        self.data.view(
+        self.data.view_inputs(
             node_id,
-            GraphNodeViewContext {
+            GraphNodeInputsViewContext {
                 inputs: &self.inputs,
+                slots,
+            },
+        )
+    }
+
+    pub fn view_outputs(
+        &self,
+        node_id: Id<GraphNodeData>,
+        slots: &GraphSlots,
+    ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
+        self.data.view_outputs(
+            node_id,
+            GraphNodeOutputsViewContext {
+                outputs: &self.outputs,
                 slots,
             },
         )
@@ -316,12 +372,12 @@ impl GraphNodeData {
     }
 }
 
-pub struct GraphNodeViewContext<'a> {
+pub struct GraphNodeInputsViewContext<'a> {
     inputs: &'a [Id<GraphInputSlotData>],
     slots: &'a GraphSlots,
 }
 
-impl GraphNodeViewContext<'_> {
+impl GraphNodeInputsViewContext<'_> {
     pub fn get_input(&self, index: usize) -> Option<&GraphInputSlotData> {
         let slot_id = self.inputs.get(index)?;
         self.slots.get_input(slot_id)
@@ -329,20 +385,22 @@ impl GraphNodeViewContext<'_> {
 
     pub fn view_input(
         &self,
+        name: &'static str,
         index: usize,
     ) -> Option<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
         let slot_id = self.inputs.get(index)?;
         let slot = self.slots.get_input(slot_id)?;
-        Some(input_slot(*slot_id, slot))
+        Some(input_slot(*slot_id, name, slot))
     }
 
     pub fn view_all_inputs(
         &self,
+        names: &[&'static str],
     ) -> Vec<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
         let mut e = Vec::with_capacity(self.inputs.len());
-        for id in self.inputs {
+        for (id, name) in self.inputs.iter().zip(names) {
             if let Some(slot) = self.slots.get_input(id) {
-                e.push(input_slot(*id, slot));
+                e.push(input_slot(*id, *name, slot));
             }
         }
         e
@@ -358,6 +416,53 @@ impl GraphNodeViewContext<'_> {
         self.inputs
             .iter()
             .filter_map(move |id| self.slots.get_input(id).map(|slot| (id, slot)))
+    }
+}
+
+pub struct GraphNodeOutputsViewContext<'a> {
+    outputs: &'a [Id<GraphOutputSlotData>],
+    slots: &'a GraphSlots,
+}
+
+impl GraphNodeOutputsViewContext<'_> {
+    pub fn get_output(&self, index: usize) -> Option<&GraphOutputSlotData> {
+        let slot_id = self.outputs.get(index)?;
+        self.slots.get_output(slot_id)
+    }
+
+    pub fn view_output(
+        &self,
+        name: &'static str,
+        index: usize,
+    ) -> Option<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
+        let slot_id = self.outputs.get(index)?;
+        let slot = self.slots.get_output(slot_id)?;
+        Some(output_slot(*slot_id, name, slot))
+    }
+
+    pub fn view_all_outputs(
+        &self,
+        names: &[&'static str],
+    ) -> Vec<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
+        let mut e = Vec::with_capacity(self.outputs.len());
+        for (id, name) in self.outputs.iter().zip(names) {
+            if let Some(slot) = self.slots.get_output(id) {
+                e.push(output_slot(*id, *name, slot));
+            }
+        }
+        e
+    }
+
+    pub fn output_len(&self) -> usize {
+        self.outputs.len()
+    }
+
+    pub fn all_outputs(
+        &self,
+    ) -> impl Iterator<Item = (&Id<GraphOutputSlotData>, &GraphOutputSlotData)> {
+        self.outputs
+            .iter()
+            .filter_map(move |id| self.slots.get_output(id).map(|slot| (id, slot)))
     }
 }
 

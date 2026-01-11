@@ -71,7 +71,6 @@ impl Graph {
                 slot_id,
                 GraphInputSlotData {
                     node_id,
-                    name: slot.name,
                     data: slot.value,
                     connected: None,
                 },
@@ -87,7 +86,6 @@ impl Graph {
                 slot_id,
                 GraphOutputSlotData {
                     node_id,
-                    name: slot.name,
                     data: GraphVariable::new_boxed(self.ident_generator.next_output(), slot.ty),
                     connected: HashSet::new(),
                 },

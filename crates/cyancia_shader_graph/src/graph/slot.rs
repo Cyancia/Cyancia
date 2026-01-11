@@ -40,28 +40,18 @@ impl GraphSlots {
 }
 
 pub struct GraphDefaultInputSlot {
-    pub name: &'static str,
     pub value: GraphLiteral,
 }
 
 impl GraphDefaultInputSlot {
-    pub fn new<T: GraphValueType + Default>(
-        name: &'static str,
-        value: T::AssociatedLiteralType,
-    ) -> Self {
+    pub fn new<T: GraphValueType + Default>(value: T::AssociatedLiteralType) -> Self {
         Self {
-            name,
             value: GraphLiteral::new::<T>(value),
         }
     }
 
-    pub fn new_non_default<T: GraphValueType>(
-        name: &'static str,
-        value: T::AssociatedLiteralType,
-        ty: T,
-    ) -> Self {
+    pub fn new_non_default<T: GraphValueType>(value: T::AssociatedLiteralType, ty: T) -> Self {
         Self {
-            name,
             value: GraphLiteral::new_non_default::<T>(value, ty),
         }
     }
@@ -69,28 +59,28 @@ impl GraphDefaultInputSlot {
 
 pub struct GraphInputSlotData {
     pub node_id: Id<GraphNodeData>,
-    pub name: &'static str,
     pub data: GraphLiteral,
     pub connected: Option<Id<GraphOutputSlotData>>,
 }
 
 pub struct GraphDefaultOutputSlot {
-    pub name: &'static str,
     pub ty: Box<dyn ErasedGraphValueType>,
 }
 
 impl GraphDefaultOutputSlot {
-    pub fn new<T: GraphValueType + Default>(name: &'static str) -> Self {
+    pub fn new<T: GraphValueType + Default>() -> Self {
         Self {
-            name,
             ty: Box::new(T::default()),
         }
+    }
+
+    pub fn new_non_default<T: GraphValueType>(ty: T) -> Self {
+        Self { ty: Box::new(ty) }
     }
 }
 
 pub struct GraphOutputSlotData {
     pub node_id: Id<GraphNodeData>,
-    pub name: &'static str,
     pub data: GraphVariable,
     pub connected: HashSet<Id<GraphInputSlotData>>,
 }

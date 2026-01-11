@@ -298,13 +298,6 @@ impl<'a> DrawableNode<'a> {
         //             GraphSlotType::Hidden => None,
         //         },
         //     });
-        let outputs = column(
-            node.outputs
-                .iter()
-                .filter_map(|slot_id| slots.outputs.get(slot_id).map(|slot| (slot_id, slot)))
-                .map(|(slot_id, slot)| output_slot(*slot_id, slot)),
-        )
-        .spacing(2);
         // let inputs = column(inputs).spacing(2);
         let header_color = node.data.header_color();
         let header = container(text(node.data.name()))
@@ -327,8 +320,13 @@ impl<'a> DrawableNode<'a> {
             column![
                 header,
                 column!(
-                    node.view(node_id, slots).map(GraphViewMessage::NodeUpdate),
-                    row![space().width(Length::Fill), outputs],
+                    node.view_inputs(node_id, slots)
+                        .map(GraphViewMessage::NodeUpdate),
+                    row![
+                        space().width(Length::Fill),
+                        node.view_outputs(node_id, slots)
+                            .map(GraphViewMessage::NodeUpdate)
+                    ],
                 )
                 .padding(2),
             ]

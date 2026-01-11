@@ -1438,22 +1438,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "example_graph"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cyancia_id",
- "cyancia_shader_graph",
- "cyancia_utils",
- "cyancia_widgets",
- "glam 0.30.9",
- "iced",
- "parking_lot",
- "serde",
- "toml",
-]
-
-[[package]]
 name = "exr"
 version = "1.74.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
