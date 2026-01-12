@@ -3,16 +3,13 @@ use cyancia_shader_graph::{
     editor::{GraphView, GraphViewMessage},
     graph::{
         Graph, GraphFunctionSignature,
-        node::{
-            GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator,
-            StatelessCommonGraphNode,
-        },
+        node::{GraphNodeCodeGenContext, GraphNodeCodeGenError, StatelessCommonGraphNode},
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
         variable::GraphLiteral,
     },
     wgsl_std::{
         self,
-        nodes::external::{ExternalDataStorage, ExternalLiteralId, ExternalNodeCreator},
+        nodes::external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
         types::F32Type,
     },
 };
@@ -48,9 +45,9 @@ impl App {
             GraphLiteral::new::<F32Type>(0.0),
         );
         storage
-            .creators
-            .register_non_default(ExternalNodeCreator::<F32Type>::new(ext_storage.into()));
-        storage.creators.register_non_default(DummyOutputNode);
+            .nodes
+            .register_non_default(ExternalNode::<F32Type>::new(ext_storage.into()));
+        storage.nodes.register_non_default(DummyOutputNode);
         Self {
             graph: Graph::new(
                 GraphFunctionSignature::new("testtt".into(), F32Type),
@@ -131,15 +128,8 @@ impl App {
     }
 }
 
+#[derive(Default, Clone)]
 pub struct DummyOutputNode;
-
-impl GraphNodeCreator for DummyOutputNode {
-    type NodeType = Self;
-
-    fn create(&self) -> Self::NodeType {
-        DummyOutputNode
-    }
-}
 
 impl StatelessCommonGraphNode for DummyOutputNode {
     fn name(&self) -> &'static str {

@@ -9,7 +9,7 @@ use iced_core::Point;
 use crate::graph::{
     node::{
         ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
-        GraphNodeCodeGenContext, GraphNodeCreatorStorage, GraphNodeData, StatefulGraphNode,
+        GraphNodeCodeGenContext, GraphNodeData, GraphNodesStorage, StatefulGraphNode,
     },
     slot::{
         ErasedGraphValueType, GraphInputSlotData, GraphOutputSlotData, GraphSlots, GraphValueType,
@@ -397,7 +397,7 @@ impl Graph {
 
 #[derive(Default)]
 pub struct GraphDynamicInstancesStorage {
-    pub creators: GraphNodeCreatorStorage,
+    pub nodes: GraphNodesStorage,
     pub types: GraphValueTypeStorage,
     pub casters: GraphTypeCastersStorage,
 }

@@ -11,13 +11,13 @@ pub fn create_storage() -> GraphDynamicInstancesStorage {
 
     let mut storage = GraphDynamicInstancesStorage::default();
 
-    storage.creators.register::<ScalarMathNode>();
-    storage.creators.register::<VectorMathNode>();
-    storage.creators.register::<ClampNode>();
-    storage.creators.register::<StepNode>();
-    storage.creators.register::<SmoothStepNode>();
-    storage.creators.register::<SplitComponentsNode>();
-    storage.creators.register::<CombineComponentsNode>();
+    storage.nodes.register::<ScalarMathNode>();
+    storage.nodes.register::<VectorMathNode>();
+    storage.nodes.register::<ClampNode>();
+    storage.nodes.register::<StepNode>();
+    storage.nodes.register::<SmoothStepNode>();
+    storage.nodes.register::<SplitComponentsNode>();
+    storage.nodes.register::<CombineComponentsNode>();
 
     storage.types.register::<F32Type>();
     storage.types.register::<Vec2FType>();

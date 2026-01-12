@@ -212,12 +212,10 @@ impl Graph {
         let mut graph_outputs = HashMap::with_capacity(outputs.len());
 
         'node_loop: for node in nodes {
-            let Some(creator) = storage.creators.get(&node.data.name) else {
+            let Some(node_inst) = storage.nodes.get_cloned(&node.data.name) else {
                 errs.push(GraphDeserializeError::NodeNotFound(node.data.name.clone()));
                 continue;
             };
-
-            let node_inst = creator.create();
 
             let raw_inputs = node_inst.create_inputs();
             if raw_inputs.len() != node.inputs.len() {

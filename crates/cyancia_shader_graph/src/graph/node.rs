@@ -1,6 +1,7 @@
 use std::{any::Any, convert::identity, sync::Arc};
 
 use cyancia_id::Id;
+use dyn_clone::DynClone;
 use iced_core::{Color, Element, Point};
 use iced_widget::Column;
 use indexmap::IndexMap;
@@ -18,7 +19,7 @@ use crate::{
     },
 };
 
-pub trait GraphNode: Send + Sync + 'static {
+pub trait GraphNode: Send + Sync + 'static + DynClone {
     type State: Send + Sync + 'static + Serialize + DeserializeOwned;
     type Message: Send + Sync + 'static;
     fn name(&self) -> &'static str;
@@ -55,7 +56,7 @@ pub struct ErasedGraphNodeMessage {
     pub id: Id<GraphNodeData>,
 }
 
-pub trait ErasedGraphNode: Send + Sync + 'static {
+pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Box<dyn Any + Send + Sync>;
     fn header_color(&self) -> Color;
@@ -252,7 +253,7 @@ pub struct StatelessState {
     _private: (),
 }
 
-pub trait StatelessCommonGraphNode: Send + Sync + 'static {
+pub trait StatelessCommonGraphNode: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn input_slot_names(&self) -> &[&'static str];
     fn output_slot_names(&self) -> &[&'static str];
@@ -564,44 +565,31 @@ impl GraphNodeCodeGenContext<'_> {
 }
 
 #[derive(Default)]
-pub struct GraphNodeCreatorStorage {
-    creators: IndexMap<&'static str, Box<dyn ErasedGraphNodeCreator>>,
+pub struct GraphNodesStorage {
+    nodes: IndexMap<&'static str, Box<dyn ErasedGraphNode>>,
 }
 
-impl GraphNodeCreatorStorage {
-    pub fn register<T: GraphNodeCreator + Default>(&mut self) {
-        let node = T::default().create();
-        let creator = Box::new(T::default());
-        self.creators.insert(GraphNode::name(&node), creator);
+impl GraphNodesStorage {
+    pub fn register<T: ErasedGraphNode + Default>(&mut self) {
+        let node = Box::new(T::default());
+        self.nodes.insert(node.name(), node);
     }
 
-    pub fn register_non_default<T: GraphNodeCreator>(&mut self, creator: T) {
-        let node = creator.create();
-        let creator = Box::new(creator);
-        self.creators.insert(GraphNode::name(&node), creator);
+    pub fn register_non_default<T: ErasedGraphNode>(&mut self, node: T) {
+        let node = Box::new(node);
+        self.nodes.insert(node.name(), node);
     }
 
-    pub fn get(&self, name: &str) -> Option<&Box<dyn ErasedGraphNodeCreator>> {
-        self.creators.get(name)
+    pub fn get(&self, name: &str) -> Option<&Box<dyn ErasedGraphNode>> {
+        self.nodes.get(name)
     }
 
-    pub fn all(&self) -> &IndexMap<&'static str, Box<dyn ErasedGraphNodeCreator>> {
-        &self.creators
+    pub fn get_cloned(&self, name: &str) -> Option<Box<dyn ErasedGraphNode>> {
+        Some(dyn_clone::clone_box(&**self.nodes.get(name)?))
     }
-}
 
-pub trait GraphNodeCreator: 'static {
-    type NodeType: GraphNode;
-    fn create(&self) -> Self::NodeType;
-}
-
-pub trait ErasedGraphNodeCreator: 'static {
-    fn create(&self) -> Box<dyn ErasedGraphNode>;
-}
-
-impl<T: GraphNodeCreator> ErasedGraphNodeCreator for T {
-    fn create(&self) -> Box<dyn ErasedGraphNode> {
-        Box::new(self.create())
+    pub fn all(&self) -> &IndexMap<&'static str, Box<dyn ErasedGraphNode>> {
+        &self.nodes
     }
 }
 

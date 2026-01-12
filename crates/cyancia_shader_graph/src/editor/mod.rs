@@ -146,7 +146,7 @@ impl<'a> GraphView<'a> {
             storage: graph.storage().clone(),
             node_creation_menu_items: graph
                 .storage()
-                .creators
+                .nodes
                 .all()
                 .keys()
                 .map(|title| NodeCreationMenuItem {
@@ -952,11 +952,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     state.node_creation_menu.position = None;
                     GraphViewMessage::NodeCreateRequest(
                         position - state.view_translation,
-                        self.storage
-                            .creators
-                            .get(&name.node_title)
-                            .unwrap()
-                            .create(),
+                        self.storage.nodes.get_cloned(&name.node_title).unwrap(),
                     )
                 },
                 None,

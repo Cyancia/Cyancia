@@ -10,8 +10,8 @@ use crate::{
     GraphRenderer, GraphTheme,
     graph::{
         node::{
-            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator,
-            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeUpdateContext,
+            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
+            GraphNodeOutputsViewContext, GraphNodeUpdateContext,
         },
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
@@ -146,34 +146,27 @@ impl<T> Clone for ExternalLiteralType<T> {
     }
 }
 
-pub struct ExternalNodeCreator<T> {
+pub struct ExternalNode<T> {
     storage: Arc<ExternalDataStorage>,
     _marker: PhantomData<T>,
 }
 
-impl<T: GraphValueType> ExternalNodeCreator<T> {
+impl<T> ExternalNode<T> {
     pub fn new(storage: Arc<ExternalDataStorage>) -> Self {
-        ExternalNodeCreator {
+        Self {
             storage,
             _marker: PhantomData,
         }
     }
 }
 
-impl<T: GraphValueType + Default> GraphNodeCreator for ExternalNodeCreator<T> {
-    type NodeType = ExternalNode<T>;
-
-    fn create(&self) -> Self::NodeType {
-        ExternalNode {
+impl<T> Clone for ExternalNode<T> {
+    fn clone(&self) -> Self {
+        Self {
             storage: self.storage.clone(),
             _marker: PhantomData,
         }
     }
-}
-
-pub struct ExternalNode<T> {
-    storage: Arc<ExternalDataStorage>,
-    _marker: PhantomData<T>,
 }
 
 pub enum ExternalNodeMessage<T> {

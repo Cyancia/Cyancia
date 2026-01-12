@@ -9,7 +9,7 @@ use crate::{
     editor::slot::{SlotSide, valued_slot},
     graph::{
         node::{
-            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator,
+            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError,
             GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeUpdateContext,
             StatelessCommonGraphNode,
         },
@@ -40,16 +40,8 @@ macro_rules! math_node {
         $default_op:ident,
         $($op_name:ident, $op_str:literal => ($func_call:expr, $($operands_name:literal),* $(,)?)),* $(,)?
     ) => {
-        #[derive(Default)]
+        #[derive(Default, Clone)]
         pub struct $node_name;
-
-        impl GraphNodeCreator for $node_name {
-            type NodeType = Self;
-
-            fn create(&self) -> Self::NodeType {
-                $node_name
-            }
-        }
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
         pub enum $node_mode_name {
@@ -283,16 +275,8 @@ math_node!(
     Trunc, "Trunc" => ("trunc({})", "X"),
 );
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ClampNode;
-
-impl GraphNodeCreator for ClampNode {
-    type NodeType = Self;
-
-    fn create(&self) -> Self::NodeType {
-        ClampNode
-    }
-}
 
 impl StatelessCommonGraphNode for ClampNode {
     fn name(&self) -> &'static str {
@@ -336,16 +320,8 @@ impl StatelessCommonGraphNode for ClampNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StepNode;
-
-impl GraphNodeCreator for StepNode {
-    type NodeType = Self;
-
-    fn create(&self) -> Self::NodeType {
-        StepNode
-    }
-}
 
 impl StatelessCommonGraphNode for StepNode {
     fn name(&self) -> &'static str {
@@ -387,16 +363,8 @@ impl StatelessCommonGraphNode for StepNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SmoothStepNode;
-
-impl GraphNodeCreator for SmoothStepNode {
-    type NodeType = Self;
-
-    fn create(&self) -> Self::NodeType {
-        SmoothStepNode
-    }
-}
 
 impl StatelessCommonGraphNode for SmoothStepNode {
     fn name(&self) -> &'static str {
@@ -440,16 +408,8 @@ impl StatelessCommonGraphNode for SmoothStepNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SplitComponentsNode;
-
-impl GraphNodeCreator for SplitComponentsNode {
-    type NodeType = Self;
-
-    fn create(&self) -> Self::NodeType {
-        SplitComponentsNode
-    }
-}
 
 impl StatelessCommonGraphNode for SplitComponentsNode {
     fn name(&self) -> &'static str {
@@ -491,16 +451,8 @@ impl StatelessCommonGraphNode for SplitComponentsNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CombineComponentsNode;
-
-impl GraphNodeCreator for CombineComponentsNode {
-    type NodeType = Self;
-
-    fn create(&self) -> Self::NodeType {
-        CombineComponentsNode
-    }
-}
 
 impl StatelessCommonGraphNode for CombineComponentsNode {
     fn name(&self) -> &'static str {
