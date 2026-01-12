@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, convert::identity, sync::Arc};
 
 use cyancia_id::Id;
 use iced_core::{Color, Element, Point};
@@ -292,7 +292,7 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
         state: &Self::State,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        Column::with_children(ctx.view_all_inputs(self.input_slot_names()))
+        Column::with_children(ctx.view_all_inputs(self.input_slot_names(), identity))
             .spacing(2)
             .into()
     }
@@ -302,7 +302,7 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
         state: &Self::State,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        Column::with_children(ctx.view_all_outputs(self.output_slot_names()))
+        Column::with_children(ctx.view_all_outputs(self.output_slot_names(), identity))
             .spacing(2)
             .into()
     }
@@ -393,14 +393,15 @@ impl GraphNodeInputsViewContext<'_> {
         Some(input_slot(*slot_id, name, slot))
     }
 
-    pub fn view_all_inputs(
+    pub fn view_all_inputs<T: 'static>(
         &self,
         names: &[&'static str],
-    ) -> Vec<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
+        f: impl Fn(ErasedGraphLiteralUpdateMessage) -> T + 'static + Copy,
+    ) -> Vec<Element<'static, T, GraphTheme, GraphRenderer>> {
         let mut e = Vec::with_capacity(self.inputs.len());
         for (id, name) in self.inputs.iter().zip(names) {
             if let Some(slot) = self.slots.get_input(id) {
-                e.push(input_slot(*id, *name, slot));
+                e.push(input_slot(*id, *name, slot).map(f));
             }
         }
         e
@@ -440,14 +441,15 @@ impl GraphNodeOutputsViewContext<'_> {
         Some(output_slot(*slot_id, name, slot))
     }
 
-    pub fn view_all_outputs(
+    pub fn view_all_outputs<T: 'static>(
         &self,
         names: &[&'static str],
-    ) -> Vec<Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>> {
+        f: impl Fn(ErasedGraphLiteralUpdateMessage) -> T + 'static + Copy,
+    ) -> Vec<Element<'static, T, GraphTheme, GraphRenderer>> {
         let mut e = Vec::with_capacity(self.outputs.len());
         for (id, name) in self.outputs.iter().zip(names) {
             if let Some(slot) = self.slots.get_output(id) {
-                e.push(output_slot(*id, *name, slot));
+                e.push(output_slot(*id, *name, slot).map(f));
             }
         }
         e

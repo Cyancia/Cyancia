@@ -248,11 +248,7 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
         ));
 
         column
-            .extend(
-                ctx.view_all_inputs(&["Var"])
-                    .into_iter()
-                    .map(|e| e.map(|m| ExternalNodeMessage::LiteralUpdate(m))),
-            )
+            .extend(ctx.view_all_inputs(&["Var"], ExternalNodeMessage::LiteralUpdate))
             .into()
     }
 
@@ -262,9 +258,7 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(
-            ctx.view_all_outputs(&["Value"])
-                .into_iter()
-                .map(|e| e.map(|m| ExternalNodeMessage::<T>::LiteralUpdate(m))),
+            ctx.view_all_outputs(&["Value"], ExternalNodeMessage::<T>::LiteralUpdate),
         )
         .into()
     }
