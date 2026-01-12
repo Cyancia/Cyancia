@@ -1,7 +1,15 @@
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
-    graph::{Graph, GraphFunctionSignature, variable::GraphLiteral},
+    graph::{
+        Graph, GraphFunctionSignature,
+        node::{
+            GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreator,
+            StatelessCommonGraphNode,
+        },
+        slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
+        variable::GraphLiteral,
+    },
     wgsl_std::{
         self,
         nodes::external::{ExternalDataStorage, ExternalLiteralId, ExternalNodeCreator},
@@ -9,7 +17,7 @@ use cyancia_shader_graph::{
     },
 };
 use iced::{
-    Element, Subscription,
+    Color, Element, Subscription, color,
     keyboard::{self, key},
     widget::row,
 };
@@ -42,6 +50,7 @@ impl App {
         storage
             .creators
             .register_non_default(ExternalNodeCreator::<F32Type>::new(ext_storage.into()));
+        storage.creators.register_non_default(DummyOutputNode);
         Self {
             graph: Graph::new(
                 GraphFunctionSignature::new("testtt".into(), F32Type),
@@ -119,5 +128,46 @@ impl App {
 
     pub fn subscription(&self) -> Subscription<GraphMessage> {
         keyboard::listen().map(GraphMessage::Keyboard)
+    }
+}
+
+pub struct DummyOutputNode;
+
+impl GraphNodeCreator for DummyOutputNode {
+    type NodeType = Self;
+
+    fn create(&self) -> Self::NodeType {
+        DummyOutputNode
+    }
+}
+
+impl StatelessCommonGraphNode for DummyOutputNode {
+    fn name(&self) -> &'static str {
+        "Dummy Output"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Input"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79bdf2)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![]
+    }
+
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+        let input = ctx.get_input(0)?;
+        Ok(format!("return {};", input))
     }
 }
