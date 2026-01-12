@@ -168,6 +168,6 @@ impl StatelessCommonGraphNode for DummyOutputNode {
 
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let input = ctx.get_input(0)?;
-        Ok(format!("return {};", input))
+        Ok(format!("return {};\n", input))
     }
 }

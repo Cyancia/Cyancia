@@ -182,7 +182,7 @@ macro_rules! math_node {
                 let output = ctx.get_output(0)?;
 
                 Ok(format!(
-                    "let {} = {};",
+                    "let {} = {};\n",
                     output,
                     state.func_call(&input_a, &input_b)
                 ))
@@ -330,7 +330,7 @@ impl StatelessCommonGraphNode for ClampNode {
         let output = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = clamp({}, {}, {});",
+            "let {} = clamp({}, {}, {});\n",
             output, input_value, input_min, input_max
         ))
     }
@@ -381,7 +381,7 @@ impl StatelessCommonGraphNode for StepNode {
         let output = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = step({}, {});",
+            "let {} = step({}, {});\n",
             output, input_edge, input_x
         ))
     }
@@ -434,7 +434,7 @@ impl StatelessCommonGraphNode for SmoothStepNode {
         let output = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = smoothstep({}, {}, {});",
+            "let {} = smoothstep({}, {}, {});\n",
             output, input_edge0, input_edge1, input_x
         ))
     }
@@ -485,7 +485,7 @@ impl StatelessCommonGraphNode for SplitComponentsNode {
         let output_y = ctx.get_output(1)?;
 
         Ok(format!(
-            "let {} = {}.x;\nlet {} = {}.y;",
+            "let {} = {}.x;\nlet {} = {}.y;\n",
             output_x, input_vector, output_y, input_vector
         ))
     }
@@ -536,7 +536,7 @@ impl StatelessCommonGraphNode for CombineComponentsNode {
         let output_vector = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = vec2f({}, {});",
+            "let {} = vec2f({}, {});\n",
             output_vector, input_x, input_y
         ))
     }
