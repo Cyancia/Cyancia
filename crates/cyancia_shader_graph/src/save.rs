@@ -113,14 +113,7 @@ impl Graph {
             .slots
             .outputs
             .iter()
-            .map(|(id, slot)| {
-                (
-                    *id,
-                    SerializableOutputSlotData {
-                        variable_name: slot.data.identifier().to_string(),
-                    },
-                )
-            })
+            .map(|(id, _)| (*id, SerializableOutputSlotData {}))
             .collect();
 
         let ident_generator = SerializableGraphIdentGenerator {
@@ -243,6 +236,7 @@ impl Graph {
         let mut graph_nodes = HashMap::with_capacity(nodes.len());
         let mut graph_inputs = HashMap::with_capacity(inputs.len());
         let mut graph_outputs = HashMap::with_capacity(outputs.len());
+        let mut ident_generator = GraphVarIdentGenerator::default();
 
         'node_loop: for node in nodes {
             let Some(node_inst) = storage.nodes.get_cloned(&node.data.name) else {
@@ -320,7 +314,7 @@ impl Graph {
                     id,
                     GraphOutputSlotData {
                         node_id: node.id,
-                        data: GraphVariable::new_boxed(slot.variable_name.clone(), default.ty),
+                        data: GraphVariable::new_boxed(ident_generator.next_output(), default.ty),
                         connected: HashSet::new(),
                     },
                 );
@@ -374,7 +368,7 @@ impl Graph {
             },
             storage,
             signature,
-            ident_generator: GraphVarIdentGenerator::new(ident_generator.counter),
+            ident_generator,
             cached_run_order: None,
         });
 
@@ -418,9 +412,7 @@ pub struct SerializableInputSlotData {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SerializableOutputSlotData {
-    pub variable_name: String,
-}
+pub struct SerializableOutputSlotData {}
 
 #[derive(Serialize, Deserialize)]
 pub struct SerializableGraphFunctionSignature {
