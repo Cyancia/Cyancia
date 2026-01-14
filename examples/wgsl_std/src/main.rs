@@ -2,7 +2,7 @@ use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
     graph::{
-        Graph, GraphFunctionSignature,
+        Graph, GraphSignature,
         node::{GraphNodeCodeGenContext, GraphNodeCodeGenError, StatelessCommonGraphNode},
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
         variable::GraphLiteral,
@@ -49,10 +49,7 @@ impl App {
             .register_non_default(ExternalNode::<F32Type>::new(ext_storage.into()));
         storage.nodes.register_non_default(DummyOutputNode);
         Self {
-            graph: Graph::new(
-                GraphFunctionSignature::new("testtt".into(), F32Type),
-                storage.into(),
-            ),
+            graph: Graph::new("testtt".into(), storage.into()),
         }
     }
 

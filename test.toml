@@ -1,0 +1,93 @@
+[[nodes]]
+id = "c5c34408-7d00-4b02-bf70-c4f4e53b3a0e"
+position = [677.0, 309.0]
+inputs = ["b4baf955-f12d-4048-8f5b-b943953c45dd", "4779b82a-948e-4dba-a77c-efe0898bc003", "c6a22f3a-9e00-4ba4-bf1c-c2df4afce60c"]
+outputs = ["95ff70a0-8a32-44c6-adf1-2b57c5a5dee6"]
+
+[nodes.data]
+name = "Smooth Step"
+
+[nodes.state]
+
+[[nodes]]
+id = "df85090c-ae1a-4567-9d15-9c1d528028f8"
+position = [474.0, 436.0]
+inputs = ["be6cc956-a988-4019-acb9-54472e769c8d"]
+outputs = ["f3dc263b-db81-44be-908e-5c38e12ccadd", "75c30fc2-bd6d-45b0-acb8-2d85a702feda"]
+
+[nodes.data]
+name = "Split Components"
+
+[nodes.state]
+
+[[nodes]]
+id = "6e7213e0-b493-48bd-9368-b530a27b1580"
+position = [824.0, 489.0]
+inputs = ["487518a0-6322-4977-bd01-8ba2076a9468", "f02c7e1c-55d2-4f93-8e9e-9f50ca305e4a"]
+outputs = ["5fc33bb8-9870-4e7a-8e4c-44d44c5b8e9b"]
+
+[nodes.data]
+name = "Combine Components"
+
+[nodes.state]
+
+[[nodes]]
+id = "ea62cc62-fa5c-4130-8a52-1dec04cf632b"
+position = [221.0, 421.0]
+inputs = ["dd485ce7-114a-4b51-b977-a102d9f3b876", "91c3db9b-90fe-4ffc-bf34-0228b8b4dc9d"]
+outputs = ["1b310ec5-aefe-4c23-b60c-f3940bb1b353"]
+state = "Add"
+
+[nodes.data]
+name = "Vector Math"
+
+[inputs.4779b82a-948e-4dba-a77c-efe0898bc003]
+data = 1.0
+
+[inputs.be6cc956-a988-4019-acb9-54472e769c8d]
+connected = "1b310ec5-aefe-4c23-b60c-f3940bb1b353"
+data = [0.0, 0.0]
+
+[inputs.b4baf955-f12d-4048-8f5b-b943953c45dd]
+connected = "f3dc263b-db81-44be-908e-5c38e12ccadd"
+data = 0.0
+
+[inputs.dd485ce7-114a-4b51-b977-a102d9f3b876]
+data = [0.0, 0.0]
+
+[inputs.c6a22f3a-9e00-4ba4-bf1c-c2df4afce60c]
+data = 0.0
+
+[inputs.91c3db9b-90fe-4ffc-bf34-0228b8b4dc9d]
+data = [0.0, 0.0]
+
+[inputs.487518a0-6322-4977-bd01-8ba2076a9468]
+connected = "95ff70a0-8a32-44c6-adf1-2b57c5a5dee6"
+data = 0.0
+
+[inputs.f02c7e1c-55d2-4f93-8e9e-9f50ca305e4a]
+connected = "75c30fc2-bd6d-45b0-acb8-2d85a702feda"
+data = 0.0
+
+[outputs.75c30fc2-bd6d-45b0-acb8-2d85a702feda]
+variable_name = "output_4"
+
+[outputs.95ff70a0-8a32-44c6-adf1-2b57c5a5dee6]
+variable_name = "output_1"
+
+[outputs.f3dc263b-db81-44be-908e-5c38e12ccadd]
+variable_name = "output_3"
+
+[outputs.5fc33bb8-9870-4e7a-8e4c-44d44c5b8e9b]
+variable_name = "output_2"
+
+[outputs.1b310ec5-aefe-4c23-b60c-f3940bb1b353]
+variable_name = "output_0"
+
+[signature]
+name = "testtt"
+inputs = []
+outputs = []
+
+[ident_generator]
+counter = 5

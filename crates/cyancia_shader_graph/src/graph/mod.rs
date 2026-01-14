@@ -25,8 +25,6 @@ pub mod variable;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GraphCompileError {
-    #[error("Invalid function signature")]
-    InvalidFunctionSignature,
     #[error("{0}")]
     NodeCodeGenError(ContextualGraphNodeCodeGenError),
     #[error(transparent)]
@@ -37,21 +35,18 @@ pub struct Graph {
     pub(crate) nodes: HashMap<Id<GraphNodeData>, GraphNodeData>,
     pub(crate) slots: GraphSlots,
     pub(crate) ident_generator: GraphVarIdentGenerator,
-    pub(crate) signature: GraphFunctionSignature,
+    pub(crate) signature: GraphSignature,
     pub(crate) storage: Arc<GraphDynamicInstancesStorage>,
     pub(crate) cached_run_order: Option<Vec<Id<GraphNodeData>>>,
 }
 
 impl Graph {
-    pub fn new(
-        signature: GraphFunctionSignature,
-        storage: Arc<GraphDynamicInstancesStorage>,
-    ) -> Self {
+    pub fn new(name: String, storage: Arc<GraphDynamicInstancesStorage>) -> Self {
         Self {
             nodes: HashMap::new(),
             slots: GraphSlots::default(),
             ident_generator: GraphVarIdentGenerator::default(),
-            signature,
+            signature: GraphSignature::new(name),
             storage,
             cached_run_order: None,
         }
@@ -252,9 +247,8 @@ impl Graph {
                 }
             }
         }
-        self.signature
-            .compile(code)
-            .ok_or(GraphCompileError::InvalidFunctionSignature)
+
+        Ok(code)
     }
 
     pub fn invalidate_cache(&mut self) {
@@ -402,73 +396,46 @@ pub struct GraphDynamicInstancesStorage {
     pub casters: GraphTypeCastersStorage,
 }
 
-pub struct GraphFunctionSignature {
+pub struct GraphSignature {
     name: String,
-    ret_type: Box<dyn ErasedGraphValueType>,
-    params: Vec<GraphVariable>,
+    inputs: Vec<GraphVariable>,
+    outputs: Vec<GraphVariable>,
 }
 
-impl GraphFunctionSignature {
-    pub fn new<T: GraphValueType>(name: String, ret_type: T) -> Self {
+impl GraphSignature {
+    pub fn new(name: String) -> Self {
         Self {
             name,
-            ret_type: Box::new(ret_type),
-            params: Vec::new(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         }
     }
 
-    pub fn new_full(
-        name: String,
-        ret_type: Box<dyn ErasedGraphValueType>,
-        params: Vec<GraphVariable>,
-    ) -> Self {
+    pub fn new_full(name: String, inputs: Vec<GraphVariable>, outputs: Vec<GraphVariable>) -> Self {
         Self {
             name,
-            ret_type,
-            params,
+            inputs,
+            outputs,
         }
-    }
-
-    pub fn with_param<T: GraphValueType + Default>(mut self, identifier: String) -> Self {
-        self.params.push(GraphVariable::new::<T>(identifier));
-        self
-    }
-
-    pub fn compile(&self, body: String) -> Option<String> {
-        let ret_ty = self.ret_type.wgsl_type()?;
-
-        let params = self
-            .params
-            .iter()
-            .filter_map(|param| {
-                param
-                    .ty()
-                    .wgsl_type()
-                    .map(|ty| format!("{}: {}", param.identifier(), ty))
-            })
-            .collect::<Vec<_>>();
-        if params.len() != self.params.len() {
-            return None;
-        }
-
-        Some(format!(
-            "fn {}({}) -> {} {{\n{}\n}}",
-            self.name,
-            params.join(", "),
-            ret_ty,
-            body
-        ))
     }
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn ret_type(&self) -> &Box<dyn ErasedGraphValueType> {
-        &self.ret_type
+    pub fn require_input(&mut self, var: GraphVariable) {
+        self.inputs.push(var);
     }
 
-    pub fn params(&self) -> &Vec<GraphVariable> {
-        &self.params
+    pub fn require_output(&mut self, var: GraphVariable) {
+        self.outputs.push(var);
+    }
+
+    pub fn inputs(&self) -> &[GraphVariable] {
+        &self.inputs
+    }
+
+    pub fn outputs(&self) -> &[GraphVariable] {
+        &self.outputs
     }
 }

@@ -11,7 +11,7 @@ use toml::ser::Buffer;
 use crate::{
     GraphSerializer,
     graph::{
-        Graph, GraphDynamicInstancesStorage, GraphFunctionSignature,
+        Graph, GraphDynamicInstancesStorage, GraphSignature,
         node::{GraphNodeData, StatefulGraphNode},
         slot::{GraphInputSlotData, GraphOutputSlotData, GraphSlots},
         variable::{GraphLiteral, GraphVarIdentGenerator, GraphVariable},
@@ -123,26 +123,34 @@ impl Graph {
             })
             .collect();
 
-        let signature = SerializableGraphFunctionSignature {
+        let ident_generator = SerializableGraphIdentGenerator {
+            counter: self.ident_generator.counter(),
+        };
+
+        let signature = SerializableGraphSignature {
             name: self.signature.name().to_string(),
-            ret_type: GraphValueTypeId {
-                name: self.signature.ret_type().name().to_string(),
-            },
-            params: self
+            inputs: self
                 .signature
-                .params()
+                .inputs()
                 .iter()
-                .map(|param| SerializableGraphVariable {
-                    identifier: param.identifier().to_string(),
+                .map(|var| SerializableGraphVariable {
+                    identifier: var.identifier().to_string(),
                     ty: GraphValueTypeId {
-                        name: param.ty().name().to_string(),
+                        name: var.ty().name().to_string(),
                     },
                 })
                 .collect(),
-        };
-
-        let ident_generator = SerializableGraphIdentGenerator {
-            counter: self.ident_generator.counter(),
+            outputs: self
+                .signature
+                .outputs()
+                .iter()
+                .map(|var| SerializableGraphVariable {
+                    identifier: var.identifier().to_string(),
+                    ty: GraphValueTypeId {
+                        name: var.ty().name().to_string(),
+                    },
+                })
+                .collect(),
         };
 
         let sg = SerializableGraph {
@@ -178,34 +186,59 @@ impl Graph {
             }
         };
 
-        let mut signature_params = Vec::with_capacity(signature.params.len());
-        for param in signature.params {
-            match storage.types.get(&param.ty.name) {
-                Some(t) => {
-                    signature_params.push(GraphVariable::new_boxed(
-                        param.identifier.clone(),
-                        dyn_clone::clone_box(&**t),
-                    ));
-                }
-                None => {
-                    errs.push(GraphDeserializeError::TypeNotFound(param.ty.name.clone()));
-                    return rs;
-                }
-            }
-        }
+        let sig_inputs = signature
+            .inputs
+            .iter()
+            .try_fold(Vec::new(), |mut acc, var| {
+                let type_name = &var.ty.name;
+                let value_type_obj = match storage.types.get(type_name) {
+                    Some(t) => t,
+                    None => {
+                        errs.push(GraphDeserializeError::TypeNotFound(type_name.clone()));
+                        return Result::<_, GraphDeserializeError>::Err(
+                            GraphDeserializeError::TypeNotFound(type_name.clone()),
+                        );
+                    }
+                };
 
-        let ret_type = match storage.types.get(&signature.ret_type.name) {
-            Some(t) => dyn_clone::clone_box(&**t),
-            None => {
-                errs.push(GraphDeserializeError::TypeNotFound(
-                    signature.ret_type.name.clone(),
+                acc.push(GraphVariable::new_boxed(
+                    var.identifier.clone(),
+                    dyn_clone::clone_box(&**value_type_obj),
                 ));
-                return rs;
-            }
+
+                Result::<_, GraphDeserializeError>::Ok(acc)
+            });
+        let Result::Ok(sig_inputs) = sig_inputs else {
+            return rs;
         };
 
-        let signature =
-            GraphFunctionSignature::new_full(signature.name, ret_type, signature_params);
+        let sig_outputs = signature
+            .outputs
+            .iter()
+            .try_fold(Vec::new(), |mut acc, var| {
+                let type_name = &var.ty.name;
+                let value_type_obj = match storage.types.get(type_name) {
+                    Some(t) => t,
+                    None => {
+                        errs.push(GraphDeserializeError::TypeNotFound(type_name.clone()));
+                        return Result::<_, GraphDeserializeError>::Err(
+                            GraphDeserializeError::TypeNotFound(type_name.clone()),
+                        );
+                    }
+                };
+
+                acc.push(GraphVariable::new_boxed(
+                    var.identifier.clone(),
+                    dyn_clone::clone_box(&**value_type_obj),
+                ));
+
+                Result::<_, GraphDeserializeError>::Ok(acc)
+            });
+        let Result::Ok(sig_outputs) = sig_outputs else {
+            return rs;
+        };
+
+        let signature = GraphSignature::new_full(signature.name, sig_inputs, sig_outputs);
 
         let mut graph_nodes = HashMap::with_capacity(nodes.len());
         let mut graph_inputs = HashMap::with_capacity(inputs.len());
@@ -340,8 +373,8 @@ impl Graph {
                 outputs: graph_outputs,
             },
             storage,
-            ident_generator: GraphVarIdentGenerator::new(ident_generator.counter),
             signature,
+            ident_generator: GraphVarIdentGenerator::new(ident_generator.counter),
             cached_run_order: None,
         });
 
@@ -354,7 +387,7 @@ pub struct SerializableGraph {
     pub nodes: Vec<SerializableNodeData>,
     pub inputs: HashMap<Id<GraphInputSlotData>, SerializableInputSlotData>,
     pub outputs: HashMap<Id<GraphOutputSlotData>, SerializableOutputSlotData>,
-    pub signature: SerializableGraphFunctionSignature,
+    pub signature: SerializableGraphSignature,
     pub ident_generator: SerializableGraphIdentGenerator,
 }
 
@@ -405,4 +438,11 @@ pub struct SerializableGraphVariable {
 #[derive(Serialize, Deserialize)]
 pub struct SerializableGraphIdentGenerator {
     pub counter: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SerializableGraphSignature {
+    pub name: String,
+    pub inputs: Vec<SerializableGraphVariable>,
+    pub outputs: Vec<SerializableGraphVariable>,
 }
