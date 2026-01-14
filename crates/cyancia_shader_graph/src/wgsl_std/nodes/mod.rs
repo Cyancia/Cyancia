@@ -102,14 +102,14 @@ macro_rules! math_node {
                 $header_color
             }
 
-            fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+            fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
                 vec![
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                 ]
             }
 
-            fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+            fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
                 vec![GraphDefaultOutputSlot::new::<$slot_ty>()]
             }
 

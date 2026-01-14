@@ -238,27 +238,38 @@ impl Graph {
         let mut graph_outputs = HashMap::with_capacity(outputs.len());
         let mut ident_generator = GraphVarIdentGenerator::default();
 
-        'node_loop: for node in nodes {
-            let Some(node_inst) = storage.nodes.get_cloned(&node.data.name) else {
-                errs.push(GraphDeserializeError::NodeNotFound(node.data.name.clone()));
+        'node_loop: for ser_node in nodes {
+            let Some(node_inst) = storage.nodes.get_cloned(&ser_node.data.name) else {
+                errs.push(GraphDeserializeError::NodeNotFound(
+                    ser_node.data.name.clone(),
+                ));
                 continue;
             };
 
-            let raw_inputs = node_inst.create_inputs();
-            if raw_inputs.len() != node.inputs.len() {
+            let mut node = StatefulGraphNode::new(node_inst);
+            match node.deserialize_state(ser_node.state) {
+                Result::Ok(_) => {}
+                Err(e) => {
+                    errs.push(GraphDeserializeError::NodeStateDeserializeError(e));
+                    continue 'node_loop;
+                }
+            }
+
+            let raw_inputs = node.create_inputs();
+            if raw_inputs.len() != ser_node.inputs.len() {
                 errs.push(GraphDeserializeError::UnmatchedInputSlotCount {
-                    node: node.id,
+                    node: ser_node.id,
                     expected: raw_inputs.len(),
-                    found: node.inputs.len(),
+                    found: ser_node.inputs.len(),
                 });
                 continue;
             }
             let mut node_inputs = HashMap::with_capacity(raw_inputs.len());
 
             for (index, default) in raw_inputs.into_iter().enumerate() {
-                let id = node.inputs[index];
+                let id = ser_node.inputs[index];
                 let Some(slot) = inputs.get(&id) else {
-                    errs.push(GraphDeserializeError::MissingInputSlot(node.id, id));
+                    errs.push(GraphDeserializeError::MissingInputSlot(ser_node.id, id));
                     continue 'node_loop;
                 };
 
@@ -282,7 +293,7 @@ impl Graph {
                 node_inputs.insert(
                     id,
                     GraphInputSlotData {
-                        node_id: node.id,
+                        node_id: ser_node.id,
                         data: GraphLiteral::new_boxed(
                             literal_value,
                             dyn_clone::clone_box(&**value_type_obj),
@@ -292,50 +303,41 @@ impl Graph {
                 );
             }
 
-            let raw_outputs = node_inst.create_outputs();
-            if raw_outputs.len() != node.outputs.len() {
+            let raw_outputs = node.create_outputs();
+            if raw_outputs.len() != ser_node.outputs.len() {
                 errs.push(GraphDeserializeError::UnmatchedOutputSlotCount {
-                    node: node.id,
+                    node: ser_node.id,
                     expected: raw_outputs.len(),
-                    found: node.outputs.len(),
+                    found: ser_node.outputs.len(),
                 });
                 continue;
             }
             let mut node_outputs = HashMap::with_capacity(raw_outputs.len());
 
             for (index, default) in raw_outputs.into_iter().enumerate() {
-                let id = node.outputs[index];
+                let id = ser_node.outputs[index];
                 let Some(slot) = outputs.get(&id) else {
-                    errs.push(GraphDeserializeError::MissingOutputSlot(node.id, id));
+                    errs.push(GraphDeserializeError::MissingOutputSlot(ser_node.id, id));
                     continue 'node_loop;
                 };
 
                 node_outputs.insert(
                     id,
                     GraphOutputSlotData {
-                        node_id: node.id,
+                        node_id: ser_node.id,
                         data: GraphVariable::new_boxed(ident_generator.next_output(), default.ty),
                         connected: HashSet::new(),
                     },
                 );
             }
 
-            let mut data = StatefulGraphNode::new(node_inst);
-            match data.deserialize_state(node.state) {
-                Result::Ok(_) => {}
-                Err(e) => {
-                    errs.push(GraphDeserializeError::NodeStateDeserializeError(e));
-                    continue 'node_loop;
-                }
-            }
-
             graph_nodes.insert(
-                node.id,
+                ser_node.id,
                 GraphNodeData {
-                    position: node.position.into(),
-                    data,
-                    inputs: node.inputs,
-                    outputs: node.outputs,
+                    position: ser_node.position.into(),
+                    data: node,
+                    inputs: ser_node.inputs,
+                    outputs: ser_node.outputs,
                 },
             );
             graph_inputs.extend(node_inputs);

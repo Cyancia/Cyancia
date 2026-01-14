@@ -10,9 +10,10 @@ use cyancia_shader_graph::{
     wgsl_std::{
         self,
         nodes::external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
-        types::F32Type,
+        types::{F32Type, Vec2FType},
     },
 };
+use glam::Vec2;
 use iced::{
     Color, Element, Subscription, color,
     keyboard::{self, key},
@@ -41,12 +42,16 @@ impl App {
         let mut storage = wgsl_std::create_storage();
         let ext_storage = ExternalDataStorage::default();
         ext_storage.insert(
-            ExternalLiteralId::<F32Type>::new("MyExternalValue".into()),
+            ExternalLiteralId::new("MyExternalF32".into()),
             GraphLiteral::new::<F32Type>(0.0),
+        );
+        ext_storage.insert(
+            ExternalLiteralId::new("MyExternalVec2F".into()),
+            GraphLiteral::new::<Vec2FType>(Vec2::ZERO),
         );
         storage
             .nodes
-            .register_non_default(ExternalNode::<F32Type>::new(ext_storage.into()));
+            .register_non_default(ExternalNode::new(ext_storage.into()));
         storage.nodes.register_non_default(DummyOutputNode);
         Self {
             graph: Graph::new("testtt".into(), storage.into()),

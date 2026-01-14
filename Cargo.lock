@@ -5322,6 +5322,7 @@ name = "wgsl_std"
 version = "0.1.0"
 dependencies = [
  "cyancia_shader_graph",
+ "glam 0.30.9",
  "iced",
  "serde",
  "toml",

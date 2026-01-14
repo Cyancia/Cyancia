@@ -77,6 +77,10 @@ impl GraphDefaultOutputSlot {
     pub fn new_non_default<T: GraphValueType>(ty: T) -> Self {
         Self { ty: Box::new(ty) }
     }
+
+    pub fn new_boxed(ty: Box<dyn ErasedGraphValueType>) -> Self {
+        Self { ty }
+    }
 }
 
 pub struct GraphOutputSlotData {

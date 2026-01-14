@@ -25,8 +25,8 @@ pub trait GraphNode: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Self::State;
     fn header_color(&self) -> Color;
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot>;
     fn view_inputs(
         &self,
         state: &Self::State,
@@ -60,32 +60,35 @@ pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Box<dyn Any + Send + Sync>;
     fn header_color(&self) -> Color;
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
+    fn create_inputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultOutputSlot>;
     fn view_inputs(
         &self,
         node_id: Id<GraphNodeData>,
-        state: &dyn Any,
+        state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer>;
     fn update(
         &self,
-        state: &mut dyn Any,
+        state: &mut Box<dyn Any + Send + Sync>,
         message: ErasedGraphNodeMessage,
         ctx: GraphNodeUpdateContext,
     );
     fn view_outputs(
         &self,
         node_id: Id<GraphNodeData>,
-        state: &dyn Any,
+        state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer>;
     fn generate_code(
         &self,
-        state: &dyn Any,
+        state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn serialize_state(&self, state: &dyn Any) -> Result<toml::Value, toml::ser::Error>;
+    fn serialize_state(
+        &self,
+        state: &Box<dyn Any + Send + Sync>,
+    ) -> Result<toml::Value, toml::ser::Error>;
     fn deserialize_state(
         &self,
         value: toml::Value,
@@ -105,18 +108,24 @@ impl<T: GraphNode> ErasedGraphNode for T {
         self.header_color()
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
-        self.create_inputs()
+    fn create_inputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultInputSlot> {
+        let state = state
+            .downcast_ref::<T::State>()
+            .expect("Failed to downcast node state.");
+        self.create_inputs(state)
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
-        self.create_outputs()
+    fn create_outputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultOutputSlot> {
+        let state = state
+            .downcast_ref::<T::State>()
+            .expect("Failed to downcast node state.");
+        self.create_outputs(state)
     }
 
     fn view_inputs(
         &self,
         node_id: Id<GraphNodeData>,
-        state: &dyn Any,
+        state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         let state = state
@@ -132,7 +141,7 @@ impl<T: GraphNode> ErasedGraphNode for T {
     fn view_outputs(
         &self,
         node_id: Id<GraphNodeData>,
-        state: &dyn Any,
+        state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         let state = state
@@ -147,7 +156,7 @@ impl<T: GraphNode> ErasedGraphNode for T {
 
     fn update(
         &self,
-        state: &mut dyn Any,
+        state: &mut Box<dyn Any + Send + Sync>,
         message: ErasedGraphNodeMessage,
         ctx: GraphNodeUpdateContext,
     ) {
@@ -163,7 +172,7 @@ impl<T: GraphNode> ErasedGraphNode for T {
 
     fn generate_code(
         &self,
-        state: &dyn Any,
+        state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         let state = state
@@ -172,7 +181,10 @@ impl<T: GraphNode> ErasedGraphNode for T {
         self.generate_code(state, ctx)
     }
 
-    fn serialize_state(&self, state: &dyn Any) -> Result<toml::Value, toml::ser::Error> {
+    fn serialize_state(
+        &self,
+        state: &Box<dyn Any + Send + Sync>,
+    ) -> Result<toml::Value, toml::ser::Error> {
         let state = state
             .downcast_ref::<T::State>()
             .expect("Failed to downcast node state.");
@@ -214,7 +226,7 @@ impl StatefulGraphNode {
         node_id: Id<GraphNodeData>,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
-        self.data.view_inputs(node_id, &*self.state, ctx)
+        self.data.view_inputs(node_id, &self.state, ctx)
     }
 
     fn view_outputs(
@@ -222,28 +234,36 @@ impl StatefulGraphNode {
         node_id: Id<GraphNodeData>,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
-        self.data.view_outputs(node_id, &*self.state, ctx)
+        self.data.view_outputs(node_id, &self.state, ctx)
     }
 
     pub fn update(&mut self, message: ErasedGraphNodeMessage, ctx: GraphNodeUpdateContext) {
-        self.data.update(&mut *self.state, message, ctx);
+        self.data.update(&mut self.state, message, ctx);
     }
 
     pub fn generate_code(
         &self,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        self.data.generate_code(&*self.state, ctx)
+        self.data.generate_code(&self.state, ctx)
     }
 
     pub fn serialize_state(&self) -> Result<toml::Value, toml::ser::Error> {
-        self.data.serialize_state(&*self.state)
+        self.data.serialize_state(&self.state)
     }
 
     pub fn deserialize_state(&mut self, value: toml::Value) -> Result<(), toml::de::Error> {
         let state = self.data.deserialize_state(value)?;
         self.state = state;
         Ok(())
+    }
+
+    pub fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        self.data.create_inputs(&self.state)
+    }
+
+    pub fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        self.data.create_outputs(&self.state)
     }
 }
 
@@ -280,11 +300,11 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
         self.header_color()
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
         self.create_inputs()
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
         self.create_outputs()
     }
 

@@ -12,7 +12,8 @@ use crate::graph::{
         GraphNodeCodeGenContext, GraphNodeData, GraphNodesStorage, StatefulGraphNode,
     },
     slot::{
-        ErasedGraphValueType, GraphInputSlotData, GraphOutputSlotData, GraphSlots, GraphValueType,
+        ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData,
+        GraphOutputSlotData, GraphSlots, GraphValueType,
     },
     variable::{
         GraphTypeCastersStorage, GraphValueTypeStorage, GraphVarIdentGenerator, GraphVariable,
@@ -57,44 +58,24 @@ impl Graph {
         position: Point,
         node: Box<dyn ErasedGraphNode>,
     ) -> Id<GraphNodeData> {
+        let node = StatefulGraphNode::new(node);
         let node_id = Id::random();
-        let raw_inputs = node.create_inputs();
-        let mut inputs = Vec::with_capacity(raw_inputs.len());
-        for slot in raw_inputs {
-            let slot_id = Id::random();
-            self.slots.inputs.insert(
-                slot_id,
-                GraphInputSlotData {
-                    node_id,
-                    data: slot.value,
-                    connected: None,
-                },
-            );
-            inputs.push(slot_id);
-        }
-
-        let raw_outputs = node.create_outputs();
-        let mut outputs = Vec::with_capacity(raw_outputs.len());
-        for slot in raw_outputs {
-            let slot_id = Id::random();
-            self.slots.outputs.insert(
-                slot_id,
-                GraphOutputSlotData {
-                    node_id,
-                    data: GraphVariable::new_boxed(self.ident_generator.next_output(), slot.ty),
-                    connected: HashSet::new(),
-                },
-            );
-            outputs.push(slot_id);
-        }
+        let inputs = create_input_slots(&mut self.slots, node_id, node.create_inputs()).into();
+        let outputs = create_output_slots(
+            &mut self.slots,
+            node_id,
+            node.create_outputs(),
+            &mut self.ident_generator,
+        )
+        .into();
 
         self.nodes.insert(
             node_id,
             GraphNodeData {
                 position,
-                inputs: inputs.into(),
-                outputs: outputs.into(),
-                data: StatefulGraphNode::new(node),
+                inputs,
+                outputs,
+                data: node,
             },
         );
         self.invalidate_cache();
@@ -107,25 +88,8 @@ impl Graph {
 
     pub fn delete_node(&mut self, id: &Id<GraphNodeData>) {
         if let Some(node) = self.nodes.remove(id) {
-            for input_slot_id in node.inputs.iter() {
-                if let Some(input_slot) = self.slots.inputs.remove(input_slot_id) {
-                    if let Some(connected) = input_slot
-                        .connected
-                        .and_then(|id| self.slots.outputs.get_mut(&id))
-                    {
-                        connected.connected.remove(&input_slot_id);
-                    }
-                }
-            }
-            for output_slot_id in node.outputs.iter() {
-                if let Some(output_slot) = self.slots.outputs.remove(output_slot_id) {
-                    for connected_id in output_slot.connected {
-                        if let Some(connected_slot) = self.slots.inputs.get_mut(&connected_id) {
-                            connected_slot.connected = None;
-                        }
-                    }
-                }
-            }
+            delete_all_inputs(&mut self.slots, &node.inputs);
+            delete_all_outputs(&mut self.slots, &node.outputs);
             self.invalidate_cache();
         }
     }
@@ -379,13 +343,167 @@ impl Graph {
     }
 
     pub fn update_node(&mut self, message: ErasedGraphNodeMessage) {
-        if let Some(node) = self.nodes.get_mut(&message.id) {
-            node.update(message, &mut self.slots);
+        let Some(node) = self.nodes.get_mut(&message.id) else {
+            return;
+        };
+
+        let node_id = message.id;
+        node.update(message, &mut self.slots);
+
+        let new_inputs = node.data.create_inputs();
+        let new_outputs = node.data.create_outputs();
+
+        if new_inputs.len() == node.inputs.len() {
+            let mut inputs_changed = false;
+            for (input_slot_id, new_input_slot) in node.inputs.iter().zip(new_inputs) {
+                let Some(input_slot) = self.slots.inputs.get_mut(input_slot_id) else {
+                    continue;
+                };
+
+                if input_slot.data.ty().name() != new_input_slot.value.ty().name() {
+                    input_slot.data = new_input_slot.value;
+                    inputs_changed = true;
+                }
+            }
+
+            if inputs_changed {
+                disconnect_all_inputs(&mut self.slots, &node.inputs);
+                self.cached_run_order = None;
+            }
+        } else {
+            delete_all_inputs(&mut self.slots, &node.inputs);
+            node.inputs = create_input_slots(&mut self.slots, node_id, new_inputs).into();
+            self.cached_run_order = None;
+        }
+
+        if new_outputs.len() == node.outputs.len() {
+            let mut outputs_changed = false;
+            for (output_slot_id, new_output_slot) in node.outputs.iter().zip(new_outputs) {
+                let Some(output_slot) = self.slots.outputs.get_mut(output_slot_id) else {
+                    continue;
+                };
+
+                if output_slot.data.ty().name() != new_output_slot.ty.name() {
+                    output_slot.data = GraphVariable::new_boxed(
+                        self.ident_generator.next_output(),
+                        new_output_slot.ty,
+                    );
+                    outputs_changed = true;
+                }
+            }
+
+            if outputs_changed {
+                disconnect_all_outputs(&mut self.slots, &node.outputs);
+                self.cached_run_order = None;
+            }
+        } else {
+            delete_all_outputs(&mut self.slots, &node.outputs);
+            node.outputs = create_output_slots(
+                &mut self.slots,
+                node_id,
+                new_outputs,
+                &mut self.ident_generator,
+            )
+            .into();
+            self.cached_run_order = None;
         }
     }
 
     pub fn storage(&self) -> &Arc<GraphDynamicInstancesStorage> {
         &self.storage
+    }
+}
+
+fn create_input_slots(
+    slots: &mut GraphSlots,
+    node_id: Id<GraphNodeData>,
+    raw_inputs: Vec<GraphDefaultInputSlot>,
+) -> Vec<Id<GraphInputSlotData>> {
+    let mut inputs = Vec::with_capacity(raw_inputs.len());
+    for slot in raw_inputs {
+        let slot_id = Id::random();
+        slots.inputs.insert(
+            slot_id,
+            GraphInputSlotData {
+                node_id,
+                data: slot.value,
+                connected: None,
+            },
+        );
+        inputs.push(slot_id);
+    }
+    inputs
+}
+
+fn create_output_slots(
+    slots: &mut GraphSlots,
+    node_id: Id<GraphNodeData>,
+    raw_outputs: Vec<GraphDefaultOutputSlot>,
+    ident_generator: &mut GraphVarIdentGenerator,
+) -> Vec<Id<GraphOutputSlotData>> {
+    let mut outputs = Vec::with_capacity(raw_outputs.len());
+    for slot in raw_outputs {
+        let slot_id = Id::random();
+        slots.outputs.insert(
+            slot_id,
+            GraphOutputSlotData {
+                node_id,
+                data: GraphVariable::new_boxed(ident_generator.next_output(), slot.ty),
+                connected: HashSet::new(),
+            },
+        );
+        outputs.push(slot_id);
+    }
+    outputs
+}
+
+fn disconnect_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[Id<GraphInputSlotData>]) {
+    for input_slot_id in input_slot_ids {
+        if let Some(input_slot) = slots.inputs.get_mut(input_slot_id)
+            && let Some(output_slot) = input_slot
+                .connected
+                .and_then(|output_id| slots.outputs.get_mut(&output_id))
+        {
+            input_slot.connected = None;
+            output_slot.connected.remove(&input_slot_id);
+        }
+    }
+}
+
+fn disconnect_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[Id<GraphOutputSlotData>]) {
+    for output_slot_id in output_slot_ids {
+        if let Some(output_slot) = slots.outputs.get_mut(output_slot_id) {
+            for input_slot_id in &output_slot.connected {
+                if let Some(input_slot) = slots.inputs.get_mut(input_slot_id) {
+                    input_slot.connected = None;
+                }
+            }
+            output_slot.connected.clear();
+        }
+    }
+}
+
+fn delete_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[Id<GraphInputSlotData>]) {
+    for input_slot_id in input_slot_ids {
+        if let Some(input_slot) = slots.inputs.remove(input_slot_id)
+            && let Some(output_slot) = input_slot
+                .connected
+                .and_then(|output_id| slots.outputs.get_mut(&output_id))
+        {
+            output_slot.connected.remove(&input_slot_id);
+        }
+    }
+}
+
+fn delete_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[Id<GraphOutputSlotData>]) {
+    for output_slot_id in output_slot_ids {
+        if let Some(output_slot) = slots.outputs.remove(output_slot_id) {
+            for input_slot_id in output_slot.connected {
+                if let Some(input_slot) = slots.inputs.get_mut(&input_slot_id) {
+                    input_slot.connected = None;
+                }
+            }
+        }
     }
 }
 

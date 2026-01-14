@@ -23,170 +23,87 @@ use crate::{
 
 #[derive(Default)]
 pub struct ExternalDataStorage {
-    contents: RwLock<HashMap<UntypedExternalLiteralId, Arc<GraphLiteral>>>,
-    types: RwLock<HashMap<TypeId, Vec<UntypedExternalLiteralId>>>,
+    contents: RwLock<HashMap<ExternalLiteralId, Arc<GraphLiteral>>>,
 }
 
 impl ExternalDataStorage {
-    pub fn insert<T: GraphValueType>(&self, id: ExternalLiteralId<T>, value: GraphLiteral) {
+    pub fn insert(&self, id: ExternalLiteralId, value: GraphLiteral) {
         let mut contents = self.contents.write();
-        let mut types = self.types.write();
-        let id = id.untyped().clone();
 
         contents.insert(id.clone(), Arc::new(value));
-        types.entry(TypeId::of::<T>()).or_default().push(id);
     }
 
-    pub fn get<T: GraphValueType>(&self, id: &ExternalLiteralId<T>) -> Option<Arc<GraphLiteral>> {
-        self.contents.read().get(id.as_untyped()).cloned()
+    pub fn get(&self, id: &ExternalLiteralId) -> Option<Arc<GraphLiteral>> {
+        self.contents.read().get(id).cloned()
     }
 
-    pub fn all_of_type<T: GraphValueType>(&self) -> Vec<ExternalLiteralId<T>> {
-        self.types
-            .read()
-            .get(&TypeId::of::<T>())
-            .map(|ids| {
-                ids.iter()
-                    .map(|id| ExternalLiteralId::new(id.name.clone()))
-                    .collect()
-            })
-            .unwrap_or_default()
+    pub fn all_id(&self) -> Vec<ExternalLiteralId> {
+        self.contents.read().keys().cloned().collect()
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct UntypedExternalLiteralId {
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct ExternalLiteralId {
     name: String,
 }
 
-impl UntypedExternalLiteralId {
-    pub fn typed<T>(self) -> ExternalLiteralId<T> {
-        ExternalLiteralId::new(self.name)
-    }
-}
-
-pub struct ExternalLiteralId<T> {
-    id: UntypedExternalLiteralId,
-    _marker: PhantomData<T>,
-}
-
-impl<T> ExternalLiteralId<T> {
+impl ExternalLiteralId {
     pub fn new(name: String) -> Self {
-        ExternalLiteralId {
-            id: UntypedExternalLiteralId { name },
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn untyped(self) -> UntypedExternalLiteralId {
-        self.id
-    }
-
-    pub fn as_untyped(&self) -> &UntypedExternalLiteralId {
-        &self.id
+        Self { name }
     }
 }
 
-impl<T> ToString for ExternalLiteralId<T> {
+impl ToString for ExternalLiteralId {
     fn to_string(&self) -> String {
-        self.id.name.clone()
+        self.name.clone()
     }
 }
 
-impl<T> Serialize for ExternalLiteralId<T> {
+impl Serialize for ExternalLiteralId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        self.id.serialize(serializer)
+        self.name.serialize(serializer)
     }
 }
 
-impl<'de, T> Deserialize<'de> for ExternalLiteralId<T> {
+impl<'de> Deserialize<'de> for ExternalLiteralId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let id = UntypedExternalLiteralId::deserialize(deserializer)?;
-        Ok(ExternalLiteralId {
-            id,
-            _marker: PhantomData,
-        })
+        let name = String::deserialize(deserializer)?;
+        Ok(ExternalLiteralId { name })
     }
 }
 
-impl<T> Clone for ExternalLiteralId<T> {
-    fn clone(&self) -> Self {
-        ExternalLiteralId {
-            id: self.id.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T> PartialEq for ExternalLiteralId<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl<T> Eq for ExternalLiteralId<T> {}
-
-pub struct ExternalLiteralType<T> {
+#[derive(Clone)]
+pub struct ExternalLiteralType {
     storage: Arc<ExternalDataStorage>,
-    marker: PhantomData<T>,
 }
 
-impl<T> Clone for ExternalLiteralType<T> {
-    fn clone(&self) -> Self {
-        ExternalLiteralType {
-            storage: self.storage.clone(),
-            marker: PhantomData,
-        }
-    }
+#[derive(Clone)]
+pub struct ExternalNode {
+    pub storage: Arc<ExternalDataStorage>,
 }
 
-pub struct ExternalNode<T> {
-    storage: Arc<ExternalDataStorage>,
-    _marker: PhantomData<T>,
-}
-
-impl<T> ExternalNode<T> {
+impl ExternalNode {
     pub fn new(storage: Arc<ExternalDataStorage>) -> Self {
-        Self {
-            storage,
-            _marker: PhantomData,
-        }
+        Self { storage }
     }
 }
 
-impl<T> Clone for ExternalNode<T> {
-    fn clone(&self) -> Self {
-        Self {
-            storage: self.storage.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-pub enum ExternalNodeMessage<T> {
-    IdChanged(ExternalLiteralId<T>),
+#[derive(Clone)]
+pub enum ExternalNodeMessage {
+    IdChanged(ExternalLiteralId),
     LiteralUpdate(ErasedGraphLiteralUpdateMessage),
 }
 
-impl<T> Clone for ExternalNodeMessage<T> {
-    fn clone(&self) -> Self {
-        match self {
-            ExternalNodeMessage::IdChanged(id) => ExternalNodeMessage::IdChanged(id.clone()),
-            ExternalNodeMessage::LiteralUpdate(m) => ExternalNodeMessage::LiteralUpdate(m.clone()),
-        }
-    }
-}
+impl GraphNode for ExternalNode {
+    type State = Option<ExternalLiteralId>;
 
-impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
-    type State = Option<ExternalLiteralId<T>>;
-
-    type Message = ExternalNodeMessage<T>;
+    type Message = ExternalNodeMessage;
 
     fn name(&self) -> &'static str {
         "External"
@@ -196,12 +113,18 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
         color!(0x79c9f2)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
-        vec![GraphDefaultOutputSlot::new::<T>()]
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+        if let Some(v) = state.as_ref().and_then(|id| self.storage.get(&id)) {
+            vec![GraphDefaultOutputSlot::new_boxed(dyn_clone::clone_box(
+                v.ty(),
+            ))]
+        } else {
+            vec![]
+        }
     }
 
     fn generate_code(
@@ -214,7 +137,7 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
             .ok_or(anyhow!("No external literal selected"))?;
         let literal = self
             .storage
-            .get::<T>(id)
+            .get(id)
             .ok_or(anyhow!("External literal not found"))?;
         let code = literal
             .to_code()
@@ -235,9 +158,9 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
         let mut column = column![];
 
         column = column.push(pick_list(
-            self.storage.all_of_type::<T>(),
+            self.storage.all_id(),
             state.clone(),
-            |id| ExternalNodeMessage::IdChanged(id),
+            ExternalNodeMessage::IdChanged,
         ));
 
         column
@@ -250,10 +173,9 @@ impl<T: GraphValueType + Default> GraphNode for ExternalNode<T> {
         state: &Self::State,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        Column::with_children(
-            ctx.view_all_outputs(&["Value"], ExternalNodeMessage::<T>::LiteralUpdate),
-        )
-        .into()
+        dbg!();
+        Column::with_children(ctx.view_all_outputs(&["Value"], ExternalNodeMessage::LiteralUpdate))
+            .into()
     }
 
     fn update(
