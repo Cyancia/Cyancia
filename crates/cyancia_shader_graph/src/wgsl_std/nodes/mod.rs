@@ -9,9 +9,8 @@ use crate::{
     editor::slot::{SlotSide, valued_slot},
     graph::{
         node::{
-            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError,
-            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeUpdateContext,
-            StatelessCommonGraphNode,
+            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
+            GraphNodeOutputsViewContext, GraphNodeUpdateContext, StatelessCommonGraphNode,
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
@@ -19,6 +18,7 @@ use crate::{
 };
 
 pub mod external;
+pub mod function;
 
 macro_rules! impl_math_format {
     ($fmt:expr, $a:expr, $b:expr, ($one:literal)) => {

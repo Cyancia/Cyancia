@@ -174,8 +174,7 @@ impl GraphNode for ExternalNode {
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         dbg!();
-        Column::with_children(ctx.view_all_outputs(&["Value"], ExternalNodeMessage::LiteralUpdate))
-            .into()
+        Column::with_children(ctx.view_all_outputs(&["Value"])).into()
     }
 
     fn update(

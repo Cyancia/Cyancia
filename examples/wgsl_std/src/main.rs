@@ -8,7 +8,7 @@ use cyancia_shader_graph::{
         variable::GraphLiteral,
     },
     wgsl_std::{
-        self,
+        self, functioning,
         nodes::external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
         types::{F32Type, Vec2FType},
     },
@@ -39,7 +39,7 @@ pub enum GraphMessage {
 
 impl App {
     pub fn new() -> Self {
-        let mut storage = wgsl_std::create_storage();
+        let mut storage = wgsl_std::std_storage();
         let ext_storage = ExternalDataStorage::default();
         ext_storage.insert(
             ExternalLiteralId::new("MyExternalF32".into()),
@@ -53,6 +53,7 @@ impl App {
             .nodes
             .register_non_default(ExternalNode::new(ext_storage.into()));
         storage.nodes.register_non_default(DummyOutputNode);
+        storage.merge(functioning());
         Self {
             graph: Graph::new("testtt".into(), storage.into()),
         }
@@ -102,10 +103,26 @@ impl App {
 
                 if modifiers.control() {
                     if physical_key == key::Physical::Code(key::Code::KeyS) {
-                        std::fs::write("test.toml", self.graph.to_toml().unwrap()).unwrap();
+                        let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("test.toml")
+                            .save_file()
+                        else {
+                            return;
+                        };
+
+                        let Ok(toml) = self.graph.to_toml() else {
+                            return;
+                        };
+                        std::fs::write(path, toml).unwrap();
                     }
                     if physical_key == key::Physical::Code(key::Code::KeyL) {
-                        let s = std::fs::read_to_string("test.toml").unwrap();
+                        let Some(path) = rfd::FileDialog::new()
+                            .set_file_name("test.toml")
+                            .pick_file()
+                        else {
+                            return;
+                        };
+                        let s = std::fs::read_to_string(path).unwrap();
                         let (graph, errors) = Graph::from_toml(self.graph.storage().clone(), &s);
                         for error in errors {
                             println!("Deserialization error: {}", error);

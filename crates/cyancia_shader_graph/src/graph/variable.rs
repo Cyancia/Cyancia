@@ -24,6 +24,12 @@ impl GraphValueTypeStorage {
     pub fn all(&self) -> &HashMap<&'static str, Box<dyn ErasedGraphValueType>> {
         &self.types
     }
+
+    pub fn merge(&mut self, other: Self) {
+        for (name, ty) in other.types {
+            self.types.insert(name, ty);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -69,6 +75,15 @@ impl GraphTypeCastersStorage {
     ) -> &HashMap<&'static str, HashMap<&'static str, Box<dyn ErasedGraphVariableCaster>>> {
         &self.casters
     }
+
+    pub fn merge(&mut self, other: Self) {
+        for (from_name, to_map) in other.casters {
+            let entry = self.casters.entry(from_name).or_default();
+            for (to_name, caster) in to_map {
+                entry.insert(to_name, caster);
+            }
+        }
+    }
 }
 
 pub trait GraphVariableCaster: 'static {
@@ -89,22 +104,14 @@ impl<T: GraphVariableCaster> ErasedGraphVariableCaster for T {
 
 #[derive(Default)]
 pub struct GraphVarIdentGenerator {
-    counter: usize,
+    output_counter: usize,
 }
 
 impl GraphVarIdentGenerator {
-    pub fn new(cnt: usize) -> Self {
-        Self { counter: cnt }
-    }
-
     pub fn next_output(&mut self) -> String {
-        let ident = format!("output_{}", self.counter);
-        self.counter += 1;
+        let ident = format!("output_{}", self.output_counter);
+        self.output_counter += 1;
         ident
-    }
-
-    pub fn counter(&self) -> usize {
-        self.counter
     }
 }
 

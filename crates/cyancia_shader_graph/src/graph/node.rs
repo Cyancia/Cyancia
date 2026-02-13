@@ -11,16 +11,18 @@ use crate::{
     GraphRenderer, GraphTheme,
     editor::slot::{input_slot, output_slot},
     graph::{
+        GraphDynamicInstancesStorage,
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
             GraphInputSlotData, GraphOutputSlotData, GraphSlots,
         },
-        variable::GraphTypeCastersStorage,
+        variable::{GraphTypeCastersStorage, GraphVarIdentGenerator},
     },
+    save::GraphSerializable,
 };
 
 pub trait GraphNode: Send + Sync + 'static + DynClone {
-    type State: Send + Sync + 'static + Serialize + DeserializeOwned;
+    type State: Send + Sync + 'static + GraphSerializable;
     type Message: Send + Sync + 'static;
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Self::State;
@@ -44,10 +46,14 @@ pub trait GraphNode: Send + Sync + 'static + DynClone {
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError>;
     fn serialize_state(&self, state: &Self::State) -> Result<toml::Value, toml::ser::Error> {
-        toml::Value::try_from(state)
+        state.to_toml()
     }
-    fn deserialize_state(&self, value: toml::Value) -> Result<Self::State, toml::de::Error> {
-        Self::State::deserialize(value)
+    fn deserialize_state(
+        &self,
+        value: toml::Value,
+        storage: &GraphDynamicInstancesStorage,
+    ) -> Result<Self::State, toml::de::Error> {
+        Self::State::from_toml(value, storage)
     }
 }
 
@@ -92,6 +98,7 @@ pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     fn deserialize_state(
         &self,
         value: toml::Value,
+        storage: &GraphDynamicInstancesStorage,
     ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error>;
 }
 
@@ -194,8 +201,9 @@ impl<T: GraphNode> ErasedGraphNode for T {
     fn deserialize_state(
         &self,
         value: toml::Value,
+        storage: &GraphDynamicInstancesStorage,
     ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error> {
-        let state = self.deserialize_state(value)?;
+        let state = self.deserialize_state(value, storage)?;
         Ok(Box::new(state))
     }
 }
@@ -252,8 +260,12 @@ impl StatefulGraphNode {
         self.data.serialize_state(&self.state)
     }
 
-    pub fn deserialize_state(&mut self, value: toml::Value) -> Result<(), toml::de::Error> {
-        let state = self.data.deserialize_state(value)?;
+    pub fn deserialize_state(
+        &mut self,
+        value: toml::Value,
+        storage: &GraphDynamicInstancesStorage,
+    ) -> Result<(), toml::de::Error> {
+        let state = self.data.deserialize_state(value, storage)?;
         self.state = state;
         Ok(())
     }
@@ -323,7 +335,7 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
         state: &Self::State,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        Column::with_children(ctx.view_all_outputs(self.output_slot_names(), identity))
+        Column::with_children(ctx.view_all_outputs(self.output_slot_names()))
             .spacing(2)
             .into()
     }
@@ -358,12 +370,14 @@ impl GraphNodeData {
         &self,
         node_id: Id<GraphNodeData>,
         slots: &GraphSlots,
+        storage: &GraphDynamicInstancesStorage,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         self.data.view_inputs(
             node_id,
             GraphNodeInputsViewContext {
                 inputs: &self.inputs,
                 slots,
+                storage,
             },
         )
     }
@@ -372,22 +386,30 @@ impl GraphNodeData {
         &self,
         node_id: Id<GraphNodeData>,
         slots: &GraphSlots,
+        storage: &GraphDynamicInstancesStorage,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         self.data.view_outputs(
             node_id,
             GraphNodeOutputsViewContext {
                 outputs: &self.outputs,
                 slots,
+                storage,
             },
         )
     }
 
-    pub fn update(&mut self, message: ErasedGraphNodeMessage, slots: &mut GraphSlots) {
+    pub fn update(
+        &mut self,
+        message: ErasedGraphNodeMessage,
+        slots: &mut GraphSlots,
+        storage: &GraphDynamicInstancesStorage,
+    ) {
         self.data.update(
             message,
             GraphNodeUpdateContext {
                 inputs: &self.inputs,
                 slots,
+                storage,
             },
         );
     }
@@ -396,6 +418,7 @@ impl GraphNodeData {
 pub struct GraphNodeInputsViewContext<'a> {
     inputs: &'a [Id<GraphInputSlotData>],
     slots: &'a GraphSlots,
+    storage: &'a GraphDynamicInstancesStorage,
 }
 
 impl GraphNodeInputsViewContext<'_> {
@@ -439,11 +462,16 @@ impl GraphNodeInputsViewContext<'_> {
             .iter()
             .filter_map(move |id| self.slots.get_input(id).map(|slot| (id, slot)))
     }
+
+    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
+        self.storage
+    }
 }
 
 pub struct GraphNodeOutputsViewContext<'a> {
     outputs: &'a [Id<GraphOutputSlotData>],
     slots: &'a GraphSlots,
+    storage: &'a GraphDynamicInstancesStorage,
 }
 
 impl GraphNodeOutputsViewContext<'_> {
@@ -465,12 +493,11 @@ impl GraphNodeOutputsViewContext<'_> {
     pub fn view_all_outputs<T: 'static>(
         &self,
         names: &[&'static str],
-        f: impl Fn(ErasedGraphLiteralUpdateMessage) -> T + 'static + Copy,
     ) -> Vec<Element<'static, T, GraphTheme, GraphRenderer>> {
         let mut e = Vec::with_capacity(self.outputs.len());
         for (id, name) in self.outputs.iter().zip(names) {
             if let Some(slot) = self.slots.get_output(id) {
-                e.push(output_slot(*id, *name, slot).map(f));
+                e.push(output_slot(*id, *name, slot));
             }
         }
         e
@@ -487,11 +514,16 @@ impl GraphNodeOutputsViewContext<'_> {
             .iter()
             .filter_map(move |id| self.slots.get_output(id).map(|slot| (id, slot)))
     }
+
+    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
+        self.storage
+    }
 }
 
 pub struct GraphNodeUpdateContext<'a> {
     inputs: &'a [Id<GraphInputSlotData>],
     slots: &'a mut GraphSlots,
+    storage: &'a GraphDynamicInstancesStorage,
 }
 
 impl GraphNodeUpdateContext<'_> {
@@ -512,13 +544,17 @@ impl GraphNodeUpdateContext<'_> {
 
         slot.data.update(message);
     }
+
+    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
+        self.storage
+    }
 }
 
 pub struct GraphNodeCodeGenContext<'a> {
     pub inputs: &'a [Id<GraphInputSlotData>],
     pub outputs: &'a [Id<GraphOutputSlotData>],
     pub graph_slots: &'a mut GraphSlots,
-    pub casters: &'a GraphTypeCastersStorage,
+    pub storage: &'a GraphDynamicInstancesStorage,
 }
 
 impl GraphNodeCodeGenContext<'_> {
@@ -547,7 +583,8 @@ impl GraphNodeCodeGenContext<'_> {
             .ok_or(GraphNodeCodeGenError::MissingOutputSlot)?;
 
         if output_slot.data.ty().name() != slot.data.ty().name() {
-            self.casters
+            self.storage
+                .casters
                 .try_cast(&output_slot.data, slot.data.ty())
                 .ok_or(GraphNodeCodeGenError::FailedToCastVariable)
         } else {
@@ -582,6 +619,10 @@ impl GraphNodeCodeGenContext<'_> {
 
         Ok(slot.data.identifier().to_string())
     }
+
+    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
+        self.storage
+    }
 }
 
 #[derive(Default)]
@@ -610,6 +651,14 @@ impl GraphNodesStorage {
 
     pub fn all(&self) -> &IndexMap<&'static str, Box<dyn ErasedGraphNode>> {
         &self.nodes
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        for (name, node) in other.nodes {
+            if !self.nodes.contains_key(name) {
+                self.nodes.insert(name, node);
+            }
+        }
     }
 }
 

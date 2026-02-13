@@ -194,7 +194,7 @@ impl Graph {
                 inputs: &node.inputs,
                 outputs: &node.outputs,
                 graph_slots: &mut self.slots,
-                casters: &self.storage.casters,
+                storage: &self.storage,
             };
 
             match node.data.generate_code(context) {
@@ -348,7 +348,7 @@ impl Graph {
         };
 
         let node_id = message.id;
-        node.update(message, &mut self.slots);
+        node.update(message, &mut self.slots, &self.storage);
 
         let new_inputs = node.data.create_inputs();
         let new_outputs = node.data.create_outputs();
@@ -512,6 +512,14 @@ pub struct GraphDynamicInstancesStorage {
     pub nodes: GraphNodesStorage,
     pub types: GraphValueTypeStorage,
     pub casters: GraphTypeCastersStorage,
+}
+
+impl GraphDynamicInstancesStorage {
+    pub fn merge(&mut self, other: Self) {
+        self.nodes.merge(other.nodes);
+        self.types.merge(other.types);
+        self.casters.merge(other.casters);
+    }
 }
 
 pub struct GraphSignature {

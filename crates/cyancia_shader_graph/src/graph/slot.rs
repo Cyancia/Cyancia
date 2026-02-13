@@ -50,6 +50,12 @@ impl GraphDefaultInputSlot {
         }
     }
 
+    pub fn new_boxed_default(ty: Box<dyn ErasedGraphValueType>) -> Self {
+        Self {
+            value: GraphLiteral::new_boxed(ty.default_literal(), ty),
+        }
+    }
+
     pub fn new_non_default<T: GraphValueType>(value: T::AssociatedLiteralType, ty: T) -> Self {
         Self {
             value: GraphLiteral::new_non_default::<T>(value, ty),
@@ -94,6 +100,7 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
     type Message: GraphLiteralUpdateMessage;
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
+    fn default_literal(&self) -> Self::AssociatedLiteralType;
     fn wgsl_type(&self) -> Option<&'static str>;
     fn view_literal(
         &self,
@@ -145,6 +152,7 @@ impl Clone for ErasedGraphLiteralUpdateMessage {
 pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
+    fn default_literal(&self) -> Box<dyn Any + Send + Sync>;
     fn wgsl_type(&self) -> Option<&'static str>;
     fn view_literal(
         &self,
@@ -174,6 +182,10 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
 
     fn name(&self) -> &'static str {
         self.name()
+    }
+
+    fn default_literal(&self) -> Box<dyn Any + Send + Sync> {
+        Box::new(self.default_literal())
     }
 
     fn wgsl_type(&self) -> Option<&'static str> {

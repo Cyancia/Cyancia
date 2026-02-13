@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Ok;
 use cyancia_id::Id;
 use serde::{Deserialize, Serialize, de::IntoDeserializer};
 use toml::ser::Buffer;
@@ -17,6 +16,27 @@ use crate::{
         variable::{GraphLiteral, GraphVarIdentGenerator, GraphVariable},
     },
 };
+
+pub trait GraphSerializable: Sized {
+    fn to_toml(&self) -> Result<toml::Value, toml::ser::Error>;
+    fn from_toml(
+        value: toml::Value,
+        storage: &GraphDynamicInstancesStorage,
+    ) -> Result<Self, toml::de::Error>;
+}
+
+impl<'de, T: Serialize + Deserialize<'de>> GraphSerializable for T {
+    fn to_toml(&self) -> Result<toml::Value, toml::ser::Error> {
+        toml::Value::try_from(self)
+    }
+
+    fn from_toml(
+        value: toml::Value,
+        storage: &GraphDynamicInstancesStorage,
+    ) -> Result<Self, toml::de::Error> {
+        Self::deserialize(value)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum GraphDeserializeError {
@@ -66,7 +86,7 @@ impl Graph {
         s: &str,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let deserializer = match toml::Deserializer::parse(s) {
-            Result::Ok(x) => x,
+            Ok(x) => x,
             Err(e) => {
                 return (None, vec![GraphDeserializeError::DeserializerError(e)]);
             }
@@ -90,7 +110,7 @@ impl Graph {
                     state: node.data.serialize_state()?,
                 });
 
-                Ok(acc)
+                Result::<_, anyhow::Error>::Ok(acc)
             })?;
 
         let inputs =
@@ -115,10 +135,6 @@ impl Graph {
             .iter()
             .map(|(id, _)| (*id, SerializableOutputSlotData {}))
             .collect();
-
-        let ident_generator = SerializableGraphIdentGenerator {
-            counter: self.ident_generator.counter(),
-        };
 
         let signature = SerializableGraphSignature {
             name: self.signature.name().to_string(),
@@ -151,7 +167,6 @@ impl Graph {
             inputs,
             outputs,
             signature,
-            ident_generator,
         };
 
         let serializer = GraphSerializer::new(buf);
@@ -170,9 +185,8 @@ impl Graph {
             inputs,
             outputs,
             signature,
-            ident_generator,
         } = match SerializableGraph::deserialize(deserializer) {
-            Result::Ok(x) => x,
+            Ok(x) => x,
             Err(e) => {
                 errs.push(GraphDeserializeError::DeserializerError(e));
                 return rs;
@@ -201,7 +215,7 @@ impl Graph {
 
                 Result::<_, GraphDeserializeError>::Ok(acc)
             });
-        let Result::Ok(sig_inputs) = sig_inputs else {
+        let Ok(sig_inputs) = sig_inputs else {
             return rs;
         };
 
@@ -227,7 +241,7 @@ impl Graph {
 
                 Result::<_, GraphDeserializeError>::Ok(acc)
             });
-        let Result::Ok(sig_outputs) = sig_outputs else {
+        let Ok(sig_outputs) = sig_outputs else {
             return rs;
         };
 
@@ -247,8 +261,8 @@ impl Graph {
             };
 
             let mut node = StatefulGraphNode::new(node_inst);
-            match node.deserialize_state(ser_node.state) {
-                Result::Ok(_) => {}
+            match node.deserialize_state(ser_node.state, &storage) {
+                Ok(_) => {}
                 Err(e) => {
                     errs.push(GraphDeserializeError::NodeStateDeserializeError(e));
                     continue 'node_loop;
@@ -283,7 +297,7 @@ impl Graph {
                 };
 
                 let literal_value = match value_type_obj.deserialize_literal(slot.data.clone()) {
-                    Result::Ok(val) => val,
+                    Ok(val) => val,
                     Err(e) => {
                         errs.push(GraphDeserializeError::LiteralDeserializeError(e));
                         continue 'node_loop;
@@ -384,7 +398,6 @@ pub struct SerializableGraph {
     pub inputs: HashMap<Id<GraphInputSlotData>, SerializableInputSlotData>,
     pub outputs: HashMap<Id<GraphOutputSlotData>, SerializableOutputSlotData>,
     pub signature: SerializableGraphSignature,
-    pub ident_generator: SerializableGraphIdentGenerator,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -427,11 +440,6 @@ pub struct SerializableGraphFunctionSignature {
 pub struct SerializableGraphVariable {
     pub identifier: String,
     pub ty: GraphValueTypeId,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SerializableGraphIdentGenerator {
-    pub counter: usize,
 }
 
 #[derive(Serialize, Deserialize)]

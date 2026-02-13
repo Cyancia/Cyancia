@@ -21,6 +21,10 @@ impl GraphValueType for F32Type {
         "Float"
     }
 
+    fn default_literal(&self) -> Self::AssociatedLiteralType {
+        0.0
+    }
+
     fn wgsl_type(&self) -> Option<&'static str> {
         Some("f32")
     }
@@ -61,6 +65,10 @@ impl GraphValueType for Vec2FType {
 
     fn name(&self) -> &'static str {
         "Vector2"
+    }
+
+    fn default_literal(&self) -> Self::AssociatedLiteralType {
+        Vec2::ZERO
     }
 
     fn wgsl_type(&self) -> Option<&'static str> {

@@ -188,7 +188,10 @@ impl<'a> DrawableGraph<'a> {
         let mut nodes = IndexMap::with_capacity(graph.nodes.len());
         let mut node_indices = HashMap::with_capacity(graph.nodes.len());
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
-            nodes.insert(*id, DrawableNode::new(*id, node, &graph.slots));
+            nodes.insert(
+                *id,
+                DrawableNode::new(*id, node, &graph.slots, graph.storage()),
+            );
             node_indices.insert(*id, index);
         }
 
@@ -272,7 +275,12 @@ pub struct DrawableNode<'a> {
 }
 
 impl<'a> DrawableNode<'a> {
-    pub fn new(node_id: Id<GraphNodeData>, node: &'a GraphNodeData, slots: &GraphSlots) -> Self {
+    pub fn new(
+        node_id: Id<GraphNodeData>,
+        node: &'a GraphNodeData,
+        slots: &GraphSlots,
+        storage: &GraphDynamicInstancesStorage,
+    ) -> Self {
         // let inputs = node
         //     .inputs
         //     .iter()
@@ -320,11 +328,11 @@ impl<'a> DrawableNode<'a> {
             column![
                 header,
                 column!(
-                    node.view_inputs(node_id, slots)
+                    node.view_inputs(node_id, slots, storage)
                         .map(GraphViewMessage::NodeUpdate),
                     row![
                         space().width(Length::Fill),
-                        node.view_outputs(node_id, slots)
+                        node.view_outputs(node_id, slots, storage)
                             .map(GraphViewMessage::NodeUpdate)
                     ],
                 )

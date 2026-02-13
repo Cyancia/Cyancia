@@ -4,10 +4,10 @@ pub mod casters;
 pub mod nodes;
 pub mod types;
 
-pub fn create_storage() -> GraphDynamicInstancesStorage {
+pub fn std_storage() -> GraphDynamicInstancesStorage {
+    use casters::*;
     use nodes::*;
     use types::*;
-    use casters::*;
 
     let mut storage = GraphDynamicInstancesStorage::default();
 
@@ -24,6 +24,15 @@ pub fn create_storage() -> GraphDynamicInstancesStorage {
 
     storage.casters.register::<F32ToVec2FCaster>();
     storage.casters.register::<Vec2FToF32Caster>();
+
+    storage
+}
+
+pub fn functioning() -> GraphDynamicInstancesStorage {
+    let mut storage = GraphDynamicInstancesStorage::default();
+
+    storage.nodes.register::<nodes::function::GraphInputNode>();
+    storage.nodes.register::<nodes::function::GraphOutputNode>();
 
     storage
 }
