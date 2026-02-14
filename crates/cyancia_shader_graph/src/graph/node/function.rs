@@ -1,17 +1,21 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU32, Ordering},
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, pick_list, space, text_input};
+use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     GraphRenderer, GraphTheme,
     editor::slot::{input_slot, output_slot},
     graph::{
-        GraphDynamicInstancesStorage, GraphFunctionsStorage, GraphVarIdentGenerator,
+        Graph, GraphDynamicInstancesStorage, GraphFunctionsStorage, GraphVarIdentGenerator,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
             GraphNodeOutputsViewContext, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
@@ -23,6 +27,15 @@ use crate::{
     },
     save::GraphSerializable,
 };
+
+pub fn functioning() -> GraphDynamicInstancesStorage {
+    let mut storage = GraphDynamicInstancesStorage::default();
+
+    storage.nodes.register::<GraphInputNode>();
+    storage.nodes.register::<GraphOutputNode>();
+
+    storage
+}
 
 static UNIQUE_COUNTER: AtomicU32 = AtomicU32::new(0);
 

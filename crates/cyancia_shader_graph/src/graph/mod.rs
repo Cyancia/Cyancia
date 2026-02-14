@@ -8,20 +8,17 @@ use iced_core::Point;
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
 
-use crate::{
-    graph::{
-        node::{
-            ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
-            GraphNodeCodeGenContext, GraphNodeData, GraphNodeUpdateSignatureContext,
-            GraphNodesStorage, StatefulGraphNode,
-        },
-        slot::{
-            ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot,
-            GraphInputSlotData, GraphOutputSlotData, GraphSlots,
-        },
-        variable::{GraphTypeCastersStorage, GraphValueTypeStorage, GraphVariable},
+use crate::graph::{
+    node::{
+        ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
+        GraphNodeCodeGenContext, GraphNodeData, GraphNodeUpdateSignatureContext, GraphNodesStorage,
+        StatefulGraphNode, function::GraphFunctionId,
     },
-    wgsl_std::nodes::function::GraphFunctionId,
+    slot::{
+        ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData,
+        GraphOutputSlotData, GraphSlots,
+    },
+    variable::{GraphTypeCastersStorage, GraphValueTypeStorage, GraphVariable},
 };
 
 pub mod node;
@@ -564,6 +561,27 @@ impl GraphDynamicInstancesStorage {
 }
 
 #[derive(Default)]
+pub struct GraphFunctionsStorage {
+    functions: RwLock<HashMap<GraphFunctionId, Arc<RwLock<Graph>>>>,
+}
+
+impl GraphFunctionsStorage {
+    pub fn insert(&self, id: GraphFunctionId, graph: Graph) {
+        self.functions
+            .write()
+            .insert(id, Arc::new(RwLock::new(graph)));
+    }
+
+    pub fn get(&self, id: &GraphFunctionId) -> Option<Arc<RwLock<Graph>>> {
+        self.functions.read().get(id).cloned()
+    }
+
+    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<GraphFunctionId, Arc<RwLock<Graph>>>> {
+        self.functions.read()
+    }
+}
+
+#[derive(Default)]
 pub struct GraphSignature {
     pub inputs: IndexMap<Id<GraphOutputSlotData>, GraphVariable>,
     pub outputs: IndexMap<Id<GraphInputSlotData>, GraphVariable>,
@@ -597,25 +615,5 @@ impl GraphVarIdentGenerator {
         let ident = format!("output_{}_{}", self.output_counter, self.suffix);
         self.output_counter += 1;
         ident
-    }
-}
-#[derive(Default)]
-pub struct GraphFunctionsStorage {
-    functions: RwLock<HashMap<GraphFunctionId, Arc<RwLock<Graph>>>>,
-}
-
-impl GraphFunctionsStorage {
-    pub fn insert(&self, id: GraphFunctionId, graph: Graph) {
-        self.functions
-            .write()
-            .insert(id, Arc::new(RwLock::new(graph)));
-    }
-
-    pub fn get(&self, id: &GraphFunctionId) -> Option<Arc<RwLock<Graph>>> {
-        self.functions.read().get(id).cloned()
-    }
-
-    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<GraphFunctionId, Arc<RwLock<Graph>>>> {
-        self.functions.read()
     }
 }

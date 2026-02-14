@@ -5,16 +5,16 @@ use cyancia_shader_graph::{
     editor::{GraphView, GraphViewMessage},
     graph::{
         Graph, GraphFunctionsStorage, GraphSignature,
-        node::{GraphNodeCodeGenContext, GraphNodeCodeGenError, StatelessCommonGraphNode},
+        node::{
+            GraphNodeCodeGenContext, GraphNodeCodeGenError, StatelessCommonGraphNode,
+            external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
+            function::{GraphFunctionId, GraphFunctionNode, functioning},
+        },
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
         variable::GraphLiteral,
     },
     wgsl_std::{
-        self, functioning,
-        nodes::{
-            external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
-            function::{GraphFunctionId, GraphFunctionNode},
-        },
+        self,
         types::{F32Type, Vec2FType},
     },
 };
@@ -203,7 +203,10 @@ impl StatelessCommonGraphNode for DummyOutputNode {
         vec![]
     }
 
-    fn generate_code(&self, mut ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input = ctx.get_input(0)?;
         Ok(format!("return {};\n", input))
     }

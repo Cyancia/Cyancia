@@ -27,12 +27,3 @@ pub fn std_storage() -> GraphDynamicInstancesStorage {
 
     storage
 }
-
-pub fn functioning() -> GraphDynamicInstancesStorage {
-    let mut storage = GraphDynamicInstancesStorage::default();
-
-    storage.nodes.register::<nodes::function::GraphInputNode>();
-    storage.nodes.register::<nodes::function::GraphOutputNode>();
-
-    storage
-}

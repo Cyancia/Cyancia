@@ -26,6 +26,9 @@ use crate::{
     save::GraphSerializable,
 };
 
+pub mod external;
+pub mod function;
+
 pub trait GraphNode: Send + Sync + 'static + DynClone {
     type State: Send + Sync + 'static + GraphSerializable;
     type Message: Send + Sync + 'static;

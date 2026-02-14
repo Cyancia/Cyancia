@@ -16,9 +16,6 @@ use crate::{
     wgsl_std::types::{F32Type, Vec2FType},
 };
 
-pub mod external;
-pub mod function;
-
 macro_rules! impl_math_format {
     ($fmt:expr, $a:expr, $b:expr, ($one:literal)) => {
         format!($fmt, $a)
