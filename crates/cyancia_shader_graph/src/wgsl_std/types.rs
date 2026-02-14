@@ -1,5 +1,5 @@
 use cyancia_widgets::spin_slider::SpinSlider;
-use glam::{Vec2, Vec3};
+use glam::Vec2;
 use iced_core::{Color, Element, color};
 use iced_widget::column;
 

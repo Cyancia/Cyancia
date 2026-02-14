@@ -1,15 +1,20 @@
+use std::sync::Arc;
+
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
     graph::{
-        Graph, GraphSignature,
+        Graph, GraphFunctionsStorage, GraphSignature,
         node::{GraphNodeCodeGenContext, GraphNodeCodeGenError, StatelessCommonGraphNode},
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
         variable::GraphLiteral,
     },
     wgsl_std::{
         self, functioning,
-        nodes::external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
+        nodes::{
+            external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
+            function::{GraphFunctionId, GraphFunctionNode},
+        },
         types::{F32Type, Vec2FType},
     },
 };
@@ -29,6 +34,7 @@ fn main() {
 
 pub struct App {
     graph: Graph,
+    functions: Arc<GraphFunctionsStorage>,
 }
 
 #[derive(Debug)]
@@ -49,13 +55,18 @@ impl App {
             ExternalLiteralId::new("MyExternalVec2F".into()),
             GraphLiteral::new::<Vec2FType>(Vec2::ZERO),
         );
+        let functions = Arc::new(GraphFunctionsStorage::default());
         storage
             .nodes
             .register_non_default(ExternalNode::new(ext_storage.into()));
+        storage
+            .nodes
+            .register_non_default(GraphFunctionNode::new(functions.clone()));
         storage.nodes.register_non_default(DummyOutputNode);
         storage.merge(functioning());
         Self {
-            graph: Graph::new("testtt".into(), storage.into()),
+            graph: Graph::new(storage.into()),
+            functions,
         }
     }
 
@@ -103,10 +114,7 @@ impl App {
 
                 if modifiers.control() {
                     if physical_key == key::Physical::Code(key::Code::KeyS) {
-                        let Some(path) = rfd::FileDialog::new()
-                            .set_file_name("test.toml")
-                            .save_file()
-                        else {
+                        let Some(path) = rfd::FileDialog::new().save_file() else {
                             return;
                         };
 
@@ -115,11 +123,8 @@ impl App {
                         };
                         std::fs::write(path, toml).unwrap();
                     }
-                    if physical_key == key::Physical::Code(key::Code::KeyL) {
-                        let Some(path) = rfd::FileDialog::new()
-                            .set_file_name("test.toml")
-                            .pick_file()
-                        else {
+                    if physical_key == key::Physical::Code(key::Code::KeyO) {
+                        let Some(path) = rfd::FileDialog::new().pick_file() else {
                             return;
                         };
                         let s = std::fs::read_to_string(path).unwrap();
@@ -131,13 +136,36 @@ impl App {
                             self.graph = graph;
                         }
                     }
+                    if physical_key == key::Physical::Code(key::Code::KeyL) {
+                        let Some(path) = rfd::FileDialog::new().pick_file() else {
+                            return;
+                        };
+                        let s = std::fs::read_to_string(&path).unwrap();
+                        let (graph, errors) = Graph::from_toml(self.graph.storage().clone(), &s);
+                        for error in errors {
+                            println!("Deserialization error: {}", error);
+                        }
+                        if let Some(graph) = graph {
+                            self.functions.insert(
+                                GraphFunctionId {
+                                    name: path.file_stem().unwrap().to_string_lossy().to_string(),
+                                },
+                                graph,
+                            );
+                            println!(
+                                "Function loaded: {}",
+                                path.file_stem().unwrap().to_string_lossy()
+                            );
+                            dbg!("Current functions: {:?}", self.functions.all().keys());
+                        }
+                    }
                 }
             }
             _ => {}
         }
 
-        match self.graph.compile() {
-            Ok(code) => println!("{}", code),
+        match self.graph.compile(Default::default(), Default::default()) {
+            Ok((_, code)) => println!("{}", code),
             Err(e) => println!("Code generation failed: {}", e),
         }
     }
@@ -175,7 +203,7 @@ impl StatelessCommonGraphNode for DummyOutputNode {
         vec![]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, mut ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let input = ctx.get_input(0)?;
         Ok(format!("return {};\n", input))
     }

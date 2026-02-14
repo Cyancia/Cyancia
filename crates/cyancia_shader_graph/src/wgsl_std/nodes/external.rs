@@ -1,4 +1,4 @@
-use std::{any::TypeId, collections::HashMap, marker::PhantomData, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::anyhow;
 use iced_core::{Color, Element, color};
@@ -15,7 +15,6 @@ use crate::{
         },
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
-            GraphValueType,
         },
         variable::GraphLiteral,
     },
@@ -113,7 +112,7 @@ impl GraphNode for ExternalNode {
         color!(0x79c9f2)
     }
 
-    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _state: &Self::State) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
@@ -130,7 +129,7 @@ impl GraphNode for ExternalNode {
     fn generate_code(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         let id = state
             .as_ref()

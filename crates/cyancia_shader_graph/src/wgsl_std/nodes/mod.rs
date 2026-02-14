@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     GraphRenderer, GraphTheme,
-    editor::slot::{SlotSide, valued_slot},
     graph::{
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
@@ -102,14 +101,14 @@ macro_rules! math_node {
                 $header_color
             }
 
-            fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+            fn create_inputs(&self, _state: &Self::State) -> Vec<GraphDefaultInputSlot> {
                 vec![
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                 ]
             }
 
-            fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+            fn create_outputs(&self, _state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
                 vec![GraphDefaultOutputSlot::new::<$slot_ty>()]
             }
 
@@ -167,7 +166,7 @@ macro_rules! math_node {
             fn generate_code(
                 &self,
                 state: &Self::State,
-                ctx: GraphNodeCodeGenContext,
+                mut ctx: GraphNodeCodeGenContext,
             ) -> Result<String, GraphNodeCodeGenError> {
                 let input_a = ctx.get_input(0)?;
                 let input_b = ctx.get_input(1)?;
@@ -307,7 +306,10 @@ impl StatelessCommonGraphNode for ClampNode {
         &["Result"]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input_value = ctx.get_input(0)?;
         let input_min = ctx.get_input(1)?;
         let input_max = ctx.get_input(2)?;
@@ -351,7 +353,10 @@ impl StatelessCommonGraphNode for StepNode {
         &["Result"]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input_edge = ctx.get_input(0)?;
         let input_x = ctx.get_input(1)?;
         let output = ctx.get_output(0)?;
@@ -395,7 +400,10 @@ impl StatelessCommonGraphNode for SmoothStepNode {
         &["Result"]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input_edge0 = ctx.get_input(0)?;
         let input_edge1 = ctx.get_input(1)?;
         let input_x = ctx.get_input(2)?;
@@ -439,7 +447,10 @@ impl StatelessCommonGraphNode for SplitComponentsNode {
         &["X", "Y"]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input_vector = ctx.get_input(0)?;
         let output_x = ctx.get_output(0)?;
         let output_y = ctx.get_output(1)?;
@@ -482,7 +493,10 @@ impl StatelessCommonGraphNode for CombineComponentsNode {
         &["Vector"]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let input_x = ctx.get_input(0)?;
         let input_y = ctx.get_input(1)?;
         let output_vector = ctx.get_output(0)?;

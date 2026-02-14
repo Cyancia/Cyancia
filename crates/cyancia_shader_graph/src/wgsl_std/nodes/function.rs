@@ -1,23 +1,220 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+};
+
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, pick_list, space, text_input};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     GraphRenderer, GraphTheme,
+    editor::slot::{input_slot, output_slot},
     graph::{
-        GraphDynamicInstancesStorage,
+        GraphDynamicInstancesStorage, GraphFunctionsStorage, GraphVarIdentGenerator,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
-            GraphNodeOutputsViewContext, GraphNodeUpdateContext,
+            GraphNodeOutputsViewContext, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
         },
         slot::{
             ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphDefaultInputSlot,
             GraphDefaultOutputSlot,
         },
-        variable::GraphLiteral,
     },
     save::GraphSerializable,
 };
+
+static UNIQUE_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+#[derive(Clone)]
+pub struct GraphFunctionNode {
+    pub storage: Arc<GraphFunctionsStorage>,
+}
+
+impl GraphFunctionNode {
+    pub fn new(storage: Arc<GraphFunctionsStorage>) -> Self {
+        Self { storage }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct GraphFunctionId {
+    pub name: String,
+}
+
+impl ToString for GraphFunctionId {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GraphFunctionNodeState {
+    pub id: Option<GraphFunctionId>,
+}
+
+#[derive(Clone)]
+pub enum GraphFunctionNodeMessage {
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+    FunctionChanged(GraphFunctionId),
+}
+
+impl GraphNode for GraphFunctionNode {
+    type State = GraphFunctionNodeState;
+
+    type Message = GraphFunctionNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Function"
+    }
+
+    fn default_state(&self) -> Self::State {
+        GraphFunctionNodeState { id: None }
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xb379f2)
+    }
+
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+            return Vec::new();
+        };
+
+        let mut graph = graph.write();
+        if graph.signature().is_none() {
+            graph.update_signature_cache();
+        }
+        graph
+            .signature()
+            .unwrap()
+            .inputs
+            .iter()
+            .map(|(slot, var)| {
+                GraphDefaultInputSlot::new_boxed_default(dyn_clone::clone_box(&*var.ty()))
+            })
+            .collect()
+    }
+
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+            return Vec::new();
+        };
+
+        let mut graph = graph.write();
+        if graph.signature().is_none() {
+            graph.update_signature_cache();
+        }
+        graph
+            .signature()
+            .unwrap()
+            .outputs
+            .iter()
+            .map(|(slot, var)| GraphDefaultOutputSlot::new_boxed(dyn_clone::clone_box(&*var.ty())))
+            .collect()
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let column = column![pick_list(
+            self.storage.all().keys().cloned().collect::<Vec<_>>(),
+            state.id.clone(),
+            GraphFunctionNodeMessage::FunctionChanged,
+        )];
+        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+            return column.into();
+        };
+
+        let mut graph = graph.write();
+        if graph.signature().is_none() {
+            graph.update_signature_cache();
+        }
+        let signature = graph.signature().unwrap();
+        let slots = ctx
+            .all_inputs()
+            .zip(signature.inputs.values())
+            .map(|((id, slot), var)| {
+                input_slot(*id, var.identifier().to_string(), slot)
+                    .map(GraphFunctionNodeMessage::LiteralUpdate)
+            })
+            .collect::<Vec<_>>();
+
+        column.extend(slots).into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+            return space().into();
+        };
+
+        let mut graph = graph.write();
+        if graph.signature().is_none() {
+            graph.update_signature_cache();
+        }
+        let signature = graph.signature().unwrap();
+        let slots = ctx
+            .all_outputs()
+            .zip(signature.outputs.values())
+            .map(|((id, slot), var)| output_slot(*id, var.identifier().to_string(), slot))
+            .collect::<Vec<_>>();
+        Column::with_children(slots).into()
+    }
+
+    fn update(&self, state: &mut Self::State, message: Self::Message, ctx: GraphNodeUpdateContext) {
+        match message {
+            GraphFunctionNodeMessage::LiteralUpdate(_) => unreachable!(),
+            GraphFunctionNodeMessage::FunctionChanged(id) => {
+                state.id = Some(id);
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let Some(id) = state.id.as_ref() else {
+            return Ok(Default::default());
+        };
+        let Some(graph) = self.storage.get(id) else {
+            return Ok(Default::default());
+        };
+
+        let input_idents = (0..ctx.inputs.len()).try_fold(
+            Vec::with_capacity(ctx.inputs.len()),
+            |mut acc, i| {
+                acc.push(ctx.get_input(i)?);
+                Ok::<_, GraphNodeCodeGenError>(acc)
+            },
+        )?;
+
+        let mut graph = graph.write();
+        let (output_idents, code) = graph
+            .compile(
+                input_idents,
+                GraphVarIdentGenerator::new(format!(
+                    "{}_{}",
+                    id.name,
+                    UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                )),
+            )
+            .map_err(|e| GraphNodeCodeGenError::Custom(e.into()))?;
+
+        for (slot_id, output_ident) in ctx.outputs.iter().zip(output_idents) {
+            ctx.output_slot_idents.insert(*slot_id, output_ident);
+        }
+
+        Ok(code)
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct GraphInputNode;
@@ -105,6 +302,10 @@ impl GraphNode for GraphInputNode {
         }
     }
 
+    fn update_signature(&self, state: &Self::State, mut ctx: GraphNodeUpdateSignatureContext) {
+        ctx.require_output_slot_as_graph_input(0, state.name.clone());
+    }
+
     fn view_inputs(
         &self,
         state: &Self::State,
@@ -129,7 +330,7 @@ impl GraphNode for GraphInputNode {
 
     fn view_outputs(
         &self,
-        state: &Self::State,
+        _state: &Self::State,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_outputs(&["Value"])).into()
@@ -153,7 +354,6 @@ impl GraphNode for GraphInputNode {
         state: &Self::State,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        // Will be handled by parent SubGraphNode
         Ok(Default::default())
     }
 }
@@ -244,6 +444,10 @@ impl GraphNode for GraphOutputNode {
         vec![]
     }
 
+    fn update_signature(&self, state: &Self::State, mut ctx: GraphNodeUpdateSignatureContext) {
+        ctx.require_input_slot_as_graph_output(0, state.name.clone());
+    }
+
     fn view_inputs(
         &self,
         state: &Self::State,
@@ -271,7 +475,7 @@ impl GraphNode for GraphOutputNode {
 
     fn view_outputs(
         &self,
-        state: &Self::State,
+        _state: &Self::State,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_outputs(&["Value"])).into()
@@ -296,7 +500,6 @@ impl GraphNode for GraphOutputNode {
         state: &Self::State,
         ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        // Will be handled by parent SubGraphNode
         Ok(Default::default())
     }
 }

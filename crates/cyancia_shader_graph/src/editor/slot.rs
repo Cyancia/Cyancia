@@ -6,7 +6,8 @@ use iced_core::{
     alignment::Vertical,
     layout, mouse,
     renderer::{self, Quad},
-    widget::{Operation, Tree, tree},
+    text::IntoFragment,
+    widget::{Operation, Tree},
 };
 use iced_widget::{row, text};
 
@@ -43,7 +44,7 @@ impl Operation for GraphSlotPinPositionCollection {
         operate(self);
     }
 
-    fn custom(&mut self, id: Option<&iced_widget::Id>, bounds: Rectangle, state: &mut dyn Any) {
+    fn custom(&mut self, _id: Option<&iced_widget::Id>, bounds: Rectangle, state: &mut dyn Any) {
         if let Some(state) = state.downcast_ref::<SlotPinState>() {
             self.slots.insert(state.id.clone(), bounds.center());
         }
@@ -89,8 +90,8 @@ where
 
     fn layout(
         &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
+        _tree: &mut Tree,
+        _renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         let d = self.radius * 2.0;
@@ -99,13 +100,13 @@ where
 
     fn draw(
         &self,
-        tree: &Tree,
+        _tree: &Tree,
         renderer: &mut Renderer,
-        theme: &Theme,
-        style: &renderer::Style,
+        _theme: &Theme,
+        _style: &renderer::Style,
         layout: layout::Layout<'_>,
-        cursor: mouse::Cursor,
-        viewport: &Rectangle,
+        _cursor: mouse::Cursor,
+        _viewport: &Rectangle,
     ) {
         renderer.fill_quad(
             Quad {
@@ -136,11 +137,11 @@ pub enum SlotSide {
     Right,
 }
 
-pub fn input_slot(
+pub fn input_slot<'a>(
     slot_id: Id<GraphInputSlotData>,
-    slot_name: &'static str,
+    slot_name: impl IntoFragment<'a>,
     slot: &GraphInputSlotData,
-) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
+) -> Element<'a, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
     match slot.connected {
         Some(_) => empty_slot(
             slot_id.into(),
@@ -160,7 +161,7 @@ pub fn input_slot(
 
 pub fn output_slot<'a, Message>(
     slot_id: Id<GraphOutputSlotData>,
-    slot_name: &'a str,
+    slot_name: impl IntoFragment<'a>,
     slot: &GraphOutputSlotData,
 ) -> Element<'a, Message, GraphTheme, GraphRenderer>
 where
@@ -168,7 +169,7 @@ where
 {
     empty_slot(
         slot_id.into(),
-        slot.data.ty().color(),
+        slot.data_ty.color(),
         slot_name,
         SlotSide::Right,
     )
@@ -177,7 +178,7 @@ where
 pub fn empty_slot<'a, Message, Theme, Renderer>(
     id: GraphSlotId,
     color: Color,
-    name: &'a str,
+    name: impl IntoFragment<'a>,
     slot_side: SlotSide,
 ) -> Element<'a, Message, Theme, Renderer>
 where
@@ -201,7 +202,7 @@ where
 pub fn valued_slot<'a, Message, Theme, Renderer>(
     id: GraphSlotId,
     color: Color,
-    name: &'a str,
+    name: impl IntoFragment<'a>,
     slot_side: SlotSide,
     widget: Element<'a, Message, Theme, Renderer>,
 ) -> Element<'a, Message, Theme, Renderer>

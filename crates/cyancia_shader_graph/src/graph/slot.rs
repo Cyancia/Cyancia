@@ -13,7 +13,7 @@ use crate::{
     GraphRenderer, GraphTheme,
     graph::{
         node::GraphNodeData,
-        variable::{GraphLiteral, GraphVariable},
+        variable::{GraphLiteral},
     },
 };
 
@@ -91,7 +91,7 @@ impl GraphDefaultOutputSlot {
 
 pub struct GraphOutputSlotData {
     pub node_id: Id<GraphNodeData>,
-    pub data: GraphVariable,
+    pub data_ty: Box<dyn ErasedGraphValueType>,
     pub connected: HashSet<Id<GraphInputSlotData>>,
 }
 

@@ -1,11 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
-    ops::Range,
+
     sync::Arc,
 };
 
-use cyancia_id::{Id, UntypedId};
-use cyancia_widgets::drag_field::DragField;
+use cyancia_id::Id;
+
 use iced_core::{
     Background, Border, Clipboard, Color, Element, Event, Layout, Length, Point, Shadow, Shell,
     Size, Vector,
@@ -203,7 +203,7 @@ impl<'a> DrawableGraph<'a> {
                 let from = graph.slots.inputs.get(&to)?.connected?;
                 let from_slot = graph.slots.outputs.get(&from)?;
 
-                let from_color = from_slot.data.ty().color();
+                let from_color = from_slot.data_ty.color();
                 let to_color = to_slot.data.ty().color();
                 let style = if from_color == to_color {
                     geometry::Style::Solid(from_color)
@@ -242,7 +242,7 @@ impl<'a> DrawableGraph<'a> {
                 (
                     (*id).into(),
                     SlotData {
-                        color: slot.data.ty().color(),
+                        color: slot.data_ty.color(),
                     },
                 )
             }))

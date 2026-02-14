@@ -5,51 +5,45 @@ use std::{
 
 use cyancia_id::Id;
 use iced_core::Point;
+use indexmap::IndexMap;
+use parking_lot::{RwLock, RwLockReadGuard};
 
-use crate::graph::{
-    node::{
-        ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
-        GraphNodeCodeGenContext, GraphNodeData, GraphNodesStorage, StatefulGraphNode,
+use crate::{
+    graph::{
+        node::{
+            ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
+            GraphNodeCodeGenContext, GraphNodeData, GraphNodeUpdateSignatureContext,
+            GraphNodesStorage, StatefulGraphNode,
+        },
+        slot::{
+            ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot,
+            GraphInputSlotData, GraphOutputSlotData, GraphSlots,
+        },
+        variable::{GraphTypeCastersStorage, GraphValueTypeStorage, GraphVariable},
     },
-    slot::{
-        ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData,
-        GraphOutputSlotData, GraphSlots, GraphValueType,
-    },
-    variable::{
-        GraphTypeCastersStorage, GraphValueTypeStorage, GraphVarIdentGenerator, GraphVariable,
-    },
+    wgsl_std::nodes::function::GraphFunctionId,
 };
 
 pub mod node;
 pub mod slot;
 pub mod variable;
 
-#[derive(Debug, thiserror::Error)]
-pub enum GraphCompileError {
-    #[error("{0}")]
-    NodeCodeGenError(ContextualGraphNodeCodeGenError),
-    #[error(transparent)]
-    CustomError(anyhow::Error),
-}
-
 pub struct Graph {
     pub(crate) nodes: HashMap<Id<GraphNodeData>, GraphNodeData>,
     pub(crate) slots: GraphSlots,
-    pub(crate) ident_generator: GraphVarIdentGenerator,
-    pub(crate) signature: GraphSignature,
     pub(crate) storage: Arc<GraphDynamicInstancesStorage>,
     pub(crate) cached_run_order: Option<Vec<Id<GraphNodeData>>>,
+    pub(crate) cached_signature: Option<GraphSignature>,
 }
 
 impl Graph {
-    pub fn new(name: String, storage: Arc<GraphDynamicInstancesStorage>) -> Self {
+    pub fn new(storage: Arc<GraphDynamicInstancesStorage>) -> Self {
         Self {
             nodes: HashMap::new(),
             slots: GraphSlots::default(),
-            ident_generator: GraphVarIdentGenerator::default(),
-            signature: GraphSignature::new(name),
             storage,
             cached_run_order: None,
+            cached_signature: None,
         }
     }
 
@@ -61,13 +55,7 @@ impl Graph {
         let node = StatefulGraphNode::new(node);
         let node_id = Id::random();
         let inputs = create_input_slots(&mut self.slots, node_id, node.create_inputs()).into();
-        let outputs = create_output_slots(
-            &mut self.slots,
-            node_id,
-            node.create_outputs(),
-            &mut self.ident_generator,
-        )
-        .into();
+        let outputs = create_output_slots(&mut self.slots, node_id, node.create_outputs()).into();
 
         self.nodes.insert(
             node_id,
@@ -125,8 +113,8 @@ impl Graph {
         let to_slot = self.slots.inputs.get(&to);
 
         if let (Some(from), Some(to)) = (from_slot, to_slot) {
-            from.data.ty().name() == to.data.ty().name()
-                || self.storage.casters.can_cast(from.data.ty(), to.data.ty())
+            from.data_ty.name() == to.data.ty().name()
+                || self.storage.casters.can_cast(&*from.data_ty, to.data.ty())
         } else {
             false
         }
@@ -181,45 +169,12 @@ impl Graph {
         }
     }
 
-    pub fn compile(&mut self) -> Result<String, GraphCompileError> {
-        if self.cached_run_order.is_none() {
-            self.update_cache();
-        }
-
-        let run_order = self.cached_run_order.as_ref().unwrap();
-        let mut code = String::new();
-        for node_id in run_order.clone() {
-            let node = self.nodes.get(&node_id).unwrap();
-            let context = GraphNodeCodeGenContext {
-                inputs: &node.inputs,
-                outputs: &node.outputs,
-                graph_slots: &mut self.slots,
-                storage: &self.storage,
-            };
-
-            match node.data.generate_code(context) {
-                Ok(node_code) => code.push_str(&node_code),
-                Err(err) => {
-                    return Err(GraphCompileError::NodeCodeGenError(
-                        ContextualGraphNodeCodeGenError {
-                            node_id,
-                            node_title: node.data.name().to_string(),
-                            err,
-                            code: code.clone(),
-                        },
-                    ));
-                }
-            }
-        }
-
-        Ok(code)
-    }
-
     pub fn invalidate_cache(&mut self) {
         self.cached_run_order = None;
+        self.cached_signature = None;
     }
 
-    pub fn update_cache(&mut self) {
+    pub fn update_run_order_cache(&mut self) {
         let mut out_degrees = self
             .nodes
             .iter()
@@ -342,6 +297,26 @@ impl Graph {
         stack.pop();
     }
 
+    pub fn update_signature_cache(&mut self) {
+        if self.cached_run_order.is_none() {
+            self.update_run_order_cache();
+        }
+
+        let run_order = self.cached_run_order.as_ref().unwrap();
+        let mut signature = GraphSignature::default();
+        for node_id in run_order.clone() {
+            let node = self.nodes.get(&node_id).unwrap();
+            let ctx = GraphNodeUpdateSignatureContext {
+                inputs: &node.inputs,
+                outputs: &node.outputs,
+                slots: &mut self.slots,
+                signature: &mut signature,
+            };
+            node.data.update_signature(ctx);
+        }
+        self.cached_signature = Some(signature);
+    }
+
     pub fn update_node(&mut self, message: ErasedGraphNodeMessage) {
         let Some(node) = self.nodes.get_mut(&message.id) else {
             return;
@@ -383,11 +358,8 @@ impl Graph {
                     continue;
                 };
 
-                if output_slot.data.ty().name() != new_output_slot.ty.name() {
-                    output_slot.data = GraphVariable::new_boxed(
-                        self.ident_generator.next_output(),
-                        new_output_slot.ty,
-                    );
+                if output_slot.data_ty.name() != new_output_slot.ty.name() {
+                    output_slot.data_ty = new_output_slot.ty;
                     outputs_changed = true;
                 }
             }
@@ -398,19 +370,89 @@ impl Graph {
             }
         } else {
             delete_all_outputs(&mut self.slots, &node.outputs);
-            node.outputs = create_output_slots(
-                &mut self.slots,
-                node_id,
-                new_outputs,
-                &mut self.ident_generator,
-            )
-            .into();
+            node.outputs = create_output_slots(&mut self.slots, node_id, new_outputs).into();
             self.cached_run_order = None;
         }
     }
 
     pub fn storage(&self) -> &Arc<GraphDynamicInstancesStorage> {
         &self.storage
+    }
+
+    pub fn signature(&self) -> Option<&GraphSignature> {
+        self.cached_signature.as_ref()
+    }
+
+    pub fn compile(
+        &mut self,
+        graph_input_idents: Vec<String>,
+        mut ident_generator: GraphVarIdentGenerator,
+    ) -> Result<(Vec<String>, String), GraphCompileError> {
+        if self.cached_run_order.is_none() {
+            self.update_run_order_cache();
+        }
+        if self.cached_signature.is_none() {
+            self.update_signature_cache();
+        }
+
+        let run_order = self.cached_run_order.as_ref().unwrap();
+        let signature = self.cached_signature.as_ref().unwrap();
+        if signature.inputs.len() != graph_input_idents.len() {
+            return Err(GraphCompileError::IncorrectInputParams {
+                expected: signature.inputs.len(),
+                found: graph_input_idents.len(),
+            });
+        }
+
+        let mut output_slot_idents = HashMap::with_capacity(graph_input_idents.len());
+        for (slot_id, ident) in signature.inputs.keys().zip(graph_input_idents) {
+            output_slot_idents.insert(*slot_id, ident);
+        }
+
+        let mut code = String::new();
+        for node_id in run_order.clone() {
+            let node = self.nodes.get(&node_id).unwrap();
+
+            let context = GraphNodeCodeGenContext {
+                inputs: &node.inputs,
+                outputs: &node.outputs,
+                graph_slots: &self.slots,
+                storage: &self.storage,
+                output_slot_idents: &mut output_slot_idents,
+                ident_generator: &mut ident_generator,
+            };
+
+            match node.data.generate_code(context) {
+                Ok(node_code) => code.push_str(&node_code),
+                Err(err) => {
+                    return Err(GraphCompileError::NodeCodeGenError(
+                        ContextualGraphNodeCodeGenError {
+                            node_id,
+                            node_title: node.data.name().to_string(),
+                            err,
+                            code: code.clone(),
+                        },
+                    ));
+                }
+            }
+        }
+
+        let graph_output_idents = signature
+            .outputs
+            .keys()
+            .filter_map(|input_slot_id| {
+                let input_slot = self.slots.inputs.get(input_slot_id)?;
+                let connected_output_id = input_slot.connected?;
+                output_slot_idents.get(&connected_output_id).cloned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            graph_output_idents.len(),
+            signature.outputs.len(),
+            "This should never fail."
+        );
+
+        Ok((graph_output_idents, code))
     }
 }
 
@@ -439,7 +481,6 @@ fn create_output_slots(
     slots: &mut GraphSlots,
     node_id: Id<GraphNodeData>,
     raw_outputs: Vec<GraphDefaultOutputSlot>,
-    ident_generator: &mut GraphVarIdentGenerator,
 ) -> Vec<Id<GraphOutputSlotData>> {
     let mut outputs = Vec::with_capacity(raw_outputs.len());
     for slot in raw_outputs {
@@ -448,7 +489,7 @@ fn create_output_slots(
             slot_id,
             GraphOutputSlotData {
                 node_id,
-                data: GraphVariable::new_boxed(ident_generator.next_output(), slot.ty),
+                data_ty: slot.ty,
                 connected: HashSet::new(),
             },
         );
@@ -522,46 +563,59 @@ impl GraphDynamicInstancesStorage {
     }
 }
 
+#[derive(Default)]
 pub struct GraphSignature {
-    name: String,
-    inputs: Vec<GraphVariable>,
-    outputs: Vec<GraphVariable>,
+    pub inputs: IndexMap<Id<GraphOutputSlotData>, GraphVariable>,
+    pub outputs: IndexMap<Id<GraphInputSlotData>, GraphVariable>,
 }
 
-impl GraphSignature {
-    pub fn new(name: String) -> Self {
+#[derive(Debug, thiserror::Error)]
+pub enum GraphCompileError {
+    #[error("{0}")]
+    NodeCodeGenError(ContextualGraphNodeCodeGenError),
+    #[error("Expected {expected} input(s), but found {found}")]
+    IncorrectInputParams { expected: usize, found: usize },
+    #[error(transparent)]
+    CustomError(anyhow::Error),
+}
+
+#[derive(Default)]
+pub struct GraphVarIdentGenerator {
+    suffix: String,
+    output_counter: usize,
+}
+
+impl GraphVarIdentGenerator {
+    pub fn new(suffix: String) -> Self {
         Self {
-            name,
-            inputs: Vec::new(),
-            outputs: Vec::new(),
+            suffix,
+            output_counter: 0,
         }
     }
 
-    pub fn new_full(name: String, inputs: Vec<GraphVariable>, outputs: Vec<GraphVariable>) -> Self {
-        Self {
-            name,
-            inputs,
-            outputs,
-        }
+    pub fn next_output(&mut self) -> String {
+        let ident = format!("output_{}_{}", self.output_counter, self.suffix);
+        self.output_counter += 1;
+        ident
+    }
+}
+#[derive(Default)]
+pub struct GraphFunctionsStorage {
+    functions: RwLock<HashMap<GraphFunctionId, Arc<RwLock<Graph>>>>,
+}
+
+impl GraphFunctionsStorage {
+    pub fn insert(&self, id: GraphFunctionId, graph: Graph) {
+        self.functions
+            .write()
+            .insert(id, Arc::new(RwLock::new(graph)));
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn get(&self, id: &GraphFunctionId) -> Option<Arc<RwLock<Graph>>> {
+        self.functions.read().get(id).cloned()
     }
 
-    pub fn require_input(&mut self, var: GraphVariable) {
-        self.inputs.push(var);
-    }
-
-    pub fn require_output(&mut self, var: GraphVariable) {
-        self.outputs.push(var);
-    }
-
-    pub fn inputs(&self) -> &[GraphVariable] {
-        &self.inputs
-    }
-
-    pub fn outputs(&self) -> &[GraphVariable] {
-        &self.outputs
+    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<GraphFunctionId, Arc<RwLock<Graph>>>> {
+        self.functions.read()
     }
 }

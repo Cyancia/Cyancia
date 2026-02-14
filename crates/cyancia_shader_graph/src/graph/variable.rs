@@ -52,13 +52,16 @@ impl GraphTypeCastersStorage {
 
     pub fn try_cast(
         &self,
-        variable: &GraphVariable,
+        from_type: &dyn ErasedGraphValueType,
         to_type: &dyn ErasedGraphValueType,
+        identifier: &String,
     ) -> Option<String> {
-        let from_name = variable.ty().name();
-        let to_name = to_type.name();
-        let caster = self.casters.get(from_name)?.get(to_name)?;
-        Some(caster.cast(&variable.identifier))
+        Some(
+            self.casters
+                .get(from_type.name())?
+                .get(to_type.name())?
+                .cast(identifier),
+        )
     }
 
     pub fn can_cast(&self, from: &dyn ErasedGraphValueType, to: &dyn ErasedGraphValueType) -> bool {
@@ -86,32 +89,19 @@ impl GraphTypeCastersStorage {
     }
 }
 
-pub trait GraphVariableCaster: 'static {
+pub trait GraphVariableCaster: Send + Sync + 'static {
     type FromType: GraphValueType + Default;
     type ToType: GraphValueType + Default;
     fn cast(&self, variable: &String) -> String;
 }
 
-pub trait ErasedGraphVariableCaster {
+pub trait ErasedGraphVariableCaster: Send + Sync + 'static {
     fn cast(&self, variable: &String) -> String;
 }
 
 impl<T: GraphVariableCaster> ErasedGraphVariableCaster for T {
     fn cast(&self, variable: &String) -> String {
         self.cast(variable)
-    }
-}
-
-#[derive(Default)]
-pub struct GraphVarIdentGenerator {
-    output_counter: usize,
-}
-
-impl GraphVarIdentGenerator {
-    pub fn next_output(&mut self) -> String {
-        let ident = format!("output_{}", self.output_counter);
-        self.output_counter += 1;
-        ident
     }
 }
 
