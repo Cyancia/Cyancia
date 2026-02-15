@@ -11,6 +11,7 @@ use parking_lot::RwLock;
 
 use crate::shell::ActionShell;
 
+pub mod brush;
 pub mod canvas_control;
 pub mod file;
 pub mod input_manager;

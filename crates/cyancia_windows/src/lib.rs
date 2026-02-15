@@ -3,6 +3,7 @@ use std::{any::Any, collections::HashMap, sync::Arc};
 use cyancia_id::Id;
 use iced_core::{Element, window};
 use iced_runtime::{Task, futures::Subscription};
+use iced_widget::space;
 
 pub struct Window;
 
@@ -103,19 +104,18 @@ where
         self.views.insert(view.id(), Box::new(view));
     }
 
-    pub fn view(&self, iced_id: window::Id) -> Element<'_, WindowManagerMessage, Theme, Renderer> {
-        let window = self
-            .windows
-            .get(&iced_id)
-            .expect("Window not found")
-            .clone();
-        let view = self.views.get(&window).expect("Window view not found");
-        view.view().map(move |msg| {
+    pub fn view(
+        &self,
+        iced_id: window::Id,
+    ) -> Option<Element<'_, WindowManagerMessage, Theme, Renderer>> {
+        let window = self.windows.get(&iced_id)?;
+        let view = self.views.get(window)?;
+        Some(view.view().map(move |msg| {
             WindowManagerMessage::Window(ErasedWindowMessage {
-                window,
+                window: *window,
                 message: msg,
             })
-        })
+        }))
     }
 
     pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
@@ -153,7 +153,19 @@ where
                 }
 
                 for view_id in shell.to_close {
+                    if !self.opened_views.contains_key(&view_id) {
+                        continue;
+                    }
+
                     task = task.chain(self.close_view(view_id).discard());
+                }
+
+                for view_id in shell.to_toggle {
+                    if self.opened_views.contains_key(&view_id) {
+                        task = task.chain(self.close_view(view_id).discard());
+                    } else {
+                        task = task.chain(self.open_view(view_id).discard());
+                    }
                 }
 
                 task.map(WindowManagerMessage::Window)
@@ -180,12 +192,14 @@ where
         let (window_id, task) = iced_runtime::window::open(Default::default());
         self.windows.insert(window_id, view_id);
         self.opened_views.insert(view_id, window_id);
+        log::info!("Opened window {:?} for view {:?}", window_id, view_id);
         task.discard()
     }
 
     pub fn close_view(&mut self, view_id: Id<Window>) -> Task<()> {
         if let Some(window_id) = self.opened_views.remove(&view_id) {
             self.windows.remove(&window_id);
+            log::info!("Closed window {:?} for view {:?}", window_id, view_id);
             iced_runtime::window::close::<()>(window_id).discard()
         } else {
             Task::none()
@@ -197,6 +211,7 @@ where
 pub struct WindowManagerShell {
     to_open: Vec<Id<Window>>,
     to_close: Vec<Id<Window>>,
+    to_toggle: Vec<Id<Window>>,
 }
 
 impl WindowManagerShell {
@@ -206,5 +221,9 @@ impl WindowManagerShell {
 
     pub fn close_window(&mut self, id: Id<Window>) {
         self.to_close.push(id);
+    }
+
+    pub fn toggle_window(&mut self, id: Id<Window>) {
+        self.to_toggle.push(id);
     }
 }

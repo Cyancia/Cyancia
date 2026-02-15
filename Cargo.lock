@@ -950,11 +950,13 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 name = "cyancia_actions"
 version = "0.1.0"
 dependencies = [
+ "cyancia_brush",
  "cyancia_canvas",
  "cyancia_id",
  "cyancia_image",
  "cyancia_input",
  "cyancia_tools",
+ "cyancia_windows",
  "futures",
  "glam 0.30.9",
  "iced_core",
@@ -971,6 +973,7 @@ version = "0.1.0"
 dependencies = [
  "cyancia_actions",
  "cyancia_assets",
+ "cyancia_brush",
  "cyancia_canvas",
  "cyancia_id",
  "cyancia_image",
@@ -1004,6 +1007,18 @@ dependencies = [
  "parking_lot",
  "serde",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "cyancia_brush"
+version = "0.1.0"
+dependencies = [
+ "cyancia_id",
+ "cyancia_shader_graph",
+ "cyancia_windows",
+ "iced_core",
+ "iced_runtime",
+ "iced_widget",
 ]
 
 [[package]]
@@ -1176,7 +1191,6 @@ dependencies = [
 name = "cyancia_windows"
 version = "0.1.0"
 dependencies = [
- "cyancia_actions",
  "cyancia_assets",
  "cyancia_canvas",
  "cyancia_id",
@@ -1191,6 +1205,7 @@ dependencies = [
  "iced_renderer",
  "iced_runtime",
  "iced_wgpu",
+ "iced_widget",
  "log",
  "wgpu",
 ]

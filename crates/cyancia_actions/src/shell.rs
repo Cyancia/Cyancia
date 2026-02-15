@@ -3,6 +3,7 @@ use std::sync::Arc;
 use cyancia_canvas::CCanvas;
 use cyancia_id::Id;
 use cyancia_tools::{CanvasTool, ToolProxy};
+use cyancia_windows::{Window, WindowManagerShell};
 use iced_runtime::Task;
 
 use crate::task::ActionTask;
@@ -12,18 +13,24 @@ pub struct DestructedShell {
     pub tasks: Vec<Task<Box<dyn ActionTask>>>,
 }
 
-pub struct ActionShell {
+pub struct ActionShell<'a> {
     current_canvas: Arc<CCanvas>,
     tool_proxy: Arc<ToolProxy>,
     tasks: Vec<Task<Box<dyn ActionTask>>>,
+    window_manager: &'a mut WindowManagerShell,
 }
 
-impl ActionShell {
-    pub fn new(current_canvas: Arc<CCanvas>, tool_proxy: Arc<ToolProxy>) -> Self {
+impl<'a> ActionShell<'a> {
+    pub fn new(
+        current_canvas: Arc<CCanvas>,
+        tool_proxy: Arc<ToolProxy>,
+        window_manager: &'a mut WindowManagerShell,
+    ) -> Self {
         Self {
             current_canvas,
             tool_proxy,
             tasks: Vec::new(),
+            window_manager,
         }
     }
 
@@ -59,5 +66,17 @@ impl ActionShell {
     pub fn queue_task<T: ActionTask>(&mut self, task: Task<T>) {
         self.tasks
             .push(task.map(|t| Box::new(t) as Box<dyn ActionTask>));
+    }
+
+    pub fn open_window(&mut self, id: Id<Window>) {
+        self.window_manager.open_window(id);
+    }
+
+    pub fn close_window(&mut self, id: Id<Window>) {
+        self.window_manager.close_window(id);
+    }
+
+    pub fn toggle_window(&mut self, id: Id<Window>) {
+        self.window_manager.toggle_window(id);
     }
 }

@@ -26,3 +26,4 @@ wgpu.workspace = true
 cyancia_assets.workspace = true
 cyancia_render.workspace = true
 iced_futures.workspace = true
+cyancia_brush.workspace = true

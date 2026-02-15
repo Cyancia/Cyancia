@@ -1,3 +1,4 @@
+use cyancia_brush::editor::BrushEditorView;
 use cyancia_id::Id;
 use cyancia_windows::WindowManager;
 use iced::Theme;
@@ -11,6 +12,7 @@ fn main() {
         || {
             let mut instance = WindowManager::<Theme, iced_wgpu::Renderer>::new();
             instance.register::<main_view::MainView>();
+            instance.register::<BrushEditorView>();
             let task = instance.open_view(Id::from_str("main_view"));
             (instance, task.discard())
         },

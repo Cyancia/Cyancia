@@ -2,6 +2,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use cyancia_actions::{
     ActionFunctionCollection,
+    brush::OpenBrushEditorAction,
     canvas_control::{
         BrushToolAction, CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction,
     },
@@ -99,7 +100,11 @@ impl<Theme> WindowView<Theme, iced_wgpu::Renderer> for MainView {
         message: Self::Message,
         windows: &mut WindowManagerShell,
     ) -> iced_runtime::Task<Self::Message> {
-        let mut shell = ActionShell::new(self.canvas.clone(), self.input_manager.tools.clone());
+        let mut shell = ActionShell::new(
+            self.canvas.clone(),
+            self.input_manager.tools.clone(),
+            windows,
+        );
 
         match message {
             MainViewMessage::WindowOpened(id) => {}
@@ -147,6 +152,7 @@ impl MainView {
                 assets.store::<ActionManifest>().clone(),
             ));
             collection.register::<OpenFileAction>();
+            collection.register::<OpenBrushEditorAction>();
             collection.register::<CanvasToolSwitch<PanToolAction>>();
             collection.register::<CanvasToolSwitch<RotateToolAction>>();
             collection.register::<CanvasToolSwitch<ZoomToolAction>>();

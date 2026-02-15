@@ -1,0 +1,12 @@
+[package]
+name = "cyancia_brush"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cyancia_windows.workspace = true
+cyancia_shader_graph.workspace = true
+iced_widget.workspace = true
+iced_core.workspace = true
+cyancia_id.workspace = true
+iced_runtime.workspace = true
