@@ -969,9 +969,28 @@ dependencies = [
 name = "cyancia_app"
 version = "0.1.0"
 dependencies = [
+ "cyancia_actions",
+ "cyancia_assets",
+ "cyancia_canvas",
+ "cyancia_id",
+ "cyancia_image",
+ "cyancia_input",
+ "cyancia_render",
+ "cyancia_tools",
  "cyancia_windows",
+ "futures",
+ "glam 0.30.9",
  "iced",
+ "iced_core",
+ "iced_futures",
+ "iced_runtime",
+ "iced_wgpu",
+ "image",
+ "log",
+ "parking_lot",
+ "rfd",
  "tracing-subscriber",
+ "wgpu",
 ]
 
 [[package]]

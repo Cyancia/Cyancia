@@ -4,15 +4,13 @@ use cyancia_id::Id;
 use iced_core::{Element, window};
 use iced_runtime::{Task, futures::Subscription};
 
-pub mod main_view;
-
 pub struct Window;
 
-pub trait WindowView<Theme>: 'static {
+pub trait WindowView<Theme, Renderer>: 'static {
     type Message: Send + Sync + 'static;
 
     fn id(&self) -> Id<Window>;
-    fn view(&self) -> Element<'static, Self::Message, Theme, iced_wgpu::Renderer>;
+    fn view(&self) -> Element<'static, Self::Message, Theme, Renderer>;
     fn update(
         &mut self,
         message: Self::Message,
@@ -23,9 +21,9 @@ pub trait WindowView<Theme>: 'static {
     }
 }
 
-pub trait ErasedWindowView<Theme> {
+pub trait ErasedWindowView<Theme, Renderer> {
     fn id(&self) -> Id<Window>;
-    fn view(&self) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer>;
+    fn view(&self) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, Renderer>;
     fn update(
         &mut self,
         message: Box<dyn Any + Send + Sync>,
@@ -36,17 +34,19 @@ pub trait ErasedWindowView<Theme> {
     }
 }
 
-impl<Theme, T> ErasedWindowView<Theme> for T
+impl<Theme, Renderer, T> ErasedWindowView<Theme, Renderer> for T
 where
     Theme: 'static,
-    T: WindowView<Theme>,
+    Renderer: iced_core::Renderer + 'static,
+    T: WindowView<Theme, Renderer>,
 {
     fn id(&self) -> Id<Window> {
-        <T as WindowView<Theme>>::id(self)
+        <T as WindowView<Theme, Renderer>>::id(self)
     }
 
-    fn view(&self) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer> {
-        <T as WindowView<Theme>>::view(self).map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    fn view(&self) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, Renderer> {
+        <T as WindowView<Theme, Renderer>>::view(self)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
     fn update(
@@ -57,12 +57,12 @@ where
         let msg = *message
             .downcast::<T::Message>()
             .expect("Cast window message failed");
-        <T as WindowView<Theme>>::update(self, msg, windows)
+        <T as WindowView<Theme, Renderer>>::update(self, msg, windows)
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>> {
-        <T as WindowView<Theme>>::subscription(self)
+        <T as WindowView<Theme, Renderer>>::subscription(self)
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 }
@@ -79,15 +79,16 @@ pub enum WindowManagerMessage {
     Window(ErasedWindowMessage),
 }
 
-pub struct WindowManager<Theme> {
+pub struct WindowManager<Theme, Renderer> {
     windows: HashMap<window::Id, Id<Window>>,
-    views: HashMap<Id<Window>, Box<dyn ErasedWindowView<Theme>>>,
+    views: HashMap<Id<Window>, Box<dyn ErasedWindowView<Theme, Renderer>>>,
     opened_views: HashMap<Id<Window>, window::Id>,
 }
 
-impl<Theme> WindowManager<Theme>
+impl<Theme, Renderer> WindowManager<Theme, Renderer>
 where
     Theme: 'static,
+    Renderer: iced_core::Renderer + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -97,22 +98,12 @@ where
         }
     }
 
-    pub fn register<T: WindowView<Theme> + Default>(&mut self) {
+    pub fn register<T: WindowView<Theme, Renderer> + Default>(&mut self) {
         let view = T::default();
         self.views.insert(view.id(), Box::new(view));
     }
 
-    pub fn boot() -> (Self, Task<WindowManagerMessage>) {
-        let mut instance = Self::new();
-        instance.register::<main_view::MainView>();
-        let task = instance.open_view(Id::from_str("main_view"));
-        (instance, task.discard())
-    }
-
-    pub fn view(
-        &self,
-        iced_id: window::Id,
-    ) -> Element<'_, WindowManagerMessage, Theme, iced_wgpu::Renderer> {
+    pub fn view(&self, iced_id: window::Id) -> Element<'_, WindowManagerMessage, Theme, Renderer> {
         let window = self
             .windows
             .get(&iced_id)
@@ -185,14 +176,14 @@ where
         Subscription::batch(views.chain([manager]))
     }
 
-    fn open_view(&mut self, view_id: Id<Window>) -> Task<()> {
+    pub fn open_view(&mut self, view_id: Id<Window>) -> Task<()> {
         let (window_id, task) = iced_runtime::window::open(Default::default());
         self.windows.insert(window_id, view_id);
         self.opened_views.insert(view_id, window_id);
         task.discard()
     }
 
-    fn close_view(&mut self, view_id: Id<Window>) -> Task<()> {
+    pub fn close_view(&mut self, view_id: Id<Window>) -> Task<()> {
         if let Some(window_id) = self.opened_views.remove(&view_id) {
             self.windows.remove(&window_id);
             iced_runtime::window::close::<()>(window_id).discard()

@@ -1,9 +1,3 @@
-use std::sync::Arc;
-
-use cyancia_actions::{
-    ActionFunctionCollection,
-    shell::{ActionShell, DestructedShell},
-};
 use cyancia_canvas::CCanvas;
 use cyancia_input::{
     key::KeyboardState,
@@ -14,6 +8,12 @@ use iced_core::{
     Point,
     keyboard::{self, key},
     mouse,
+};
+use std::sync::Arc;
+
+use crate::{
+    ActionFunctionCollection,
+    shell::{ActionShell, DestructedShell},
 };
 
 pub struct InputManager {

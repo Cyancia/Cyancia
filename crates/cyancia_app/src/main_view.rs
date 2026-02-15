@@ -6,6 +6,7 @@ use cyancia_actions::{
         BrushToolAction, CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction,
     },
     file::OpenFileAction,
+    input_manager::InputManager,
     shell::{ActionShell, DestructedShell},
     task::ActionTask,
 };
@@ -29,14 +30,11 @@ use cyancia_tools::{
     CanvasToolFunctionCollection, ToolProxy, brush::BrushTool, pan::PanTool, rotate::RotateTool,
     zoom::ZoomTool,
 };
+use cyancia_windows::{Window, WindowManagerShell, WindowView};
 use glam::UVec2;
 use iced_core::{Element, keyboard, mouse, window};
 use iced_runtime::{Task, futures::Subscription};
 use wgpu::{Device, Queue};
-
-use crate::{Window, WindowManagerShell, WindowView, main_view::input_manager::InputManager};
-
-pub mod input_manager;
 
 pub struct MainView {
     pub assets: AssetRegistry,
@@ -76,7 +74,7 @@ impl Debug for MainViewMessage {
     }
 }
 
-impl<Theme> WindowView<Theme> for MainView {
+impl<Theme> WindowView<Theme, iced_wgpu::Renderer> for MainView {
     type Message = MainViewMessage;
 
     fn id(&self) -> Id<Window> {

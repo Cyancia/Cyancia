@@ -13,6 +13,7 @@ use crate::shell::ActionShell;
 
 pub mod canvas_control;
 pub mod file;
+pub mod input_manager;
 pub mod shell;
 pub mod task;
 pub mod utils;
