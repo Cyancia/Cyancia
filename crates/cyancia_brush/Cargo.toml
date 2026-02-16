@@ -23,3 +23,5 @@ wgpu.workspace = true
 bytemuck.workspace = true
 iced_wgpu.workspace = true
 serde.workspace = true
+cyancia_render.workspace = true
+log.workspace = true

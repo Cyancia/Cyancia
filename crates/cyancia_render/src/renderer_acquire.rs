@@ -6,6 +6,7 @@ use iced_wgpu::core::{
 };
 use wgpu::{Device, Queue};
 
+// TODO: Remove this by building our own event loop handler.
 /// HACK:
 /// We really really really need the device and queue to initialize resources, as well as
 /// performing background tasks.

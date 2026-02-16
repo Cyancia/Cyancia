@@ -2,6 +2,7 @@ use std::{fs::read_to_string, sync::Arc};
 
 use cyancia_assets::store::AssetRegistry;
 use cyancia_id::Id;
+use cyancia_render::RENDER_CONTEXT;
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
@@ -149,14 +150,27 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
                     return Task::none();
                 };
 
-                println!("Selected brush: {}", brush.metadata.name);
-                // BrushPresetInstance::from_asset(
-                //     &brush,
-                //     self.main_graph_storage.clone(),
-                //     self.function_graph_storage.clone(),
-                //     &self.device,
-                //     &self.queue,
-                // );
+                let (instance, errors) = BrushPresetInstance::from_asset(
+                    &brush,
+                    self.main_graph_storage.clone(),
+                    self.function_graph_storage.clone(),
+                    &RENDER_CONTEXT.device,
+                    &RENDER_CONTEXT.queue,
+                );
+
+                if let Some(instance) = instance {
+                    self.selected = Some(SelectedBrush {
+                        id: brush_id,
+                        instance,
+                    });
+                }
+
+                if !errors.is_empty() {
+                    log::error!("Errors while loading brush preset:");
+                    for error in errors {
+                        log::error!("- {:?}", error);
+                    }
+                }
             }
             _ => {}
         }
