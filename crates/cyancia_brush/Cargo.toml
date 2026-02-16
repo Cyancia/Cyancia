@@ -10,3 +10,7 @@ iced_widget.workspace = true
 iced_core.workspace = true
 cyancia_id.workspace = true
 iced_runtime.workspace = true
+glam.workspace = true
+wesl.workspace = true
+iced_futures.workspace = true
+rfd.workspace = true

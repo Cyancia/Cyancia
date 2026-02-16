@@ -1,5 +1,5 @@
 use cyancia_utils::count;
-use glam::Vec2;
+use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, pick_list};
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use crate::{
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
-    wgsl_std::types::{F32Type, Vec2FType},
+    wgsl_std::types::{ColorType, F32Type, TextureReference, TextureType, Vec2FType},
 };
 
 macro_rules! impl_math_format {
@@ -501,6 +501,160 @@ impl StatelessCommonGraphNode for CombineComponentsNode {
         Ok(format!(
             "let {} = vec2f({}, {});\n",
             output_vector, input_x, input_y
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct CombineColorComponentsNode;
+
+impl StatelessCommonGraphNode for CombineColorComponentsNode {
+    fn name(&self) -> &'static str {
+        "Combine Color Components"
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xae79f2)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+            GraphDefaultInputSlot::new::<F32Type>(1.0),
+        ]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["R", "G", "B", "A"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Color"]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input_r = ctx.get_input(0)?;
+        let input_g = ctx.get_input(1)?;
+        let input_b = ctx.get_input(2)?;
+        let input_a = ctx.get_input(3)?;
+        let output_color = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = vec4f({}, {}, {}, {});\n",
+            output_color, input_r, input_g, input_b, input_a
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct SplitColorComponentsNode;
+
+impl StatelessCommonGraphNode for SplitColorComponentsNode {
+    fn name(&self) -> &'static str {
+        "Split Color Components"
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xa3f279)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO)]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+        ]
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Color"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["R", "G", "B", "A"]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input_color = ctx.get_input(0)?;
+        let output_r = ctx.get_output(0)?;
+        let output_g = ctx.get_output(1)?;
+        let output_b = ctx.get_output(2)?;
+        let output_a = ctx.get_output(3)?;
+
+        Ok(format!(
+            "let {} = {}.r;\nlet {} = {}.g;\nlet {} = {}.b;\nlet {} = {}.a;\n",
+            output_r,
+            input_color,
+            output_g,
+            input_color,
+            output_b,
+            input_color,
+            output_a,
+            input_color
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct GetPixelColorNode;
+
+impl StatelessCommonGraphNode for GetPixelColorNode {
+    fn name(&self) -> &'static str {
+        "Get Pixel Color"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        // TODO: sample modes
+        &["Texture", "Position"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Color"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xf279d1)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<TextureType>(TextureReference::NULL),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+        ]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input_texture = ctx.get_input(0)?;
+        let input_position = ctx.get_input(1)?;
+        let output_color = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = textureLoad(textures, {}, {}, 0);\n",
+            output_color, input_position, input_texture
         ))
     }
 }

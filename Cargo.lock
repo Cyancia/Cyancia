@@ -1016,9 +1016,13 @@ dependencies = [
  "cyancia_id",
  "cyancia_shader_graph",
  "cyancia_windows",
+ "glam 0.30.9",
  "iced_core",
+ "iced_futures",
  "iced_runtime",
  "iced_widget",
+ "rfd",
+ "wesl",
 ]
 
 [[package]]
@@ -5367,6 +5371,7 @@ dependencies = [
 name = "wgsl_std"
 version = "0.1.0"
 dependencies = [
+ "cyancia_brush",
  "cyancia_shader_graph",
  "glam 0.30.9",
  "iced",

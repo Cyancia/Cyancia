@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use cyancia_brush::render::graph::brush_graph_storage;
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
@@ -64,6 +65,7 @@ impl App {
             .register_non_default(GraphFunctionNode::new(functions.clone()));
         storage.nodes.register_non_default(DummyOutputNode);
         storage.merge(functioning());
+        storage.merge(brush_graph_storage());
         Self {
             graph: Graph::new(storage.into()),
             functions,
