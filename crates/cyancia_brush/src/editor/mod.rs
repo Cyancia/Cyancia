@@ -3,6 +3,7 @@ use std::{fs::read_to_string, sync::Arc};
 use cyancia_id::Id;
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
+    editor::{GraphView, GraphViewMessage},
     graph::{Graph, GraphDynamicInstancesStorage, node::function::functioning},
     wgsl_std::std_storage,
 };
@@ -51,6 +52,7 @@ impl Default for BrushEditorView {
 pub enum BrushEditorMessage {
     KeyboardEvent(keyboard::Event),
     MouseEvent(mouse::Event),
+    GraphView(GraphViewMessage),
 }
 
 impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
@@ -61,7 +63,11 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
     }
 
     fn view<'a>(&'a self) -> Element<'a, Self::Message, GraphTheme, GraphRenderer> {
-        space().into()
+        if let Some(graph) = &self.brush {
+            Element::new(GraphView::new(graph)).map(BrushEditorMessage::GraphView)
+        } else {
+            space().into()
+        }
     }
 
     fn update(
@@ -111,6 +117,34 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
                 }
             }
             BrushEditorMessage::MouseEvent(event) => {}
+            BrushEditorMessage::GraphView(message) => {
+                let Some(graph) = &mut self.brush else {
+                    return Task::none();
+                };
+
+                match message {
+                    GraphViewMessage::NodeMoveRequest(point, id) => {
+                        if let Some(node) = graph.get_node_mut(&id) {
+                            node.position = point;
+                        }
+                    }
+                    GraphViewMessage::EdgeCreateRequest(from, to) => {
+                        graph.connect_slots(from, to);
+                    }
+                    GraphViewMessage::EdgeRemoveRequest(id) => {
+                        graph.disconnect_slot(id);
+                    }
+                    GraphViewMessage::NodeDeleteRequest(id) => {
+                        graph.delete_node(&id);
+                    }
+                    GraphViewMessage::NodeCreateRequest(point, node) => {
+                        graph.add_boxed_node(point, node);
+                    }
+                    GraphViewMessage::NodeUpdate(message) => {
+                        graph.update_node(message);
+                    }
+                }
+            }
             _ => {}
         }
 
