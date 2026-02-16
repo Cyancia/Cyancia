@@ -205,4 +205,8 @@ impl<T: Asset> AssetStore<T> {
     pub fn into_map(self) -> HashMap<Id<T>, Arc<T>> {
         self.assets
     }
+
+    pub fn all(&self) -> &HashMap<Id<T>, Arc<T>> {
+        &self.assets
+    }
 }

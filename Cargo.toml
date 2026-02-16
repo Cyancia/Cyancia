@@ -75,6 +75,7 @@ half = "2"
 rfd = "0.16"
 anyhow = "1"
 dyn-clone = "1"
+zip = "8"
 
 # [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }

@@ -95,55 +95,8 @@ impl Graph {
     }
 
     pub fn serialize<'a>(&self, buf: &mut Buffer) -> Result<(), anyhow::Error> {
-        let nodes = self
-            .nodes
-            .iter()
-            .try_fold(Vec::new(), |mut acc, (node_id, node)| {
-                acc.push(SerializableNodeData {
-                    id: *node_id,
-                    position: node.position.into(),
-                    inputs: node.inputs.clone(),
-                    outputs: node.outputs.clone(),
-                    data: GraphNodeTypeId {
-                        name: node.data.name().to_string(),
-                    },
-                    state: node.data.serialize_state()?,
-                });
-
-                Result::<_, anyhow::Error>::Ok(acc)
-            })?;
-
-        let inputs =
-            self.slots
-                .inputs
-                .iter()
-                .try_fold(HashMap::default(), |mut acc, (id, slot)| {
-                    acc.insert(
-                        *id,
-                        SerializableInputSlotData {
-                            connected: slot.connected,
-                            data: slot.data.ty().serialize_literal(slot.data.value())?,
-                        },
-                    );
-
-                    Result::<_, anyhow::Error>::Ok(acc)
-                })?;
-
-        let outputs = self
-            .slots
-            .outputs
-            .iter()
-            .map(|(id, _)| (*id, SerializableOutputSlotData {}))
-            .collect();
-
-        let sg = SerializableGraph {
-            nodes,
-            inputs,
-            outputs,
-        };
-
         let serializer = GraphSerializer::new(buf);
-        sg.serialize(serializer)?;
+        self.as_serialized()?.serialize(serializer)?;
         Ok(())
     }
 
@@ -151,19 +104,28 @@ impl Graph {
         storage: Arc<GraphDynamicInstancesStorage>,
         deserializer: toml::Deserializer<'de>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
-        let mut rs = (None, Vec::new());
-        let errs = &mut rs.1;
+        let sg = match SerializableGraph::deserialize(deserializer) {
+            Ok(x) => x,
+            Err(e) => {
+                return (None, vec![GraphDeserializeError::DeserializerError(e)]);
+            }
+        };
+
+        Self::from_serialized(storage, sg)
+    }
+
+    pub fn from_serialized(
+        storage: Arc<GraphDynamicInstancesStorage>,
+        serialized: SerializableGraph,
+    ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let SerializableGraph {
             nodes,
             inputs,
             outputs,
-        } = match SerializableGraph::deserialize(deserializer) {
-            Ok(x) => x,
-            Err(e) => {
-                errs.push(GraphDeserializeError::DeserializerError(e));
-                return rs;
-            }
-        };
+        } = serialized;
+
+        let mut rs = (None, Vec::new());
+        let errs = &mut rs.1;
 
         let mut graph_nodes = HashMap::with_capacity(nodes.len());
         let mut graph_inputs = HashMap::with_capacity(inputs.len());
@@ -306,26 +268,75 @@ impl Graph {
 
         return rs;
     }
+
+    pub fn as_serialized(&self) -> Result<SerializableGraph, anyhow::Error> {
+        let nodes = self
+            .nodes
+            .iter()
+            .try_fold(Vec::new(), |mut acc, (node_id, node)| {
+                acc.push(SerializableNodeData {
+                    id: *node_id,
+                    position: node.position.into(),
+                    inputs: node.inputs.clone(),
+                    outputs: node.outputs.clone(),
+                    data: GraphNodeTypeId {
+                        name: node.data.name().to_string(),
+                    },
+                    state: node.data.serialize_state()?,
+                });
+
+                Result::<_, anyhow::Error>::Ok(acc)
+            })?;
+
+        let inputs =
+            self.slots
+                .inputs
+                .iter()
+                .try_fold(HashMap::default(), |mut acc, (id, slot)| {
+                    acc.insert(
+                        *id,
+                        SerializableInputSlotData {
+                            connected: slot.connected,
+                            data: slot.data.ty().serialize_literal(slot.data.value())?,
+                        },
+                    );
+
+                    Result::<_, anyhow::Error>::Ok(acc)
+                })?;
+
+        let outputs = self
+            .slots
+            .outputs
+            .iter()
+            .map(|(id, _)| (*id, SerializableOutputSlotData {}))
+            .collect();
+
+        Ok(SerializableGraph {
+            nodes,
+            inputs,
+            outputs,
+        })
+    }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableGraph {
     pub nodes: Vec<SerializableNodeData>,
     pub inputs: HashMap<Id<GraphInputSlotData>, SerializableInputSlotData>,
     pub outputs: HashMap<Id<GraphOutputSlotData>, SerializableOutputSlotData>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct GraphValueTypeId {
     pub name: String,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct GraphNodeTypeId {
     pub name: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableNodeData {
     pub id: Id<GraphNodeData>,
     pub data: GraphNodeTypeId,
@@ -335,23 +346,23 @@ pub struct SerializableNodeData {
     pub state: toml::Value,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableInputSlotData {
     pub connected: Option<Id<GraphOutputSlotData>>,
     pub data: toml::Value,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableOutputSlotData {}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableGraphFunctionSignature {
     pub name: String,
     pub ret_type: GraphValueTypeId,
     pub params: Vec<SerializableGraphVariable>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableGraphVariable {
     pub identifier: String,
     pub ty: GraphValueTypeId,

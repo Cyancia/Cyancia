@@ -3,6 +3,8 @@ use cyancia_id::Id;
 use cyancia_windows::WindowManager;
 use iced::Theme;
 
+use crate::main_view::MainView;
+
 mod main_view;
 
 fn main() {
@@ -11,8 +13,9 @@ fn main() {
     iced::daemon(
         || {
             let mut instance = WindowManager::<Theme, iced_wgpu::Renderer>::new();
-            instance.register::<main_view::MainView>();
-            instance.register::<BrushEditorView>();
+            let main_view = MainView::new();
+            instance.register(BrushEditorView::new(main_view.assets.clone()));
+            instance.register(main_view);
             let task = instance.open_view(Id::from_str("main_view"));
             (instance, task.discard())
         },

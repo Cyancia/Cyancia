@@ -1,5 +1,6 @@
 use std::{fs::read_to_string, sync::Arc};
 
+use cyancia_assets::store::AssetRegistry;
 use cyancia_id::Id;
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
@@ -14,19 +15,29 @@ use iced_core::{
     mouse,
 };
 use iced_runtime::{Task, futures::Subscription};
-use iced_widget::space;
+use iced_widget::{container, row, space};
+use wgpu::{Device, Queue};
 
-use crate::render::graph::{brush_graph_storage, generate_brush_shader};
+use crate::{
+    asset::{BrushPreset, BrushPresetInstance},
+    browser::brush_asset_browser,
+    render::graph::{brush_graph_storage, generate_brush_shader},
+};
 
-pub struct BrushEditorView {
-    main_graph_storage: Arc<GraphDynamicInstancesStorage>,
-    function_graph_storage: Arc<GraphDynamicInstancesStorage>,
-    // TODO: replace with entire preset
-    brush: Option<Graph>,
+pub struct SelectedBrush {
+    pub id: Id<BrushPreset>,
+    pub instance: BrushPresetInstance,
 }
 
-impl Default for BrushEditorView {
-    fn default() -> Self {
+pub struct BrushEditorView {
+    assets: Arc<AssetRegistry>,
+    main_graph_storage: Arc<GraphDynamicInstancesStorage>,
+    function_graph_storage: Arc<GraphDynamicInstancesStorage>,
+    selected: Option<SelectedBrush>,
+}
+
+impl BrushEditorView {
+    pub fn new(assets: Arc<AssetRegistry>) -> Self {
         let main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
@@ -42,7 +53,8 @@ impl Default for BrushEditorView {
         };
 
         Self {
-            brush: None,
+            assets,
+            selected: None,
             main_graph_storage,
             function_graph_storage,
         }
@@ -53,6 +65,7 @@ pub enum BrushEditorMessage {
     KeyboardEvent(keyboard::Event),
     MouseEvent(mouse::Event),
     GraphView(GraphViewMessage),
+    BrushSelected(Id<BrushPreset>),
 }
 
 impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
@@ -63,11 +76,19 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
     }
 
     fn view<'a>(&'a self) -> Element<'a, Self::Message, GraphTheme, GraphRenderer> {
-        if let Some(graph) = &self.brush {
-            Element::new(GraphView::new(graph)).map(BrushEditorMessage::GraphView)
-        } else {
-            space().into()
+        let mut editor = row![
+            brush_asset_browser(self.assets.store::<BrushPreset>(), std::convert::identity)
+                .map(BrushEditorMessage::BrushSelected)
+        ];
+
+        if let Some(brush) = &self.selected {
+            editor = editor.push(
+                Element::new(GraphView::new(&brush.instance.main_graph))
+                    .map(BrushEditorMessage::GraphView),
+            );
         }
+
+        editor.into()
     }
 
     fn update(
@@ -83,8 +104,8 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
             }) => {
                 // TODO: with custom keybinds and actions.
                 if physical_key == key::Physical::Code(key::Code::KeyP) && modifiers.control() {
-                    if let Some(graph) = &mut self.brush {
-                        match generate_brush_shader(graph) {
+                    if let Some(brush) = &mut self.selected {
+                        match generate_brush_shader(&mut brush.instance.main_graph) {
                             Ok(shader) => println!("Generated shader:\n{}", shader),
                             Err(e) => println!("Failed to generate shader: {:?}", e),
                         }
@@ -92,35 +113,13 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
                         println!("No brush graph to generate shader from.");
                     }
                 }
-                if physical_key == key::Physical::Code(key::Code::KeyO) && modifiers.control() {
-                    let Some(file) = rfd::FileDialog::new()
-                        .add_filter("Brush Graph", &["csg", "csf"])
-                        .pick_file()
-                    else {
-                        return Task::none();
-                    };
-
-                    let storage = match file.extension().and_then(|e| e.to_str()) {
-                        Some("csg") => self.main_graph_storage.clone(),
-                        Some("csf") => self.function_graph_storage.clone(),
-                        _ => {
-                            println!("Unsupported file type.");
-                            return Task::none();
-                        }
-                    };
-
-                    let graph = Graph::from_toml(storage, &read_to_string(&file).unwrap())
-                        .0
-                        .unwrap();
-                    self.brush = Some(graph);
-                    println!("Loaded brush graph from file: {}", file.display());
-                }
             }
             BrushEditorMessage::MouseEvent(event) => {}
             BrushEditorMessage::GraphView(message) => {
-                let Some(graph) = &mut self.brush else {
+                let Some(brush) = &mut self.selected else {
                     return Task::none();
                 };
+                let graph = &mut brush.instance.main_graph;
 
                 match message {
                     GraphViewMessage::NodeMoveRequest(point, id) => {
@@ -144,6 +143,20 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
                         graph.update_node(message);
                     }
                 }
+            }
+            BrushEditorMessage::BrushSelected(brush_id) => {
+                let Some(brush) = self.assets.asset(brush_id) else {
+                    return Task::none();
+                };
+
+                println!("Selected brush: {}", brush.metadata.name);
+                // BrushPresetInstance::from_asset(
+                //     &brush,
+                //     self.main_graph_storage.clone(),
+                //     self.function_graph_storage.clone(),
+                //     &self.device,
+                //     &self.queue,
+                // );
             }
             _ => {}
         }

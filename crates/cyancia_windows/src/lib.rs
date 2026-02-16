@@ -99,8 +99,7 @@ where
         }
     }
 
-    pub fn register<T: WindowView<Theme, Renderer> + Default>(&mut self) {
-        let view = T::default();
+    pub fn register<T: WindowView<Theme, Renderer>>(&mut self, view: T) {
         self.views.insert(view.id(), Box::new(view));
     }
 

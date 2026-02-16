@@ -12,6 +12,7 @@ use cyancia_actions::{
     task::ActionTask,
 };
 use cyancia_assets::store::{AssetLoaderRegistry, AssetRegistry};
+use cyancia_brush::asset::BrushPresetLoader;
 use cyancia_canvas::{CCanvas, widget::CanvasWidget};
 use cyancia_id::Id;
 use cyancia_image::{
@@ -38,7 +39,7 @@ use iced_runtime::{Task, futures::Subscription};
 use wgpu::{Device, Queue};
 
 pub struct MainView {
-    pub assets: AssetRegistry,
+    pub assets: Arc<AssetRegistry>,
     pub input_manager: InputManager,
     pub canvas: Arc<CCanvas>,
 
@@ -145,6 +146,7 @@ impl MainView {
     pub fn new() -> Self {
         let mut loaders = AssetLoaderRegistry::new();
         cyancia_input::register_loaders(&mut loaders);
+        loaders.register::<BrushPresetLoader>();
         let assets = AssetRegistry::new("assets", &loaders);
 
         let actions = {
@@ -170,7 +172,7 @@ impl MainView {
         let tools = { ToolProxy::new(Id::from_str("brush_tool"), tool_functions) };
 
         Self {
-            assets,
+            assets: Arc::new(assets),
             canvas: Arc::new(CCanvas {
                 image: Arc::new(CImage::new(UVec2 { x: 1024, y: 768 })),
                 transform: Default::default(),
