@@ -60,7 +60,7 @@ impl WindowView<GraphTheme, GraphRenderer> for BrushEditorView {
         Id::from_str("brush_editor")
     }
 
-    fn view(&self) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+    fn view<'a>(&'a self) -> Element<'a, Self::Message, GraphTheme, GraphRenderer> {
         space().into()
     }
 

@@ -11,7 +11,7 @@ pub trait WindowView<Theme, Renderer>: 'static {
     type Message: Send + Sync + 'static;
 
     fn id(&self) -> Id<Window>;
-    fn view(&self) -> Element<'static, Self::Message, Theme, Renderer>;
+    fn view<'a>(&'a self) -> Element<'a, Self::Message, Theme, Renderer>;
     fn update(
         &mut self,
         message: Self::Message,
@@ -24,7 +24,7 @@ pub trait WindowView<Theme, Renderer>: 'static {
 
 pub trait ErasedWindowView<Theme, Renderer> {
     fn id(&self) -> Id<Window>;
-    fn view(&self) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, Renderer>;
+    fn view<'a>(&'a self) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer>;
     fn update(
         &mut self,
         message: Box<dyn Any + Send + Sync>,
@@ -45,7 +45,7 @@ where
         <T as WindowView<Theme, Renderer>>::id(self)
     }
 
-    fn view(&self) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, Renderer> {
+    fn view<'a>(&'a self) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer> {
         <T as WindowView<Theme, Renderer>>::view(self)
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }

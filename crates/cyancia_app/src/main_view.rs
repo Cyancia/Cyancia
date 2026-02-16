@@ -82,7 +82,7 @@ impl<Theme> WindowView<Theme, iced_wgpu::Renderer> for MainView {
         Id::from_str("main_view")
     }
 
-    fn view(&self) -> Element<'static, Self::Message, Theme, iced_wgpu::Renderer> {
+    fn view<'a>(&'a self) -> Element<'a, Self::Message, Theme, iced_wgpu::Renderer> {
         if self.renderer_acquired {
             self.view_internal()
         } else {
