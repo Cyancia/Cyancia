@@ -121,13 +121,17 @@ impl<T: Asset> AssetHandle<T> {
             .ok()
     }
 
-    pub async fn update(&self, asset: T) {
-        let _ = self.index_db.update_by_url(&self.url, asset.hash()).await;
+    pub fn update(&self, asset: T) {
         self.bundle
             .update_by_path(self.url.path_str().to_string(), Arc::new(asset));
     }
 
-    pub fn write(&self) {
+    pub async fn write(&self) {
+        let Some(asset) = self.read() else {
+            return;
+        };
+
+        let _ = self.index_db.update_by_url(&self.url, asset.hash()).await;
         self.bundle.write_by_path(self.url.path_str())
     }
 

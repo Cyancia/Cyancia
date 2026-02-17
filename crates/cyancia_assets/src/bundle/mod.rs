@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::HashMap,
     sync::Arc,
 };
 
@@ -65,15 +65,7 @@ impl CachedAssetBundle {
     }
 
     pub fn update_by_path(&self, path: String, asset: Arc<dyn ErasedAsset>) {
-        match self.cached_asset.write().entry(path) {
-            Entry::Occupied(e) => {
-                // TODO: This should never happen
-                return;
-            }
-            Entry::Vacant(e) => {
-                e.insert(asset);
-            }
-        }
+        self.cached_asset.write().insert(path, asset);
     }
 
     pub fn write_by_path(&self, path: &str) {

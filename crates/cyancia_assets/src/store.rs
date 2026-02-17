@@ -279,7 +279,7 @@ mod tests {
         let hero_asset = read_write_handle.read().expect("expected read success");
         assert_eq!(hero_asset.value, "hero");
 
-        read_write_handle.write();
+        read_write_handle.write().await;
         let paths = write_paths.lock().unwrap();
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0], "hero.asset");
@@ -288,16 +288,24 @@ mod tests {
         let update_handle = registry
             .handle::<TestAsset>(bundle_id.clone(), "update.asset")
             .expect("expected update handle");
-        update_handle
-            .update(TestAsset {
-                value: "after".to_string(),
-            })
-            .await;
+        update_handle.update(TestAsset {
+            value: "after".to_string(),
+        });
 
         let updated = update_handle.read().expect("expected updated asset");
         assert_eq!(updated.value, "after");
 
-        let metadata = update_handle.metadata().await.expect("expected metadata");
-        assert_eq!(metadata.content_hash, "after");
+        let metadata_before_write = update_handle.metadata().await.expect("expected metadata");
+        assert_eq!(metadata_before_write.content_hash, "before");
+
+        update_handle.write().await;
+
+        let metadata_after_write = update_handle.metadata().await.expect("expected metadata");
+        assert_eq!(metadata_after_write.content_hash, "after");
+
+        let paths = write_paths.lock().unwrap();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0], "hero.asset");
+        assert_eq!(paths[1], "update.asset");
     }
 }

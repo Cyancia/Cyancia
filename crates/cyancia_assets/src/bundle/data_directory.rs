@@ -112,3 +112,127 @@ fn scan_all_assets(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{io::Read, path::PathBuf};
+
+    use super::*;
+    use crate::{asset::Asset, loader::AssetSerializer};
+
+    #[derive(Default)]
+    struct TestTextAssetSerializer;
+
+    struct TestTextAsset {
+        value: String,
+    }
+
+    impl Asset for TestTextAsset {
+        const TYPE_NAME: &'static str = "test_text_asset";
+
+        fn hash(&self) -> String {
+            self.value.clone()
+        }
+    }
+
+    impl AssetSerializer for TestTextAssetSerializer {
+        type Asset = TestTextAsset;
+        type Error = std::io::Error;
+
+        fn file_extension() -> &'static str {
+            "tasset"
+        }
+
+        fn read(&self, reader: &mut dyn Read) -> Result<Self::Asset, Self::Error> {
+            let mut value = String::new();
+            reader.read_to_string(&mut value)?;
+            Ok(TestTextAsset { value })
+        }
+
+        fn write(
+            &self,
+            asset: &Self::Asset,
+            writer: &mut dyn std::io::Write,
+        ) -> Result<(), Self::Error> {
+            writer.write_all(asset.value.as_bytes())
+        }
+    }
+
+    fn serializers() -> AssetSerializerRegistry {
+        let mut serializers = AssetSerializerRegistry::new();
+        serializers.register::<TestTextAssetSerializer>();
+        serializers
+    }
+
+    fn sample_assets_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_assets")
+            .join("sample")
+    }
+
+    #[test]
+    fn test_all_assets() {
+        let serializers = serializers();
+        let bundle = CyanciaDataDirectory {
+            root: sample_assets_root(),
+        };
+
+        let mut assets = bundle.all_assets(&serializers);
+        assets.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+
+        assert_eq!(assets.len(), 2);
+        assert_eq!(assets[0].relative_path, "a.tasset");
+        assert_eq!(assets[0].content_hash, "alpha");
+        assert_eq!(assets[0].asset_type, TestTextAsset::TYPE_NAME);
+        assert_eq!(assets[1].relative_path, "b.tasset");
+        assert_eq!(assets[1].content_hash, "beta");
+        assert_eq!(assets[1].asset_type, TestTextAsset::TYPE_NAME);
+    }
+
+    #[test]
+    fn test_read_by_path() {
+        let serializers = serializers();
+        let bundle = CyanciaDataDirectory {
+            root: sample_assets_root(),
+        };
+
+        let asset = bundle
+            .read_by_path("a.tasset", &serializers)
+            .and_then(|a| a.downcast_arc::<TestTextAsset>().ok())
+            .expect("expected readable test asset");
+
+        assert_eq!(asset.value, "alpha");
+    }
+
+    #[test]
+    fn test_write_by_path() {
+        let serializers = serializers();
+        let runtime_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_assets")
+            .join(format!("runtime_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&runtime_root).unwrap();
+
+        let bundle = CyanciaDataDirectory {
+            root: runtime_root.clone(),
+        };
+
+        bundle.write_by_path(
+            "nested/new.tasset",
+            &TestTextAsset {
+                value: "written".to_string(),
+            },
+            &serializers,
+        );
+
+        let file_content = std::fs::read_to_string(runtime_root.join("nested/new.tasset")).unwrap();
+        assert_eq!(file_content, "written");
+
+        let read_back = bundle
+            .read_by_path("nested/new.tasset", &serializers)
+            .and_then(|a| a.downcast_arc::<TestTextAsset>().ok())
+            .expect("expected read back asset");
+        assert_eq!(read_back.value, "written");
+
+        std::fs::remove_dir_all(runtime_root).unwrap();
+    }
+}
