@@ -5,204 +5,299 @@ use std::{
     sync::Arc,
 };
 
-use cyancia_id::Id;
-
 use crate::{
-    asset::Asset,
-    loader::{AssetLoader, ErasedAssetLoader},
+    asset::{Asset, AssetHandle, AssetUrl},
+    bundle::{AssetBundle, BundleId, BundleMetadata, CachedAssetBundle},
+    error::Result,
+    id::AssetId,
+    index_db::AssetIndexDb,
+    loader::{AssetSerializer, ErasedAssetSerializer},
 };
 
-pub struct AssetLoaderRegistry {
-    loaders: HashMap<&'static str, Arc<dyn ErasedAssetLoader>>,
-}
-
-impl AssetLoaderRegistry {
-    pub fn new() -> Self {
-        Self {
-            loaders: HashMap::new(),
-        }
-    }
-
-    pub fn register<L: AssetLoader + Default>(&mut self) {
-        let loader = Arc::new(L::default());
-        for &ext in L::file_extensions() {
-            self.loaders.insert(ext, loader.clone());
-        }
-    }
-
-    pub fn get(&self, ext: &str) -> Option<Arc<dyn ErasedAssetLoader>> {
-        self.loaders.get(ext).cloned()
-    }
-}
-
 pub struct AssetRegistry {
-    stores: HashMap<TypeId, Box<dyn Any + Send + Sync + 'static>>,
+    bundles: HashMap<BundleId, Arc<CachedAssetBundle>>,
+    index_db: Arc<AssetIndexDb>,
 }
 
 impl AssetRegistry {
-    pub fn new(root: impl AsRef<Path>, loaders: &AssetLoaderRegistry) -> Self {
-        let mut assets = Self {
-            stores: HashMap::new(),
-        };
+    pub async fn new(root: impl AsRef<Path>) -> Result<Self> {
+        // TODO: Scan bundles
+        let bundles = HashMap::new();
+        let index_db = AssetIndexDb::connect(&format!(
+            "sqlite:{}",
+            root.as_ref().join("index.sqlite3").display()
+        ))
+        .await?;
 
-        asset_loading::load_all_assets(&mut assets, loaders, root.as_ref());
-
-        assets
+        Ok(Self {
+            bundles,
+            index_db: Arc::new(index_db),
+        })
     }
 
-    pub fn store<T: Asset>(&self) -> &AssetStore<T> {
-        self.stores
-            .get(&TypeId::of::<T>())
-            .expect(&format!(
-                "Store of type {} doesn't exist.",
-                std::any::type_name::<T>()
-            ))
-            .downcast_ref::<AssetStore<T>>()
-            .unwrap()
+    pub fn add_bundle(&mut self, bundle: CachedAssetBundle) {
+        self.bundles.insert(
+            BundleId::new(bundle.metadata().filename.clone()),
+            Arc::new(bundle),
+        );
     }
 
-    pub fn store_mut<T: Asset>(&mut self) -> &mut AssetStore<T> {
-        self.stores
-            .get_mut(&TypeId::of::<T>())
-            .expect(&format!(
-                "Store of type {} doesn't exist.",
-                std::any::type_name::<T>()
-            ))
-            .downcast_mut::<AssetStore<T>>()
-            .unwrap()
+    pub fn handle<T: Asset>(&self, bundle_id: BundleId, path: &str) -> Option<AssetHandle<T>> {
+        let bundle = self.bundles.get(&bundle_id)?;
+
+        Some(AssetHandle::new(
+            AssetUrl::new(bundle_id, path.to_string().into()),
+            bundle.clone(),
+            self.index_db.clone(),
+        ))
     }
 
-    pub fn asset<T: Asset>(&self, id: Id<T>) -> Option<Arc<T>> {
-        self.store::<T>().get(id)
-    }
+    pub async fn all_handles_of<T: Asset>(&self) -> Option<Vec<AssetHandle<T>>> {
+        let metadata = self.index_db.all_by_type(T::TYPE_NAME).await.ok()?;
 
-    pub fn init_store<T: Asset>(&mut self) {
-        match self.stores.entry(TypeId::of::<T>()) {
-            Entry::Occupied(_) => {}
-            Entry::Vacant(e) => {
-                e.insert(Box::new(AssetStore::<T>::new()));
-            }
-        }
+        let handles = metadata
+            .into_iter()
+            .filter_map(|meta| {
+                Some(AssetHandle::new(
+                    AssetUrl::new(meta.bundle_id.clone(), meta.relative_path.into()),
+                    self.bundles.get(&meta.bundle_id)?.clone(),
+                    self.index_db.clone(),
+                ))
+            })
+            .collect::<_>();
+
+        Some(handles)
     }
 }
 
-mod asset_loading {
-    use std::{fs::read_dir, path::PathBuf};
-
-    use cyancia_id::UntypedId;
-
+#[cfg(test)]
+mod tests {
     use super::*;
+    use std::{collections::HashMap, sync::Mutex};
 
-    pub(super) fn load_all_assets(
-        assets: &mut AssetRegistry,
-        loaders: &AssetLoaderRegistry,
-        root: &Path,
-    ) {
-        let mut counter = 0;
-        match load_folder(assets, loaders, root, &mut counter) {
-            Ok(_) => {
-                log::info!(
-                    "Successfully loaded {} assets from {}",
-                    counter,
-                    root.display()
-                );
-            }
-            Err(e) => {
-                log::error!("Error loading assets from root {}: {}", root.display(), e);
-            }
+    use crate::{
+        asset::{AssetMetadata, ErasedAsset},
+        loader::AssetSerializerRegistry,
+    };
+
+    struct TestAsset {
+        value: String,
+    }
+
+    impl Asset for TestAsset {
+        const TYPE_NAME: &'static str = "test_asset";
+
+        fn hash(&self) -> String {
+            self.value.clone()
         }
     }
 
-    fn load_folder(
-        assets: &mut AssetRegistry,
-        loaders: &AssetLoaderRegistry,
-        path: &Path,
-        counter: &mut u32,
-    ) -> Result<(), std::io::Error> {
-        for entry in read_dir(path)? {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(e) => {
-                    log::error!("Error reading directory entry {}: {}", e, path.display());
-                    continue;
-                }
-            };
+    struct InMemoryBundle {
+        assets: HashMap<String, Arc<dyn ErasedAsset>>,
+        write_paths: Arc<Mutex<Vec<String>>>,
+    }
 
-            let path = entry.path();
-            if path.is_dir() {
-                match load_folder(assets, loaders, &path, counter) {
-                    Ok(_) => {}
-                    Err(e) => log::error!("Error loading directory {}: {}", path.display(), e),
-                };
-            } else if path.is_file() {
-                match load_file(assets, loaders, &path) {
-                    Ok(_) => {
-                        log::info!("Loaded file: {}", path.display());
-                        *counter += 1;
-                    }
-                    Err(e) => log::error!("Error loading file {}: {}", path.display(), e),
-                };
-            } else {
-                log::warn!("Skipping non-file, non-directory: {}", path.display());
-            }
+    impl AssetBundle for InMemoryBundle {
+        fn hash(&self) -> String {
+            "bundle-hash".to_string()
         }
 
-        Ok(())
-    }
+        fn all_assets(&self, _serializers: &AssetSerializerRegistry) -> Vec<AssetMetadata> {
+            Vec::new()
+        }
 
-    #[derive(Debug, thiserror::Error)]
-    enum LoadFileError {
-        #[error(transparent)]
-        Io(#[from] std::io::Error),
-        #[error("Unknown file extension for path: {0}")]
-        UnknownExtension(PathBuf),
-        #[error("Error loading asset {0}: {1}")]
-        Loader(PathBuf, Box<dyn std::error::Error>),
-    }
+        fn read_by_path(
+            &self,
+            path: &str,
+            _serializers: &AssetSerializerRegistry,
+        ) -> Option<Arc<dyn ErasedAsset>> {
+            self.assets.get(path).cloned()
+        }
 
-    fn load_file(
-        assets: &mut AssetRegistry,
-        loaders: &AssetLoaderRegistry,
-        path: &Path,
-    ) -> Result<(), LoadFileError> {
-        let ext = path
-            .extension()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| LoadFileError::UnknownExtension(path.to_path_buf()))?;
-        let loader = loaders
-            .get(ext)
-            .ok_or_else(|| LoadFileError::UnknownExtension(path.to_path_buf()))?;
-        let mut file = std::fs::File::open(path)?;
-        let asset = loader
-            .read(&mut file)
-            .map_err(|e| LoadFileError::Loader(path.to_path_buf(), e))?;
-        loader.insert_asset(UntypedId::random((*asset).type_id()), asset, assets);
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AssetStore<T: Asset> {
-    assets: HashMap<Id<T>, Arc<T>>,
-}
-
-impl<T: Asset> AssetStore<T> {
-    pub fn new() -> Self {
-        Self {
-            assets: HashMap::new(),
+        fn write_by_path(
+            &self,
+            path: &str,
+            _asset: &dyn ErasedAsset,
+            _serializers: &AssetSerializerRegistry,
+        ) {
+            self.write_paths.lock().unwrap().push(path.to_string());
         }
     }
 
-    pub fn get(&self, id: Id<T>) -> Option<Arc<T>> {
-        self.assets.get(&id).cloned()
+    fn sample_metadata(bundle_id: BundleId, path: &str, hash: &str) -> AssetMetadata {
+        AssetMetadata {
+            bundle_id,
+            asset_type: TestAsset::TYPE_NAME.to_string(),
+            relative_path: path.to_string(),
+            content_hash: hash.to_string(),
+            updated_at: chrono::Utc::now(),
+        }
     }
 
-    pub fn insert(&mut self, id: Id<T>, asset: Arc<T>) {
-        self.assets.insert(id, asset);
+    fn create_cached_bundle(
+        bundle_name: &str,
+        assets: &[(&str, &str)],
+    ) -> (CachedAssetBundle, Arc<Mutex<Vec<String>>>) {
+        let mut map: HashMap<String, Arc<dyn ErasedAsset>> = HashMap::new();
+        for (path, value) in assets {
+            map.insert(
+                (*path).to_string(),
+                Arc::new(TestAsset {
+                    value: (*value).to_string(),
+                }),
+            );
+        }
+        let write_paths = Arc::new(Mutex::new(Vec::new()));
+
+        (
+            CachedAssetBundle::new(
+                BundleMetadata {
+                    filename: bundle_name.to_string(),
+                    content_hash: "bundle-content-hash".to_string(),
+                },
+                Arc::new(InMemoryBundle {
+                    assets: map,
+                    write_paths: write_paths.clone(),
+                }),
+                Arc::new(AssetSerializerRegistry::new()),
+            ),
+            write_paths,
+        )
     }
 
-    pub fn into_map(self) -> HashMap<Id<T>, Arc<T>> {
-        self.assets
+    async fn create_registry() -> AssetRegistry {
+        let index_db = AssetIndexDb::connect("sqlite::memory:").await.unwrap();
+        index_db.initialize_tables().await.unwrap();
+
+        AssetRegistry {
+            bundles: HashMap::new(),
+            index_db: Arc::new(index_db),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_returns_valid_handle() {
+        let mut registry = create_registry().await;
+        let bundle_id = BundleId::new("bundle-handle".to_string());
+
+        let (bundle, _write_paths) =
+            create_cached_bundle("bundle-handle", &[("hero.asset", "hero")]);
+        registry.add_bundle(bundle);
+
+        let handle = registry
+            .handle::<TestAsset>(bundle_id.clone(), "hero.asset")
+            .expect("expected handle to exist");
+
+        assert_eq!(handle.url().source(), &bundle_id);
+        assert_eq!(handle.url().path_str(), "hero.asset");
+
+        let asset = handle.read().expect("expected asset to be readable");
+        assert_eq!(asset.value, "hero");
+    }
+
+    #[tokio::test]
+    async fn test_all_handles_of_returns_matching_handles() {
+        let mut registry = create_registry().await;
+
+        let bundle_ok = BundleId::new("bundle-ok".to_string());
+        let bundle_missing = BundleId::new("bundle-missing".to_string());
+
+        let (bundle, _write_paths) = create_cached_bundle("bundle-ok", &[("a.asset", "asset-a")]);
+        registry.add_bundle(bundle);
+
+        registry
+            .index_db
+            .upsert_bundle(&bundle_ok, "bundle-hash-ok")
+            .await
+            .unwrap();
+        registry
+            .index_db
+            .upsert_bundle(&bundle_missing, "bundle-hash-missing")
+            .await
+            .unwrap();
+        registry
+            .index_db
+            .upsert_asset(sample_metadata(bundle_ok.clone(), "a.asset", "hash-a"))
+            .await
+            .unwrap();
+        registry
+            .index_db
+            .upsert_asset(sample_metadata(
+                bundle_missing.clone(),
+                "not-in-registry.asset",
+                "hash-missing",
+            ))
+            .await
+            .unwrap();
+
+        let handles = registry
+            .all_handles_of::<TestAsset>()
+            .await
+            .expect("query should succeed");
+
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].url().source(), &bundle_ok);
+        assert_eq!(handles[0].url().path_str(), "a.asset");
+
+        let asset = handles[0]
+            .read()
+            .expect("expected mapped asset to be readable");
+        assert_eq!(asset.value, "asset-a");
+    }
+
+    #[tokio::test]
+    async fn test_asset_handle_read_write_update() {
+        let mut registry = create_registry().await;
+        let bundle_id = BundleId::new("bundle-handle-rwu".to_string());
+
+        let (bundle, write_paths) = create_cached_bundle(
+            "bundle-handle-rwu",
+            &[("hero.asset", "hero"), ("update.asset", "before")],
+        );
+        registry.add_bundle(bundle);
+
+        registry
+            .index_db
+            .upsert_bundle(&bundle_id, "bundle-hash")
+            .await
+            .unwrap();
+        registry
+            .index_db
+            .upsert_asset(sample_metadata(bundle_id.clone(), "hero.asset", "hero"))
+            .await
+            .unwrap();
+        registry
+            .index_db
+            .upsert_asset(sample_metadata(bundle_id.clone(), "update.asset", "before"))
+            .await
+            .unwrap();
+
+        let read_write_handle = registry
+            .handle::<TestAsset>(bundle_id.clone(), "hero.asset")
+            .expect("expected read/write handle");
+
+        let hero_asset = read_write_handle.read().expect("expected read success");
+        assert_eq!(hero_asset.value, "hero");
+
+        read_write_handle.write();
+        let paths = write_paths.lock().unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], "hero.asset");
+        drop(paths);
+
+        let update_handle = registry
+            .handle::<TestAsset>(bundle_id.clone(), "update.asset")
+            .expect("expected update handle");
+        update_handle
+            .update(TestAsset {
+                value: "after".to_string(),
+            })
+            .await;
+
+        let updated = update_handle.read().expect("expected updated asset");
+        assert_eq!(updated.value, "after");
+
+        let metadata = update_handle.metadata().await.expect("expected metadata");
+        assert_eq!(metadata.content_hash, "after");
     }
 }

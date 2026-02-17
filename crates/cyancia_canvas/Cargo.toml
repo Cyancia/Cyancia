@@ -4,11 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cyancia_input.workspace = true
 iced_core.workspace = true
 cyancia_assets.workspace = true
 log.workspace = true
-cyancia_id.workspace = true
 parking_lot.workspace = true
 cyancia_utils.workspace = true
 wgpu.workspace = true

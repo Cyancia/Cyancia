@@ -1,22 +1,37 @@
 [workspace]
-members = ["crates/*", "examples/*"]
+members = [
+    # "crates/cyancia_actions",
+    # "crates/cyancia_app",
+    "crates/cyancia_assets",
+    # "crates/cyancia_canvas",
+    # "crates/cyancia_graph",
+    # "crates/cyancia_image",
+    # "crates/cyancia_input",
+    # "crates/cyancia_math",
+    # "crates/cyancia_render",
+    # "crates/cyancia_shader_graph",
+    # "crates/cyancia_tools",
+    "crates/cyancia_utils",
+    "crates/cyancia_utils_derive",
+    # "crates/cyancia_widgets",
+    # "examples/*",
+]
 resolver = "2"
 
 [workspace.dependencies]
-cyancia_graph = { version = "0.1.0", path = "crates/cyancia_graph" }
+# cyancia_graph = { version = "0.1.0", path = "crates/cyancia_graph" }
 cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
 cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
-cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
-cyancia_input = { version = "0.1.0", path = "crates/cyancia_input" }
+# cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
+# cyancia_input = { version = "0.1.0", path = "crates/cyancia_input" }
 cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
-cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
-cyancia_id = { version = "0.1.0", path = "crates/cyancia_id" }
-cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
-cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
-cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
-cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
-cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
-cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
+# cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
+# cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
+# cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
+# cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
+# cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
+# cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
+# cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
 
 iced = { version = "0.14", features = [
     "debug",
@@ -73,6 +88,18 @@ half = "2"
 rfd = "0.16"
 anyhow = "1"
 dyn-clone = "1"
+sqlx = { version = "0.8", default-features = false, features = [
+    "derive",
+    "sqlite",
+    "chrono",
+    "uuid",
+    "runtime-tokio",
+] }
+chrono = { version = "0.4", features = ["serde"] }
+atomicow = "1"
+tokio = { version = "1", default-features = false }
+md5 = "0.8"
+filetime = "0.2"
 
 # [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }

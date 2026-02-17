@@ -11,6 +11,5 @@ smallvec.workspace = true
 cyancia_assets.workspace = true
 toml.workspace = true
 indexmap.workspace = true
-cyancia_id.workspace = true
 bitflags.workspace = true
 log.workspace = true

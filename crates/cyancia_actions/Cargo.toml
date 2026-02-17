@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 parking_lot.workspace = true
-cyancia_id.workspace = true
 cyancia_input.workspace = true
 iced_core.workspace = true
 cyancia_canvas.workspace = true

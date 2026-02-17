@@ -10,7 +10,6 @@ iced_core.workspace = true
 glam.workspace = true
 parking_lot.workspace = true
 wgpu.workspace = true
-cyancia_id.workspace = true
 uuid.workspace = true
 image.workspace = true
 bytemuck.workspace = true

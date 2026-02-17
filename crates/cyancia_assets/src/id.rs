@@ -10,13 +10,13 @@ static ID_TO_NAME: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 
 #[derive(Deref)]
-pub struct Id<T> {
+pub struct AssetId<T> {
     #[deref]
     id: Uuid,
     _marker: PhantomData<T>,
 }
 
-impl<T> std::fmt::Debug for Id<T> {
+impl<T> std::fmt::Debug for AssetId<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[cfg(debug_assertions)]
         {
@@ -34,7 +34,7 @@ impl<T> std::fmt::Debug for Id<T> {
     }
 }
 
-impl<T> Clone for Id<T> {
+impl<T> Clone for AssetId<T> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -43,23 +43,23 @@ impl<T> Clone for Id<T> {
     }
 }
 
-impl<T> Copy for Id<T> {}
+impl<T> Copy for AssetId<T> {}
 
-impl<T> PartialEq for Id<T> {
+impl<T> PartialEq for AssetId<T> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl<T> Eq for Id<T> {}
+impl<T> Eq for AssetId<T> {}
 
-impl<T> std::hash::Hash for Id<T> {
+impl<T> std::hash::Hash for AssetId<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl<T> Id<T> {
+impl<T> AssetId<T> {
     pub fn random() -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -90,16 +90,16 @@ impl<T> Id<T> {
     }
 }
 
-impl<T: 'static> Id<T> {
-    pub fn untyped(self) -> UntypedId {
-        UntypedId {
+impl<T: 'static> AssetId<T> {
+    pub fn untyped(self) -> UntypedAssetId {
+        UntypedAssetId {
             id: self.id,
             ty: TypeId::of::<T>(),
         }
     }
 }
 
-impl<T> Serialize for Id<T> {
+impl<T> Serialize for AssetId<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -108,7 +108,7 @@ impl<T> Serialize for Id<T> {
     }
 }
 
-impl<'de, T> Deserialize<'de> for Id<T> {
+impl<'de, T> Deserialize<'de> for AssetId<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -122,12 +122,12 @@ impl<'de, T> Deserialize<'de> for Id<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct UntypedId {
+pub struct UntypedAssetId {
     id: Uuid,
     ty: TypeId,
 }
 
-impl std::fmt::Debug for UntypedId {
+impl std::fmt::Debug for UntypedAssetId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[cfg(debug_assertions)]
         {
@@ -145,7 +145,7 @@ impl std::fmt::Debug for UntypedId {
     }
 }
 
-impl UntypedId {
+impl UntypedAssetId {
     pub fn random_typed<T: 'static>() -> Self {
         Self::random(TypeId::of::<T>())
     }
@@ -177,9 +177,9 @@ impl UntypedId {
         Self { id, ty }
     }
 
-    pub fn typed<T: 'static>(self) -> Option<Id<T>> {
+    pub fn typed<T: 'static>(self) -> Option<AssetId<T>> {
         if self.ty == TypeId::of::<T>() {
-            Some(Id {
+            Some(AssetId {
                 id: self.id,
                 _marker: PhantomData,
             })
