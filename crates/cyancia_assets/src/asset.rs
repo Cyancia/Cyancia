@@ -54,21 +54,21 @@ pub struct AssetMetadata {
     pub updated_at: DateTime<Utc>,
 }
 
-pub struct AssetUrl<'a> {
+pub struct AssetUrl {
     source: BundleId,
-    path: CowArc<'a, str>,
+    path: Arc<str>,
 }
 
-impl<'a> AssetUrl<'a> {
-    pub(crate) fn new(source: BundleId, path: CowArc<'a, str>) -> Self {
+impl AssetUrl {
+    pub(crate) fn new(source: BundleId, path: Arc<str>) -> Self {
         Self { source, path }
     }
 
-    pub fn try_parse(path: &'a str) -> Option<Self> {
+    pub fn try_parse(path: &str) -> Option<Self> {
         let (source, path) = path.split_once(':')?;
         Some(Self {
             source: BundleId::new(source.to_string()),
-            path: CowArc::Borrowed(path),
+            path: Path::new(path).canonicalize().ok()?.to_str()?.into(),
         })
     }
 
@@ -80,13 +80,13 @@ impl<'a> AssetUrl<'a> {
         &self.path
     }
 
-    pub fn path(&'a self) -> &'a Path {
+    pub fn path(&self) -> &Path {
         Path::new(self.path.as_ref())
     }
 }
 
 pub struct AssetHandle<T: Asset> {
-    url: AssetUrl<'static>,
+    url: AssetUrl,
     bundle: Arc<CachedAssetBundle>,
     index_db: Arc<AssetIndexDb>,
     _marker: PhantomData<T>,
@@ -94,7 +94,7 @@ pub struct AssetHandle<T: Asset> {
 
 impl<T: Asset> AssetHandle<T> {
     pub(crate) fn new(
-        url: AssetUrl<'static>,
+        url: AssetUrl,
         bundle: Arc<CachedAssetBundle>,
         index_db: Arc<AssetIndexDb>,
     ) -> Self {
@@ -106,7 +106,7 @@ impl<T: Asset> AssetHandle<T> {
         }
     }
 
-    pub fn url(&self) -> &AssetUrl<'_> {
+    pub fn url(&self) -> &AssetUrl {
         &self.url
     }
 
@@ -141,14 +141,14 @@ impl<T: Asset> AssetHandle<T> {
 }
 
 pub struct UntypedAssetHandle {
-    url: AssetUrl<'static>,
+    url: AssetUrl,
     bundle: Arc<CachedAssetBundle>,
     index_db: Arc<AssetIndexDb>,
     ty: TypeId,
 }
 
 impl UntypedAssetHandle {
-    pub fn url(&self) -> &AssetUrl<'static> {
+    pub fn url(&self) -> &AssetUrl {
         &self.url
     }
 

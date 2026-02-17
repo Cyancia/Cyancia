@@ -91,7 +91,46 @@ ON CONFLICT(bundle_id, relative_path) DO UPDATE SET
         Ok(())
     }
 
-    pub async fn get_by_url(&self, url: &AssetUrl<'_>) -> sqlx::Result<Option<AssetMetadata>> {
+    pub async fn upsert_many_assets(
+        &self,
+        assets: impl IntoIterator<Item = AssetMetadata>,
+    ) -> sqlx::Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        for asset in assets {
+            sqlx::query(
+                r#"
+INSERT INTO assets (
+    bundle_id,
+    type,
+    relative_path,
+    content_hash,
+    updated_at
+)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(bundle_id, relative_path) DO UPDATE SET
+    bundle_id = excluded.bundle_id,
+    type = excluded.type,
+    relative_path = excluded.relative_path,
+    content_hash = excluded.content_hash,
+    updated_at = excluded.updated_at
+                "#,
+            )
+            .bind(&*asset.bundle_id)
+            .bind(&asset.asset_type)
+            .bind(&asset.relative_path)
+            .bind(&asset.content_hash)
+            .bind(asset.updated_at.to_rfc3339())
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub async fn get_by_url(&self, url: &AssetUrl) -> sqlx::Result<Option<AssetMetadata>> {
         sqlx::query_as::<_, AssetMetadata>(
             r#"
 SELECT
@@ -131,11 +170,7 @@ ORDER BY relative_path ASC
         .await
     }
 
-    pub async fn update_by_url(
-        &self,
-        url: &AssetUrl<'_>,
-        content_hash: String,
-    ) -> sqlx::Result<()> {
+    pub async fn update_by_url(&self, url: &AssetUrl, content_hash: String) -> sqlx::Result<()> {
         sqlx::query(
             r#"
 UPDATE assets
@@ -248,9 +283,33 @@ WHERE type = 'table'
         .await
         .unwrap();
 
-        let url = AssetUrl::new(bundle_id, CowArc::Borrowed("textures/hero.png"));
+        let url = AssetUrl::new(bundle_id, "textures/hero.png".into());
         let metadata = db.get_by_url(&url).await.unwrap().unwrap();
         assert_eq!(metadata.content_hash, "hash-v2");
+    }
+
+    #[tokio::test]
+    async fn test_upsert_many_assets() {
+        let db = create_initialized_db().await;
+        let bundle_id = BundleId::new("bundle-upsert-many".to_string());
+        insert_bundle(&db, &bundle_id).await;
+
+        db.upsert_many_assets(vec![
+            sample_metadata(bundle_id.clone(), "image", "a.png", "hash-a1"),
+            sample_metadata(bundle_id.clone(), "image", "b.png", "hash-b1"),
+            sample_metadata(bundle_id.clone(), "image", "a.png", "hash-a2"),
+        ])
+        .await
+        .unwrap();
+
+        let assets = db.all_by_type("image").await.unwrap();
+        assert_eq!(assets.len(), 2);
+
+        let asset_a = assets
+            .iter()
+            .find(|asset| asset.relative_path == "a.png")
+            .unwrap();
+        assert_eq!(asset_a.content_hash, "hash-a2");
     }
 
     #[tokio::test]
@@ -268,11 +327,11 @@ WHERE type = 'table'
         .await
         .unwrap();
 
-        let existing_url = AssetUrl::new(bundle_id.clone(), CowArc::Borrowed("std/default.wgsl"));
+        let existing_url = AssetUrl::new(bundle_id.clone(), "std/default.wgsl".into());
         let found = db.get_by_url(&existing_url).await.unwrap();
         assert!(found.is_some());
 
-        let missing_url = AssetUrl::new(bundle_id, CowArc::Borrowed("std/missing.wgsl"));
+        let missing_url = AssetUrl::new(bundle_id, "std/missing.wgsl".into());
         let missing = db.get_by_url(&missing_url).await.unwrap();
         assert!(missing.is_none());
     }
@@ -324,7 +383,7 @@ WHERE type = 'table'
         .await
         .unwrap();
 
-        let url = AssetUrl::new(bundle_id, CowArc::Borrowed("textures/background.png"));
+        let url = AssetUrl::new(bundle_id, "textures/background.png".into());
         let before = db.get_by_url(&url).await.unwrap().unwrap();
 
         db.update_by_url(&url, "after".to_string()).await.unwrap();
