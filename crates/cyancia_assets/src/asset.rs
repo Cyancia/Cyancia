@@ -60,7 +60,7 @@ pub struct AssetUrl {
 }
 
 impl AssetUrl {
-    pub(crate) fn new(source: BundleId, path: Arc<str>) -> Self {
+    pub fn new(source: BundleId, path: Arc<str>) -> Self {
         Self { source, path }
     }
 

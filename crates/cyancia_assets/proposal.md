@@ -1,12 +1,12 @@
-# cyancia_assets Proposal (Bundle-Scoped Index)
+# cyancia_assets Proposal (DB-Managed Revision)
 
 ## 目标
 
-为 `cyancia_assets` 设计一套可渐进演化的资产系统，核心约束如下：
+将 `cyancia_assets` 调整为“**数据库管理版本状态**”的模型，核心约束如下：
 
-- URL 统一为 `bundle_id:path`（不再暴露 `_memory` / `_local` 全局 source）
-- 每个 bundle 在内部自行管理 `zip/base + local + memory` 三层覆盖
-- 数据库仅维护“索引元数据”，不承担 latest 解析与分层策略
+- URL 保持统一：`bundle_id:path`
+- 资产当前状态由 DB 字段直接描述：`revision + physical_location`
+- `physical_location` 仅表示“当前有效内容在哪一层”，不再由 runtime 隐式推导 latest
 - 多窗口共享同一套 runtime/index，保证一致可见性
 
 ---
@@ -43,36 +43,56 @@ pub struct BundleId(pub Uuid);
 
 ---
 
-## 2. 存储层设计（Bundle 内部分层 + DB 索引）
+## 2. 版本与位置模型（DB 为真相源）
 
-### 2.1 Bundle 内部分层（由 bundle 自管）
+### 2.1 核心字段
 
-每个 bundle 内部维护自己的覆盖链（例如）：
+每个资产至少维护以下“当前态”字段：
 
-1. `memory`（运行期覆盖）
-2. `local`（用户落盘覆盖）
-3. `zip/base`（bundle 基础内容）
+- `revision`：整数版本号（单资产单调递增）
+- `physical_location`：当前有效内容所在层
 
-> 该覆盖策略只在 **单个 bundle 内** 生效，不跨 bundle。
+建议定义：
 
-### 2.2 数据库职责边界
+```rust
+#[repr(i16)]
+pub enum PhysicalLocation {
+    Memory = 0,         // 运行期覆盖（未落盘）
+    LocalModified = 1,  // 已落盘本地覆盖
+    BundleBase = 2,     // 未修改，仍使用包体内内容
+}
+```
 
-数据库只存索引元数据：
+> 说明：你提的 `0/1/2` 方案可行，建议以 enum 包一层，避免魔法数字散落在业务代码里。
 
-- `asset_id`：稳定唯一标识
-- `bundle_id`：所属 bundle
-- `type`：资产类型
-- `relative_path`：bundle 内相对路径
-- `content_hash`：索引侧内容摘要
-- `updated_at`：索引更新时间
+### 2.2 状态迁移约定
 
-数据库不负责：
+- `update`（内存改动）：`revision += 1`，`physical_location = 0`
+- `write`（写入本地）：`revision` 不变，`physical_location = 1`
+- `revert`（回退到包体）：`revision += 1`，`physical_location = 2`
 
-- bundle 内部的 latest 选择
-- memory/local/base 三层合并
-- payload 读写
+可选策略（按需开启）：
 
-### 2.3 最小表结构
+- 若 `write` 过程中做了规范化变换（例如重编码），允许 `revision += 1`
+
+---
+
+## 3. 存储层职责
+
+### 3.1 Runtime 职责
+
+- 负责按 `physical_location` 读取真实内容（memory/local/bundle）
+- 负责执行 update/write/revert 并推动 DB 状态迁移
+
+### 3.2 DB 职责
+
+- 维护资产当前态（`revision`、`physical_location`、`content_hash`、`updated_at`）
+- 可选维护历史版本（审计/回溯）
+- 提供查询与并发控制（CAS）
+
+---
+
+## 4. 最小表结构
 
 ```sql
 CREATE TABLE bundles (
@@ -90,111 +110,46 @@ CREATE TABLE assets (
     bundle_id TEXT NOT NULL,
     type TEXT NOT NULL,
     relative_path TEXT NOT NULL,
+
+    revision INTEGER NOT NULL DEFAULT 0,
+    physical_location INTEGER NOT NULL DEFAULT 2, -- 0=memory,1=local,2=bundle
+
     content_hash TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY(bundle_id) REFERENCES bundles(bundle_id),
-    UNIQUE(bundle_id, relative_path)
-);
 
--- 说明：asset_id 已是 PRIMARY KEY（天然唯一），无需再额外声明 UNIQUE(asset_id)
+    FOREIGN KEY(bundle_id) REFERENCES bundles(bundle_id),
+    UNIQUE(bundle_id, relative_path),
+    CHECK (physical_location IN (0, 1, 2))
+);
 
 CREATE INDEX idx_assets_bundle_path ON assets(bundle_id, relative_path);
 CREATE INDEX idx_assets_type ON assets(type);
 CREATE INDEX idx_assets_bundle ON assets(bundle_id);
+CREATE INDEX idx_assets_revision ON assets(revision);
+```
+
+### 4.1 可选：历史版本表
+
+若需要审计/回退，可增加：
+
+```sql
+CREATE TABLE asset_revisions (
+    asset_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    physical_location INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(asset_id, revision),
+    FOREIGN KEY(asset_id) REFERENCES assets(asset_id),
+    CHECK (physical_location IN (0, 1, 2))
+);
 ```
 
 ---
 
-## 3. `ctt` 格式约定
+## 5. API 草案（最小可落地）
 
-`ctt` 本质是 zip 容器，建议最小结构：
-
-```text
-sand.ctt
- ├─ manifest.json
- └─ payload/
-    └─ image.png
-```
-
-`manifest.json` 建议字段：
-
-```json
-{
-  "format": "ctt",
-  "version": 1,
-  "asset_id": "...",
-  "cached_logical_path": "textures/sand.ctt",
-  "payload_entry": "payload/image.png",
-  "content_hash": "sha256:...",
-  "created_at": "...",
-  "updated_at": "..."
-}
-```
-
-> `asset_id` 必须稳定，不应随机生成。
-
----
-
-## 4. API 草案（最小可落地）
-
-### 4.1 Bundle 抽象（单 bundle 作用域）
-
-```rust
-pub trait AssetSource: Send + Sync {
-    fn id(&self) -> BundleId;
-    fn effective_hash(&self) -> String;
-    fn all_assets(&self) -> Vec<AssetIndexRow>;
-
-    fn handle_by_id<T>(&self, asset_id: &UntypedId) -> Result<Handle<T>, AssetError>;
-    fn handle_by_path<T>(&self, path: &RelativeAssetPath) -> Result<Handle<T>, AssetError>;
-
-    fn read_by_id<T>(&self, asset_id: &UntypedId) -> Result<Arc<T>, AssetError>;
-    fn read_by_path<T>(&self, path: &RelativeAssetPath) -> Result<Arc<T>, AssetError>;
-
-    fn update_by_id<T>(&self, asset_id: &UntypedId, new_data: T) -> Result<(), AssetError>;
-    fn update_by_path<T>(&self, path: &RelativeAssetPath, new_data: T) -> Result<(), AssetError>;
-
-    fn write_by_id(&self, asset_id: &UntypedId) -> Result<(), AssetError>;
-    fn write_by_path(&self, path: &RelativeAssetPath) -> Result<(), AssetError>;
-
-    fn revert_by_id(&self, asset_id: &UntypedId) -> Result<(), AssetError>;
-    fn revert_by_path(&self, path: &RelativeAssetPath) -> Result<(), AssetError>;
-}
-```
-
-约束：
-
-- 分层（memory/local/base）由该 bundle 内部自行处理
-- 对外仅暴露 bundle 作用域接口，不跨 bundle 混查
-
-### 4.2 Resolver + Handle（跨 bundle 路由）
-
-```rust
-pub struct AssetResolver {
-    bundles: HashMap<BundleId, Arc<dyn AssetSource>>,
-}
-
-impl AssetResolver {
-    pub fn handle<T: Asset>(&self, url: AssetUrl) -> Result<AssetHandle<T>, AssetError>;
-    pub fn handles_many<T: Asset>(&self, urls: &[AssetUrl]) -> Result<Vec<AssetHandle<T>>, AssetError>;
-}
-
-pub struct AssetHandle<T: Asset> {
-    asset_id: UntypedId,
-    url: AssetUrl,
-    bundle: Arc<dyn AssetSource>,
-    _marker: PhantomData<T>,
-}
-
-impl<T: Asset> AssetHandle<T> {
-    pub fn read(&self) -> Result<Arc<T>, AssetError>;
-    pub fn update(&mut self, new_data: T) -> Result<(), AssetError>;
-    pub fn write(&mut self) -> Result<(), AssetError>;
-    pub fn revert(&mut self) -> Result<(), AssetError>;
-}
-```
-
-### 4.3 Index / Store（仅元数据）
+### 5.1 索引行模型
 
 ```rust
 pub struct AssetIndexRow {
@@ -202,201 +157,130 @@ pub struct AssetIndexRow {
     pub bundle_id: BundleId,
     pub asset_type: String,
     pub relative_path: RelativeAssetPath,
+
+    pub revision: i64,
+    pub physical_location: PhysicalLocation,
+
     pub content_hash: String,
     pub updated_at: OffsetDateTime,
 }
+```
 
+### 5.2 Index DB
+
+```rust
 pub struct AssetIndexDb {
-    // 例如: rusqlite::Connection / sqlx::SqlitePool
+    // e.g. rusqlite::Connection / sqlx::SqlitePool
 }
 
 impl AssetIndexDb {
     pub fn upsert(&self, row: &AssetIndexRow) -> Result<(), AssetError>;
+
     pub fn get_by_id(&self, asset_id: &UntypedId) -> Result<Option<AssetIndexRow>, AssetError>;
     pub fn get_by_url(&self, url: &AssetUrl) -> Result<Option<AssetIndexRow>, AssetError>;
     pub fn list_by_type(&self, asset_type: &str) -> Result<Vec<AssetIndexRow>, AssetError>;
-    pub fn update_by_id(&self, asset_id: &UntypedId, content_hash: &str) -> Result<AssetIndexRow, AssetError>;
-    pub fn update_by_url(&self, url: &AssetUrl, content_hash: &str) -> Result<AssetIndexRow, AssetError>;
-    pub fn write_by_id(&self, asset_id: &UntypedId) -> Result<AssetIndexRow, AssetError>;
-    pub fn write_by_url(&self, url: &AssetUrl) -> Result<AssetIndexRow, AssetError>;
+
+    pub fn update_state_by_id(
+        &self,
+        asset_id: &UntypedId,
+        expected_revision: i64,
+        next_revision: i64,
+        next_location: PhysicalLocation,
+        next_hash: &str,
+    ) -> Result<AssetIndexRow, AssetError>;
+
+    pub fn update_state_by_url(
+        &self,
+        url: &AssetUrl,
+        expected_revision: i64,
+        next_revision: i64,
+        next_location: PhysicalLocation,
+        next_hash: &str,
+    ) -> Result<AssetIndexRow, AssetError>;
 }
 ```
 
-#### SQL 草案（AssetIndexDb）
+> `expected_revision` 用于 CAS，避免多窗口并发覆盖。
 
-参数约定：
-
-- `BundleId` 绑定为其 UUID 文本
-- `get_by_url/update_by_url/write_by_url` 输入 URL 必须符合 `bundle_id:path`
-
-### 4.3.1 Bundle 变更检测基线
-
-为避免仅依赖文件 `mtime` 带来的漏检，bundle 变更建议以 **effective hash** 为准：
-
-- `base_hash`：zip/base 层摘要
-- `local_hash`：local 覆盖层摘要
-- `memory_hash`：memory 覆盖层摘要
-- `effective_hash = H(base_hash, local_hash, memory_hash)`
-
-推荐流程：
-
-1. bundle 内部发生 `update/write/revert` 时立即重算 `effective_hash` 并广播事件
-2. runtime 收到事件后刷新该 bundle 对应索引行（`updated_at` / `content_hash`）
-3. 后台周期性 reconciliation（例如启动后、窗口激活后、固定间隔）兜底修正漏事件
-
-##### upsert
-
-```sql
-INSERT INTO assets (
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at
-)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT(asset_id) DO UPDATE SET
-    bundle_id = excluded.bundle_id,
-    type = excluded.type,
-    relative_path = excluded.relative_path,
-    content_hash = excluded.content_hash,
-    updated_at = excluded.updated_at;
-```
-
-##### get_by_id
-
-```sql
-SELECT
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at
-FROM assets
-WHERE asset_id = ?
-LIMIT 1;
-```
-
-##### get_by_url
-
-```sql
-SELECT
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at
-FROM assets
-WHERE bundle_id = ?
-  AND relative_path = ?
-LIMIT 1;
-```
-
-##### list_by_type
-
-```sql
-SELECT
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at
-FROM assets
-WHERE type = ?
-ORDER BY relative_path ASC;
-```
-
-##### update_by_id
-
-```sql
-UPDATE assets
-SET
-    content_hash = ?,
-    updated_at = ?
-WHERE asset_id = ?
-RETURNING
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at;
-```
-
-##### update_by_url
-
-```sql
-UPDATE assets
-SET
-    content_hash = ?,
-    updated_at = ?
-WHERE bundle_id = ?
-  AND relative_path = ?
-RETURNING
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at;
-```
-
-##### write_by_id
-
-```sql
-UPDATE assets
-SET
-    updated_at = ?
-WHERE asset_id = ?
-RETURNING
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at;
-```
-
-##### write_by_url
-
-```sql
-UPDATE assets
-SET
-    updated_at = ?
-WHERE bundle_id = ?
-  AND relative_path = ?
-RETURNING
-    asset_id,
-    bundle_id,
-    type,
-    relative_path,
-    content_hash,
-    updated_at;
-```
-
-### 4.4 Runtime
+### 5.3 Resolver + Handle
 
 ```rust
-pub struct AssetRuntime {
-    pub resolver: AssetResolver,
-    pub index: Arc<AssetIndexDb>,
+pub struct AssetResolver {
+    bundles: HashMap<BundleId, Arc<dyn AssetSource>>,
 }
 
-impl AssetRuntime {
-    pub fn handle_by_id<T: Asset>(&self, asset_id: &UntypedId) -> Result<AssetHandle<T>, AssetError>;
-    pub fn handle_by_url<T: Asset>(&self, url: AssetUrl) -> Result<AssetHandle<T>, AssetError>;
+pub struct AssetHandle<T: Asset> {
+    asset_id: UntypedId,
+    url: AssetUrl,
+    _marker: PhantomData<T>,
+}
+
+impl<T: Asset> AssetHandle<T> {
+    pub fn read(&self) -> Result<Arc<T>, AssetError>;
+    pub fn update(&mut self, new_data: T) -> Result<(), AssetError>; // -> location=0
+    pub fn write(&mut self) -> Result<(), AssetError>;               // -> location=1
+    pub fn revert(&mut self) -> Result<(), AssetError>;              // -> location=2
 }
 ```
 
 ---
 
-## 5. 多窗口一致性模型
+## 6. SQL 草案（状态更新）
 
-### 5.1 共享服务注入
+### 6.1 get_by_url
+
+```sql
+SELECT
+    asset_id,
+    bundle_id,
+    type,
+    relative_path,
+    revision,
+    physical_location,
+    content_hash,
+    updated_at
+FROM assets
+WHERE bundle_id = ?
+  AND relative_path = ?
+LIMIT 1;
+```
+
+### 6.2 CAS 更新（按 id）
+
+```sql
+UPDATE assets
+SET
+    revision = ?,
+    physical_location = ?,
+    content_hash = ?,
+    updated_at = ?
+WHERE asset_id = ?
+  AND revision = ?
+RETURNING
+    asset_id,
+    bundle_id,
+    type,
+    relative_path,
+    revision,
+    physical_location,
+    content_hash,
+    updated_at;
+```
+
+参数顺序建议：
+
+1. `next_revision`
+2. `next_location`
+3. `next_hash`
+4. `now`
+5. `asset_id`
+6. `expected_revision`
+
+---
+
+## 7. 多窗口一致性模型
+
+### 7.1 共享服务注入
 
 ```rust
 pub struct AppServices {
@@ -404,41 +288,53 @@ pub struct AppServices {
 }
 ```
 
-### 5.2 事件通知
+### 7.2 事件通知
 
 ```rust
 pub enum AssetEvent {
-    Updated { original: AssetUrl, updated: AssetUrl },
-    Saved { original: AssetUrl, updated: AssetUrl },
-    Reverted { original: AssetUrl, updated: AssetUrl },
-    PathDrift {
-        original: AssetUrl,
-        updated: AssetUrl,
-        cached_logical_path: RelativeAssetPath,
+    Updated {
+        url: AssetUrl,
+        revision: i64,
+        physical_location: PhysicalLocation,
+    },
+    Saved {
+        url: AssetUrl,
+        revision: i64,
+        physical_location: PhysicalLocation,
+    },
+    Reverted {
+        url: AssetUrl,
+        revision: i64,
+        physical_location: PhysicalLocation,
+    },
+    Conflict {
+        url: AssetUrl,
+        expected_revision: i64,
+        actual_revision: i64,
     },
 }
 ```
 
 ---
 
-## 6. 渐进实施计划
+## 8. 渐进实施计划
 
 ### Phase 1
 
 - 固定 URL 语义：`bundle_id:path`
-- 落地 `bundles/assets` 最小表结构
-- 接入 `AssetIndexDb::{upsert,get_by_id,get_by_url,list_by_type}`
+- 扩展 `assets` 表：`revision`、`physical_location`
+- 接入 `get_by_id/get_by_url/list_by_type`
 
 ### Phase 2
 
-- `AssetResolver` 接通 bundle 路由
-- `AssetHandle::{read,update,write,revert}` 与 bundle 内部实现打通
-- 多窗口事件广播与增量刷新
+- `update/write/revert` 全部改为 CAS 更新
+- `AssetHandle` 与 DB 状态迁移打通
+- 多窗口事件广播与冲突提示（`Conflict`）
 
 ### Phase 3
 
-- 完善导入/冲突策略（`asset_id` 冲突处理）
-- 增强诊断（hash 漂移、路径漂移、bundle 变化扫描）
+- 可选接入 `asset_revisions` 历史表
+- 增强诊断（hash 漂移、路径漂移、bundle 扫描）
 
 ### Phase 4
 
