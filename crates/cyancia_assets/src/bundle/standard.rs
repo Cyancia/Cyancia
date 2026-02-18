@@ -106,10 +106,6 @@ impl AssetBundle for StandardAssetBundle {
         self.metadata.id
     }
 
-    fn hash(&self) -> String {
-        todo!()
-    }
-
     fn is_read_only() -> bool {
         true
     }

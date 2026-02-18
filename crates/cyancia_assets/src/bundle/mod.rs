@@ -32,7 +32,6 @@ wrapper! {
 pub struct BundleMetadata {
     pub bundle_id: BundleId,
     pub filename: String,
-    pub content_hash: String,
     pub readonly: bool,
 }
 
@@ -197,7 +196,6 @@ pub trait AssetBundle: Send + Sync + 'static {
     type Error: Error + Sync + Send + 'static;
 
     fn id(&self) -> BundleId;
-    fn hash(&self) -> String;
     fn is_read_only() -> bool;
 
     fn read(
@@ -214,7 +212,6 @@ pub trait AssetBundle: Send + Sync + 'static {
 
 pub trait ErasedAssetBundle: Send + Sync + 'static {
     fn id(&self) -> BundleId;
-    fn hash(&self) -> String;
     fn is_read_only(&self) -> bool;
     fn read(
         &self,
@@ -231,10 +228,6 @@ pub trait ErasedAssetBundle: Send + Sync + 'static {
 impl<T: AssetBundle> ErasedAssetBundle for T {
     fn id(&self) -> BundleId {
         self.id()
-    }
-
-    fn hash(&self) -> String {
-        self.hash()
     }
 
     fn is_read_only(&self) -> bool {

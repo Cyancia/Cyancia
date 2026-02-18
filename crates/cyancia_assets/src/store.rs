@@ -46,7 +46,6 @@ impl AssetRegistry {
         let metadata = BundleMetadata {
             bundle_id: bundle.id(),
             filename,
-            content_hash: bundle.hash(),
             readonly: bundle.is_read_only(),
         };
         self.bundles.insert(

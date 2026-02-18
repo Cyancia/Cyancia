@@ -48,10 +48,6 @@ impl AssetBundle for DataDirectory {
         DATA_DIRECTORY_BUNDLE_ID
     }
 
-    fn hash(&self) -> String {
-        todo!()
-    }
-
     fn is_read_only() -> bool {
         false
     }
