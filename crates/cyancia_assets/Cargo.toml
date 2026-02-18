@@ -17,6 +17,9 @@ atomicow.workspace = true
 uuid.workspace = true
 md5.workspace = true
 filetime.workspace = true
+anyhow.workspace = true
+zip.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

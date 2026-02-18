@@ -15,28 +15,40 @@ impl AssetIndexDb {
     pub async fn initialize_tables(&self) -> sqlx::Result<()> {
         sqlx::query(
             r#"
-create table if not exists bundles
-(
-    filename TEXT primary key,
-    content_hash TEXT
-)
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
+CREATE TABLE bundles (
+    bundle_id TEXT PRIMARY KEY,
+    content_hash TEXT,
+    filename TEXT,
+    readonly INTEGER NOT NULL CHECK (readonly IN (0, 1))
+);
 
-        sqlx::query(
-            r#"
-create table if not exists assets
-(
-	bundle_id TEXT not null references bundles,
-	type TEXT not null,
-	relative_path TEXT not null,
-	content_hash TEXT not null,
-	updated_at TEXT not null,
-	unique (bundle_id, relative_path)
-)
-        "#,
+CREATE UNIQUE INDEX idx_bundles_filename_unique
+ON bundles(filename)
+WHERE filename IS NOT NULL;
+
+CREATE TABLE assets (
+    asset_id TEXT PRIMARY KEY,
+    bundle_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+
+    revision INTEGER NOT NULL DEFAULT 0,
+    physical_location INTEGER NOT NULL DEFAULT 2, -- 0=memory,1=local,2=bundle
+
+    content_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+
+    FOREIGN KEY(bundle_id) REFERENCES bundles(bundle_id),
+    UNIQUE(bundle_id, relative_path),
+    CHECK (physical_location IN (0, 1, 2))
+);
+
+CREATE INDEX idx_assets_bundle_path ON assets(bundle_id, relative_path);
+CREATE INDEX idx_assets_type ON assets(type);
+CREATE INDEX idx_assets_bundle ON assets(bundle_id);
+CREATE INDEX idx_assets_revision ON assets(revision);
+CREATE INDEX idx_assets_location ON assets(physical_location);
+            "#,
         )
         .execute(&self.pool)
         .await?;
@@ -84,7 +96,7 @@ ON CONFLICT(bundle_id, relative_path) DO UPDATE SET
         .bind(&asset.asset_type)
         .bind(&asset.relative_path)
         .bind(&asset.content_hash)
-        .bind(asset.updated_at.to_rfc3339())
+        .bind(asset.updated_at)
         .execute(&self.pool)
         .await?;
 
@@ -120,7 +132,7 @@ ON CONFLICT(bundle_id, relative_path) DO UPDATE SET
             .bind(&asset.asset_type)
             .bind(&asset.relative_path)
             .bind(&asset.content_hash)
-            .bind(asset.updated_at.to_rfc3339())
+            .bind(asset.updated_at)
             .execute(&mut *tx)
             .await?;
         }
@@ -130,24 +142,27 @@ ON CONFLICT(bundle_id, relative_path) DO UPDATE SET
         Ok(())
     }
 
-    pub async fn get_by_url(&self, url: &AssetUrl) -> sqlx::Result<Option<AssetMetadata>> {
+    pub async fn get(&self, url: &AssetUrl) -> sqlx::Result<AssetMetadata> {
         sqlx::query_as::<_, AssetMetadata>(
             r#"
 SELECT
+    asset_id,
     bundle_id,
-    type AS asset_type,
+    type,
     relative_path,
+    revision,
+    physical_location,
     content_hash,
     updated_at
 FROM assets
 WHERE bundle_id = ?
   AND relative_path = ?
-LIMIT 1
+LIMIT 1;
         "#,
         )
         .bind(&*url.source())
         .bind(url.path_str())
-        .fetch_optional(&self.pool)
+        .fetch_one(&self.pool)
         .await
     }
 
@@ -170,24 +185,121 @@ ORDER BY relative_path ASC
         .await
     }
 
-    pub async fn update_by_url(&self, url: &AssetUrl, content_hash: String) -> sqlx::Result<()> {
-        sqlx::query(
+    pub async fn update(
+        &self,
+        url: &AssetUrl,
+        expected_old_hash: &str,
+        new_hash: &str,
+    ) -> sqlx::Result<Option<AssetMetadata>> {
+        sqlx::query_as::<_, AssetMetadata>(
             r#"
-UPDATE assets
-SET
-    content_hash = ?,
-    updated_at = ?
-WHERE bundle_id = ?
-    AND relative_path = ?
+latest AS (
+    SELECT
+        asset_id,
+        bundle_id,
+        type,
+        relative_path,
+        revision,
+        content_hash
+    FROM assets
+    WHERE bundle_id = ?
+      AND relative_path = ?
+    ORDER BY revision DESC
+    LIMIT 1
+)
+INSERT INTO assets (
+    asset_id,
+    bundle_id,
+    type,
+    relative_path,
+    revision,
+    physical_location,
+    content_hash,
+    updated_at
+)
+SELECT
+    asset_id,
+    bundle_id,
+    type,
+    relative_path,
+    revision + 1,
+    0,
+    ?,
+    ?
+FROM latest
+WHERE content_hash = ?
+RETURNING
+    asset_id,
+    bundle_id,
+    type,
+    relative_path,
+    revision,
+    physical_location,
+    content_hash,
+    updated_at;
         "#,
         )
-        .bind(content_hash)
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(new_hash)
+        .bind(chrono::Utc::now())
         .bind(&*url.source())
         .bind(url.path_str())
-        .execute(&self.pool)
-        .await?;
+        .bind(expected_old_hash)
+        .fetch_optional(&self.pool)
+        .await
+    }
 
-        Ok(())
+    pub async fn write(&self, url: &AssetUrl) -> sqlx::Result<AssetMetadata> {
+        sqlx::query_as::<_, AssetMetadata>(
+            r#"
+WITH latest AS (
+    SELECT
+        a.rowid AS target_rowid,
+        a.physical_location,
+        b.readonly
+    FROM assets a
+    JOIN bundles b ON b.bundle_id = a.bundle_id
+    WHERE a.bundle_id = ?
+      AND a.relative_path = ?
+    ORDER BY a.revision DESC
+    LIMIT 1
+),
+target AS (
+    SELECT
+        target_rowid,
+        CASE WHEN readonly = 1 THEN 1 ELSE 2 END AS next_location
+    FROM latest
+    WHERE physical_location = 0
+)
+UPDATE assets
+SET
+    physical_location = (SELECT next_location FROM target),
+WHERE rowid = (SELECT target_rowid FROM target)
+RETURNING
+    asset_id,
+    bundle_id,
+    type,
+    relative_path,
+    revision,
+    physical_location,
+    content_hash,
+    updated_at;
+        "#,
+        )
+        .bind(&*url.source())
+        .bind(url.path_str())
+        .fetch_one(&self.pool)
+        .await
+    }
+
+    pub async fn discard_in_memory_assets(&self) -> sqlx::Result<u32> {
+        sqlx::query_scalar::<_, u32>(
+            r#"
+DELETE FROM assets
+WHERE physical_location = 0;
+SELECT changes() AS deleted_rows;
+        "#,
+        )
+        .fetch_one(&self.pool)
+        .await
     }
 }

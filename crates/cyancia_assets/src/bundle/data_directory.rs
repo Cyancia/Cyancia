@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::File,
     path::{Path, PathBuf},
     sync::Arc,
@@ -9,7 +10,7 @@ use filetime::FileTime;
 use uuid::Uuid;
 
 use crate::{
-    asset::{AssetMetadata, ErasedAsset},
+    asset::{AssetMetadata, AssetPhysicalLocation, ErasedAsset},
     bundle::{AssetBundle, BundleId},
     loader::AssetSerializerRegistry,
 };
@@ -17,6 +18,8 @@ use crate::{
 pub struct DataDirectory {
     root: PathBuf,
 }
+
+pub const DATA_DIRECTORY_BUNDLE_ID: BundleId = BundleId::new(Uuid::from_u128(0));
 
 impl DataDirectory {
     pub fn new(root: impl AsRef<Path>) -> Self {
@@ -26,97 +29,104 @@ impl DataDirectory {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum DataDirectoryError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Missing serializer for extension: {0}")]
+    MissingSerializer(String),
+    #[error("Missing extension for path: {0}")]
+    MissingExtension(PathBuf),
+    #[error("Serializer error: {0}")]
+    SerializerError(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
 impl AssetBundle for DataDirectory {
+    type Error = DataDirectoryError;
+
+    fn id(&self) -> BundleId {
+        DATA_DIRECTORY_BUNDLE_ID
+    }
+
     fn hash(&self) -> String {
-        String::new() // TODO: Implement hash for data directory.
+        todo!()
     }
 
-    fn all_assets(&self, serializers: &AssetSerializerRegistry) -> Vec<AssetMetadata> {
-        let mut metadata = Vec::new();
-        scan_all_assets(&self.root, serializers, &mut metadata);
-        metadata
+    fn is_read_only() -> bool {
+        false
     }
 
-    fn read_by_path(
+    fn read(
         &self,
-        path: &str,
         serializers: &AssetSerializerRegistry,
-    ) -> Option<Arc<dyn ErasedAsset>> {
-        let abs_path = self.root.join(path);
-        if !abs_path.exists() {
-            return None;
-        }
-        let ext = abs_path.extension()?.to_str()?;
-        let mut file = File::open(&abs_path).ok()?;
-
-        Some(serializers.get(ext)?.read(&mut file).ok()?.into())
+    ) -> Result<HashMap<String, Arc<dyn ErasedAsset>>, Self::Error> {
+        let mut assets = HashMap::new();
+        scan_all_assets(&self.root, serializers, &mut assets)?;
+        Ok(assets)
     }
 
-    fn write_by_path(
+    fn write(
         &self,
         path: &str,
         asset: &dyn ErasedAsset,
         serializers: &AssetSerializerRegistry,
-    ) {
+    ) -> Result<(), Self::Error> {
         let abs_path = self.root.join(path);
         if let Some(parent) = abs_path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let Ok(mut file) = File::create(&abs_path) else {
-            return;
-        };
+        let mut file = File::create(&abs_path)?;
         let Some(ext) = abs_path.extension().and_then(|e| e.to_str()) else {
-            return;
+            return Err(DataDirectoryError::MissingExtension(abs_path));
         };
 
-        if let Some(serializer) = serializers.get(ext) {
-            serializer.write(asset, &mut file).ok();
-        }
+        let serializer = serializers
+            .get(ext)
+            .ok_or_else(|| DataDirectoryError::MissingSerializer(ext.to_string()))?;
+        serializer
+            .write(asset, &mut file)
+            .map_err(DataDirectoryError::SerializerError)
     }
 }
 
 fn scan_all_assets(
     root: &Path,
     serializers: &AssetSerializerRegistry,
-    metadata: &mut Vec<AssetMetadata>,
-) {
-    let Ok(entires) = root.read_dir() else {
-        return;
-    };
+    assets: &mut HashMap<String, Arc<dyn ErasedAsset>>,
+) -> Result<(), DataDirectoryError> {
+    let entries = std::fs::read_dir(root)?;
 
-    for entry in entires {
+    for entry in entries {
         let Ok(entry) = entry else {
             continue;
         };
 
         let path = entry.path();
         if path.is_dir() {
-            scan_all_assets(&path, serializers, metadata);
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str())
-            && let Some(serializer) = serializers.get(ext)
-            && let Ok(mut file) = File::open(&path)
-            && let Ok(file_metadata) = file.metadata()
-            && let Ok(content) = serializer.read(&mut file)
-        {
+            scan_all_assets(&path, serializers, assets)?;
+        } else if path.is_file() {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .ok_or_else(|| DataDirectoryError::MissingExtension(path.clone()))?;
+            let mut file = File::open(&path)?;
+            let serializer = serializers
+                .get(ext)
+                .ok_or_else(|| DataDirectoryError::MissingSerializer(ext.to_string()))?;
+
+            let asset = serializer
+                .read(&mut file)
+                .map_err(DataDirectoryError::SerializerError)?;
             let relative_path = path
                 .strip_prefix(root)
                 .unwrap()
+                .canonicalize()
+                .unwrap()
                 .to_string_lossy()
                 .to_string();
-
-            let updated_at = DateTime::from_timestamp(
-                FileTime::from_last_modification_time(&file_metadata).unix_seconds(),
-                0,
-            )
-            .unwrap();
-
-            metadata.push(AssetMetadata {
-                bundle_id: BundleId::new("DataDirectory".to_string()),
-                asset_type: serializer.asset_type_name().to_string(),
-                relative_path,
-                content_hash: content.hash(),
-                updated_at,
-            });
+            assets.insert(relative_path, asset.into());
         }
     }
+
+    Ok(())
 }

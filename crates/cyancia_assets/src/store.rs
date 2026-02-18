@@ -5,23 +5,27 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::Result;
+
 use crate::{
     asset::{Asset, AssetHandle, AssetUrl},
-    bundle::{AssetBundle, BundleId, BundleMetadata, CachedAssetBundle},
-    error::Result,
+    bundle::{AssetBundle, AssetBundleCache, BundleId, BundleMetadata, ErasedAssetBundle},
     id::AssetId,
     index_db::AssetIndexDb,
-    loader::{AssetSerializer, ErasedAssetSerializer},
+    loader::{AssetSerializer, AssetSerializerRegistry, ErasedAssetSerializer},
 };
 
 pub struct AssetRegistry {
-    bundles: HashMap<BundleId, Arc<CachedAssetBundle>>,
+    bundles: HashMap<BundleId, Arc<AssetBundleCache>>,
+    serializers: Arc<AssetSerializerRegistry>,
     index_db: Arc<AssetIndexDb>,
 }
 
 impl AssetRegistry {
-    pub async fn new(root: impl AsRef<Path>) -> Result<Self> {
-        // TODO: Scan bundles
+    pub async fn new(
+        root: impl AsRef<Path>,
+        serializers: Arc<AssetSerializerRegistry>,
+    ) -> Result<Self> {
         let bundles = HashMap::new();
         let index_db = AssetIndexDb::connect(&format!(
             "sqlite:{}",
@@ -32,14 +36,26 @@ impl AssetRegistry {
         Ok(Self {
             bundles,
             index_db: Arc::new(index_db),
+            serializers,
         })
     }
 
-    pub fn add_bundle<B: AssetBundle>(&mut self, bundle: B) {
+    pub fn add_bundle<B: AssetBundle>(&mut self, filename: String, bundle: B) -> Result<()> {
+        let metadata = BundleMetadata {
+            bundle_id: bundle.id(),
+            filename,
+            content_hash: bundle.hash(),
+            readonly: bundle.is_read_only(),
+        };
         self.bundles.insert(
-            BundleId::new(bundle.metadata().filename.clone()),
-            Arc::new(bundle),
+            metadata.bundle_id,
+            Arc::new(AssetBundleCache::new(
+                metadata,
+                Arc::new(bundle),
+                self.serializers.clone(),
+            )?),
         );
+        Ok(())
     }
 
     pub fn handle<T: Asset>(&self, bundle_id: BundleId, path: &str) -> Option<AssetHandle<T>> {
@@ -67,5 +83,9 @@ impl AssetRegistry {
             .collect::<_>();
 
         Some(handles)
+    }
+
+    pub fn serializers(&self) -> &AssetSerializerRegistry {
+        &self.serializers
     }
 }
