@@ -1,7 +1,7 @@
 use std::{
     any::{Any, TypeId},
     collections::{HashMap, hash_map::Entry},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -16,6 +16,7 @@ use crate::{
 };
 
 pub struct AssetRegistry {
+    root: PathBuf,
     bundles: HashMap<BundleId, Arc<AssetBundleCache>>,
     serializers: Arc<AssetSerializerRegistry>,
     index_db: Arc<AssetIndexDb>,
@@ -34,6 +35,7 @@ impl AssetRegistry {
         .await?;
 
         Ok(Self {
+            root: root.as_ref().to_path_buf(),
             bundles,
             index_db: Arc::new(index_db),
             serializers,
@@ -50,6 +52,7 @@ impl AssetRegistry {
         self.bundles.insert(
             metadata.bundle_id,
             Arc::new(AssetBundleCache::new(
+                &self.root,
                 metadata,
                 Arc::new(bundle),
                 self.serializers.clone(),
