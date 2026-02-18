@@ -25,12 +25,12 @@ use crate::{
 
 pub trait Asset: Send + Sync + 'static + DowncastSync {
     const TYPE_NAME: &'static str;
-    fn hash(&self) -> String;
+    fn hash(&self) -> i64;
 }
 
 pub trait ErasedAsset: Send + Sync + 'static + DowncastSync {
     fn type_name(&self) -> &'static str;
-    fn hash(&self) -> String;
+    fn hash(&self) -> i64;
 }
 
 downcast_rs::impl_downcast!(sync ErasedAsset);
@@ -40,7 +40,7 @@ impl<T: Asset> ErasedAsset for T {
         T::TYPE_NAME
     }
 
-    fn hash(&self) -> String {
+    fn hash(&self) -> i64 {
         self.hash()
     }
 }
@@ -51,7 +51,7 @@ pub struct AssetMetadata {
     // TODO: Replace with Arc<str> when sqlx supports.
     pub asset_type: String,
     pub relative_path: String,
-    pub content_hash: String,
+    pub content_hash: i64,
     pub updated_at: DateTime<Utc>,
     pub physical_location: AssetPhysicalLocation,
 }
@@ -134,7 +134,7 @@ impl<T: Asset> AssetHandle<T> {
     pub async fn update(&self, asset: T) -> Result<()> {
         let old_metadata = self.metadata().await?;
         self.index_db
-            .update(&self.url, &old_metadata.content_hash, &asset.hash())
+            .update(&self.url, old_metadata.content_hash, asset.hash())
             .await?;
         self.bundle
             .update(self.url.path_str().to_string(), Arc::new(asset))?;
@@ -143,7 +143,7 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub async fn write(&self) -> Result<()> {
-        self.bundle.write(&self.url.path);
+        self.bundle.write(&self.url.path)?;
         self.index_db.write(&self.url).await?;
         Ok(())
     }
@@ -189,16 +189,15 @@ impl UntypedAssetHandle {
     pub async fn update(&self, asset: Arc<dyn ErasedAsset>) -> Result<()> {
         let old_metadata = self.metadata().await?;
         self.index_db
-            .update(&self.url, &old_metadata.content_hash, &asset.hash())
+            .update(&self.url, old_metadata.content_hash, asset.hash())
             .await?;
-        self.bundle
-            .update(self.url.path_str().to_string(), asset);
+        self.bundle.update(self.url.path_str().to_string(), asset)?;
 
         Ok(())
     }
 
     pub async fn write(&self) -> Result<()> {
-        self.bundle.write(&self.url.path);
+        self.bundle.write(&self.url.path)?;
         self.index_db.write(&self.url).await?;
         Ok(())
     }

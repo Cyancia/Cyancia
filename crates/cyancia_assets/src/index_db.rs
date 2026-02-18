@@ -188,8 +188,8 @@ ORDER BY relative_path ASC
     pub async fn update(
         &self,
         url: &AssetUrl,
-        expected_old_hash: &str,
-        new_hash: &str,
+        expected_old_hash: i64,
+        new_hash: i64,
     ) -> sqlx::Result<Option<AssetMetadata>> {
         sqlx::query_as::<_, AssetMetadata>(
             r#"
