@@ -62,7 +62,6 @@ pub struct AssetMetadata {
     pub ty: String,
     pub bundle_id: BundleId,
     pub relative_path: String,
-    pub content_hash: i64,
     pub revision: u32,
     pub in_memory: bool,
 }
@@ -135,7 +134,7 @@ impl<T: Asset> AssetHandle<T> {
         self.bundle.as_ref()
     }
 
-    pub async fn read(&self) -> AssetResult<Arc<T>> {
+    pub async fn get(&self) -> AssetResult<Arc<T>> {
         let dynamic = match self.bundle.get_cached(&self.id) {
             Ok(cached) => cached,
             Err(_) => {
@@ -151,7 +150,7 @@ impl<T: Asset> AssetHandle<T> {
 
     pub async fn update(&self, asset: T) -> AssetResult<()> {
         let hash = asset.hash();
-        self.bundle.update(self.id, Arc::new(asset));
+        self.bundle.update(self.id, Arc::new(asset))?;
         self.index_db.update_asset(&self.id, hash).await?;
 
         Ok(())

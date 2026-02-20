@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    asset::{Asset, AssetHandle, AssetId, AssetUrl},
+    asset::{Asset, AssetHandle, AssetId, AssetMetadata, AssetUrl},
     bundle::{AssetBundle, AssetBundleCache, AssetBundleMetadata, BundleId, ErasedAssetBundle},
     error::AssetResult,
     index_db::AssetIndexDb,
@@ -26,11 +26,7 @@ impl AssetRegistry {
         serializers: Arc<AssetSerializerRegistry>,
     ) -> AssetResult<Self> {
         let bundles = HashMap::new();
-        let index_db = AssetIndexDb::connect(&format!(
-            "sqlite:{}",
-            root.as_ref().join("index.sqlite3").display()
-        ))
-        .await?;
+        let index_db = AssetIndexDb::connect("index.sqlite3").await?;
 
         Ok(Self {
             root: root.as_ref().to_path_buf(),
@@ -40,13 +36,24 @@ impl AssetRegistry {
         })
     }
 
-    pub fn add_bundle<B: AssetBundle>(&mut self, filename: String, bundle: B) -> AssetResult<()> {
-        let cache = AssetBundleCache::new(
+    pub async fn add_bundle<B: AssetBundle>(
+        &mut self,
+        filename: String,
+        bundle: B,
+    ) -> AssetResult<()> {
+        let (cache, metadata) = AssetBundleCache::new(
             self.root.clone(),
             filename,
             Arc::new(bundle),
             self.serializers.clone(),
         )?;
+
+        let _ = self.index_db.upsert_bundle(cache.metadata()).await;
+
+        for meta in metadata {
+            let _ = self.index_db.upsert_asset(&meta).await;
+        }
+
         self.bundles
             .insert(cache.metadata().bundle_id, Arc::new(cache));
         Ok(())

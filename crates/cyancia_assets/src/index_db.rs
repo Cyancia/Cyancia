@@ -1,3 +1,5 @@
+use std::{fs::File, path::Path};
+
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -11,31 +13,39 @@ pub struct AssetIndexDb {
 }
 
 impl AssetIndexDb {
-    pub async fn connect(database_url: &str) -> sqlx::Result<Self> {
-        let pool = SqlitePool::connect(database_url).await?;
-        Ok(Self { pool })
+    pub async fn connect(path: impl AsRef<Path>) -> sqlx::Result<Self> {
+        let path = path.as_ref();
+        if !path.exists() {
+            File::create(path)?;
+        }
+
+        let database_url = format!("sqlite://{}", path.display());
+        let pool = SqlitePool::connect(&database_url).await?;
+        let db = Self { pool };
+        db.initialize_tables().await?;
+        db.revert_all_assets().await?;
+        Ok(db)
     }
 
-    pub async fn initialize_tables(&self) -> sqlx::Result<()> {
+    async fn initialize_tables(&self) -> sqlx::Result<()> {
         sqlx::query(
             r#"
 CREATE TABLE IF NOT EXISTS assets (
     asset_id TEXT,
     ty TEXT NOT NULL,
     bundle_id TEXT NOT NULL,
-    relative_path TEXT NOT NULL,
-    content_hash INTEGER NOT NULL,
+    relative_path TEXT,
     revision INTEGER NOT NULL,
     in_memory BOOLEAN NOT NULL,
 
-    UNIQUE KEY (bundle_id, relative_path),
+    UNIQUE (bundle_id, relative_path),
     FOREIGN KEY (bundle_id) REFERENCES bundles(bundle_id)
-)
+);
 
 CREATE TABLE IF NOT EXISTS bundles (
     bundle_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-)
+    name TEXT NOT NULL
+);
             "#,
         )
         .execute(&self.pool)
@@ -70,19 +80,18 @@ INSERT INTO assets (
     ty,
     bundle_id,
     relative_path,
-    content_hash,
     revision,
     in_memory
 )
-VALUES (?, ?, ?, ?, ?, ?, ? = false)
+VALUES (?, ?, ?, ?, ?, ?)
         "#,
         )
         .bind(&asset.asset_id)
         .bind(&asset.ty)
         .bind(&asset.bundle_id)
         .bind(&asset.relative_path)
-        .bind(asset.content_hash)
         .bind(asset.revision)
+        .bind(asset.in_memory)
         .execute(&self.pool)
         .await?;
 
@@ -97,7 +106,6 @@ SELECT
     ty,
     bundle_id,
     relative_path,
-    content_hash,
     revision,
     in_memory
 FROM assets
@@ -114,14 +122,26 @@ LIMIT 1
     pub async fn all_by_type(&self, asset_type: &str) -> sqlx::Result<Vec<AssetMetadata>> {
         sqlx::query_as::<_, AssetMetadata>(
             r#"
+WITH ordered AS (
+    SELECT
+        asset_id,
+        ty,
+        bundle_id,
+        relative_path,
+        revision,
+        in_memory,
+        ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY revision DESC) AS ord
+    FROM assets
+)
 SELECT
+    asset_id,
+    ty,
     bundle_id,
-    type AS asset_type,
     relative_path,
-    content_hash,
-    updated_at
-FROM assets
-WHERE type = ?
+    revision,
+    in_memory
+FROM ordered
+WHERE ord = 1 AND ty = ?
 ORDER BY relative_path ASC
         "#,
         )
@@ -137,7 +157,7 @@ WITH latest AS (
     SELECT
         asset_id,
         ty,
-        content_hash,
+        bundle_id,
         revision,
         in_memory
     FROM assets
@@ -150,7 +170,6 @@ INSERT INTO assets (
     ty,
     bundle_id,
     relative_path,
-    content_hash,
     revision,
     in_memory
 )
@@ -159,7 +178,6 @@ SELECT
     ty,
     bundle_id,
     ? = NULL,
-    ? AS content_hash,
     revision + 1 AS revision,
     true AS in_memory
 FROM latest
@@ -188,6 +206,7 @@ WHERE asset_id = ? AND revision = (SELECT revision FROM latest) AND in_memory = 
 RETURNING revision
         "#,
         )
+        .bind(id)
         .bind(new_path)
         .bind(id)
         .fetch_one(&self.pool)

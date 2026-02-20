@@ -17,7 +17,6 @@ use crate::{
 };
 
 pub struct StandardAssetBundle {
-    path: PathBuf,
     archive: RwLock<ZipArchive<File>>,
 }
 
@@ -27,14 +26,13 @@ impl StandardAssetBundle {
         let archive = ZipArchive::new(File::open(&path)?)?;
 
         Ok(Self {
-            path,
             archive: archive.into(),
         })
     }
 
     pub async fn scan_bundles(
         root: impl AsRef<Path>,
-    ) -> (Vec<Self>, Vec<StandardAssetBundleError>) {
+    ) -> (Vec<(String, Self)>, Vec<StandardAssetBundleError>) {
         let mut bundles = Vec::new();
         let mut errors = Vec::new();
         scan_bundles(root, &mut bundles, &mut errors).await;
@@ -44,7 +42,7 @@ impl StandardAssetBundle {
 
 async fn scan_bundles(
     root: impl AsRef<Path>,
-    bundles: &mut Vec<StandardAssetBundle>,
+    bundles: &mut Vec<(String, StandardAssetBundle)>,
     errors: &mut Vec<StandardAssetBundleError>,
 ) {
     let entries = match std::fs::read_dir(root) {
@@ -65,7 +63,9 @@ async fn scan_bundles(
             let ext = path.extension().and_then(|ext| ext.to_str());
             if ext == Some("csb") {
                 match StandardAssetBundle::new(&path) {
-                    Ok(bundle) => bundles.push(bundle),
+                    Ok(bundle) => {
+                        bundles.push((path.file_stem().unwrap().to_string_lossy().into(), bundle))
+                    }
                     Err(e) => errors.push(e),
                 }
             }
