@@ -1,14 +1,17 @@
 use std::{
     any::TypeId,
+    fmt::Display,
     marker::PhantomData,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
 };
 
-use anyhow::Result;
 use atomicow::CowArc;
+use cyancia_utils::wrapper;
 use downcast_rs::{Downcast, DowncastSync};
+use parse_display::Display;
+use serde::{Deserialize, Serialize};
 use sqlx::{
     prelude::{FromRow, Type},
     types::{
@@ -19,9 +22,16 @@ use sqlx::{
 
 use crate::{
     bundle::{AssetBundle, AssetBundleCache, BundleId},
-    id::{AssetId, UntypedAssetId},
+    error::{AssetError, AssetResult},
     index_db::AssetIndexDb,
 };
+
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Serialize, Deserialize, Display)]
+    #[sqlx(transparent)]
+    #[display("{0}")]
+    pub AssetId: Uuid
+}
 
 pub trait Asset: Send + Sync + 'static + DowncastSync {
     const TYPE_NAME: &'static str;
@@ -47,13 +57,14 @@ impl<T: Asset> ErasedAsset for T {
 
 #[derive(FromRow)]
 pub struct AssetMetadata {
-    pub bundle_id: BundleId,
+    pub asset_id: AssetId,
     // TODO: Replace with Arc<str> when sqlx supports.
-    pub asset_type: String,
+    pub ty: String,
+    pub bundle_id: BundleId,
     pub relative_path: String,
     pub content_hash: i64,
-    pub updated_at: DateTime<Utc>,
-    pub physical_location: AssetPhysicalLocation,
+    pub revision: u32,
+    pub in_memory: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -96,7 +107,7 @@ impl AssetUrl {
 }
 
 pub struct AssetHandle<T: Asset> {
-    url: AssetUrl,
+    id: AssetId,
     bundle: Arc<AssetBundleCache>,
     index_db: Arc<AssetIndexDb>,
     _marker: PhantomData<T>,
@@ -104,105 +115,58 @@ pub struct AssetHandle<T: Asset> {
 
 impl<T: Asset> AssetHandle<T> {
     pub(crate) fn new(
-        url: AssetUrl,
+        id: AssetId,
         bundle: Arc<AssetBundleCache>,
         index_db: Arc<AssetIndexDb>,
     ) -> Self {
         Self {
-            url,
+            id,
             bundle,
             index_db,
             _marker: PhantomData,
         }
     }
 
-    pub fn url(&self) -> &AssetUrl {
-        &self.url
+    pub fn id(&self) -> AssetId {
+        self.id
     }
 
     pub fn bundle(&self) -> &AssetBundleCache {
         self.bundle.as_ref()
     }
 
-    pub fn read(&self) -> Result<Arc<T>> {
-        self.bundle
-            .read(self.url.path_str())?
-            .downcast_arc()
-            .map_err(|_| anyhow::anyhow!("Failed to downcast asset"))
+    pub async fn read(&self) -> AssetResult<Arc<T>> {
+        let dynamic = match self.bundle.get_cached(&self.id) {
+            Ok(cached) => cached,
+            Err(_) => {
+                let metadata = self.metadata().await?;
+                self.bundle.read(self.id, metadata.revision).await?
+            }
+        };
+
+        dynamic
+            .downcast_arc::<T>()
+            .map_err(|_| AssetError::CastAssetError(T::TYPE_NAME.to_string()))
     }
 
-    pub async fn update(&self, asset: T) -> Result<()> {
-        let old_metadata = self.metadata().await?;
+    pub async fn update(&self, asset: T) -> AssetResult<()> {
+        let hash = asset.hash();
+        self.bundle.update(self.id, Arc::new(asset));
+        self.index_db.update_asset(&self.id, hash).await?;
+
+        Ok(())
+    }
+
+    pub async fn write(&self) -> AssetResult<()> {
+        let metadata = self.metadata().await?;
+        let new_path = self.bundle.write(&self.id, metadata.revision)?;
         self.index_db
-            .update(&self.url, old_metadata.content_hash, asset.hash())
+            .write_asset(&self.id, new_path.to_str().unwrap())
             .await?;
-        self.bundle
-            .update(self.url.path_str().to_string(), Arc::new(asset))?;
-
         Ok(())
     }
 
-    pub async fn write(&self) -> Result<()> {
-        self.bundle.write(&self.url.path)?;
-        self.index_db.write(&self.url).await?;
-        Ok(())
-    }
-
-    pub async fn metadata(&self) -> Result<AssetMetadata> {
-        self.index_db.get(&self.url).await.map_err(Into::into)
-    }
-}
-
-pub struct UntypedAssetHandle {
-    url: AssetUrl,
-    bundle: Arc<AssetBundleCache>,
-    index_db: Arc<AssetIndexDb>,
-    ty: TypeId,
-}
-
-impl UntypedAssetHandle {
-    pub fn url(&self) -> &AssetUrl {
-        &self.url
-    }
-
-    pub fn bundle(&self) -> &AssetBundleCache {
-        self.bundle.as_ref()
-    }
-
-    pub fn ty(&self) -> TypeId {
-        self.ty
-    }
-
-    pub fn into_typed<T: Asset>(self) -> Option<AssetHandle<T>> {
-        Some(AssetHandle {
-            url: self.url,
-            bundle: self.bundle,
-            index_db: self.index_db,
-            _marker: PhantomData,
-        })
-    }
-
-    pub fn read(&self) -> Result<Arc<dyn ErasedAsset>> {
-        self.bundle.read(self.url.path_str())
-    }
-
-    pub async fn update(&self, asset: Arc<dyn ErasedAsset>) -> Result<()> {
-        let old_metadata = self.metadata().await?;
-        self.index_db
-            .update(&self.url, old_metadata.content_hash, asset.hash())
-            .await?;
-        self.bundle.update(self.url.path_str().to_string(), asset)?;
-
-        Ok(())
-    }
-
-    pub async fn write(&self) -> Result<()> {
-        self.bundle.write(&self.url.path)?;
-        self.index_db.write(&self.url).await?;
-        Ok(())
-    }
-
-    pub async fn metadata(&self) -> Result<AssetMetadata> {
-        self.index_db.get(&self.url).await.map_err(Into::into)
+    pub async fn metadata(&self) -> AssetResult<AssetMetadata> {
+        Ok(self.index_db.get_asset(&self.id).await?)
     }
 }

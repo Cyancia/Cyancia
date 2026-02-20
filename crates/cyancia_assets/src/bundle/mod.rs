@@ -2,25 +2,29 @@ use std::{
     collections::HashMap,
     error::Error,
     fs::File,
+    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use anyhow::Result;
 use atomicow::CowArc;
 use cyancia_utils::wrapper;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use sqlx::{Decode, Encode, Sqlite, prelude::Type, types::Uuid};
-
-use crate::{
-    asset::{Asset, AssetMetadata, ErasedAsset, UntypedAssetHandle},
-    id::UntypedAssetId,
-    index_db::AssetIndexDb,
-    loader::AssetSerializerRegistry,
+use sqlx::{
+    Decode, Encode, Sqlite,
+    prelude::{FromRow, Type},
+    types::Uuid,
 };
 
-pub mod data_directory;
+use crate::{
+    asset::{Asset, AssetId, AssetMetadata, ErasedAsset},
+    error::{AssetError, AssetResult},
+    index_db::AssetIndexDb,
+    loader::{AssetSerializerRegistry, ErasedAssetSerializer},
+};
+
+pub mod directory;
 pub mod standard;
 
 wrapper! {
@@ -29,224 +33,214 @@ wrapper! {
     pub BundleId: Uuid
 }
 
-pub struct BundleMetadata {
+#[derive(FromRow, Serialize, Deserialize)]
+pub struct AssetBundleMetadata {
     pub bundle_id: BundleId,
-    pub filename: String,
-    pub readonly: bool,
+    pub name: String,
 }
 
 pub struct AssetBundleCache {
     assets_root: PathBuf,
-    metadata: BundleMetadata,
-    cached_asset: RwLock<HashMap<String, Arc<dyn ErasedAsset>>>,
-    serializers: Arc<AssetSerializerRegistry>,
+    filename: String,
+    metadata: AssetBundleMetadata,
     bundle: Arc<dyn ErasedAssetBundle>,
+
+    id_to_path: RwLock<HashMap<AssetId, PathBuf>>,
+    assets: RwLock<HashMap<AssetId, Arc<dyn ErasedAsset>>>,
+
+    serializers: Arc<AssetSerializerRegistry>,
 }
 
 impl AssetBundleCache {
     pub fn new(
-        asset_root: impl AsRef<Path>,
-        metadata: BundleMetadata,
+        assets_root: impl AsRef<Path>,
+        filename: String,
         bundle: Arc<dyn ErasedAssetBundle>,
         serializers: Arc<AssetSerializerRegistry>,
-    ) -> Result<Self> {
-        let mut assets = read_modified(asset_root.as_ref(), &metadata.filename, &serializers)?;
-        assets.extend(bundle.read(serializers.as_ref())?);
+    ) -> AssetResult<Self> {
+        let mut manifest = bundle.manifest().map_err(AssetError::BundleError)?;
+        // TODO: Manifest might be outdated, so probably scan the entire directory?
+        manifest.extend(read_modified_manifest(assets_root.as_ref(), &filename)?);
 
         Ok(Self {
-            assets_root: asset_root.as_ref().to_path_buf(),
-            metadata,
-            cached_asset: RwLock::new(assets),
-            serializers,
+            assets_root: assets_root.as_ref().to_path_buf(),
+            filename,
+            metadata: bundle.metadata().map_err(AssetError::BundleError)?,
             bundle,
+
+            id_to_path: manifest.into(),
+            assets: Default::default(),
+
+            serializers,
         })
     }
 
-    pub fn metadata(&self) -> &BundleMetadata {
+    pub fn get_cached(&self, id: &AssetId) -> AssetResult<Arc<dyn ErasedAsset>> {
+        let assets = self.assets.read();
+        assets
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AssetError::AssetNotFound(*id))
+    }
+
+    pub fn update(&self, id: AssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
+        self.assets.write().insert(id, asset);
+        Ok(())
+    }
+
+    pub fn write(&self, id: &AssetId, revision: u32) -> AssetResult<PathBuf> {
+        let assets = self.assets.read();
+        let asset = assets
+            .get(id)
+            .ok_or_else(|| AssetError::AssetNotFound(*id))?;
+        let id_to_path = self.id_to_path.read();
+        let path = id_to_path
+            .get(id)
+            .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
+        let serializer = self.serializers.get_for_path(path)?;
+
+        write_modified_asset(
+            &self.assets_root,
+            path,
+            &self.filename,
+            asset.as_ref(),
+            revision,
+            serializer.as_ref(),
+        )
+    }
+
+    pub fn metadata(&self) -> &AssetBundleMetadata {
         &self.metadata
     }
 
-    pub fn read(&self, path: &str) -> Result<Arc<dyn ErasedAsset>> {
-        self.cached_asset
-            .read()
-            .get(path)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Asset not found in cache: {}", path))
-    }
+    pub async fn read(&self, id: AssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
+        let id_to_path = self.id_to_path.read();
+        let path = id_to_path
+            .get(&id)
+            .ok_or_else(|| AssetError::AssetPathNotFound(id))?;
+        let serializer = self.serializers.get_for_path(path)?;
 
-    pub fn update(&self, path: String, asset: Arc<dyn ErasedAsset>) -> Result<()> {
-        self.cached_asset.write().insert(path, asset);
-        Ok(())
-    }
-
-    pub fn write(&self, path: &str) -> Result<()> {
-        let cache = self.cached_asset.read();
-        let asset = cache
-            .get(path)
-            .ok_or_else(|| anyhow::anyhow!("Asset not found in cache: {}", path))?;
-
-        if self.bundle.is_read_only() {
-            write_modified(
-                &self.assets_root,
-                Path::new(path),
-                &self.metadata.filename,
-                asset.as_ref(),
-                self.serializers.as_ref(),
-            )?;
+        let asset = if revision == 0 {
+            self.bundle
+                .read(serializer.as_ref())
+                .map_err(AssetError::BundleError)?
         } else {
-            self.bundle.write(path, asset.as_ref(), &self.serializers)?;
-        }
-
-        Ok(())
-    }
-}
-
-fn read_modified(
-    assets_root: &Path,
-    bundle_filename: &str,
-    serializers: &AssetSerializerRegistry,
-) -> Result<HashMap<String, Arc<dyn ErasedAsset>>> {
-    let mut assets = HashMap::new();
-    read_modified_dfs(
-        &assets_root.join(bundle_filename),
-        serializers,
-        assets_root,
-        &mut assets,
-    )?;
-    Ok(assets)
-}
-
-fn read_modified_dfs(
-    bundle_root: &Path,
-    serializers: &AssetSerializerRegistry,
-    current_path: &Path,
-    assets: &mut HashMap<String, Arc<dyn ErasedAsset>>,
-) -> Result<()> {
-    let entries = std::fs::read_dir(bundle_root)?;
-
-    for entry in entries {
-        let Ok(entry) = entry else {
-            continue;
+            read_modified_asset(
+                &self.assets_root,
+                path,
+                &self.filename,
+                serializer.as_ref(),
+                revision,
+            )?
         };
 
-        let path = entry.path();
-        if path.is_dir() {
-            read_modified_dfs(&path, serializers, current_path, assets)?;
-        } else if path.is_file() {
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing extension for path: {}", path.display()))?;
-            let mut file = File::open(&path)?;
-            let serializer = serializers
-                .get(ext)
-                .ok_or_else(|| anyhow::anyhow!("Missing serializer for extension: {}", ext))?;
-            let asset = serializer.read(&mut file).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to read asset from file for path: {}, error: {}",
-                    path.display(),
-                    e
-                )
-            })?;
-
-            let relative_path = path
-                .strip_prefix(bundle_root)?
-                .to_str()
-                .unwrap()
-                .to_string();
-            assets.insert(relative_path, asset.into());
-        }
+        self.assets.write().insert(id, asset.clone());
+        Ok(asset)
     }
-
-    Ok(())
 }
 
-fn write_modified(
+fn read_modified_manifest(
     assets_root: &Path,
-    asset_path: &Path,
+    bundle_filename: &str,
+) -> AssetResult<HashMap<AssetId, PathBuf>> {
+    let path = modified_bundle_absolute_path(assets_root, bundle_filename).join("manifest.toml");
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let mut buf = String::new();
+    File::open(path)?.read_to_string(&mut buf)?;
+    let manifest = toml::from_str(&buf).map_err(AssetError::TomlDeError)?;
+    Ok(manifest)
+}
+
+fn read_modified_asset(
+    assets_root: &Path,
+    asset_relative_path: &Path,
+    bundle_filename: &str,
+    serializer: &dyn ErasedAssetSerializer,
+    revision: u32,
+) -> AssetResult<Arc<dyn ErasedAsset>> {
+    let path = modified_bundle_absolute_path(assets_root, bundle_filename)
+        .join(modified_asset_relative_path(asset_relative_path, revision));
+    let mut file = File::open(path)?;
+    serializer
+        .read(&mut file)
+        .map_err(AssetError::SerializerError)
+        .map(Into::into)
+}
+
+fn write_modified_asset(
+    assets_root: &Path,
+    asset_relative_path: &Path,
     bundle_filename: &str,
     asset: &dyn ErasedAsset,
-    serializers: &AssetSerializerRegistry,
-) -> Result<()> {
-    let asset_ext = asset_path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing extension for path: {}", asset_path.display()))?;
-    let bundle_filename = Path::new(bundle_filename)
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let serializer = serializers
-        .get(asset_ext)
-        .ok_or_else(|| anyhow::anyhow!("Missing serializer for extension: {}", asset_ext))?;
-    let mut file = File::open(assets_root.join(bundle_filename))?;
-    serializer.write(asset, &mut file).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to write asset to file for path: {}, error: {}",
-            asset_path.display(),
-            e
-        )
-    })?;
+    revision: u32,
+    serializer: &dyn ErasedAssetSerializer,
+) -> AssetResult<PathBuf> {
+    let new_relative_path = modified_asset_relative_path(asset_relative_path, revision);
+    let modified_bundle_path = modified_bundle_absolute_path(assets_root, bundle_filename);
+    let mut file = File::open(modified_bundle_path.join(&new_relative_path))?;
+    serializer
+        .write(asset, &mut file)
+        .map_err(AssetError::SerializerError)?;
 
-    Ok(())
+    Ok(new_relative_path)
+}
+
+fn modified_asset_relative_path(asset_relative_path: &Path, revision: u32) -> PathBuf {
+    let ext = asset_relative_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default();
+    let file_stem = asset_relative_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    asset_relative_path.with_file_name(format!("{}.rev{}.{}", file_stem, revision, ext))
+}
+
+fn modified_bundle_absolute_path(assets_root: &Path, bundle_filename: &str) -> PathBuf {
+    assets_root.join(format!("{}.modified", bundle_filename))
 }
 
 pub trait AssetBundle: Send + Sync + 'static {
     type Error: Error + Sync + Send + 'static;
 
-    fn id(&self) -> BundleId;
-    fn is_read_only() -> bool;
-
+    fn metadata(&self) -> Result<AssetBundleMetadata, Self::Error>;
+    fn manifest(&self) -> Result<HashMap<AssetId, PathBuf>, Self::Error>;
     fn read(
         &self,
-        serializers: &AssetSerializerRegistry,
-    ) -> std::result::Result<HashMap<String, Arc<dyn ErasedAsset>>, Self::Error>;
-    fn write(
-        &self,
-        path: &str,
-        asset: &dyn ErasedAsset,
-        serializers: &AssetSerializerRegistry,
-    ) -> std::result::Result<(), Self::Error>;
+        path: &Path,
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<Arc<dyn ErasedAsset>, Self::Error>;
 }
 
 pub trait ErasedAssetBundle: Send + Sync + 'static {
-    fn id(&self) -> BundleId;
-    fn is_read_only(&self) -> bool;
+    fn metadata(&self) -> Result<AssetBundleMetadata, Box<dyn Error + Send + Sync + 'static>>;
+    fn manifest(&self)
+    -> Result<HashMap<AssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
     fn read(
         &self,
-        serializers: &AssetSerializerRegistry,
-    ) -> std::result::Result<HashMap<String, Arc<dyn ErasedAsset>>, anyhow::Error>;
-    fn write(
-        &self,
-        path: &str,
-        asset: &dyn ErasedAsset,
-        serializers: &AssetSerializerRegistry,
-    ) -> std::result::Result<(), anyhow::Error>;
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<Arc<dyn ErasedAsset>, Box<dyn Error + Send + Sync + 'static>>;
 }
 
 impl<T: AssetBundle> ErasedAssetBundle for T {
-    fn id(&self) -> BundleId {
-        self.id()
+    fn metadata(&self) -> Result<AssetBundleMetadata, Box<dyn Error + Send + Sync + 'static>> {
+        self.metadata().map_err(Into::into)
     }
 
-    fn is_read_only(&self) -> bool {
-        T::is_read_only()
+    fn manifest(
+        &self,
+    ) -> Result<HashMap<AssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>> {
+        self.manifest().map_err(Into::into)
     }
 
     fn read(
         &self,
-        serializers: &AssetSerializerRegistry,
-    ) -> std::result::Result<HashMap<String, Arc<dyn ErasedAsset>>, anyhow::Error> {
-        self.read(serializers).map_err(Into::into)
-    }
-
-    fn write(
-        &self,
-        path: &str,
-        asset: &dyn ErasedAsset,
-        serializers: &AssetSerializerRegistry,
-    ) -> std::result::Result<(), anyhow::Error> {
-        self.write(path, asset, serializers).map_err(Into::into)
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<Arc<dyn ErasedAsset>, Box<dyn Error + Send + Sync + 'static>> {
+        self.read(Path::new(""), serializer).map_err(Into::into)
     }
 }

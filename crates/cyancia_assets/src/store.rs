@@ -5,12 +5,10 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
-
 use crate::{
-    asset::{Asset, AssetHandle, AssetUrl},
-    bundle::{AssetBundle, AssetBundleCache, BundleId, BundleMetadata, ErasedAssetBundle},
-    id::AssetId,
+    asset::{Asset, AssetHandle, AssetId, AssetUrl},
+    bundle::{AssetBundle, AssetBundleCache, AssetBundleMetadata, BundleId, ErasedAssetBundle},
+    error::AssetResult,
     index_db::AssetIndexDb,
     loader::{AssetSerializer, AssetSerializerRegistry, ErasedAssetSerializer},
 };
@@ -26,7 +24,7 @@ impl AssetRegistry {
     pub async fn new(
         root: impl AsRef<Path>,
         serializers: Arc<AssetSerializerRegistry>,
-    ) -> Result<Self> {
+    ) -> AssetResult<Self> {
         let bundles = HashMap::new();
         let index_db = AssetIndexDb::connect(&format!(
             "sqlite:{}",
@@ -42,29 +40,27 @@ impl AssetRegistry {
         })
     }
 
-    pub fn add_bundle<B: AssetBundle>(&mut self, filename: String, bundle: B) -> Result<()> {
-        let metadata = BundleMetadata {
-            bundle_id: bundle.id(),
+    pub fn add_bundle<B: AssetBundle>(&mut self, filename: String, bundle: B) -> AssetResult<()> {
+        let cache = AssetBundleCache::new(
+            self.root.clone(),
             filename,
-            readonly: bundle.is_read_only(),
-        };
-        self.bundles.insert(
-            metadata.bundle_id,
-            Arc::new(AssetBundleCache::new(
-                &self.root,
-                metadata,
-                Arc::new(bundle),
-                self.serializers.clone(),
-            )?),
-        );
+            Arc::new(bundle),
+            self.serializers.clone(),
+        )?;
+        self.bundles
+            .insert(cache.metadata().bundle_id, Arc::new(cache));
         Ok(())
     }
 
-    pub fn handle<T: Asset>(&self, bundle_id: BundleId, path: &str) -> Option<AssetHandle<T>> {
+    pub fn handle<T: Asset>(
+        &self,
+        bundle_id: BundleId,
+        asset_id: AssetId,
+    ) -> Option<AssetHandle<T>> {
         let bundle = self.bundles.get(&bundle_id)?;
 
         Some(AssetHandle::new(
-            AssetUrl::new(bundle_id, path.to_string().into()),
+            asset_id,
             bundle.clone(),
             self.index_db.clone(),
         ))
@@ -77,7 +73,7 @@ impl AssetRegistry {
             .into_iter()
             .filter_map(|meta| {
                 Some(AssetHandle::new(
-                    AssetUrl::new(meta.bundle_id.clone(), meta.relative_path.into()),
+                    meta.asset_id,
                     self.bundles.get(&meta.bundle_id)?.clone(),
                     self.index_db.clone(),
                 ))
