@@ -1,15 +1,21 @@
 use std::{
     any::{Any, TypeId},
     collections::{HashMap, hash_map::Entry},
+    fs::metadata,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+use chrono::DateTime;
+
 use crate::{
     asset::{Asset, AssetHandle, AssetId, AssetMetadata, AssetUrl},
-    bundle::{AssetBundle, AssetBundleCache, AssetBundleMetadata, BundleId, ErasedAssetBundle},
-    error::AssetResult,
-    index_db::AssetIndexDb,
+    bundle::{
+        AssetBundle, AssetBundleCache, AssetBundleMetadata, BundleId, ErasedAssetBundle,
+        modified_bundle_absolute_path, scan_bundle_assets,
+    },
+    error::{AssetError, AssetResult},
+    index_db::{AssetIndexDb, BundleStatus},
     loader::{AssetSerializer, AssetSerializerRegistry, ErasedAssetSerializer},
 };
 
@@ -36,23 +42,42 @@ impl AssetRegistry {
         })
     }
 
-    pub async fn add_bundle<B: AssetBundle>(
-        &mut self,
-        filename: String,
-        bundle: B,
-    ) -> AssetResult<()> {
-        let (cache, metadata) = AssetBundleCache::new(
+    pub async fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
+        let bundle = Arc::new(bundle) as Arc<dyn ErasedAssetBundle>;
+        let mut bundle_meta = bundle.metadata().map_err(AssetError::BundleError)?;
+        let modified = modified_bundle_absolute_path(&self.root, &bundle_meta.bundle_id);
+        if modified.exists() {
+            let t = DateTime::from(metadata(modified)?.modified()?);
+            if t > bundle_meta.last_modified {
+                bundle_meta.last_modified = t;
+            }
+        }
+
+        let state = self.index_db.upsert_bundle(&bundle_meta).await?;
+        let manifest = match state {
+            BundleStatus::UpToDate => {
+                self.index_db
+                    .get_assets_by_bundle(&bundle_meta.bundle_id)
+                    .await?
+            }
+            BundleStatus::Outdated => {
+                let manifest = scan_bundle_assets(&self.root, bundle.as_ref(), &self.serializers)?;
+                self.index_db
+                    .upsert_assets(&bundle_meta.bundle_id, &manifest)
+                    .await?;
+                manifest
+            }
+        };
+
+        let cache = AssetBundleCache::new(
             self.root.clone(),
-            filename,
-            Arc::new(bundle),
+            bundle,
+            manifest
+                .into_iter()
+                .map(|a| (a.asset_id, a.relative_path.into()))
+                .collect(),
             self.serializers.clone(),
         )?;
-
-        let _ = self.index_db.upsert_bundle(cache.metadata()).await;
-
-        for meta in metadata {
-            let _ = self.index_db.upsert_asset(&meta).await;
-        }
 
         self.bundles
             .insert(cache.metadata().bundle_id, Arc::new(cache));
@@ -74,7 +99,7 @@ impl AssetRegistry {
     }
 
     pub async fn all_handles_of<T: Asset>(&self) -> Option<Vec<AssetHandle<T>>> {
-        let metadata = self.index_db.all_by_type(T::TYPE_NAME).await.ok()?;
+        let metadata = self.index_db.get_assets_by_type(T::TYPE_NAME).await.ok()?;
 
         let handles = metadata
             .into_iter()

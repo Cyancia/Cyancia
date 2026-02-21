@@ -55,7 +55,7 @@ impl<T: Asset> ErasedAsset for T {
     }
 }
 
-#[derive(FromRow)]
+#[derive(FromRow, Debug, Clone)]
 pub struct AssetMetadata {
     pub asset_id: AssetId,
     // TODO: Replace with Arc<str> when sqlx supports.

@@ -266,7 +266,6 @@ dependencies = [
  "chrono",
  "cyancia_utils",
  "downcast-rs",
- "filetime",
  "log",
  "md5",
  "parking_lot",
@@ -393,17 +392,6 @@ dependencies = [
  "concurrent-queue",
  "parking",
  "pin-project-lite",
-]
-
-[[package]]
-name = "filetime"
-version = "0.2.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f98844151eee8917efc50bd9e8318cb963ae8b297431495d3f758616ea5c57db"
-dependencies = [
- "cfg-if",
- "libc",
- "libredox",
 ]
 
 [[package]]

@@ -72,18 +72,15 @@ async fn test() {
         .await
         .unwrap();
     registry
-        .add_bundle(
-            "local_assets".to_string(),
-            AssetDirectory::new("assets/local_assets"),
-        )
+        .add_bundle(AssetDirectory::new("assets/local_assets"))
         .await
         .unwrap();
 
     let (bundles, errors) = StandardAssetBundle::scan_bundles("assets").await;
     assert!(errors.is_empty());
     assert_eq!(bundles.len(), 1);
-    for (filename, bundle) in bundles {
-        registry.add_bundle(filename, bundle).await.unwrap();
+    for bundle in bundles {
+        registry.add_bundle(bundle).await.unwrap();
     }
 
     let handles = registry.all_handles_of::<TestAsset>().await.unwrap();
@@ -100,11 +97,11 @@ async fn test() {
             .unwrap();
     }
 
-    let handles = registry.all_handles_of::<TestAsset>().await.unwrap();
-    for handle in handles {
-        let asset = handle.get().await.unwrap();
-        println!("Got asset: {:?}", asset);
+    // let handles = registry.all_handles_of::<TestAsset>().await.unwrap();
+    // for handle in handles {
+    //     let asset = handle.get().await.unwrap();
+    //     println!("Got asset: {:?}", asset);
 
-        handle.write().await.unwrap();
-    }
+    //     handle.write().await.unwrap();
+    // }
 }

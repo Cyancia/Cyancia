@@ -8,6 +8,7 @@ use std::{
 };
 
 use atomicow::CowArc;
+use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
@@ -37,14 +38,15 @@ wrapper! {
 pub struct AssetBundleMetadata {
     pub bundle_id: BundleId,
     pub name: String,
+    pub last_modified: DateTime<Utc>,
 }
 
 pub struct AssetBundleCache {
     assets_root: PathBuf,
-    filename: String,
     metadata: AssetBundleMetadata,
     bundle: Arc<dyn ErasedAssetBundle>,
 
+    id_to_original_path: HashMap<AssetId, PathBuf>,
     id_to_path: RwLock<HashMap<AssetId, PathBuf>>,
     assets: RwLock<HashMap<AssetId, Arc<dyn ErasedAsset>>>,
 
@@ -54,71 +56,21 @@ pub struct AssetBundleCache {
 impl AssetBundleCache {
     pub fn new(
         assets_root: impl AsRef<Path>,
-        filename: String,
         bundle: Arc<dyn ErasedAssetBundle>,
+        manifest: HashMap<AssetId, PathBuf>,
         serializers: Arc<AssetSerializerRegistry>,
-    ) -> AssetResult<(Self, Vec<AssetMetadata>)> {
-        let bundle_meta = bundle.metadata().map_err(AssetError::BundleError)?;
-        let mut manifest = bundle.manifest().map_err(AssetError::BundleError)?;
+    ) -> AssetResult<Self> {
+        Ok(Self {
+            assets_root: assets_root.as_ref().to_path_buf(),
+            metadata: bundle.metadata().map_err(AssetError::BundleError)?,
 
-        let mut metadata = HashMap::with_capacity(manifest.len());
-        for (id, path) in &manifest {
-            let Ok(serializer) = serializers.get_for_path(path) else {
-                continue;
-            };
-            metadata.insert(
-                *id,
-                AssetMetadata {
-                    asset_id: *id,
-                    ty: serializer.asset_type_name().to_string(),
-                    bundle_id: bundle_meta.bundle_id,
-                    relative_path: path.to_string_lossy().to_string(),
-                    revision: 0,
-                    in_memory: false,
-                },
-            );
-        }
+            id_to_original_path: bundle.manifest().map_err(AssetError::BundleError)?,
+            id_to_path: manifest.into(),
+            bundle,
+            assets: Default::default(),
 
-        // TODO: Manifest might be outdated, so probably scan the entire directory?
-        let modified_manifest = read_modified_manifest(assets_root.as_ref(), &filename)?;
-        manifest.reserve(modified_manifest.len());
-        for (id, path) in &modified_manifest {
-            let Some(revision) = parse_revision_from_path(path) else {
-                // TODO
-                continue;
-            };
-
-            let Ok(serializer) = serializers.get_for_path(path) else {
-                continue;
-            };
-
-            metadata.insert(
-                *id,
-                AssetMetadata {
-                    asset_id: *id,
-                    ty: serializer.asset_type_name().to_string(),
-                    bundle_id: bundle_meta.bundle_id,
-                    relative_path: path.to_string_lossy().to_string(),
-                    revision,
-                    in_memory: false,
-                },
-            );
-        }
-
-        Ok((
-            Self {
-                assets_root: assets_root.as_ref().to_path_buf(),
-                filename,
-                metadata: bundle.metadata().map_err(AssetError::BundleError)?,
-                bundle,
-
-                id_to_path: manifest.into(),
-                assets: Default::default(),
-
-                serializers,
-            },
-            metadata.into_values().collect(),
-        ))
+            serializers,
+        })
     }
 
     pub fn get_cached(&self, id: &AssetId) -> AssetResult<Arc<dyn ErasedAsset>> {
@@ -139,8 +91,8 @@ impl AssetBundleCache {
         let asset = assets
             .get(id)
             .ok_or_else(|| AssetError::AssetNotFound(*id))?;
-        let id_to_path = self.id_to_path.read();
-        let path = id_to_path
+        let path = self
+            .id_to_original_path
             .get(id)
             .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
         let serializer = self.serializers.get_for_path(path)?;
@@ -148,7 +100,7 @@ impl AssetBundleCache {
         write_modified_asset(
             &self.assets_root,
             path,
-            &self.filename,
+            &self.metadata.bundle_id,
             asset.as_ref(),
             revision,
             serializer.as_ref(),
@@ -174,9 +126,8 @@ impl AssetBundleCache {
             read_modified_asset(
                 &self.assets_root,
                 path,
-                &self.filename,
+                &self.metadata.bundle_id,
                 serializer.as_ref(),
-                revision,
             )?
         };
 
@@ -185,39 +136,160 @@ impl AssetBundleCache {
     }
 }
 
-fn read_modified_manifest(
-    assets_root: &Path,
-    bundle_filename: &str,
-) -> AssetResult<HashMap<AssetId, PathBuf>> {
-    let path = modified_bundle_absolute_path(assets_root, bundle_filename).join("manifest.toml");
-    if !path.exists() {
-        return Ok(HashMap::new());
+pub fn scan_bundle_assets(
+    assets_root: impl AsRef<Path>,
+    bundle: &dyn ErasedAssetBundle,
+    serializers: &AssetSerializerRegistry,
+) -> AssetResult<Vec<AssetMetadata>> {
+    let bundle_meta = bundle.metadata().map_err(AssetError::BundleError)?;
+    let manifest = bundle.manifest().map_err(AssetError::BundleError)?;
+    let mut assets = Vec::with_capacity(manifest.len());
+
+    for (id, path) in &manifest {
+        let Ok(serializer) = serializers.get_for_path(path) else {
+            continue;
+        };
+        assets.push(AssetMetadata {
+            asset_id: *id,
+            ty: serializer.asset_type_name().to_string(),
+            bundle_id: bundle_meta.bundle_id,
+            relative_path: path.to_string_lossy().to_string(),
+            revision: 0,
+            in_memory: false,
+        });
     }
 
-    let mut buf = String::new();
-    File::open(path)?.read_to_string(&mut buf)?;
-    let manifest = toml::from_str(&buf).map_err(AssetError::TomlDeError)?;
-    Ok(manifest)
+    let modified = scan_modified_assets(
+        &assets_root.as_ref(),
+        &bundle_meta.bundle_id,
+        &manifest,
+        &serializers,
+    )?;
+    assets.extend(modified);
+
+    Ok(assets)
+}
+
+fn scan_modified_assets(
+    assets_root: &Path,
+    bundle_id: &BundleId,
+    bundle_manifest: &HashMap<AssetId, PathBuf>,
+    serializers: &AssetSerializerRegistry,
+) -> AssetResult<Vec<AssetMetadata>> {
+    let mut assets = Vec::new();
+    let modified_bundle_path = modified_bundle_absolute_path(assets_root, bundle_id);
+    if !modified_bundle_path.exists() {
+        return Ok(assets);
+    }
+
+    let reversed_manifest = bundle_manifest
+        .iter()
+        .map(|(id, path)| (path.clone(), *id))
+        .collect::<HashMap<_, _>>();
+
+    scan_modified_assets_dfs(
+        &modified_bundle_path,
+        bundle_id,
+        &modified_bundle_path,
+        &mut assets,
+        serializers,
+        &reversed_manifest,
+    )?;
+
+    Ok(assets)
+}
+
+fn scan_modified_assets_dfs(
+    modified_bundle_path: &Path,
+    bundle_id: &BundleId,
+    current_path: &Path,
+    assets: &mut Vec<AssetMetadata>,
+    serializers: &AssetSerializerRegistry,
+    path_to_id: &HashMap<PathBuf, AssetId>,
+) -> AssetResult<()> {
+    for entry in current_path.read_dir()? {
+        let Ok(entry) = entry else {
+            continue;
+        };
+
+        let path = entry.path();
+        if path.is_dir() {
+            let _ = scan_modified_assets_dfs(
+                modified_bundle_path,
+                bundle_id,
+                &path,
+                assets,
+                serializers,
+                path_to_id,
+            );
+        } else if path.is_file() {
+            let Some(revision) = parse_revision_from_path(&path) else {
+                continue;
+            };
+
+            let Ok(serializer) = serializers.get_for_path(&path) else {
+                continue;
+            };
+            let modified_path = path
+                .strip_prefix(modified_bundle_path)
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+
+            let Some(original_path) = restore_original_path(&Path::new(&modified_path)) else {
+                continue;
+            };
+            let Some(asset_id) = path_to_id.get(&original_path) else {
+                continue;
+            };
+
+            assets.push(AssetMetadata {
+                asset_id: *asset_id,
+                ty: serializer.asset_type_name().to_string(),
+                bundle_id: *bundle_id,
+                relative_path: modified_path,
+                revision,
+                in_memory: false,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_revision_from_path(path: &Path) -> Option<u32> {
     let filename = path.file_stem()?.to_str()?;
-    let parts: Vec<&str> = filename.split(".rev").collect();
+    let parts = filename.split(".rev").collect::<Vec<_>>();
     if parts.len() != 2 {
         return None;
     }
     parts[1].split('.').next()?.parse().ok()
 }
 
+fn restore_original_path(modified_path: &Path) -> Option<PathBuf> {
+    let filename = modified_path.file_stem()?.to_str()?;
+    let parts = filename.split(".rev").collect::<Vec<_>>();
+    if parts.len() != 2 {
+        return None;
+    }
+    let original_filename = format!(
+        "{}.{}",
+        parts[0],
+        modified_path
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+    );
+    Some(modified_path.with_file_name(original_filename))
+}
+
 fn read_modified_asset(
     assets_root: &Path,
     asset_relative_path: &Path,
-    bundle_filename: &str,
+    bundle_id: &BundleId,
     serializer: &dyn ErasedAssetSerializer,
-    revision: u32,
 ) -> AssetResult<Arc<dyn ErasedAsset>> {
-    let path = modified_bundle_absolute_path(assets_root, bundle_filename)
-        .join(modified_asset_relative_path(asset_relative_path, revision));
+    let path = modified_bundle_absolute_path(assets_root, bundle_id).join(asset_relative_path);
     let mut file = File::open(path)?;
     serializer
         .read(&mut file)
@@ -227,14 +299,14 @@ fn read_modified_asset(
 
 fn write_modified_asset(
     assets_root: &Path,
-    asset_relative_path: &Path,
-    bundle_filename: &str,
+    original_relative_path: &Path,
+    bundle_id: &BundleId,
     asset: &dyn ErasedAsset,
     revision: u32,
     serializer: &dyn ErasedAssetSerializer,
 ) -> AssetResult<PathBuf> {
-    let new_relative_path = modified_asset_relative_path(asset_relative_path, revision);
-    let modified_bundle_path = modified_bundle_absolute_path(assets_root, bundle_filename);
+    let new_relative_path = modified_asset_relative_path(original_relative_path, revision);
+    let modified_bundle_path = modified_bundle_absolute_path(assets_root, bundle_id);
     let modified_asset_path = modified_bundle_path.join(&new_relative_path);
 
     if let Some(dir) = &modified_asset_path.parent() {
@@ -260,8 +332,13 @@ fn modified_asset_relative_path(asset_relative_path: &Path, revision: u32) -> Pa
     asset_relative_path.with_file_name(format!("{}.rev{}.{}", file_stem, revision, ext))
 }
 
-fn modified_bundle_absolute_path(assets_root: &Path, bundle_filename: &str) -> PathBuf {
-    assets_root.join(format!("{}.modified", bundle_filename))
+pub fn modified_bundle_absolute_path(
+    assets_root: impl AsRef<Path>,
+    bundle_id: &BundleId,
+) -> PathBuf {
+    assets_root
+        .as_ref()
+        .join(format!("{}.modified", bundle_id.0))
 }
 
 pub trait AssetBundle: Send + Sync + 'static {

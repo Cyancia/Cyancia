@@ -1,11 +1,12 @@
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{File, metadata},
     io::{Cursor, Read, read_to_string},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+use chrono::DateTime;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
@@ -17,6 +18,7 @@ use crate::{
 };
 
 pub struct StandardAssetBundle {
+    path: PathBuf,
     archive: RwLock<ZipArchive<File>>,
 }
 
@@ -26,13 +28,14 @@ impl StandardAssetBundle {
         let archive = ZipArchive::new(File::open(&path)?)?;
 
         Ok(Self {
+            path,
             archive: archive.into(),
         })
     }
 
     pub async fn scan_bundles(
         root: impl AsRef<Path>,
-    ) -> (Vec<(String, Self)>, Vec<StandardAssetBundleError>) {
+    ) -> (Vec<Self>, Vec<StandardAssetBundleError>) {
         let mut bundles = Vec::new();
         let mut errors = Vec::new();
         scan_bundles(root, &mut bundles, &mut errors).await;
@@ -42,7 +45,7 @@ impl StandardAssetBundle {
 
 async fn scan_bundles(
     root: impl AsRef<Path>,
-    bundles: &mut Vec<(String, StandardAssetBundle)>,
+    bundles: &mut Vec<StandardAssetBundle>,
     errors: &mut Vec<StandardAssetBundleError>,
 ) {
     let entries = match std::fs::read_dir(root) {
@@ -63,9 +66,7 @@ async fn scan_bundles(
             let ext = path.extension().and_then(|ext| ext.to_str());
             if ext == Some("csb") {
                 match StandardAssetBundle::new(&path) {
-                    Ok(bundle) => {
-                        bundles.push((path.file_stem().unwrap().to_string_lossy().into(), bundle))
-                    }
+                    Ok(bundle) => bundles.push(bundle),
                     Err(e) => errors.push(e),
                 }
             }
@@ -91,13 +92,26 @@ pub enum StandardAssetBundleError {
     TomlError(#[from] toml::de::Error),
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct StandardAssetBundleMetadata {
+    pub bundle_id: BundleId,
+    pub name: String,
+}
+
 impl AssetBundle for StandardAssetBundle {
     type Error = StandardAssetBundleError;
 
     fn metadata(&self) -> Result<AssetBundleMetadata, Self::Error> {
         let mut archive = self.archive.write();
         let content = read_to_string(archive.by_name("metadata.toml")?)?;
-        Ok(toml::from_str(&content)?)
+        let bundle_meta = toml::from_str::<StandardAssetBundleMetadata>(&content)?;
+        let last_modified = DateTime::from(metadata(&self.path)?.modified()?);
+
+        Ok(AssetBundleMetadata {
+            bundle_id: bundle_meta.bundle_id,
+            name: bundle_meta.name,
+            last_modified,
+        })
     }
 
     fn manifest(&self) -> Result<HashMap<AssetId, PathBuf>, Self::Error> {

@@ -1,12 +1,11 @@
 use std::{
     collections::HashMap,
-    fs::{File, read_to_string},
+    fs::{File, metadata, read_to_string},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use chrono::DateTime;
-use filetime::FileTime;
+use chrono::{DateTime, Local, TimeZone, Utc};
 use uuid::Uuid;
 
 use crate::{
@@ -46,12 +45,14 @@ impl AssetBundle for AssetDirectory {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
+        let last_modified = DateTime::from(metadata(&self.root)?.modified()?);
 
         Ok(AssetBundleMetadata {
             bundle_id: BundleId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
                 folder_name.as_bytes(),
             ))),
             name: folder_name.to_string(),
+            last_modified,
         })
     }
 
