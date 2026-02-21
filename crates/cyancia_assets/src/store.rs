@@ -15,8 +15,9 @@ use crate::{
         modified_bundle_absolute_path, scan_bundle_assets,
     },
     error::{AssetError, AssetResult},
-    index_db::{AssetIndexDb, BundleStatus},
+    index_db::{AssetFilter, AssetIndexDb, ItemStatus, UntypedAssetFilter},
     loader::{AssetSerializer, AssetSerializerRegistry, ErasedAssetSerializer},
+    tag::{Tag, TagId},
 };
 
 pub struct AssetRegistry {
@@ -53,14 +54,17 @@ impl AssetRegistry {
             }
         }
 
-        let state = self.index_db.upsert_bundle(&bundle_meta).await?;
-        let manifest = match state {
-            BundleStatus::UpToDate => {
+        let status = self.index_db.upsert_bundle(&bundle_meta).await?;
+        let manifest = match status {
+            ItemStatus::UpToDate => {
                 self.index_db
-                    .get_assets_by_bundle(&bundle_meta.bundle_id)
+                    .get_assets(UntypedAssetFilter {
+                        bundle: Some(bundle_meta.bundle_id),
+                        ..Default::default()
+                    })
                     .await?
             }
-            BundleStatus::Outdated => {
+            ItemStatus::Outdated => {
                 let manifest = scan_bundle_assets(&self.root, bundle.as_ref(), &self.serializers)?;
                 self.index_db
                     .upsert_assets(&bundle_meta.bundle_id, &manifest)
@@ -68,6 +72,12 @@ impl AssetRegistry {
                 manifest
             }
         };
+
+        let tags = manifest
+            .iter()
+            .filter(|a| a.ty == Tag::TYPE_NAME)
+            .cloned()
+            .collect::<Vec<_>>();
 
         let cache = AssetBundleCache::new(
             self.root.clone(),
@@ -78,9 +88,23 @@ impl AssetRegistry {
                 .collect(),
             self.serializers.clone(),
         )?;
+        let cache = Arc::new(cache);
 
-        self.bundles
-            .insert(cache.metadata().bundle_id, Arc::new(cache));
+        match status {
+            ItemStatus::UpToDate => {}
+            ItemStatus::Outdated => {
+                for tag in tags {
+                    let handle =
+                        AssetHandle::<Tag>::new(tag.asset_id, cache.clone(), self.index_db.clone());
+                    let tag_asset = handle.get().await?;
+                    self.index_db
+                        .upsert_tag(&tag_asset, tag.last_modified)
+                        .await?;
+                }
+            }
+        }
+
+        self.bundles.insert(cache.metadata().bundle_id, cache);
         Ok(())
     }
 
@@ -98,10 +122,30 @@ impl AssetRegistry {
         ))
     }
 
-    pub async fn all_handles_of<T: Asset>(&self) -> Option<Vec<AssetHandle<T>>> {
-        let metadata = self.index_db.get_assets_by_type(T::TYPE_NAME).await.ok()?;
+    pub async fn all_handles_of<T: Asset>(&self) -> AssetResult<Vec<AssetHandle<T>>> {
+        Ok(self.metadata_to_handles(
+            self.index_db
+                .get_assets(UntypedAssetFilter {
+                    ty: Some(T::TYPE_NAME.to_string()),
+                    ..Default::default()
+                })
+                .await?,
+        ))
+    }
 
-        let handles = metadata
+    pub async fn all_handles_of_filtered<T: Asset>(
+        &self,
+        filter: AssetFilter<T>,
+    ) -> AssetResult<Vec<AssetHandle<T>>> {
+        Ok(self.metadata_to_handles(self.index_db.get_assets(filter.into_untyped()).await?))
+    }
+
+    pub fn serializers(&self) -> &AssetSerializerRegistry {
+        &self.serializers
+    }
+
+    fn metadata_to_handles<T: Asset>(&self, metadata: Vec<AssetMetadata>) -> Vec<AssetHandle<T>> {
+        metadata
             .into_iter()
             .filter_map(|meta| {
                 Some(AssetHandle::new(
@@ -110,12 +154,6 @@ impl AssetRegistry {
                     self.index_db.clone(),
                 ))
             })
-            .collect::<_>();
-
-        Some(handles)
-    }
-
-    pub fn serializers(&self) -> &AssetSerializerRegistry {
-        &self.serializers
+            .collect()
     }
 }

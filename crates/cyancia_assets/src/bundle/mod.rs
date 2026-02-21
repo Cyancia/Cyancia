@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     error::Error,
-    fs::{File, create_dir_all},
+    fs::{File, create_dir_all, metadata},
     io::Read,
     path::{Path, PathBuf},
     sync::Arc,
@@ -155,6 +155,8 @@ pub fn scan_bundle_assets(
             bundle_id: bundle_meta.bundle_id,
             relative_path: path.to_string_lossy().to_string(),
             revision: 0,
+            // TODO: This isn't accurate, but... probably good enough for now?
+            last_modified: bundle_meta.last_modified,
             in_memory: false,
         });
     }
@@ -249,6 +251,7 @@ fn scan_modified_assets_dfs(
                 bundle_id: *bundle_id,
                 relative_path: modified_path,
                 revision,
+                last_modified: metadata(&path)?.modified()?.into(),
                 in_memory: false,
             });
         }

@@ -35,12 +35,10 @@ wrapper! {
 
 pub trait Asset: Send + Sync + 'static + DowncastSync {
     const TYPE_NAME: &'static str;
-    fn hash(&self) -> i64;
 }
 
 pub trait ErasedAsset: Send + Sync + 'static + DowncastSync {
     fn type_name(&self) -> &'static str;
-    fn hash(&self) -> i64;
 }
 
 downcast_rs::impl_downcast!(sync ErasedAsset);
@@ -48,10 +46,6 @@ downcast_rs::impl_downcast!(sync ErasedAsset);
 impl<T: Asset> ErasedAsset for T {
     fn type_name(&self) -> &'static str {
         T::TYPE_NAME
-    }
-
-    fn hash(&self) -> i64 {
-        self.hash()
     }
 }
 
@@ -63,6 +57,7 @@ pub struct AssetMetadata {
     pub bundle_id: BundleId,
     pub relative_path: String,
     pub revision: u32,
+    pub last_modified: DateTime<Utc>,
     pub in_memory: bool,
 }
 
@@ -149,9 +144,8 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub async fn update(&self, asset: T) -> AssetResult<()> {
-        let hash = asset.hash();
         self.bundle.update(self.id, Arc::new(asset))?;
-        self.index_db.update_asset(&self.id, hash).await?;
+        self.index_db.update_asset(&self.id).await?;
 
         Ok(())
     }
@@ -160,7 +154,11 @@ impl<T: Asset> AssetHandle<T> {
         let metadata = self.metadata().await?;
         let new_path = self.bundle.write(&self.id, metadata.revision)?;
         self.index_db
-            .write_asset(&self.id, new_path.to_str().unwrap())
+            .write_asset(
+                &self.id,
+                new_path.to_str().unwrap(),
+                std::fs::metadata(&new_path)?.modified()?.into(),
+            )
             .await?;
         Ok(())
     }

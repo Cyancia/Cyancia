@@ -2,17 +2,21 @@ use std::{
     fmt::Debug,
     hash::{BuildHasher, RandomState},
     io::read_to_string,
+    str::FromStr,
 };
 
 use cyancia_assets::{
     asset::{Asset, AssetId, AssetUrl},
     bundle::{AssetBundle, BundleId, directory::AssetDirectory, standard::StandardAssetBundle},
+    index_db::AssetFilter,
     loader::{AssetSerializer, AssetSerializerRegistry},
     store::AssetRegistry,
+    tag::{TagId, TagSerializer},
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct TestAsset {
     name: String,
     value: i32,
@@ -20,10 +24,6 @@ struct TestAsset {
 
 impl Asset for TestAsset {
     const TYPE_NAME: &'static str = "test_asset";
-
-    fn hash(&self) -> i64 {
-        RandomState::new().hash_one(self).cast_signed()
-    }
 }
 
 #[derive(Default)]
@@ -67,6 +67,7 @@ impl AssetSerializer for TestAssetSerializer {
 async fn test() {
     let mut serializers = AssetSerializerRegistry::new();
     serializers.register::<TestAssetSerializer>();
+    serializers.register::<TagSerializer>();
 
     let mut registry = AssetRegistry::new("assets", serializers.into())
         .await
@@ -83,10 +84,9 @@ async fn test() {
         registry.add_bundle(bundle).await.unwrap();
     }
 
-    let handles = registry.all_handles_of::<TestAsset>().await.unwrap();
-    for handle in handles {
+    for handle in registry.all_handles_of::<TestAsset>().await.unwrap() {
         let asset = handle.get().await.unwrap();
-        println!("Got asset: {:?}", asset);
+        println!("Test asset: {:?}", asset);
 
         handle
             .update(TestAsset {
@@ -97,11 +97,25 @@ async fn test() {
             .unwrap();
     }
 
-    // let handles = registry.all_handles_of::<TestAsset>().await.unwrap();
-    // for handle in handles {
-    //     let asset = handle.get().await.unwrap();
-    //     println!("Got asset: {:?}", asset);
+    for handle in registry
+        .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(TagId::new(
+            Uuid::from_str("f6d3cfcd-d9d8-49e4-a63c-b216444834ba").unwrap(),
+        )))
+        .await
+        .unwrap()
+    {
+        let asset = handle.get().await.unwrap();
+        println!("Test asset with tag: {:?}", asset);
+    }
 
-    //     handle.write().await.unwrap();
-    // }
+    for handle in registry
+        .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_bundle(BundleId::new(
+            Uuid::from_str("63f361f6-afbd-4df5-8e8d-13848d1d2cc1").unwrap(),
+        )))
+        .await
+        .unwrap()
+    {
+        let asset = handle.get().await.unwrap();
+        println!("Test asset in bundle: {:?}", asset);
+    }
 }
