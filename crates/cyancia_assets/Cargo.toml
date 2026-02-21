@@ -22,3 +22,4 @@ parse-display.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+env_logger.workspace = true

@@ -2,6 +2,7 @@ use std::{
     fmt::Debug,
     hash::{BuildHasher, RandomState},
     io::read_to_string,
+    path::Path,
     str::FromStr,
 };
 
@@ -65,6 +66,8 @@ impl AssetSerializer for TestAssetSerializer {
 
 #[tokio::test]
 async fn test() {
+    env_logger::init();
+
     let mut serializers = AssetSerializerRegistry::new();
     serializers.register::<TestAssetSerializer>();
     serializers.register::<TagSerializer>();
@@ -84,28 +87,77 @@ async fn test() {
         registry.add_bundle(bundle).await.unwrap();
     }
 
-    for handle in registry.all_handles_of::<TestAsset>().await.unwrap() {
-        let asset = handle.get().await.unwrap();
-        println!("Test asset: {:?}", asset);
-
-        handle
-            .update(TestAsset {
-                name: asset.name.clone(),
-                value: asset.value * 2,
-            })
+    {
+        let expected = &[
+            TestAsset {
+                name: "Test Asset".to_string(),
+                value: 42,
+            },
+            TestAsset {
+                name: "Test Asset 2".to_string(),
+                value: 84,
+            },
+        ];
+        for (i, handle) in registry
+            .all_handles_of::<TestAsset>()
             .await
-            .unwrap();
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            let asset = handle.get().await.unwrap();
+            assert_eq!(asset.as_ref(), &expected[i]);
+
+            handle
+                .update(TestAsset {
+                    name: asset.name.clone(),
+                    value: asset.value * 2,
+                })
+                .await
+                .unwrap();
+        }
+    }
+
+    {
+        let expected = &[
+            TestAsset {
+                name: "Test Asset".to_string(),
+                value: 42 * 2,
+            },
+            TestAsset {
+                name: "Test Asset 2".to_string(),
+                value: 84 * 2,
+            },
+        ];
+        for (i, handle) in registry
+            .all_handles_of::<TestAsset>()
+            .await
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            let asset = handle.get().await.unwrap();
+            assert_eq!(asset.as_ref(), &expected[i]);
+
+            handle.write().await.unwrap();
+        }
     }
 
     for handle in registry
         .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(TagId::new(
-            Uuid::from_str("f6d3cfcd-d9d8-49e4-a63c-b216444834ba").unwrap(),
+            Uuid::from_str("ef34773e-d825-974f-3268-7d7fed983dc8").unwrap(),
         )))
         .await
         .unwrap()
     {
         let asset = handle.get().await.unwrap();
-        println!("Test asset with tag: {:?}", asset);
+        assert_eq!(
+            asset.as_ref(),
+            &TestAsset {
+                name: "Test Asset".to_string(),
+                value: 84,
+            }
+        );
     }
 
     for handle in registry
@@ -116,6 +168,27 @@ async fn test() {
         .unwrap()
     {
         let asset = handle.get().await.unwrap();
-        println!("Test asset in bundle: {:?}", asset);
+        assert_eq!(
+            asset.as_ref(),
+            &TestAsset {
+                name: "Test Asset 2".to_string(),
+                value: 168,
+            }
+        );
     }
+
+    std::fs::remove_dir_all("assets/ef34773e-d825-974f-3268-7d7fed983dc8.modified").unwrap();
+    std::fs::remove_dir_all("assets/63f361f6-afbd-4df5-8e8d-13848d1d2cc1.modified").unwrap();
+    sqlx::query(
+        r#"
+DROP TABLE IF EXISTS bundles;
+DROP TABLE IF EXISTS assets;
+DROP TABLE IF EXISTS asset_revisions;
+DROP TABLE IF EXISTS asset_tags;
+DROP TABLE IF EXISTS tags;
+        "#,
+    )
+    .execute(registry.index_db().pool())
+    .await
+    .unwrap();
 }

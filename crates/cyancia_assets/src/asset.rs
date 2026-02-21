@@ -153,12 +153,10 @@ impl<T: Asset> AssetHandle<T> {
     pub async fn write(&self) -> AssetResult<()> {
         let metadata = self.metadata().await?;
         let new_path = self.bundle.write(&self.id, metadata.revision)?;
+        let last_modified =
+            std::fs::metadata(self.bundle.absolute_modified_path(&new_path))?.modified()?;
         self.index_db
-            .write_asset(
-                &self.id,
-                new_path.to_str().unwrap(),
-                std::fs::metadata(&new_path)?.modified()?.into(),
-            )
+            .write_asset(&self.id, new_path.to_str().unwrap(), last_modified.into())
             .await?;
         Ok(())
     }

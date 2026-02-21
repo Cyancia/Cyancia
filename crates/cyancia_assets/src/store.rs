@@ -43,6 +43,10 @@ impl AssetRegistry {
         })
     }
 
+    pub fn index_db(&self) -> &AssetIndexDb {
+        &self.index_db
+    }
+
     pub async fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
         let bundle = Arc::new(bundle) as Arc<dyn ErasedAssetBundle>;
         let mut bundle_meta = bundle.metadata().map_err(AssetError::BundleError)?;

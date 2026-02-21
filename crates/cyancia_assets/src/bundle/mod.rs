@@ -134,6 +134,10 @@ impl AssetBundleCache {
         self.assets.write().insert(id, asset.clone());
         Ok(asset)
     }
+
+    pub fn absolute_modified_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        modified_bundle_absolute_path(&self.assets_root, &self.metadata.bundle_id).join(path)
+    }
 }
 
 pub fn scan_bundle_assets(

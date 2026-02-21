@@ -137,6 +137,10 @@ CREATE TABLE IF NOT EXISTS asset_tags (
         Ok(())
     }
 
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
     pub async fn upsert_bundle(&self, bundle: &AssetBundleMetadata) -> sqlx::Result<ItemStatus> {
         let none_if_latest = sqlx::query_scalar::<_, u32>(
             r#"
@@ -247,7 +251,6 @@ INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)
             .bind(tag.id())
             .execute(&mut *tx)
             .await?;
-            dbg!();
         }
 
         tx.commit().await?;
