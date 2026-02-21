@@ -53,7 +53,7 @@ impl AssetRegistry {
         let modified = modified_bundle_absolute_path(&self.root, &bundle_meta.bundle_id);
         if modified.exists() {
             let t = DateTime::from(metadata(modified)?.modified()?);
-            if t > bundle_meta.last_modified {
+            if t != bundle_meta.last_modified {
                 bundle_meta.last_modified = t;
             }
         }
