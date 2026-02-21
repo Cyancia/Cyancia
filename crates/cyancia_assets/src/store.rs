@@ -32,11 +32,12 @@ impl AssetRegistry {
         root: impl AsRef<Path>,
         serializers: Arc<AssetSerializerRegistry>,
     ) -> AssetResult<Self> {
+        let root = root.as_ref();
         let bundles = HashMap::new();
-        let index_db = AssetIndexDb::connect("index.sqlite3").await?;
+        let index_db = AssetIndexDb::connect(root.join("index.sqlite3")).await?;
 
         Ok(Self {
-            root: root.as_ref().to_path_buf(),
+            root: root.to_path_buf(),
             bundles,
             index_db: Arc::new(index_db),
             serializers,
