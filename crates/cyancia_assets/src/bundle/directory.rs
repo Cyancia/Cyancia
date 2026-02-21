@@ -16,12 +16,26 @@ use crate::{
 
 pub struct AssetDirectory {
     root: PathBuf,
+    id: BundleId,
+    name: String,
 }
 
 impl AssetDirectory {
     pub fn new(root: impl AsRef<Path>) -> Self {
+        let root = root.as_ref();
+        let name = root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let id = BundleId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
+            name.as_bytes(),
+        )));
+
         Self {
-            root: root.as_ref().into(),
+            id,
+            name,
+            root: root.into(),
         }
     }
 }
@@ -40,26 +54,31 @@ impl AssetBundle for AssetDirectory {
     type Error = DataDirectoryError;
 
     fn metadata(&self) -> Result<AssetBundleMetadata, DataDirectoryError> {
-        let folder_name = self
-            .root
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default();
         let last_modified = DateTime::from(metadata(&self.root)?.modified()?);
 
         Ok(AssetBundleMetadata {
-            bundle_id: BundleId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
-                folder_name.as_bytes(),
-            ))),
-            name: folder_name.to_string(),
+            bundle_id: self.id,
+            name: self.name.clone(),
             last_modified,
         })
     }
 
     fn manifest(&self) -> Result<HashMap<AssetId, PathBuf>, DataDirectoryError> {
-        Ok(toml::from_str(&read_to_string(
-            self.root.join("manifest.toml"),
-        )?)?)
+        let path = self.root.join("manifest.toml");
+        let exists = path.exists();
+        if !exists || metadata(&path)?.modified()? != metadata(&self.root)?.modified()? {
+            if exists {
+                // Or the manifest itself will be scanned.
+                std::fs::remove_file(&path)?;
+            }
+
+            let manifest = scan_dir(&self.root, &self.id)?;
+            let manifest_str = toml::to_string_pretty(&manifest).unwrap();
+            std::fs::write(&path, manifest_str)?;
+            Ok(manifest)
+        } else {
+            Ok(toml::from_str(&read_to_string(&path)?)?)
+        }
     }
 
     fn read(
@@ -74,4 +93,45 @@ impl AssetBundle for AssetDirectory {
             .map_err(DataDirectoryError::SerializerError)?;
         Ok(asset.into())
     }
+}
+
+fn scan_dir(
+    root: &Path,
+    bundle_id: &BundleId,
+) -> Result<HashMap<AssetId, PathBuf>, DataDirectoryError> {
+    let mut assets = HashMap::new();
+    scan_dir_dfs(root, root, bundle_id, &mut assets)?;
+    Ok(assets)
+}
+
+fn scan_dir_dfs(
+    current_path: &Path,
+    root: &Path,
+    bundle_id: &BundleId,
+    assets: &mut HashMap<AssetId, PathBuf>,
+) -> Result<(), DataDirectoryError> {
+    let entries = std::fs::read_dir(current_path)?;
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+
+        let path = entry.path();
+        if path.is_dir() {
+            let _ = scan_dir_dfs(&path, root, bundle_id, assets)?;
+        } else {
+            let relative_path = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+            let asset_id = AssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
+                relative_path.as_bytes(),
+            )));
+
+            assets.insert(asset_id, relative_path.into());
+        }
+    }
+
+    Ok(())
 }
