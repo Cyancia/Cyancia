@@ -26,14 +26,18 @@ impl AssetSerializerRegistry {
         self.serializers.get(ext).cloned()
     }
 
-    pub fn get_for_path(&self, path: impl AsRef<Path>) -> AssetResult<Arc<dyn ErasedAssetSerializer>> {
+    pub fn get_for_path(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> AssetResult<Arc<dyn ErasedAssetSerializer>> {
         let path = path.as_ref();
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .ok_or_else(|| AssetError::MissingExtension(path.to_path_buf()))?;
-        self.get(ext)
-            .ok_or_else(|| AssetError::SerializerNotFound(ext.to_string()))
+        Ok(self
+            .get(ext)
+            .ok_or_else(|| AssetError::SerializerNotFound(ext.to_string()))?)
     }
 }
 

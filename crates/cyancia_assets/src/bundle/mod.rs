@@ -11,6 +11,8 @@ use atomicow::CowArc;
 use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
 use parking_lot::{RwLock, RwLockReadGuard};
+use parse_display::Display;
+use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     Decode, Encode, Sqlite,
@@ -29,8 +31,9 @@ pub mod directory;
 pub mod standard;
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Display, Serialize, Deserialize)]
     #[sqlx(transparent)]
+    #[display("{0}")]
     pub BundleId: Uuid
 }
 
@@ -46,7 +49,7 @@ pub struct AssetBundleCache {
     metadata: AssetBundleMetadata,
     bundle: Arc<dyn ErasedAssetBundle>,
 
-    id_to_original_path: HashMap<AssetId, PathBuf>,
+    id_to_original_path: RwLock<HashMap<AssetId, PathBuf>>,
     id_to_path: RwLock<HashMap<AssetId, PathBuf>>,
     assets: RwLock<HashMap<AssetId, Arc<dyn ErasedAsset>>>,
 
@@ -64,7 +67,7 @@ impl AssetBundleCache {
             assets_root: assets_root.as_ref().to_path_buf(),
             metadata: bundle.metadata().map_err(AssetError::BundleError)?,
 
-            id_to_original_path: bundle.manifest().map_err(AssetError::BundleError)?,
+            id_to_original_path: bundle.manifest().map_err(AssetError::BundleError)?.into(),
             id_to_path: manifest.into(),
             bundle,
             assets: Default::default(),
@@ -75,10 +78,10 @@ impl AssetBundleCache {
 
     pub fn get_cached(&self, id: &AssetId) -> AssetResult<Arc<dyn ErasedAsset>> {
         let assets = self.assets.read();
-        assets
+        Ok(assets
             .get(id)
             .cloned()
-            .ok_or_else(|| AssetError::AssetNotFound(*id))
+            .ok_or_else(|| AssetError::AssetNotFound(*id))?)
     }
 
     pub fn update(&self, id: AssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
@@ -91,8 +94,8 @@ impl AssetBundleCache {
         let asset = assets
             .get(id)
             .ok_or_else(|| AssetError::AssetNotFound(*id))?;
-        let path = self
-            .id_to_original_path
+        let id_to_original_path = self.id_to_original_path.read();
+        let path = id_to_original_path
             .get(id)
             .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
         let serializer = self.serializers.get_for_path(path)?;
@@ -105,6 +108,25 @@ impl AssetBundleCache {
             revision,
             serializer.as_ref(),
         )
+    }
+
+    pub fn is_readonly(&self) -> bool {
+        self.bundle.is_readonly()
+    }
+
+    pub fn add(&self, path: impl AsRef<Path>, asset: Arc<dyn ErasedAsset>) -> AssetResult<AssetId> {
+        let path = path.as_ref().clean();
+        let serializer = self.serializers.get_for_path(&path)?;
+        let id = self
+            .bundle
+            .add(&path, asset.as_ref(), serializer.as_ref())
+            .map_err(AssetError::BundleError)?;
+
+        self.id_to_path.write().insert(id, path.clone());
+        self.id_to_original_path.write().insert(id, path.clone());
+        self.assets.write().insert(id, asset);
+
+        Ok(id)
     }
 
     pub fn metadata(&self) -> &AssetBundleMetadata {
@@ -298,10 +320,10 @@ fn read_modified_asset(
 ) -> AssetResult<Arc<dyn ErasedAsset>> {
     let path = modified_bundle_absolute_path(assets_root, bundle_id).join(asset_relative_path);
     let mut file = File::open(path)?;
-    serializer
+    Ok(serializer
         .read(&mut file)
         .map_err(AssetError::SerializerError)
-        .map(Into::into)
+        .map(Into::into)?)
 }
 
 fn write_modified_asset(
@@ -349,6 +371,7 @@ pub fn modified_bundle_absolute_path(
 }
 
 pub trait AssetBundle: Send + Sync + 'static {
+    const READONLY: bool;
     type Error: Error + Sync + Send + 'static;
 
     fn metadata(&self) -> Result<AssetBundleMetadata, Self::Error>;
@@ -358,9 +381,16 @@ pub trait AssetBundle: Send + Sync + 'static {
         path: &Path,
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<Arc<dyn ErasedAsset>, Self::Error>;
+    fn add(
+        &self,
+        path: &Path,
+        asset: &dyn ErasedAsset,
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<AssetId, Self::Error>;
 }
 
 pub trait ErasedAssetBundle: Send + Sync + 'static {
+    fn is_readonly(&self) -> bool;
     fn metadata(&self) -> Result<AssetBundleMetadata, Box<dyn Error + Send + Sync + 'static>>;
     fn manifest(&self)
     -> Result<HashMap<AssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
@@ -369,9 +399,19 @@ pub trait ErasedAssetBundle: Send + Sync + 'static {
         path: &Path,
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<Arc<dyn ErasedAsset>, Box<dyn Error + Send + Sync + 'static>>;
+    fn add(
+        &self,
+        path: &Path,
+        asset: &dyn ErasedAsset,
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<AssetId, Box<dyn Error + Send + Sync + 'static>>;
 }
 
 impl<T: AssetBundle> ErasedAssetBundle for T {
+    fn is_readonly(&self) -> bool {
+        T::READONLY
+    }
+
     fn metadata(&self) -> Result<AssetBundleMetadata, Box<dyn Error + Send + Sync + 'static>> {
         self.metadata().map_err(Into::into)
     }
@@ -388,5 +428,14 @@ impl<T: AssetBundle> ErasedAssetBundle for T {
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<Arc<dyn ErasedAsset>, Box<dyn Error + Send + Sync + 'static>> {
         self.read(path, serializer).map_err(Into::into)
+    }
+
+    fn add(
+        &self,
+        path: &Path,
+        asset: &dyn ErasedAsset,
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<AssetId, Box<dyn Error + Send + Sync + 'static>> {
+        self.add(path, asset, serializer).map_err(Into::into)
     }
 }

@@ -4,7 +4,7 @@ use std::{
     io::read_to_string,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Once,
+    sync::{Arc, Once},
 };
 
 use cyancia_assets::{
@@ -235,6 +235,9 @@ async fn test() {
     restore_guard.snapshot_file(&local_test1_path).unwrap();
     restore_guard.snapshot_file(&local_test_hello_path).unwrap();
     restore_guard.snapshot_dir(&local_modified_dir).unwrap();
+    restore_guard
+        .snapshot_file(&local_assets_root.join("added_asset.toml"))
+        .unwrap();
 
     if local_manifest_path.exists() {
         fs::remove_file(&local_manifest_path).unwrap();
@@ -339,6 +342,60 @@ async fn test() {
     assert_eq!(tagged_assets.len(), 1);
     assert_eq!(tagged_assets[0].get().await.unwrap().name, "Test Asset");
 
+    let new_asset_id = registry
+        .add_asset::<TestAsset>(
+            local_bundle_id,
+            "added_asset.toml",
+            Arc::new(TestAsset {
+                name: "Added Asset".to_string(),
+                value: 999,
+            }),
+        )
+        .await
+        .unwrap();
+
+    let new_asset_handle = registry
+        .handle::<TestAsset>(local_bundle_id, new_asset_id)
+        .unwrap();
+    assert_eq!(
+        new_asset_handle.get().await.unwrap().as_ref(),
+        &TestAsset {
+            name: "Added Asset".to_string(),
+            value: 999,
+        }
+    );
+
+    new_asset_handle
+        .update(TestAsset {
+            name: "Added Asset".to_string(),
+            value: 1000,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        new_asset_handle.get().await.unwrap().as_ref(),
+        &TestAsset {
+            name: "Added Asset".to_string(),
+            value: 1000,
+        }
+    );
+
+    new_asset_handle.write().await.unwrap();
+    let new_asset_meta = new_asset_handle.metadata().await.unwrap();
+    assert_eq!(new_asset_meta.revision, 1);
+    assert!(!new_asset_meta.in_memory);
+    let new_asset_written_file =
+        modified_bundle_absolute_path(&assets_root, &local_bundle_id)
+            .join(&new_asset_meta.relative_path);
+    assert!(new_asset_written_file.exists());
+    assert_eq!(
+        parse_test_asset(&new_asset_written_file),
+        TestAsset {
+            name: "Added Asset".to_string(),
+            value: 1000,
+        }
+    );
+
     drop(registry);
 
     fs::remove_file(&local_test_hello_path).unwrap();
@@ -374,7 +431,7 @@ async fn test() {
         .all_handles_of::<TestAsset>()
         .await
         .unwrap();
-    assert_eq!(restarted_test_assets.len(), 2);
+    assert_eq!(restarted_test_assets.len(), 3);
 
     let mut restarted_by_name = HashMap::new();
     for handle in &restarted_test_assets {
@@ -385,6 +442,7 @@ async fn test() {
     assert_eq!(restarted_by_name.get("Test Asset"), Some(&42));
     assert_eq!(restarted_by_name.get("Test Asset 2"), Some(&84));
     assert_eq!(restarted_by_name.get("Hello World"), None);
+    assert_eq!(restarted_by_name.get("Added Asset"), Some(&999));
 
     let restarted_tag_handles = restarted_registry.all_handles_of::<Tag>().await.unwrap();
     assert_eq!(restarted_tag_handles.len(), 1);
@@ -418,5 +476,16 @@ async fn test() {
     assert_eq!(
         names,
         vec!["Test Asset".to_string(), "Test Asset 2".to_string()]
+    );
+
+    let restarted_new_asset_handle = restarted_registry
+        .handle::<TestAsset>(local_bundle_id, new_asset_id)
+        .unwrap();
+    assert_eq!(
+        restarted_new_asset_handle.get().await.unwrap().as_ref(),
+        &TestAsset {
+            name: "Added Asset".to_string(),
+            value: 999,
+        }
     );
 }

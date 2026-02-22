@@ -61,45 +61,6 @@ pub struct AssetMetadata {
     pub in_memory: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Type)]
-#[repr(u32)]
-pub enum AssetPhysicalLocation {
-    Memory,
-    LocalModified,
-    Bundle,
-}
-
-pub struct AssetUrl {
-    source: BundleId,
-    path: Arc<str>,
-}
-
-impl AssetUrl {
-    pub fn new(source: BundleId, path: Arc<str>) -> Self {
-        Self { source, path }
-    }
-
-    pub fn try_parse(path: &str) -> Option<Self> {
-        let (source, path) = path.split_once(':')?;
-        Some(Self {
-            source: BundleId::new(Uuid::from_str(source).ok()?),
-            path: Path::new(path).canonicalize().ok()?.to_str()?.into(),
-        })
-    }
-
-    pub fn source(&self) -> &BundleId {
-        &self.source
-    }
-
-    pub fn path_str(&self) -> &str {
-        &self.path
-    }
-
-    pub fn path(&self) -> &Path {
-        Path::new(self.path.as_ref())
-    }
-}
-
 pub struct AssetHandle<T: Asset> {
     id: AssetId,
     bundle: Arc<AssetBundleCache>,
@@ -138,9 +99,9 @@ impl<T: Asset> AssetHandle<T> {
             }
         };
 
-        dynamic
+        Ok(dynamic
             .downcast_arc::<T>()
-            .map_err(|_| AssetError::CastAssetError(T::TYPE_NAME.to_string()))
+            .map_err(|_| AssetError::CastAssetError(T::TYPE_NAME.to_string()))?)
     }
 
     pub async fn update(&self, asset: T) -> AssetResult<()> {

@@ -102,6 +102,7 @@ md5 = "0.8"
 zip = "8"
 parse-display = "0.10"
 env_logger = "0.11"
+path-clean = "1"
 
 # [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }

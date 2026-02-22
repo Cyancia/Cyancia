@@ -99,6 +99,8 @@ pub struct StandardAssetBundleMetadata {
 }
 
 impl AssetBundle for StandardAssetBundle {
+    const READONLY: bool = true;
+
     type Error = StandardAssetBundleError;
 
     fn metadata(&self) -> Result<AssetBundleMetadata, Self::Error> {
@@ -133,5 +135,14 @@ impl AssetBundle for StandardAssetBundle {
             .read(&mut Cursor::new(buffer))
             .map_err(StandardAssetBundleError::SerializerError)?;
         Ok(asset.into())
+    }
+
+    fn add(
+        &self,
+        path: &Path,
+        asset: &dyn ErasedAsset,
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<AssetId, StandardAssetBundleError> {
+        Err(StandardAssetBundleError::UnsupportedWriting)
     }
 }

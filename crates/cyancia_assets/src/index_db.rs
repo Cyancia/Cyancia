@@ -5,8 +5,9 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, AssetId, AssetMetadata, AssetUrl},
+    asset::{Asset, AssetId, AssetMetadata},
     bundle::{AssetBundleMetadata, BundleId},
+    error::AssetResult,
     tag::{Tag, TagId},
 };
 
@@ -68,7 +69,7 @@ pub struct AssetIndexDb {
 }
 
 impl AssetIndexDb {
-    pub async fn connect(path: impl AsRef<Path>) -> sqlx::Result<Self> {
+    pub async fn connect(path: impl AsRef<Path>) -> AssetResult<Self> {
         let path = path.as_ref();
         if !path.exists() {
             File::create(path)?;
@@ -82,7 +83,7 @@ impl AssetIndexDb {
         Ok(db)
     }
 
-    async fn initialize_tables(&self) -> sqlx::Result<()> {
+    async fn initialize_tables(&self) -> AssetResult<()> {
         sqlx::query(
             r#"
 CREATE TABLE IF NOT EXISTS bundles (
@@ -141,7 +142,7 @@ CREATE TABLE IF NOT EXISTS asset_tags (
         &self.pool
     }
 
-    pub async fn upsert_bundle(&self, bundle: &AssetBundleMetadata) -> sqlx::Result<ItemStatus> {
+    pub async fn upsert_bundle(&self, bundle: &AssetBundleMetadata) -> AssetResult<ItemStatus> {
         let none_if_latest = sqlx::query_scalar::<_, u32>(
             r#"
 INSERT INTO bundles (bundle_id, name, last_modified)
@@ -166,11 +167,11 @@ RETURNING 0;
         })
     }
 
-    pub async fn upsert_assets(
+    pub async fn replace_assets(
         &self,
         bundle: &BundleId,
         assets: &[AssetMetadata],
-    ) -> sqlx::Result<()> {
+    ) -> AssetResult<()> {
         let mut tx = self.pool.begin().await?;
 
         sqlx::query(
@@ -207,7 +208,7 @@ VALUES (?, ?, ?, ?, ?);
         Ok(())
     }
 
-    pub async fn upsert_tag(&self, tag: &Tag, last_modified: DateTime<Utc>) -> sqlx::Result<()> {
+    pub async fn upsert_tag(&self, tag: &Tag, last_modified: DateTime<Utc>) -> AssetResult<()> {
         let none_if_latest = sqlx::query_scalar::<_, u32>(
             r#"
 INSERT INTO tags (tag_id, name, last_modified)
@@ -258,8 +259,41 @@ INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)
         Ok(())
     }
 
-    pub async fn get_asset(&self, id: &AssetId) -> sqlx::Result<AssetMetadata> {
-        sqlx::query_as::<_, AssetMetadata>(
+    pub async fn add_asset(&self, asset: &AssetMetadata) -> AssetResult<AssetId> {
+        let asset_id = asset.asset_id;
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(
+            r#"
+INSERT INTO assets (asset_id, ty, bundle_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING;
+            "#,
+        )
+        .bind(&asset.asset_id)
+        .bind(&asset.ty)
+        .bind(asset.bundle_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
+VALUES (?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(&asset.asset_id)
+        .bind(asset.revision)
+        .bind(&asset.relative_path)
+        .bind(&asset.last_modified)
+        .bind(asset.in_memory)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(asset_id)
+    }
+
+    pub async fn get_asset(&self, id: &AssetId) -> AssetResult<AssetMetadata> {
+        let asset = sqlx::query_as::<_, AssetMetadata>(
             r#"
 SELECT
     r.asset_id,
@@ -278,11 +312,13 @@ LIMIT 1
         )
         .bind(id)
         .fetch_one(&self.pool)
-        .await
+        .await?;
+
+        Ok(asset)
     }
 
-    pub async fn get_assets(&self, filter: UntypedAssetFilter) -> sqlx::Result<Vec<AssetMetadata>> {
-        sqlx::query_as::<_, AssetMetadata>(
+    pub async fn get_assets(&self, filter: UntypedAssetFilter) -> AssetResult<Vec<AssetMetadata>> {
+        let assets = sqlx::query_as::<_, AssetMetadata>(
             r#"
 WITH latest AS (
     SELECT
@@ -315,44 +351,13 @@ ORDER BY l.relative_path ASC;
         .bind(filter.tag)
         .bind(filter.bundle)
         .fetch_all(&self.pool)
-        .await
+        .await?;
+
+        Ok(assets)
     }
 
-    pub async fn get_assets_by_tag(&self, tag_id: &TagId) -> sqlx::Result<Vec<AssetMetadata>> {
-        sqlx::query_as::<_, AssetMetadata>(
-            r#"
-WITH latest AS (
-    SELECT
-        r.asset_id,
-        r.relative_path,
-        r.revision,
-        r.last_modified,
-        r.in_memory,
-        ROW_NUMBER() OVER (PARTITION BY r.asset_id ORDER BY r.revision DESC) AS ord
-    FROM asset_revisions r
-)
-SELECT
-    l.asset_id,
-    a.ty,
-    a.bundle_id,
-    l.relative_path,
-    l.revision,
-    l.last_modified,
-    l.in_memory
-FROM latest l
-JOIN assets a ON a.asset_id = l.asset_id
-JOIN asset_tags t ON t.asset_id = a.asset_id
-WHERE t.tag_id = ? AND l.ord = 1
-ORDER BY l.relative_path ASC;
-        "#,
-        )
-        .bind(tag_id)
-        .fetch_all(&self.pool)
-        .await
-    }
-
-    pub async fn update_asset(&self, id: &AssetId) -> sqlx::Result<u32> {
-        sqlx::query_scalar::<_, u32>(
+    pub async fn update_asset(&self, id: &AssetId) -> AssetResult<u32> {
+        let revision = sqlx::query_scalar::<_, u32>(
             r#"
 WITH latest AS (
     SELECT
@@ -385,7 +390,9 @@ RETURNING revision;
         .bind(id)
         .bind(Utc::now())
         .fetch_one(&self.pool)
-        .await
+        .await?;
+
+        Ok(revision)
     }
 
     pub async fn write_asset(
@@ -393,8 +400,8 @@ RETURNING revision;
         id: &AssetId,
         new_path: &str,
         last_modified: DateTime<Utc>,
-    ) -> sqlx::Result<u32> {
-        sqlx::query_scalar::<_, u32>(
+    ) -> AssetResult<u32> {
+        let revision = sqlx::query_scalar::<_, u32>(
             r#"
 WITH latest AS (
     SELECT revision
@@ -413,10 +420,12 @@ RETURNING revision;
         .bind(new_path)
         .bind(last_modified)
         .fetch_one(&self.pool)
-        .await
+        .await?;
+
+        Ok(revision)
     }
 
-    pub async fn revert_asset(&self, id: &Uuid) -> sqlx::Result<()> {
+    pub async fn revert_asset(&self, id: &Uuid) -> AssetResult<()> {
         sqlx::query(
             r#"
 DELETE FROM asset_revisions WHERE in_memory = true AND asset_id = ?
@@ -429,7 +438,7 @@ DELETE FROM asset_revisions WHERE in_memory = true AND asset_id = ?
         Ok(())
     }
 
-    pub async fn revert_all_assets(&self) -> sqlx::Result<()> {
+    pub async fn revert_all_assets(&self) -> AssetResult<()> {
         sqlx::query(
             r#"
 DELETE FROM asset_revisions WHERE in_memory = true
@@ -441,8 +450,8 @@ DELETE FROM asset_revisions WHERE in_memory = true
         Ok(())
     }
 
-    pub async fn get_bundle(&self, id: &BundleId) -> sqlx::Result<AssetBundleMetadata> {
-        sqlx::query_as::<_, AssetBundleMetadata>(
+    pub async fn get_bundle(&self, id: &BundleId) -> AssetResult<AssetBundleMetadata> {
+        let bundle = sqlx::query_as::<_, AssetBundleMetadata>(
             r#"
 SELECT
     bundle_id,
@@ -453,6 +462,8 @@ WHERE bundle_id = ?
         )
         .bind(id)
         .fetch_one(&self.pool)
-        .await
+        .await?;
+
+        Ok(bundle)
     }
 }

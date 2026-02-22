@@ -1,9 +1,11 @@
 use std::{
+    backtrace::Backtrace,
     error::Error,
+    fmt::Debug,
     path::{PathBuf, StripPrefixError},
 };
 
-use crate::asset::AssetId;
+use crate::{asset::AssetId, bundle::BundleId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssetError {
@@ -11,6 +13,8 @@ pub enum AssetError {
     AssetPathNotFound(AssetId),
     #[error("Asset not found for asset ID: {0}")]
     AssetNotFound(AssetId),
+    #[error("Asset bundle not found for bundle ID: {0}")]
+    BundleNotFound(BundleId),
     #[error("No serializer found for asset extension: {0}")]
     SerializerNotFound(String),
     #[error("IO error: {0}")]
@@ -35,4 +39,43 @@ pub enum AssetError {
     SqlxError(#[from] sqlx::Error),
 }
 
-pub type AssetResult<T> = std::result::Result<T, AssetError>;
+pub struct AssetErrorWithBacktrace {
+    error: AssetError,
+    backtrace: Backtrace,
+}
+
+impl From<AssetError> for AssetErrorWithBacktrace {
+    fn from(value: AssetError) -> Self {
+        Self {
+            error: value,
+            backtrace: Backtrace::capture(),
+        }
+    }
+}
+
+impl Debug for AssetErrorWithBacktrace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}\nBacktrace:\n{}", self.error, self.backtrace)
+    }
+}
+
+macro_rules! from_error {
+    ($($error:ty),*) => {
+        $(
+            impl From<$error> for AssetErrorWithBacktrace {
+                fn from(value: $error) -> Self {
+                    Self::from(AssetError::from(value))
+                }
+            }
+        )*
+    };
+}
+from_error!(
+    std::io::Error,
+    zip::result::ZipError,
+    toml::de::Error,
+    toml::ser::Error,
+    sqlx::Error
+);
+
+pub type AssetResult<T> = std::result::Result<T, AssetErrorWithBacktrace>;

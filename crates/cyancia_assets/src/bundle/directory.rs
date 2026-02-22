@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs::{File, metadata, read_to_string},
+    io::Write,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -9,7 +10,7 @@ use chrono::{DateTime, Local, TimeZone, Utc};
 use uuid::Uuid;
 
 use crate::{
-    asset::{AssetId, AssetMetadata, AssetPhysicalLocation, ErasedAsset},
+    asset::{AssetId, AssetMetadata, ErasedAsset},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
 };
@@ -46,11 +47,15 @@ pub enum DataDirectoryError {
     Io(#[from] std::io::Error),
     #[error("Serializer error: {0}")]
     SerializerError(Box<dyn std::error::Error + Send + Sync + 'static>),
-    #[error("Toml error: {0}")]
-    TomlError(#[from] toml::de::Error),
+    #[error("Toml serialization error: {0}")]
+    TomlSerError(#[from] toml::ser::Error),
+    #[error("Toml deserialization error: {0}")]
+    TomlDeError(#[from] toml::de::Error),
 }
 
 impl AssetBundle for AssetDirectory {
+    const READONLY: bool = false;
+
     type Error = DataDirectoryError;
 
     fn metadata(&self) -> Result<AssetBundleMetadata, DataDirectoryError> {
@@ -73,8 +78,7 @@ impl AssetBundle for AssetDirectory {
             }
 
             let manifest = scan_dir(&self.root, &self.id)?;
-            let manifest_str = toml::to_string_pretty(&manifest).unwrap();
-            std::fs::write(&path, manifest_str)?;
+            std::fs::write(&path, toml::to_string(&manifest)?)?;
             Ok(manifest)
         } else {
             Ok(toml::from_str(&read_to_string(&path)?)?)
@@ -92,6 +96,32 @@ impl AssetBundle for AssetDirectory {
             .read(&mut file)
             .map_err(DataDirectoryError::SerializerError)?;
         Ok(asset.into())
+    }
+
+    fn add(
+        &self,
+        path: &Path,
+        asset: &dyn ErasedAsset,
+        serializer: &dyn ErasedAssetSerializer,
+    ) -> Result<AssetId, DataDirectoryError> {
+        let asset_path = self.root.join(path);
+        if let Some(parent) = asset_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = File::create(&asset_path)?;
+        serializer
+            .write(asset, &mut file)
+            .map_err(DataDirectoryError::SerializerError)?;
+        let path_str = path.to_string_lossy().to_string();
+        let asset_id = asset_id_from_relative_path(&path_str);
+        let append = toml::Value::try_from(&(asset_id, path_str))?.to_string();
+
+        File::options()
+            .append(true)
+            .open(self.root.join("manifest.toml"))?
+            // Only works because it's toml.
+            .write_all(append.as_bytes())?;
+        Ok(asset_id)
     }
 }
 
@@ -125,13 +155,17 @@ fn scan_dir_dfs(
                 .unwrap()
                 .to_string_lossy()
                 .to_string();
-            let asset_id = AssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
-                relative_path.as_bytes(),
-            )));
+            let asset_id = asset_id_from_relative_path(&relative_path);
 
             assets.insert(asset_id, relative_path.into());
         }
     }
 
     Ok(())
+}
+
+fn asset_id_from_relative_path(path: &str) -> AssetId {
+    AssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
+        path.as_bytes(),
+    )))
 }

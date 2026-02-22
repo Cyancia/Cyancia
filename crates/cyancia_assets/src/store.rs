@@ -6,10 +6,10 @@ use std::{
     sync::Arc,
 };
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 
 use crate::{
-    asset::{Asset, AssetHandle, AssetId, AssetMetadata, AssetUrl},
+    asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset},
     bundle::{
         AssetBundle, AssetBundleCache, AssetBundleMetadata, BundleId, ErasedAssetBundle,
         modified_bundle_absolute_path, scan_bundle_assets,
@@ -48,6 +48,37 @@ impl AssetRegistry {
         &self.index_db
     }
 
+    pub fn bundles(&self) -> impl Iterator<Item = &Arc<AssetBundleCache>> {
+        self.bundles.values()
+    }
+
+    pub async fn add_asset<T: Asset>(
+        &self,
+        bundle_id: BundleId,
+        path: impl AsRef<Path>,
+        asset: Arc<T>,
+    ) -> AssetResult<AssetId> {
+        let bundle = self
+            .bundles
+            .get(&bundle_id)
+            .ok_or_else(|| AssetError::BundleNotFound(bundle_id))?;
+        let asset_id = bundle.add(&path, asset.clone())?;
+        self.index_db
+            .add_asset(&AssetMetadata {
+                asset_id,
+                ty: asset.type_name().to_string(),
+                bundle_id,
+                relative_path: path.as_ref().to_path_buf().to_string_lossy().to_string(),
+                revision: 0,
+                // TODO: This can be different from that in fs. But this field is only used for tags to determine if they are outdated.
+                //       Probably fix it?
+                last_modified: Utc::now(),
+                in_memory: false,
+            })
+            .await?;
+        Ok(asset_id)
+    }
+
     pub async fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
         let bundle = Arc::new(bundle) as Arc<dyn ErasedAssetBundle>;
         let mut bundle_meta = bundle.metadata().map_err(AssetError::BundleError)?;
@@ -72,7 +103,7 @@ impl AssetRegistry {
             ItemStatus::Outdated => {
                 let manifest = scan_bundle_assets(&self.root, bundle.as_ref(), &self.serializers)?;
                 self.index_db
-                    .upsert_assets(&bundle_meta.bundle_id, &manifest)
+                    .replace_assets(&bundle_meta.bundle_id, &manifest)
                     .await?;
                 manifest
             }
