@@ -7,7 +7,6 @@ use std::{
     sync::Arc,
 };
 
-use atomicow::CowArc;
 use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
 use parking_lot::{RwLock, RwLockReadGuard};

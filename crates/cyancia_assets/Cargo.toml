@@ -13,7 +13,6 @@ parking_lot.workspace = true
 sqlx.workspace = true
 xxhash-rust.workspace = true
 chrono.workspace = true
-atomicow.workspace = true
 uuid.workspace = true
 md5.workspace = true
 zip.workspace = true

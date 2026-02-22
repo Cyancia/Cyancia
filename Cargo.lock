@@ -109,16 +109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atomicow"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f52e8890bb9844440d0c412fa74b67fd2f14e85248b6e00708059b6da9e5f8bf"
-dependencies = [
- "portable-atomic",
- "portable-atomic-util",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -318,7 +308,6 @@ dependencies = [
 name = "cyancia_assets"
 version = "0.1.0"
 dependencies = [
- "atomicow",
  "chrono",
  "cyancia_utils",
  "downcast-rs",

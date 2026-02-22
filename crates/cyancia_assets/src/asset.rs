@@ -7,7 +7,6 @@ use std::{
     sync::Arc,
 };
 
-use atomicow::CowArc;
 use cyancia_utils::wrapper;
 use downcast_rs::{Downcast, DowncastSync};
 use parse_display::Display;
