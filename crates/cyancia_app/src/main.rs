@@ -1,13 +1,12 @@
-use crate::main_view::MainView;
+// use crate::main_view::MainView;
 
-mod input_manager;
-mod main_view;
+// mod input_manager;
+// mod main_view;
+
+use cyancia_runtime::Runtime;
 
 fn main() {
     tracing_subscriber::fmt().with_env_filter("info").init();
 
-    iced::application(MainView::new, MainView::update, MainView::view)
-        .subscription(MainView::subscription)
-        .run()
-        .unwrap();
+    Runtime::default().run();
 }

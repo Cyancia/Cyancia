@@ -1,8 +1,9 @@
 [workspace]
 members = [
     # "crates/cyancia_actions",
-    # "crates/cyancia_app",
+    "crates/cyancia_app",
     "crates/cyancia_assets",
+    "crates/cyancia_runtime",
     # "crates/cyancia_canvas",
     # "crates/cyancia_graph",
     # "crates/cyancia_image",
@@ -32,6 +33,7 @@ cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
 # cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
 # cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
 # cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
+cyancia_runtime = { version = "0.1.0", path = "crates/cyancia_runtime" }
 
 iced = { version = "0.14", features = [
     "debug",
@@ -103,6 +105,8 @@ zip = "8"
 parse-display = "0.10"
 env_logger = "0.11"
 path-clean = "1"
+winit = "0.30"
+rustc-hash = "1"
 
 # [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }
