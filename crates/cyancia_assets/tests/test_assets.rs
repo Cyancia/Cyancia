@@ -8,7 +8,7 @@ use std::{
 };
 
 use cyancia_assets::{
-    asset::{Asset, AssetId},
+    asset::{Asset, UntypedAssetId},
     bundle::{
         AssetBundle, directory::AssetDirectory, modified_bundle_absolute_path,
         standard::StandardAssetBundle,
@@ -202,8 +202,8 @@ fn remove_path_if_exists(path: &Path) -> std::io::Result<()> {
     }
 }
 
-fn parse_id(id: &str) -> AssetId {
-    AssetId::new(Uuid::from_str(id).unwrap())
+fn parse_id(id: &str) -> UntypedAssetId {
+    UntypedAssetId::new(Uuid::from_str(id).unwrap())
 }
 
 fn parse_test_asset(path: impl AsRef<Path>) -> TestAsset {

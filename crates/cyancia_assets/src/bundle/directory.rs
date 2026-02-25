@@ -10,7 +10,7 @@ use chrono::{DateTime, Local, TimeZone, Utc};
 use uuid::Uuid;
 
 use crate::{
-    asset::{AssetId, AssetMetadata, ErasedAsset},
+    asset::{UntypedAssetId, AssetMetadata, ErasedAsset},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
 };
@@ -68,7 +68,7 @@ impl AssetBundle for AssetDirectory {
         })
     }
 
-    fn manifest(&self) -> Result<HashMap<AssetId, PathBuf>, DataDirectoryError> {
+    fn manifest(&self) -> Result<HashMap<UntypedAssetId, PathBuf>, DataDirectoryError> {
         let path = self.root.join("manifest.toml");
         let exists = path.exists();
         if !exists || metadata(&path)?.modified()? != metadata(&self.root)?.modified()? {
@@ -103,7 +103,7 @@ impl AssetBundle for AssetDirectory {
         path: &Path,
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
-    ) -> Result<AssetId, DataDirectoryError> {
+    ) -> Result<UntypedAssetId, DataDirectoryError> {
         let asset_path = self.root.join(path);
         if let Some(parent) = asset_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -128,7 +128,7 @@ impl AssetBundle for AssetDirectory {
 fn scan_dir(
     root: &Path,
     bundle_id: &BundleId,
-) -> Result<HashMap<AssetId, PathBuf>, DataDirectoryError> {
+) -> Result<HashMap<UntypedAssetId, PathBuf>, DataDirectoryError> {
     let mut assets = HashMap::new();
     scan_dir_dfs(root, root, bundle_id, &mut assets)?;
     Ok(assets)
@@ -138,7 +138,7 @@ fn scan_dir_dfs(
     current_path: &Path,
     root: &Path,
     bundle_id: &BundleId,
-    assets: &mut HashMap<AssetId, PathBuf>,
+    assets: &mut HashMap<UntypedAssetId, PathBuf>,
 ) -> Result<(), DataDirectoryError> {
     let entries = std::fs::read_dir(current_path)?;
     for entry in entries {
@@ -164,8 +164,8 @@ fn scan_dir_dfs(
     Ok(())
 }
 
-fn asset_id_from_relative_path(path: &str) -> AssetId {
-    AssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
+fn asset_id_from_relative_path(path: &str) -> UntypedAssetId {
+    UntypedAssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
         path.as_bytes(),
     )))
 }

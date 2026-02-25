@@ -1,4 +1,4 @@
-use cyancia_assets::store::AssetLoaderRegistry;
+use cyancia_assets::loader::AssetSerializerRegistry;
 
 use crate::action::ActionManifestLoader;
 
@@ -6,6 +6,7 @@ pub mod action;
 pub mod key;
 pub mod mouse;
 
-pub fn register_loaders(loaders: &mut AssetLoaderRegistry) {
+// TODO: use plugin system
+pub fn register_loaders(loaders: &mut AssetSerializerRegistry) {
     loaders.register::<ActionManifestLoader>();
 }

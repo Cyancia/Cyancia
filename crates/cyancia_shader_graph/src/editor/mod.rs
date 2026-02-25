@@ -1,10 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-
     sync::Arc,
 };
-
-use cyancia_id::Id;
 
 use iced_core::{
     Background, Border, Clipboard, Color, Element, Event, Layout, Length, Point, Shadow, Shell,
@@ -39,8 +36,11 @@ use crate::{
     },
     graph::{
         Graph, GraphDynamicInstancesStorage,
-        node::{ErasedGraphNode, ErasedGraphNodeMessage, GraphNodeData},
-        slot::{GraphInputSlotData, GraphOutputSlotData, GraphSlots},
+        node::{ErasedGraphNode, ErasedGraphNodeMessage, GraphNodeData, GraphNodeId},
+        slot::{
+            GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
+            GraphSlots,
+        },
     },
 };
 
@@ -51,10 +51,10 @@ const NODE_BORDER_RADIUS: f32 = 5.0;
 
 pub enum GraphViewMessage {
     NodeCreateRequest(Point, Box<dyn ErasedGraphNode>),
-    NodeMoveRequest(Point, Id<GraphNodeData>),
-    NodeDeleteRequest(Id<GraphNodeData>),
-    EdgeCreateRequest(Id<GraphOutputSlotData>, Id<GraphInputSlotData>),
-    EdgeRemoveRequest(Id<GraphInputSlotData>),
+    NodeMoveRequest(Point, GraphNodeId),
+    NodeDeleteRequest(GraphNodeId),
+    EdgeCreateRequest(GraphOutputSlotId, GraphInputSlotId),
+    EdgeRemoveRequest(GraphInputSlotId),
     NodeUpdate(ErasedGraphNodeMessage),
 }
 
@@ -177,10 +177,10 @@ pub struct GraphNodeStyle {
 }
 
 pub struct DrawableGraph<'a> {
-    pub nodes: IndexMap<Id<GraphNodeData>, DrawableNode<'a>>,
+    pub nodes: IndexMap<GraphNodeId, DrawableNode<'a>>,
     pub slots: HashMap<GraphSlotId, SlotData>,
-    pub edges: HashMap<Id<GraphInputSlotData>, DrawableEdge>,
-    pub vert_in_loop: HashSet<Id<GraphNodeData>>,
+    pub edges: HashMap<GraphInputSlotId, DrawableEdge>,
+    pub vert_in_loop: HashSet<GraphNodeId>,
 }
 
 impl<'a> DrawableGraph<'a> {
@@ -262,21 +262,21 @@ pub struct SlotData {
 }
 
 pub struct DrawableEdge {
-    from: Id<GraphOutputSlotData>,
+    from: GraphOutputSlotId,
     style: geometry::Style,
 }
 
 pub struct DrawableNode<'a> {
-    pub node_id: Id<GraphNodeData>,
+    pub node_id: GraphNodeId,
     pub position: Point,
     pub widget: Element<'a, GraphViewMessage, GraphTheme, GraphRenderer>,
-    pub input_slots: Arc<[Id<GraphInputSlotData>]>,
-    pub output_slots: Arc<[Id<GraphOutputSlotData>]>,
+    pub input_slots: Arc<[GraphInputSlotId]>,
+    pub output_slots: Arc<[GraphOutputSlotId]>,
 }
 
 impl<'a> DrawableNode<'a> {
     pub fn new(
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         node: &'a GraphNodeData,
         slots: &GraphSlots,
         storage: &GraphDynamicInstancesStorage,
@@ -1007,7 +1007,7 @@ enum DragNodeState {
     Idle,
     Dragging {
         cursor_origin: Point,
-        node_origin: HashMap<Id<GraphNodeData>, Point>,
+        node_origin: HashMap<GraphNodeId, Point>,
     },
 }
 
@@ -1023,7 +1023,7 @@ enum EdgeConnectState {
 
 #[derive(Default)]
 struct NodeSelectionState {
-    selected_nodes: HashSet<Id<GraphNodeData>>,
+    selected_nodes: HashSet<GraphNodeId>,
     state: DragSelectionState,
 }
 

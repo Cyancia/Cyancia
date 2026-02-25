@@ -1,12 +1,21 @@
 use std::path::Path;
 
+use cyancia_runtime::{Application, plugin::Plugin};
 use glam::UVec2;
 use image::DynamicImage;
 
-use crate::layer::Layer;
+use crate::{layer::Layer, tile::GpuTileStorage};
 
 pub mod layer;
 pub mod tile;
+
+pub struct ImagePlugin;
+
+impl Plugin for ImagePlugin {
+    fn build(&self, app: &mut Application) {
+        app.add_service::<GpuTileStorage>();
+    }
+}
 
 #[derive(Debug)]
 pub struct CImage {

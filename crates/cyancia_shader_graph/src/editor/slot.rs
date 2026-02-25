@@ -1,6 +1,5 @@
 use std::{any::Any, collections::HashMap};
 
-use cyancia_id::Id;
 use iced_core::{
     Border, Color, Element, Length, Point, Rectangle, Size, Widget,
     alignment::Vertical,
@@ -13,23 +12,26 @@ use iced_widget::{row, text};
 
 use crate::{
     GraphRenderer, GraphTheme,
-    graph::slot::{ErasedGraphLiteralUpdateMessage, GraphInputSlotData, GraphOutputSlotData},
+    graph::slot::{
+        ErasedGraphLiteralUpdateMessage, GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData,
+        GraphOutputSlotId,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GraphSlotId {
-    Input(Id<GraphInputSlotData>),
-    Output(Id<GraphOutputSlotData>),
+    Input(GraphInputSlotId),
+    Output(GraphOutputSlotId),
 }
 
-impl From<Id<GraphInputSlotData>> for GraphSlotId {
-    fn from(value: Id<GraphInputSlotData>) -> Self {
+impl From<GraphInputSlotId> for GraphSlotId {
+    fn from(value: GraphInputSlotId) -> Self {
         GraphSlotId::Input(value)
     }
 }
 
-impl From<Id<GraphOutputSlotData>> for GraphSlotId {
-    fn from(value: Id<GraphOutputSlotData>) -> Self {
+impl From<GraphOutputSlotId> for GraphSlotId {
+    fn from(value: GraphOutputSlotId) -> Self {
         GraphSlotId::Output(value)
     }
 }
@@ -56,11 +58,11 @@ impl GraphSlotPinPositionCollection {
         self.slots.get(slot_id)
     }
 
-    pub fn get_input(&self, slot_id: &Id<GraphInputSlotData>) -> Option<&Point> {
+    pub fn get_input(&self, slot_id: &GraphInputSlotId) -> Option<&Point> {
         self.slots.get(&GraphSlotId::Input(*slot_id))
     }
 
-    pub fn get_output(&self, slot_id: &Id<GraphOutputSlotData>) -> Option<&Point> {
+    pub fn get_output(&self, slot_id: &GraphOutputSlotId) -> Option<&Point> {
         self.slots.get(&GraphSlotId::Output(*slot_id))
     }
 
@@ -138,7 +140,7 @@ pub enum SlotSide {
 }
 
 pub fn input_slot<'a>(
-    slot_id: Id<GraphInputSlotData>,
+    slot_id: GraphInputSlotId,
     slot_name: impl IntoFragment<'a>,
     slot: &GraphInputSlotData,
 ) -> Element<'a, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
@@ -160,7 +162,7 @@ pub fn input_slot<'a>(
 }
 
 pub fn output_slot<'a, Message>(
-    slot_id: Id<GraphOutputSlotData>,
+    slot_id: GraphOutputSlotId,
     slot_name: impl IntoFragment<'a>,
     slot: &GraphOutputSlotData,
 ) -> Element<'a, Message, GraphTheme, GraphRenderer>

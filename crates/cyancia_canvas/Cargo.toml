@@ -18,6 +18,9 @@ encase.workspace = true
 cyancia_math.workspace = true
 bytemuck.workspace = true
 iced_wgpu.workspace = true
+cyancia_runtime.workspace = true
+uuid.workspace = true
+serde.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

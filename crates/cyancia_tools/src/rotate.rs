@@ -1,10 +1,9 @@
 use cyancia_canvas::{CCanvas, control::CanvasTransform};
-use cyancia_id::Id;
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_math::number::AngleDifference;
 use glam::Vec2;
 
-use crate::{CanvasTool, CanvasToolFunction};
+use crate::{CanvasTool, CanvasToolFunction, CanvasToolId};
 
 #[derive(Default)]
 pub struct RotateTool {
@@ -14,8 +13,8 @@ pub struct RotateTool {
 }
 
 impl CanvasToolFunction for RotateTool {
-    fn id(&self) -> Id<CanvasTool> {
-        Id::from_str("rotate_tool")
+    fn id(&self) -> CanvasToolId {
+        CanvasToolId::new("rotate_tool".into())
     }
 
     fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, canvas: &CCanvas) {

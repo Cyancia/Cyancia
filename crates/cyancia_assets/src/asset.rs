@@ -29,7 +29,88 @@ wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Serialize, Deserialize, Display)]
     #[sqlx(transparent)]
     #[display("{0}")]
-    pub AssetId: Uuid
+    pub UntypedAssetId: Uuid
+}
+
+impl UntypedAssetId {
+    pub fn into_typed<T: Asset>(self) -> AssetId<T> {
+        AssetId::new(self.0)
+    }
+}
+
+#[derive(Display)]
+#[display("{id}")]
+pub struct AssetId<T: Asset> {
+    id: Uuid,
+    _marker: PhantomData<T>,
+}
+
+impl<T: Asset> std::fmt::Debug for AssetId<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("AssetId").field(&self.id).finish()
+    }
+}
+
+impl<T: Asset> Clone for AssetId<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: Asset> Copy for AssetId<T> {}
+
+impl<T: Asset> PartialEq for AssetId<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T: Asset> Eq for AssetId<T> {}
+
+impl<T: Asset> std::hash::Hash for AssetId<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl<T: Asset> Serialize for AssetId<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.id.serialize(serializer)
+    }
+}
+
+impl<'de, T: Asset> Deserialize<'de> for AssetId<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = Uuid::deserialize(deserializer)?;
+        Ok(Self {
+            id,
+            _marker: PhantomData,
+        })
+    }
+}
+
+impl<T: Asset> std::ops::Deref for AssetId<T> {
+    type Target = Uuid;
+
+    fn deref(&self) -> &Self::Target {
+        &self.id
+    }
+}
+
+impl<T: Asset> AssetId<T> {
+    pub fn new(id: Uuid) -> Self {
+        Self {
+            id,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn into_untyped(self) -> UntypedAssetId {
+        UntypedAssetId::new(self.id)
+    }
 }
 
 pub trait Asset: Send + Sync + 'static + DowncastSync {
@@ -50,7 +131,7 @@ impl<T: Asset> ErasedAsset for T {
 
 #[derive(FromRow, Debug, Clone)]
 pub struct AssetMetadata {
-    pub asset_id: AssetId,
+    pub asset_id: UntypedAssetId,
     // TODO: Replace with Arc<str> when sqlx supports.
     pub ty: String,
     pub bundle_id: BundleId,
@@ -60,16 +141,16 @@ pub struct AssetMetadata {
     pub in_memory: bool,
 }
 
+#[derive(Clone)]
 pub struct AssetHandle<T: Asset> {
-    id: AssetId,
+    id: AssetId<T>,
     bundle: Arc<AssetBundleCache>,
     index_db: Arc<AssetIndexDb>,
-    _marker: PhantomData<T>,
 }
 
 impl<T: Asset> AssetHandle<T> {
     pub(crate) fn new(
-        id: AssetId,
+        id: AssetId<T>,
         bundle: Arc<AssetBundleCache>,
         index_db: Arc<AssetIndexDb>,
     ) -> Self {
@@ -77,11 +158,10 @@ impl<T: Asset> AssetHandle<T> {
             id,
             bundle,
             index_db,
-            _marker: PhantomData,
         }
     }
 
-    pub fn id(&self) -> AssetId {
+    pub fn id(&self) -> AssetId<T> {
         self.id
     }
 
@@ -90,11 +170,12 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub async fn get(&self) -> AssetResult<Arc<T>> {
-        let dynamic = match self.bundle.get_cached(&self.id) {
+        let untyped = self.id.into_untyped();
+        let dynamic = match self.bundle.get_cached(&untyped) {
             Ok(cached) => cached,
             Err(_) => {
                 let metadata = self.metadata().await?;
-                self.bundle.read(self.id, metadata.revision).await?
+                self.bundle.read(untyped, metadata.revision).await?
             }
         };
 
@@ -104,24 +185,26 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub async fn update(&self, asset: T) -> AssetResult<()> {
-        self.bundle.update(self.id, Arc::new(asset))?;
-        self.index_db.update_asset(&self.id).await?;
+        let untyped = self.id.into_untyped();
+        self.bundle.update(untyped, Arc::new(asset))?;
+        self.index_db.update_asset(&untyped).await?;
 
         Ok(())
     }
 
     pub async fn write(&self) -> AssetResult<()> {
+        let untyped = self.id.into_untyped();
         let metadata = self.metadata().await?;
-        let new_path = self.bundle.write(&self.id, metadata.revision)?;
+        let new_path = self.bundle.write(&untyped, metadata.revision)?;
         let last_modified =
             std::fs::metadata(self.bundle.absolute_modified_path(&new_path))?.modified()?;
         self.index_db
-            .write_asset(&self.id, new_path.to_str().unwrap(), last_modified.into())
+            .write_asset(&untyped, new_path.to_str().unwrap(), last_modified.into())
             .await?;
         Ok(())
     }
 
     pub async fn metadata(&self) -> AssetResult<AssetMetadata> {
-        Ok(self.index_db.get_asset(&self.id).await?)
+        Ok(self.index_db.get_asset(&self.id.into_untyped()).await?)
     }
 }

@@ -2,16 +2,20 @@ wesl::wesl_pkg!(pub render);
 
 use std::sync::Arc;
 
-use cyancia_utils::global_instance::GlobalInstance;
-use wgpu::{Device, Queue};
+use cyancia_runtime::{Application, Runtime, plugin::Plugin};
+use futures::executor::block_on;
+use wgpu::{Backends, Device, Features, Limits, Queue};
+
+use crate::resources::{FullscreenVertex, GlobalSamplers};
 
 pub mod buffer;
-pub mod renderer_acquire;
 pub mod resources;
 
-pub struct RenderContext {
-    pub device: Arc<Device>,
-    pub queue: Arc<Queue>,
-}
+pub struct RenderPlugin;
 
-pub static RENDER_CONTEXT: GlobalInstance<RenderContext> = GlobalInstance::new();
+impl Plugin for RenderPlugin {
+    fn build(&self, app: &mut Application) {
+        app.add_service::<GlobalSamplers>()
+            .add_service::<FullscreenVertex>();
+    }
+}

@@ -19,6 +19,8 @@ zip.workspace = true
 toml.workspace = true
 parse-display.workspace = true
 path-clean.workspace = true
+cyancia_runtime.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

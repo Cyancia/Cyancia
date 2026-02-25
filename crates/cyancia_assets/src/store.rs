@@ -7,9 +7,10 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
+use cyancia_runtime::service::Service;
 
 use crate::{
-    asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset},
+    asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset, UntypedAssetId},
     bundle::{
         AssetBundle, AssetBundleCache, AssetBundleMetadata, BundleId, ErasedAssetBundle,
         modified_bundle_absolute_path, scan_bundle_assets,
@@ -26,6 +27,8 @@ pub struct AssetRegistry {
     serializers: Arc<AssetSerializerRegistry>,
     index_db: Arc<AssetIndexDb>,
 }
+
+impl Service for AssetRegistry {}
 
 impl AssetRegistry {
     pub async fn new(
@@ -57,7 +60,7 @@ impl AssetRegistry {
         bundle_id: BundleId,
         path: impl AsRef<Path>,
         asset: Arc<T>,
-    ) -> AssetResult<AssetId> {
+    ) -> AssetResult<AssetId<T>> {
         let bundle = self
             .bundles
             .get(&bundle_id)
@@ -76,7 +79,7 @@ impl AssetRegistry {
                 in_memory: false,
             })
             .await?;
-        Ok(asset_id)
+        Ok(asset_id.into_typed())
     }
 
     pub async fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
@@ -130,8 +133,11 @@ impl AssetRegistry {
             ItemStatus::UpToDate => {}
             ItemStatus::Outdated => {
                 for tag in tags {
-                    let handle =
-                        AssetHandle::<Tag>::new(tag.asset_id, cache.clone(), self.index_db.clone());
+                    let handle = AssetHandle::<Tag>::new(
+                        tag.asset_id.into_typed(),
+                        cache.clone(),
+                        self.index_db.clone(),
+                    );
                     let tag_asset = handle.get().await?;
                     self.index_db
                         .upsert_tag(&tag_asset, tag.last_modified)
@@ -147,7 +153,7 @@ impl AssetRegistry {
     pub fn handle<T: Asset>(
         &self,
         bundle_id: BundleId,
-        asset_id: AssetId,
+        asset_id: AssetId<T>,
     ) -> Option<AssetHandle<T>> {
         let bundle = self.bundles.get(&bundle_id)?;
 
@@ -185,7 +191,7 @@ impl AssetRegistry {
             .into_iter()
             .filter_map(|meta| {
                 Some(AssetHandle::new(
-                    meta.asset_id,
+                    meta.asset_id.into_typed(),
                     self.bundles.get(&meta.bundle_id)?.clone(),
                     self.index_db.clone(),
                 ))

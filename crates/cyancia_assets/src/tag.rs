@@ -7,7 +7,7 @@ use sqlx::prelude::{FromRow, Type};
 use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, AssetId},
+    asset::{Asset, UntypedAssetId},
     loader::AssetSerializer,
 };
 
@@ -22,7 +22,7 @@ wrapper! {
 pub struct Tag {
     tag_id: TagId,
     name: String,
-    assets: Vec<AssetId>,
+    assets: Vec<UntypedAssetId>,
 }
 
 impl Asset for Tag {
@@ -50,17 +50,17 @@ impl Tag {
         self.name = name;
     }
 
-    pub fn assets(&self) -> &[AssetId] {
+    pub fn assets(&self) -> &[UntypedAssetId] {
         &self.assets
     }
 
-    pub fn add_asset(&mut self, asset_id: AssetId) {
+    pub fn add_asset(&mut self, asset_id: UntypedAssetId) {
         if !self.assets.contains(&asset_id) {
             self.assets.push(asset_id);
         }
     }
 
-    pub fn remove_asset(&mut self, asset_id: &AssetId) {
+    pub fn remove_asset(&mut self, asset_id: &UntypedAssetId) {
         self.assets.retain(|id| id != asset_id);
     }
 }

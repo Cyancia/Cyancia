@@ -3,36 +3,47 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use cyancia_id::Id;
+use cyancia_utils::wrapper;
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 use iced_core::{Color, Element};
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
+use uuid::Uuid;
 
 use crate::{
     GraphRenderer, GraphTheme,
     graph::{
-        node::GraphNodeData,
-        variable::{GraphLiteral},
+        node::{GraphNodeData, GraphNodeId},
+        variable::GraphLiteral,
     },
 };
 
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub GraphInputSlotId : Uuid
+}
+
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub GraphOutputSlotId : Uuid
+}
+
 #[derive(Default)]
 pub struct GraphSlots {
-    pub(crate) inputs: HashMap<Id<GraphInputSlotData>, GraphInputSlotData>,
-    pub(crate) outputs: HashMap<Id<GraphOutputSlotData>, GraphOutputSlotData>,
+    pub(crate) inputs: HashMap<GraphInputSlotId, GraphInputSlotData>,
+    pub(crate) outputs: HashMap<GraphOutputSlotId, GraphOutputSlotData>,
 }
 
 impl GraphSlots {
-    pub fn get_input(&self, id: &Id<GraphInputSlotData>) -> Option<&GraphInputSlotData> {
+    pub fn get_input(&self, id: &GraphInputSlotId) -> Option<&GraphInputSlotData> {
         self.inputs.get(id)
     }
 
-    pub fn get_output(&self, id: &Id<GraphOutputSlotData>) -> Option<&GraphOutputSlotData> {
+    pub fn get_output(&self, id: &GraphOutputSlotId) -> Option<&GraphOutputSlotData> {
         self.outputs.get(id)
     }
 
-    pub fn get_connected(&self, input_id: &Id<GraphInputSlotData>) -> Option<&GraphOutputSlotData> {
+    pub fn get_connected(&self, input_id: &GraphInputSlotId) -> Option<&GraphOutputSlotData> {
         let input_node = self.inputs.get(input_id)?;
         let connected_id = input_node.connected.as_ref()?;
         self.outputs.get(connected_id)
@@ -64,9 +75,9 @@ impl GraphDefaultInputSlot {
 }
 
 pub struct GraphInputSlotData {
-    pub node_id: Id<GraphNodeData>,
+    pub node_id: GraphNodeId,
     pub data: GraphLiteral,
-    pub connected: Option<Id<GraphOutputSlotData>>,
+    pub connected: Option<GraphOutputSlotId>,
 }
 
 pub struct GraphDefaultOutputSlot {
@@ -90,9 +101,9 @@ impl GraphDefaultOutputSlot {
 }
 
 pub struct GraphOutputSlotData {
-    pub node_id: Id<GraphNodeData>,
+    pub node_id: GraphNodeId,
     pub data_ty: Box<dyn ErasedGraphValueType>,
-    pub connected: HashSet<Id<GraphInputSlotData>>,
+    pub connected: HashSet<GraphInputSlotId>,
 }
 
 pub trait GraphValueType: Send + Sync + 'static + DynClone {
@@ -129,7 +140,7 @@ downcast_rs::impl_downcast!(GraphLiteralUpdateMessage);
 
 pub struct ErasedGraphLiteralUpdateMessage {
     pub inner: Box<dyn GraphLiteralUpdateMessage>,
-    pub id: Id<GraphInputSlotData>,
+    pub id: GraphInputSlotId,
 }
 
 impl std::fmt::Debug for ErasedGraphLiteralUpdateMessage {
@@ -156,7 +167,7 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn wgsl_type(&self) -> Option<&'static str>;
     fn view_literal(
         &self,
-        slot_id: Id<GraphInputSlotData>,
+        slot_id: GraphInputSlotId,
         data: &Box<dyn Any + Send + Sync>,
     ) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>;
     fn update_literal(
@@ -194,7 +205,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
 
     fn view_literal(
         &self,
-        slot_id: Id<GraphInputSlotData>,
+        slot_id: GraphInputSlotId,
         data: &Box<dyn Any + Send + Sync>,
     ) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
         let literal = data

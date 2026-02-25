@@ -1,5 +1,4 @@
 use cyancia_canvas::CCanvas;
-use cyancia_id::Id;
 use cyancia_input::{
     action::Action,
     key::{KeySequence, KeyboardState},
@@ -7,14 +6,14 @@ use cyancia_input::{
 };
 use iced_core::Point;
 
-use crate::{CanvasTool, CanvasToolFunction};
+use crate::{CanvasTool, CanvasToolFunction, CanvasToolId};
 
 #[derive(Default)]
 pub struct BrushTool;
 
 impl CanvasToolFunction for BrushTool {
-    fn id(&self) -> Id<CanvasTool> {
-        Id::from_str("brush_tool")
+    fn id(&self) -> CanvasToolId {
+        CanvasToolId::new("brush_tool".into())
     }
 
     fn activate(&mut self, canvas: &CCanvas) {

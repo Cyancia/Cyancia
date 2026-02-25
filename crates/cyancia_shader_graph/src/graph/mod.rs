@@ -3,20 +3,20 @@ use std::{
     sync::Arc,
 };
 
-use cyancia_id::Id;
 use iced_core::Point;
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
+use uuid::Uuid;
 
 use crate::graph::{
     node::{
         ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
-        GraphNodeCodeGenContext, GraphNodeData, GraphNodeUpdateSignatureContext, GraphNodesStorage,
-        StatefulGraphNode, function::GraphFunctionId,
+        GraphNodeCodeGenContext, GraphNodeData, GraphNodeId, GraphNodeUpdateSignatureContext,
+        GraphNodesStorage, StatefulGraphNode, function::GraphFunctionId,
     },
     slot::{
         ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData,
-        GraphOutputSlotData, GraphSlots,
+        GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
     },
     variable::{GraphTypeCastersStorage, GraphValueTypeStorage, GraphVariable},
 };
@@ -26,10 +26,10 @@ pub mod slot;
 pub mod variable;
 
 pub struct Graph {
-    pub(crate) nodes: HashMap<Id<GraphNodeData>, GraphNodeData>,
+    pub(crate) nodes: HashMap<GraphNodeId, GraphNodeData>,
     pub(crate) slots: GraphSlots,
     pub(crate) storage: Arc<GraphDynamicInstancesStorage>,
-    pub(crate) cached_run_order: Option<Vec<Id<GraphNodeData>>>,
+    pub(crate) cached_run_order: Option<Vec<GraphNodeId>>,
     pub(crate) cached_signature: Option<GraphSignature>,
 }
 
@@ -48,9 +48,9 @@ impl Graph {
         &mut self,
         position: Point,
         node: Box<dyn ErasedGraphNode>,
-    ) -> Id<GraphNodeData> {
+    ) -> GraphNodeId {
         let node = StatefulGraphNode::new(node);
-        let node_id = Id::random();
+        let node_id = GraphNodeId::new(Uuid::new_v4());
         let inputs = create_input_slots(&mut self.slots, node_id, node.create_inputs()).into();
         let outputs = create_output_slots(&mut self.slots, node_id, node.create_outputs()).into();
 
@@ -67,11 +67,11 @@ impl Graph {
         node_id
     }
 
-    pub fn add_node<T: GraphNode>(&mut self, position: Point, node: T) -> Id<GraphNodeData> {
+    pub fn add_node<T: GraphNode>(&mut self, position: Point, node: T) -> GraphNodeId {
         self.add_boxed_node(position, Box::new(node))
     }
 
-    pub fn delete_node(&mut self, id: &Id<GraphNodeData>) {
+    pub fn delete_node(&mut self, id: &GraphNodeId) {
         if let Some(node) = self.nodes.remove(id) {
             delete_all_inputs(&mut self.slots, &node.inputs);
             delete_all_outputs(&mut self.slots, &node.outputs);
@@ -79,15 +79,15 @@ impl Graph {
         }
     }
 
-    pub fn get_node(&self, id: &Id<GraphNodeData>) -> Option<&GraphNodeData> {
+    pub fn get_node(&self, id: &GraphNodeId) -> Option<&GraphNodeData> {
         self.nodes.get(id)
     }
 
-    pub fn get_node_mut(&mut self, id: &Id<GraphNodeData>) -> Option<&mut GraphNodeData> {
+    pub fn get_node_mut(&mut self, id: &GraphNodeId) -> Option<&mut GraphNodeData> {
         self.nodes.get_mut(id)
     }
 
-    pub fn connect_slots(&mut self, from: Id<GraphOutputSlotData>, to: Id<GraphInputSlotData>) {
+    pub fn connect_slots(&mut self, from: GraphOutputSlotId, to: GraphInputSlotId) {
         if !self.can_connect_slots(from, to) {
             return;
         }
@@ -101,11 +101,7 @@ impl Graph {
         }
     }
 
-    pub fn can_connect_slots(
-        &self,
-        from: Id<GraphOutputSlotData>,
-        to: Id<GraphInputSlotData>,
-    ) -> bool {
+    pub fn can_connect_slots(&self, from: GraphOutputSlotId, to: GraphInputSlotId) -> bool {
         let from_slot = self.slots.outputs.get(&from);
         let to_slot = self.slots.inputs.get(&to);
 
@@ -117,7 +113,7 @@ impl Graph {
         }
     }
 
-    pub fn disconnect_slot(&mut self, to: Id<GraphInputSlotData>) {
+    pub fn disconnect_slot(&mut self, to: GraphInputSlotId) {
         if let Some(input_slot) = self.slots.inputs.get_mut(&to)
             && let Some(output_slot) = input_slot
                 .connected
@@ -131,9 +127,9 @@ impl Graph {
 
     pub fn connect_slots_by_index(
         &mut self,
-        from_node: Id<GraphNodeData>,
+        from_node: GraphNodeId,
         from_output_index: usize,
-        to_node: Id<GraphNodeData>,
+        to_node: GraphNodeId,
         to_input_index: usize,
     ) {
         let from_slot = self
@@ -153,7 +149,7 @@ impl Graph {
         }
     }
 
-    pub fn disconnect_slots_by_index(&mut self, to_node: Id<GraphNodeData>, to_input_index: usize) {
+    pub fn disconnect_slots_by_index(&mut self, to_node: GraphNodeId, to_input_index: usize) {
         let to_slot = self
             .nodes
             .get(&to_node)
@@ -237,7 +233,7 @@ impl Graph {
         self.cached_run_order = Some(dbg!(run_order));
     }
 
-    pub fn find_loops(&self) -> Vec<Vec<Id<GraphNodeData>>> {
+    pub fn find_loops(&self) -> Vec<Vec<GraphNodeId>> {
         let mut visited = HashSet::new();
         let mut stack = Vec::new();
         let mut loops = Vec::new();
@@ -251,10 +247,10 @@ impl Graph {
 
     fn find_loops_dfs(
         &self,
-        node_id: Id<GraphNodeData>,
-        visited: &mut HashSet<Id<GraphNodeData>>,
-        stack: &mut Vec<Id<GraphNodeData>>,
-        loops: &mut Vec<Vec<Id<GraphNodeData>>>,
+        node_id: GraphNodeId,
+        visited: &mut HashSet<GraphNodeId>,
+        stack: &mut Vec<GraphNodeId>,
+        loops: &mut Vec<Vec<GraphNodeId>>,
     ) {
         if stack.contains(&node_id) {
             let loop_start_index = stack.iter().position(|&id| id == node_id).unwrap();
@@ -455,12 +451,12 @@ impl Graph {
 
 fn create_input_slots(
     slots: &mut GraphSlots,
-    node_id: Id<GraphNodeData>,
+    node_id: GraphNodeId,
     raw_inputs: Vec<GraphDefaultInputSlot>,
-) -> Vec<Id<GraphInputSlotData>> {
+) -> Vec<GraphInputSlotId> {
     let mut inputs = Vec::with_capacity(raw_inputs.len());
     for slot in raw_inputs {
-        let slot_id = Id::random();
+        let slot_id = GraphInputSlotId::new(Uuid::new_v4());
         slots.inputs.insert(
             slot_id,
             GraphInputSlotData {
@@ -476,12 +472,12 @@ fn create_input_slots(
 
 fn create_output_slots(
     slots: &mut GraphSlots,
-    node_id: Id<GraphNodeData>,
+    node_id: GraphNodeId,
     raw_outputs: Vec<GraphDefaultOutputSlot>,
-) -> Vec<Id<GraphOutputSlotData>> {
+) -> Vec<GraphOutputSlotId> {
     let mut outputs = Vec::with_capacity(raw_outputs.len());
     for slot in raw_outputs {
-        let slot_id = Id::random();
+        let slot_id = GraphOutputSlotId::new(Uuid::new_v4());
         slots.outputs.insert(
             slot_id,
             GraphOutputSlotData {
@@ -495,7 +491,7 @@ fn create_output_slots(
     outputs
 }
 
-fn disconnect_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[Id<GraphInputSlotData>]) {
+fn disconnect_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[GraphInputSlotId]) {
     for input_slot_id in input_slot_ids {
         if let Some(input_slot) = slots.inputs.get_mut(input_slot_id)
             && let Some(output_slot) = input_slot
@@ -508,7 +504,7 @@ fn disconnect_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[Id<GraphInput
     }
 }
 
-fn disconnect_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[Id<GraphOutputSlotData>]) {
+fn disconnect_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[GraphOutputSlotId]) {
     for output_slot_id in output_slot_ids {
         if let Some(output_slot) = slots.outputs.get_mut(output_slot_id) {
             for input_slot_id in &output_slot.connected {
@@ -521,7 +517,7 @@ fn disconnect_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[Id<GraphOut
     }
 }
 
-fn delete_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[Id<GraphInputSlotData>]) {
+fn delete_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[GraphInputSlotId]) {
     for input_slot_id in input_slot_ids {
         if let Some(input_slot) = slots.inputs.remove(input_slot_id)
             && let Some(output_slot) = input_slot
@@ -533,7 +529,7 @@ fn delete_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[Id<GraphInputSlot
     }
 }
 
-fn delete_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[Id<GraphOutputSlotData>]) {
+fn delete_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[GraphOutputSlotId]) {
     for output_slot_id in output_slot_ids {
         if let Some(output_slot) = slots.outputs.remove(output_slot_id) {
             for input_slot_id in output_slot.connected {
@@ -583,8 +579,8 @@ impl GraphFunctionsStorage {
 
 #[derive(Default)]
 pub struct GraphSignature {
-    pub inputs: IndexMap<Id<GraphOutputSlotData>, GraphVariable>,
-    pub outputs: IndexMap<Id<GraphInputSlotData>, GraphVariable>,
+    pub inputs: IndexMap<GraphOutputSlotId, GraphVariable>,
+    pub outputs: IndexMap<GraphInputSlotId, GraphVariable>,
 }
 
 #[derive(Debug, thiserror::Error)]

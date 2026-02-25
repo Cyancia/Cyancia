@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use cyancia_utils::{global_instance::GlobalInstance, include_shader};
-use wgpu::{
-    AddressMode, Device, FilterMode, Sampler, SamplerDescriptor, ShaderModule,
-    ShaderModuleDescriptor, ShaderSource, VertexState,
+use cyancia_runtime::{
+    Runtime,
+    service::{FromRuntime, RenderContext, Service},
 };
-
-pub static GLOBAL_SAMPLERS: GlobalInstance<GlobalSamplers> = GlobalInstance::new();
+use cyancia_utils::include_shader;
+use futures::executor::block_on;
+use wgpu::{
+    Adapter, AddressMode, Backends, Device, Features, FilterMode, Instance, Limits, Queue, Sampler,
+    SamplerDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource, VertexState,
+};
 
 #[derive(Debug)]
 pub struct GlobalSamplers {
@@ -14,6 +17,15 @@ pub struct GlobalSamplers {
     linear_clamp: Arc<Sampler>,
     nearest_wrap: Arc<Sampler>,
     linear_wrap: Arc<Sampler>,
+}
+
+impl Service for GlobalSamplers {}
+
+impl FromRuntime for GlobalSamplers {
+    fn from_runtime(runtime: &Runtime) -> Self {
+        let render_context = runtime.service::<RenderContext>();
+        Self::new(&render_context.device)
+    }
 }
 
 impl GlobalSamplers {
@@ -87,11 +99,18 @@ impl GlobalSamplers {
     }
 }
 
-pub static FULLSCREEN_VERTEX: GlobalInstance<FullscreenVertex> = GlobalInstance::new();
-
 #[derive(Debug)]
 pub struct FullscreenVertex {
     shader: ShaderModule,
+}
+
+impl Service for FullscreenVertex {}
+
+impl FromRuntime for FullscreenVertex {
+    fn from_runtime(runtime: &Runtime) -> Self {
+        let render_context = runtime.service::<RenderContext>();
+        Self::new(&render_context.device)
+    }
 }
 
 impl FullscreenVertex {
@@ -101,7 +120,9 @@ impl FullscreenVertex {
             source: ShaderSource::Wgsl(include_shader!("fullscreen_vertex.wgsl").into()),
         });
 
-        Self { shader: fullscreen_vertex }
+        Self {
+            shader: fullscreen_vertex,
+        }
     }
 
     pub fn fullscreen_vertex(&self) -> &ShaderModule {

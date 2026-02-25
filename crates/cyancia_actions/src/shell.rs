@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use cyancia_canvas::CCanvas;
-use cyancia_id::Id;
 use cyancia_tools::{CanvasTool, ToolProxy};
 use iced_runtime::Task;
 

@@ -5,7 +5,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, AssetId, AssetMetadata},
+    asset::{Asset, UntypedAssetId, AssetMetadata},
     bundle::{AssetBundleMetadata, BundleId},
     error::AssetResult,
     tag::{Tag, TagId},
@@ -259,7 +259,7 @@ INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)
         Ok(())
     }
 
-    pub async fn add_asset(&self, asset: &AssetMetadata) -> AssetResult<AssetId> {
+    pub async fn add_asset(&self, asset: &AssetMetadata) -> AssetResult<UntypedAssetId> {
         let asset_id = asset.asset_id;
         let mut tx = self.pool.begin().await?;
 
@@ -292,7 +292,7 @@ VALUES (?, ?, ?, ?, ?);
         Ok(asset_id)
     }
 
-    pub async fn get_asset(&self, id: &AssetId) -> AssetResult<AssetMetadata> {
+    pub async fn get_asset(&self, id: &UntypedAssetId) -> AssetResult<AssetMetadata> {
         let asset = sqlx::query_as::<_, AssetMetadata>(
             r#"
 SELECT
@@ -356,7 +356,7 @@ ORDER BY l.relative_path ASC;
         Ok(assets)
     }
 
-    pub async fn update_asset(&self, id: &AssetId) -> AssetResult<u32> {
+    pub async fn update_asset(&self, id: &UntypedAssetId) -> AssetResult<u32> {
         let revision = sqlx::query_scalar::<_, u32>(
             r#"
 WITH latest AS (
@@ -397,7 +397,7 @@ RETURNING revision;
 
     pub async fn write_asset(
         &self,
-        id: &AssetId,
+        id: &UntypedAssetId,
         new_path: &str,
         last_modified: DateTime<Utc>,
     ) -> AssetResult<u32> {

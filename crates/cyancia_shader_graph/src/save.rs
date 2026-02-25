@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use cyancia_id::Id;
 use serde::{Deserialize, Serialize};
 use toml::ser::Buffer;
 
@@ -11,8 +10,11 @@ use crate::{
     GraphSerializer,
     graph::{
         Graph, GraphDynamicInstancesStorage, GraphSignature,
-        node::{GraphNodeData, StatefulGraphNode},
-        slot::{GraphInputSlotData, GraphOutputSlotData, GraphSlots},
+        node::{GraphNodeData, GraphNodeId, StatefulGraphNode},
+        slot::{
+            GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
+            GraphSlots,
+        },
         variable::{GraphLiteral, GraphVariable},
     },
 };
@@ -46,26 +48,22 @@ pub enum GraphDeserializeError {
     NodeNotFound(String),
     #[error("Unmatched input slot count on node {node:?}: expected {expected}, found {found}")]
     UnmatchedInputSlotCount {
-        node: Id<GraphNodeData>,
+        node: GraphNodeId,
         expected: usize,
         found: usize,
     },
     #[error("Unmatched output slot count on node {node:?}: expected {expected}, found {found}")]
     UnmatchedOutputSlotCount {
-        node: Id<GraphNodeData>,
+        node: GraphNodeId,
         expected: usize,
         found: usize,
     },
     #[error("Missing input slot on node {0:?}: {1:?}")]
-    MissingInputSlot(Id<GraphNodeData>, Id<GraphInputSlotData>),
+    MissingInputSlot(GraphNodeId, GraphInputSlotId),
     #[error("Missing output slot on node {0:?}: {1:?}")]
-    MissingOutputSlot(Id<GraphNodeData>, Id<GraphOutputSlotData>),
+    MissingOutputSlot(GraphNodeId, GraphOutputSlotId),
     #[error("Input slot {1:?} on node {0:?} is connected to missing output slot {2:?}")]
-    MissingConnectedSlot(
-        Id<GraphNodeData>,
-        Id<GraphInputSlotData>,
-        Id<GraphOutputSlotData>,
-    ),
+    MissingConnectedSlot(GraphNodeId, GraphInputSlotId, GraphOutputSlotId),
     #[error("Failed to deserialize literal data: {0}")]
     LiteralDeserializeError(toml::de::Error),
     #[error("Failed to deserialize node state: {0}")]
@@ -311,8 +309,8 @@ impl Graph {
 #[derive(Serialize, Deserialize)]
 pub struct SerializableGraph {
     pub nodes: Vec<SerializableNodeData>,
-    pub inputs: HashMap<Id<GraphInputSlotData>, SerializableInputSlotData>,
-    pub outputs: HashMap<Id<GraphOutputSlotData>, SerializableOutputSlotData>,
+    pub inputs: HashMap<GraphInputSlotId, SerializableInputSlotData>,
+    pub outputs: HashMap<GraphOutputSlotId, SerializableOutputSlotData>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -327,17 +325,17 @@ pub struct GraphNodeTypeId {
 
 #[derive(Serialize, Deserialize)]
 pub struct SerializableNodeData {
-    pub id: Id<GraphNodeData>,
+    pub id: GraphNodeId,
     pub data: GraphNodeTypeId,
     pub position: [f32; 2],
-    pub inputs: Arc<[Id<GraphInputSlotData>]>,
-    pub outputs: Arc<[Id<GraphOutputSlotData>]>,
+    pub inputs: Arc<[GraphInputSlotId]>,
+    pub outputs: Arc<[GraphOutputSlotId]>,
     pub state: toml::Value,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct SerializableInputSlotData {
-    pub connected: Option<Id<GraphOutputSlotData>>,
+    pub connected: Option<GraphOutputSlotId>,
     pub data: toml::Value,
 }
 

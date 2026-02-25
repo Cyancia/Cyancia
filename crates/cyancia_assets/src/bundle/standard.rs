@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::{
-    asset::{AssetId, AssetMetadata, ErasedAsset},
+    asset::{UntypedAssetId, AssetMetadata, ErasedAsset},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
 };
@@ -116,7 +116,7 @@ impl AssetBundle for StandardAssetBundle {
         })
     }
 
-    fn manifest(&self) -> Result<HashMap<AssetId, PathBuf>, Self::Error> {
+    fn manifest(&self) -> Result<HashMap<UntypedAssetId, PathBuf>, Self::Error> {
         let mut archive = self.archive.write();
         let content = read_to_string(archive.by_name("manifest.toml")?)?;
         Ok(toml::from_str(&content)?)
@@ -142,7 +142,7 @@ impl AssetBundle for StandardAssetBundle {
         path: &Path,
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
-    ) -> Result<AssetId, StandardAssetBundleError> {
+    ) -> Result<UntypedAssetId, StandardAssetBundleError> {
         Err(StandardAssetBundleError::UnsupportedWriting)
     }
 }

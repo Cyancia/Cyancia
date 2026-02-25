@@ -1,7 +1,9 @@
 use std::{cell::OnceCell, collections::HashMap, ops::Deref, sync::Arc};
 
-use cyancia_id::Id;
-use cyancia_utils::global_instance::GlobalInstance;
+use cyancia_runtime::{
+    Runtime,
+    service::{FromRuntime, RenderContext, Service},
+};
 use dashmap::DashMap;
 use glam::{Mat3, UVec2};
 use iced_core::Rectangle;
@@ -20,7 +22,7 @@ use wgpu::{
     wgt::TextureDataOrder,
 };
 
-use crate::layer::Layer;
+use crate::layer::{Layer, LayerId};
 
 #[derive(Debug)]
 pub struct GpuTilePile {
@@ -36,7 +38,7 @@ pub struct GroupedTileViews {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TileId {
-    pub image_layer: Id<Layer>,
+    pub image_layer: LayerId,
     pub index: UVec2,
     pub pile_index: usize,
     pub pile_layer: u32,
@@ -48,22 +50,54 @@ pub struct Tile {
     pub view: Arc<TextureView>,
 }
 
-pub static GPU_TILE_STORAGE: GlobalInstance<GpuTileStorage> = GlobalInstance::new();
+// TODO: We are having this wrapper because rendering iced primitives doesn't allow bring external context
+//       with lifetime.
+#[derive(Clone)]
+pub struct GpuTileStorage {
+    inner: Arc<GpuTileStorageInner>,
+}
+
+impl Service for GpuTileStorage {}
+
+impl FromRuntime for GpuTileStorage {
+    fn from_runtime(runtime: &Runtime) -> Self {
+        Self {
+            inner: Arc::new(GpuTileStorageInner::from_runtime(runtime)),
+        }
+    }
+}
+
+impl Deref for GpuTileStorage {
+    type Target = GpuTileStorageInner;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref()
+    }
+}
 
 #[derive(Debug)]
-pub struct GpuTileStorage {
+pub struct GpuTileStorageInner {
     device: Arc<Device>,
     queue: Arc<Queue>,
     piles: RwLock<Vec<GpuTilePile>>,
-    tiles: DashMap<(Id<Layer>, UVec2), Tile>,
+    tiles: DashMap<(LayerId, UVec2), Tile>,
     available_slices: RwLock<Vec<(usize, usize)>>,
 }
 
-impl GpuTileStorage {
+// impl Service for GpuTileStorageInner {}
+
+impl FromRuntime for GpuTileStorageInner {
+    fn from_runtime(runtime: &Runtime) -> Self {
+        let render_context = runtime.service::<RenderContext>();
+        Self::new(render_context.device.clone(), render_context.queue.clone())
+    }
+}
+
+impl GpuTileStorageInner {
     pub const TILE_SIZE: u32 = 256;
     pub const TILES_PER_PILE: u32 = 256;
     pub const EMPTY_TILE_ID: TileId = TileId {
-        image_layer: Id::from_uuid(Uuid::from_u128(0)),
+        image_layer: LayerId::new(Uuid::from_u128(0)),
         index: UVec2::ZERO,
         pile_layer: 0,
         pile_index: 0,
@@ -141,7 +175,7 @@ impl GpuTileStorage {
         }
     }
 
-    pub fn get_tile(&self, image_layer: Id<Layer>, index: UVec2) -> Tile {
+    pub fn get_tile(&self, image_layer: LayerId, index: UVec2) -> Tile {
         self.tiles
             .get(&(image_layer, index))
             .map(|r| r.value().clone())
@@ -157,7 +191,7 @@ impl GpuTileStorage {
             })
     }
 
-    pub fn get_tile_mut(&self, image_layer: Id<Layer>, index: UVec2) -> Tile {
+    pub fn get_tile_mut(&self, image_layer: LayerId, index: UVec2) -> Tile {
         dbg!(self.tiles.len(), self.available_slices.read().len());
         match self.tiles.entry((image_layer, index)) {
             dashmap::Entry::Occupied(e) => e.get().clone(),
@@ -241,7 +275,7 @@ impl GpuTileStorage {
             .extend((0..Self::TILES_PER_PILE as usize).map(|x| (pile_index, x)));
     }
 
-    pub fn upload_image(&self, layer_id: Id<Layer>, img: DynamicImage) {
+    pub fn upload_image(&self, layer_id: LayerId, img: DynamicImage) {
         let width = img.width();
         let height = img.height();
 
@@ -377,7 +411,7 @@ impl GpuTileStorage {
         &self,
         pixel_rect: Rectangle<u32>,
         total_tile_count: UVec2,
-        image_layer: Id<Layer>,
+        image_layer: LayerId,
     ) -> Vec<GroupedTileViews> {
         let pixel_min = UVec2::new(pixel_rect.x, pixel_rect.y);
         let pixel_max = UVec2::new(

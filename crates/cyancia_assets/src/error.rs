@@ -5,14 +5,14 @@ use std::{
     path::{PathBuf, StripPrefixError},
 };
 
-use crate::{asset::AssetId, bundle::BundleId};
+use crate::{asset::UntypedAssetId, bundle::BundleId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssetError {
     #[error("Asset path not found for asset ID: {0}")]
-    AssetPathNotFound(AssetId),
+    AssetPathNotFound(UntypedAssetId),
     #[error("Asset not found for asset ID: {0}")]
-    AssetNotFound(AssetId),
+    AssetNotFound(UntypedAssetId),
     #[error("Asset bundle not found for bundle ID: {0}")]
     BundleNotFound(BundleId),
     #[error("No serializer found for asset extension: {0}")]

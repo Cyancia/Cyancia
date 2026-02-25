@@ -1,25 +1,24 @@
 use std::{marker::PhantomData, time::Instant};
 
-use cyancia_id::Id;
-use cyancia_input::action::Action;
-use cyancia_tools::CanvasTool;
+use cyancia_input::action::{Action, ActionId};
+use cyancia_tools::{CanvasTool, CanvasToolId};
 
 use crate::{ActionFunction, shell::ActionShell};
 
 pub trait CanvasToolAction: Send + Sync + 'static {
-    fn action() -> Id<Action>;
-    fn tool() -> Id<CanvasTool>;
+    fn action() -> ActionId;
+    fn tool() -> CanvasToolId;
 }
 
 macro_rules! canvas_tool_action {
     ($name:ident, $action:literal, $tool: literal) => {
         pub struct $name;
         impl CanvasToolAction for $name {
-            fn action() -> Id<Action> {
-                Id::from_str($action)
+            fn action() -> ActionId {
+                ActionId::new($action.into())
             }
-            fn tool() -> Id<CanvasTool> {
-                Id::from_str($tool)
+            fn tool() -> CanvasToolId {
+                CanvasToolId::new($tool.into())
             }
         }
     };
@@ -44,7 +43,7 @@ impl<T: CanvasToolAction> Default for CanvasToolSwitch<T> {
 }
 
 impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
-    fn id(&self) -> Id<Action> {
+    fn id(&self) -> ActionId {
         T::action()
     }
 

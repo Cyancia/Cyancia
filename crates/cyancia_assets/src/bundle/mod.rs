@@ -20,7 +20,7 @@ use sqlx::{
 };
 
 use crate::{
-    asset::{Asset, AssetId, AssetMetadata, ErasedAsset},
+    asset::{Asset, UntypedAssetId, AssetMetadata, ErasedAsset},
     error::{AssetError, AssetResult},
     index_db::AssetIndexDb,
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
@@ -48,9 +48,9 @@ pub struct AssetBundleCache {
     metadata: AssetBundleMetadata,
     bundle: Arc<dyn ErasedAssetBundle>,
 
-    id_to_original_path: RwLock<HashMap<AssetId, PathBuf>>,
-    id_to_path: RwLock<HashMap<AssetId, PathBuf>>,
-    assets: RwLock<HashMap<AssetId, Arc<dyn ErasedAsset>>>,
+    id_to_original_path: RwLock<HashMap<UntypedAssetId, PathBuf>>,
+    id_to_path: RwLock<HashMap<UntypedAssetId, PathBuf>>,
+    assets: RwLock<HashMap<UntypedAssetId, Arc<dyn ErasedAsset>>>,
 
     serializers: Arc<AssetSerializerRegistry>,
 }
@@ -59,7 +59,7 @@ impl AssetBundleCache {
     pub fn new(
         assets_root: impl AsRef<Path>,
         bundle: Arc<dyn ErasedAssetBundle>,
-        manifest: HashMap<AssetId, PathBuf>,
+        manifest: HashMap<UntypedAssetId, PathBuf>,
         serializers: Arc<AssetSerializerRegistry>,
     ) -> AssetResult<Self> {
         Ok(Self {
@@ -75,7 +75,7 @@ impl AssetBundleCache {
         })
     }
 
-    pub fn get_cached(&self, id: &AssetId) -> AssetResult<Arc<dyn ErasedAsset>> {
+    pub fn get_cached(&self, id: &UntypedAssetId) -> AssetResult<Arc<dyn ErasedAsset>> {
         let assets = self.assets.read();
         Ok(assets
             .get(id)
@@ -83,12 +83,12 @@ impl AssetBundleCache {
             .ok_or_else(|| AssetError::AssetNotFound(*id))?)
     }
 
-    pub fn update(&self, id: AssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
+    pub fn update(&self, id: UntypedAssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
         self.assets.write().insert(id, asset);
         Ok(())
     }
 
-    pub fn write(&self, id: &AssetId, revision: u32) -> AssetResult<PathBuf> {
+    pub fn write(&self, id: &UntypedAssetId, revision: u32) -> AssetResult<PathBuf> {
         let assets = self.assets.read();
         let asset = assets
             .get(id)
@@ -113,7 +113,7 @@ impl AssetBundleCache {
         self.bundle.is_readonly()
     }
 
-    pub fn add(&self, path: impl AsRef<Path>, asset: Arc<dyn ErasedAsset>) -> AssetResult<AssetId> {
+    pub fn add(&self, path: impl AsRef<Path>, asset: Arc<dyn ErasedAsset>) -> AssetResult<UntypedAssetId> {
         let path = path.as_ref().clean();
         let serializer = self.serializers.get_for_path(&path)?;
         let id = self
@@ -132,7 +132,7 @@ impl AssetBundleCache {
         &self.metadata
     }
 
-    pub async fn read(&self, id: AssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
+    pub async fn read(&self, id: UntypedAssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
         let id_to_path = self.id_to_path.read();
         let path = id_to_path
             .get(&id)
@@ -200,7 +200,7 @@ pub fn scan_bundle_assets(
 fn scan_modified_assets(
     assets_root: &Path,
     bundle_id: &BundleId,
-    bundle_manifest: &HashMap<AssetId, PathBuf>,
+    bundle_manifest: &HashMap<UntypedAssetId, PathBuf>,
     serializers: &AssetSerializerRegistry,
 ) -> AssetResult<Vec<AssetMetadata>> {
     let mut assets = Vec::new();
@@ -232,7 +232,7 @@ fn scan_modified_assets_dfs(
     current_path: &Path,
     assets: &mut Vec<AssetMetadata>,
     serializers: &AssetSerializerRegistry,
-    path_to_id: &HashMap<PathBuf, AssetId>,
+    path_to_id: &HashMap<PathBuf, UntypedAssetId>,
 ) -> AssetResult<()> {
     for entry in current_path.read_dir()? {
         let Ok(entry) = entry else {
@@ -374,7 +374,7 @@ pub trait AssetBundle: Send + Sync + 'static {
     type Error: Error + Sync + Send + 'static;
 
     fn metadata(&self) -> Result<AssetBundleMetadata, Self::Error>;
-    fn manifest(&self) -> Result<HashMap<AssetId, PathBuf>, Self::Error>;
+    fn manifest(&self) -> Result<HashMap<UntypedAssetId, PathBuf>, Self::Error>;
     fn read(
         &self,
         path: &Path,
@@ -385,14 +385,14 @@ pub trait AssetBundle: Send + Sync + 'static {
         path: &Path,
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
-    ) -> Result<AssetId, Self::Error>;
+    ) -> Result<UntypedAssetId, Self::Error>;
 }
 
 pub trait ErasedAssetBundle: Send + Sync + 'static {
     fn is_readonly(&self) -> bool;
     fn metadata(&self) -> Result<AssetBundleMetadata, Box<dyn Error + Send + Sync + 'static>>;
     fn manifest(&self)
-    -> Result<HashMap<AssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
+    -> Result<HashMap<UntypedAssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
     fn read(
         &self,
         path: &Path,
@@ -403,7 +403,7 @@ pub trait ErasedAssetBundle: Send + Sync + 'static {
         path: &Path,
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
-    ) -> Result<AssetId, Box<dyn Error + Send + Sync + 'static>>;
+    ) -> Result<UntypedAssetId, Box<dyn Error + Send + Sync + 'static>>;
 }
 
 impl<T: AssetBundle> ErasedAssetBundle for T {
@@ -417,7 +417,7 @@ impl<T: AssetBundle> ErasedAssetBundle for T {
 
     fn manifest(
         &self,
-    ) -> Result<HashMap<AssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>> {
+    ) -> Result<HashMap<UntypedAssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>> {
         self.manifest().map_err(Into::into)
     }
 
@@ -434,7 +434,7 @@ impl<T: AssetBundle> ErasedAssetBundle for T {
         path: &Path,
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
-    ) -> Result<AssetId, Box<dyn Error + Send + Sync + 'static>> {
+    ) -> Result<UntypedAssetId, Box<dyn Error + Send + Sync + 'static>> {
         self.add(path, asset, serializer).map_err(Into::into)
     }
 }

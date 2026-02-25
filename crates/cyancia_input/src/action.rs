@@ -1,7 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
-use cyancia_assets::{asset::Asset, loader::AssetLoader, store::AssetStore};
-use cyancia_id::Id;
+use cyancia_assets::{
+    asset::{Asset, AssetId, UntypedAssetId},
+    loader::AssetSerializer,
+};
+use cyancia_utils::wrapper;
 use serde::{Deserialize, Serialize};
 
 use crate::key::KeySequence;
@@ -13,14 +16,19 @@ pub struct Action {
     pub priority: u8,
 }
 
-impl Asset for Action {}
+wrapper! {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub ActionId : Arc<str>
+}
 
 #[derive(Debug, Clone)]
 pub struct ActionManifest {
     pub actions: Vec<Action>,
 }
 
-impl Asset for ActionManifest {}
+impl Asset for ActionManifest {
+    const TYPE_NAME: &'static str = "action_manifest";
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SerializableAction {
@@ -37,16 +45,18 @@ pub enum ActionManifestLoaderError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Toml(#[from] toml::de::Error),
+    TomlDe(#[from] toml::de::Error),
+    #[error(transparent)]
+    TomlSer(#[from] toml::ser::Error),
 }
 
-impl AssetLoader for ActionManifestLoader {
+impl AssetSerializer for ActionManifestLoader {
     type Asset = ActionManifest;
 
     type Error = ActionManifestLoaderError;
 
-    fn file_extensions() -> &'static [&'static str] {
-        &["actions"]
+    fn file_extension() -> &'static str {
+        "actions"
     }
 
     fn read(&self, reader: &mut dyn std::io::Read) -> Result<Self::Asset, Self::Error> {
@@ -62,26 +72,52 @@ impl AssetLoader for ActionManifestLoader {
             .collect();
         Ok(ActionManifest { actions })
     }
+
+    fn write(
+        &self,
+        asset: &Self::Asset,
+        writer: &mut dyn std::io::Write,
+    ) -> Result<(), Self::Error> {
+        let actions = asset
+            .actions
+            .iter()
+            .map(|a| {
+                (
+                    a.name.to_string(),
+                    SerializableAction {
+                        shortcut: a.shortcut.clone(),
+                        priority: if a.priority == 0 {
+                            None
+                        } else {
+                            Some(a.priority)
+                        },
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let toml = toml::to_string(&actions)?;
+        writer.write_all(toml.as_bytes())?;
+        Ok(())
+    }
 }
 
 pub struct ActionCollection {
-    shortcuts: HashMap<KeySequence, Vec<Id<Action>>>,
-    actions: HashMap<Id<Action>, Arc<Action>>,
+    shortcuts: HashMap<KeySequence, Vec<ActionId>>,
+    actions: HashMap<ActionId, Arc<Action>>,
 }
 
 impl ActionCollection {
-    pub fn new(manifests: AssetStore<ActionManifest>) -> Self {
+    pub fn new(manifests: impl IntoIterator<Item = impl Borrow<ActionManifest>>) -> Self {
         let actions = manifests
-            .into_map()
             .into_iter()
-            .flat_map(|(_, manifest)| manifest.actions.clone())
-            .map(|action| (Id::from_str(&action.name), Arc::new(action)))
+            .flat_map(|manifest| manifest.borrow().actions.clone())
+            .map(|action| (ActionId::new(action.name.clone()), Arc::new(action)))
             .collect::<HashMap<_, _>>();
         let mut shortcuts = actions.iter().fold(
-            HashMap::<KeySequence, Vec<Id<Action>>>::default(),
+            HashMap::<KeySequence, Vec<ActionId>>::default(),
             |mut acc, (id, a)| {
                 for shortcut in &a.shortcut {
-                    acc.entry(*shortcut).or_default().push(*id);
+                    acc.entry(*shortcut).or_default().push(id.clone());
                 }
                 acc
             },
@@ -96,16 +132,16 @@ impl ActionCollection {
         Self { shortcuts, actions }
     }
 
-    pub fn get_action_id(&self, shortcut: KeySequence) -> Option<Id<Action>> {
+    pub fn get_action_id(&self, shortcut: KeySequence) -> Option<ActionId> {
         let ids = self.shortcuts.get(&shortcut)?;
         ids.first().cloned()
     }
 
-    pub fn get_action(&self, id: Id<Action>) -> Option<Arc<Action>> {
+    pub fn get_action(&self, id: ActionId) -> Option<Arc<Action>> {
         self.actions.get(&id).cloned()
     }
 
-    pub fn get_all_action_ids(&self, shortcut: KeySequence) -> Option<Vec<Id<Action>>> {
+    pub fn get_all_action_ids(&self, shortcut: KeySequence) -> Option<Vec<ActionId>> {
         self.shortcuts.get(&shortcut).cloned()
     }
 }

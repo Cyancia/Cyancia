@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use cyancia_assets::store::AssetRegistry;
-use cyancia_image::tile::GpuTileStorage;
-use cyancia_input::action::{ActionCollection, ActionManifest};
+use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner};
+use cyancia_render::resources::{FullscreenVertex, GlobalSamplers};
+use cyancia_runtime::Runtime;
 use glam::{UVec2, Vec2};
 use iced_core::{
     Clipboard, Element, Event, Layout, Length, Rectangle, Shell, Size, Widget,
@@ -13,12 +14,17 @@ use iced_core::{
 };
 use iced_wgpu::primitive::Renderer;
 use iced_widget::{renderer::wgpu::primitive, shader::Program};
+use parking_lot::Mutex;
 
-use crate::{CCanvas, render::CanvasPrimitive};
+use crate::{
+    CCanvas,
+    render::{CanvasPrimitive, CanvasRenderer},
+};
 
 pub struct CanvasWidget {
     pub canvas: Arc<CCanvas>,
-    pub gpu_tile_storage: Arc<GpuTileStorage>,
+    pub renderer: Arc<Mutex<CanvasRenderer>>,
+    pub tile_storage: GpuTileStorage,
 }
 
 impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidget {
@@ -64,13 +70,14 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
             layout.bounds(),
             CanvasPrimitive {
                 canvas: self.canvas.clone(),
-                tile_storage: self.gpu_tile_storage.clone(),
+                renderer: self.renderer.clone(),
+                tile_storage: self.tile_storage.clone(),
             },
         );
     }
 }
 
-impl<Message, Theme> From<CanvasWidget> for Element<'_, Message, Theme, iced_wgpu::Renderer> {
+impl<'a, Message, Theme> From<CanvasWidget> for Element<'a, Message, Theme, iced_wgpu::Renderer> {
     fn from(canvas: CanvasWidget) -> Self {
         Element::new(canvas)
     }

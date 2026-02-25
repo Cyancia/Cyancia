@@ -1,17 +1,24 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use cyancia_id::Id;
 use cyancia_image::{
-    layer::Layer,
-    tile::{GpuTileStorage, TileId},
+    layer::{Layer, LayerId},
+    tile::{GpuTileStorage, GpuTileStorageInner, TileId},
 };
 use cyancia_math::iced_rect::{RectangleConversion, RectangleTransform};
-use cyancia_render::{buffer::DynamicBuffer, resources::{FULLSCREEN_VERTEX, GLOBAL_SAMPLERS}};
+use cyancia_render::{
+    buffer::DynamicBuffer,
+    resources::{FullscreenVertex, GlobalSamplers},
+};
+use cyancia_runtime::{
+    Runtime,
+    service::{FromRuntime, RenderContext, Service},
+};
 use cyancia_utils::include_shader;
 use encase::ShaderType;
 use glam::{Mat3, UVec2};
 use iced_core::Rectangle;
 use iced_widget::shader;
+use parking_lot::{Mutex, RwLock};
 use wgpu::{
     AddressMode, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType,
@@ -25,28 +32,59 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-use crate::CCanvas;
+use crate::{CCanvas, CanvasId};
+
+#[derive(Default)]
+pub struct CanvasRenderers {
+    instances: RwLock<HashMap<CanvasId, Arc<Mutex<CanvasRenderer>>>>,
+}
+
+impl Service for CanvasRenderers {}
+
+impl CanvasRenderers {
+    pub fn get(&self, canvas_id: &CanvasId) -> Option<Arc<Mutex<CanvasRenderer>>> {
+        self.instances.read().get(canvas_id).cloned()
+    }
+
+    pub fn insert(&self, canvas_id: CanvasId, renderer: CanvasRenderer) {
+        self.instances.write().insert(canvas_id, Arc::new(Mutex::new(renderer)));
+    }
+
+    pub fn remove(&self, canvas_id: &CanvasId) {
+        self.instances.write().remove(canvas_id);
+    }
+}
 
 #[derive(Debug)]
 pub struct CanvasRenderer {
-    buffer: Option<Arc<TextureView>>,
+    device: Arc<Device>,
+    buffer: Option<TextureView>,
     render_pipeline: CanvasRenderPipeline,
     present_pipeline: CanvasPresentPipeline,
-    device: Arc<Device>,
 }
 
-impl CanvasRenderer {}
+impl Service for CanvasRenderer {}
 
-impl shader::Pipeline for CanvasRenderer {
-    fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self
-    where
-        Self: Sized,
-    {
+impl FromRuntime for CanvasRenderer {
+    fn from_runtime(runtime: &Runtime) -> Self {
+        let render_context = runtime.service::<RenderContext>();
+        let render_pipeline = CanvasRenderPipeline::new(
+            &render_context.device,
+            GpuTileStorageInner::TILE_FORMAT,
+            runtime.service::<GlobalSamplers>().as_ref(),
+        );
+        let present_pipeline = CanvasPresentPipeline::new(
+            &render_context.device,
+            // TODO: this format varies based on platforms and hdr settings.
+            TextureFormat::Bgra8Unorm,
+            runtime.service::<FullscreenVertex>().as_ref(),
+            runtime.service::<GlobalSamplers>().as_ref(),
+        );
         Self {
-            buffer: None,
-            render_pipeline: CanvasRenderPipeline::new(&device, GpuTileStorage::TILE_FORMAT),
-            present_pipeline: CanvasPresentPipeline::new(&device, format),
-            device: device.clone().into(),
+            device: render_context.device.clone(),
+            buffer: Default::default(),
+            render_pipeline,
+            present_pipeline,
         }
     }
 }
@@ -69,7 +107,7 @@ impl CanvasRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: GpuTileStorage::TILE_FORMAT,
+            format: GpuTileStorageInner::TILE_FORMAT,
             usage: TextureUsages::RENDER_ATTACHMENT
                 | TextureUsages::STORAGE_BINDING
                 | TextureUsages::TEXTURE_BINDING,
@@ -78,18 +116,66 @@ impl CanvasRenderer {
 
         let texture_view = texture.create_view(&TextureViewDescriptor::default());
 
-        self.buffer = Some(Arc::new(texture_view));
+        self.buffer = Some(texture_view);
+    }
+
+    pub fn prepare(&mut self, canvas: CanvasUniform) {
+        self.render_pipeline.prepare(&self.device, canvas);
+    }
+
+    pub fn draw(
+        &self,
+        encoder: &mut CommandEncoder,
+        clip_bounds: &Rectangle<u32>,
+        target: &TextureView,
+        canvas: &CCanvas,
+        tile_storage: &GpuTileStorageInner,
+    ) {
+        let Some(buffer) = &self.buffer else {
+            return;
+        };
+
+        self.render_pipeline.draw(
+            &self.device,
+            encoder,
+            tile_storage,
+            clip_bounds,
+            buffer,
+            canvas.image.root().id(),
+        );
+        self.present_pipeline
+            .present(&self.device, encoder, buffer, &target, clip_bounds);
     }
 }
 
-#[derive(Debug)]
+pub struct DummyPipeline;
+
+impl shader::Pipeline for DummyPipeline {
+    fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self
+    where
+        Self: Sized,
+    {
+        Self
+    }
+}
+
 pub struct CanvasPrimitive {
     pub canvas: Arc<CCanvas>,
-    pub tile_storage: Arc<GpuTileStorage>,
+    pub renderer: Arc<Mutex<CanvasRenderer>>,
+    pub tile_storage: GpuTileStorage,
+}
+
+impl std::fmt::Debug for CanvasPrimitive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CanvasPrimitive")
+            .field("canvas", &self.canvas)
+            .field("runtime", &"Runtime")
+            .finish()
+    }
 }
 
 impl shader::Primitive for CanvasPrimitive {
-    type Pipeline = CanvasRenderer;
+    type Pipeline = DummyPipeline;
 
     fn prepare(
         &self,
@@ -99,20 +185,18 @@ impl shader::Primitive for CanvasPrimitive {
         bounds: &Rectangle,
         viewport: &shader::Viewport,
     ) {
+        let mut renderer = self.renderer.lock();
         let size = UVec2::new(bounds.width as u32, bounds.height as u32);
         renderer.resize_buffer(size);
         let transform = self.canvas.transform.read();
 
-        renderer.render_pipeline.prepare(
-            &renderer.device,
-            CanvasUniform {
-                transform: transform.pixel_to_widget,
-                inv_transform: transform.pixel_to_widget.inverse(),
-                size: self.canvas.image.size(),
-                total_tile_count: GpuTileStorage::calc_tile_count(self.canvas.image.size()),
-                tile_size: GpuTileStorage::TILE_SIZE,
-            },
-        );
+        renderer.prepare(CanvasUniform {
+            transform: transform.pixel_to_widget,
+            inv_transform: transform.pixel_to_widget.inverse(),
+            size: self.canvas.image.size(),
+            total_tile_count: GpuTileStorageInner::calc_tile_count(self.canvas.image.size()),
+            tile_size: GpuTileStorageInner::TILE_SIZE,
+        });
     }
 
     fn render(
@@ -122,21 +206,13 @@ impl shader::Primitive for CanvasPrimitive {
         target: &TextureView,
         clip_bounds: &Rectangle<u32>,
     ) {
-        let Some(buffer) = &renderer.buffer else {
-            return;
-        };
-
-        renderer.render_pipeline.draw(
-            &renderer.device,
+        self.renderer.lock().draw(
             encoder,
-            &self.tile_storage,
             clip_bounds,
-            buffer,
-            self.canvas.image.root().id(),
+            target,
+            &self.canvas,
+            &self.tile_storage,
         );
-        renderer
-            .present_pipeline
-            .present(&renderer.device, encoder, buffer, &target, clip_bounds);
     }
 }
 
@@ -146,6 +222,7 @@ pub struct CanvasRenderPipeline {
     main_layout: BindGroupLayout,
     uniform_buffer: DynamicBuffer<CanvasUniform>,
     uniform: Option<CanvasUniform>,
+    sampler: Sampler,
 }
 
 #[derive(Debug, Clone, Copy, ShaderType)]
@@ -158,7 +235,7 @@ pub struct CanvasUniform {
 }
 
 impl CanvasRenderPipeline {
-    fn new(device: &Device, format: TextureFormat) -> Self {
+    fn new(device: &Device, format: TextureFormat, samplers: &GlobalSamplers) -> Self {
         let main_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("canvas main layout"),
             entries: &[
@@ -244,6 +321,7 @@ impl CanvasRenderPipeline {
                 BufferUsages::UNIFORM,
             ),
             uniform: None,
+            sampler: samplers.linear_clamp().clone(),
         }
     }
 
@@ -258,10 +336,10 @@ impl CanvasRenderPipeline {
         &self,
         device: &Device,
         encoder: &mut CommandEncoder,
-        tile_storage: &GpuTileStorage,
+        tile_storage: &GpuTileStorageInner,
         clip_bounds: &Rectangle<u32>,
         target: &TextureView,
-        root_layer_id: Id<Layer>,
+        root_layer_id: LayerId,
     ) {
         let Some(uniform) = &self.uniform else {
             return;
@@ -308,7 +386,7 @@ impl CanvasRenderPipeline {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::Sampler(&GLOBAL_SAMPLERS.linear_clamp()),
+                        resource: BindingResource::Sampler(&self.sampler),
                     },
                     BindGroupEntry {
                         binding: 2,
@@ -345,10 +423,16 @@ impl CanvasRenderPipeline {
 pub struct CanvasPresentPipeline {
     pipeline: RenderPipeline,
     layout: BindGroupLayout,
+    sampler: Sampler,
 }
 
 impl CanvasPresentPipeline {
-    pub fn new(device: &Device, format: TextureFormat) -> Self {
+    pub fn new(
+        device: &Device,
+        format: TextureFormat,
+        fullscreen_vertex: &FullscreenVertex,
+        samplers: &GlobalSamplers,
+    ) -> Self {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("canvas present shader"),
             source: ShaderSource::Wgsl(include_shader!("canvas_present.wgsl").into()),
@@ -385,7 +469,7 @@ impl CanvasPresentPipeline {
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("canvas present pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: FULLSCREEN_VERTEX.fullscreen_vertex_state(),
+            vertex: fullscreen_vertex.fullscreen_vertex_state(),
             fragment: Some(FragmentState {
                 module: &shader,
                 entry_point: Some("fragment"),
@@ -406,6 +490,7 @@ impl CanvasPresentPipeline {
         Self {
             pipeline,
             layout,
+            sampler: samplers.linear_clamp().clone(),
         }
     }
 
@@ -427,7 +512,7 @@ impl CanvasPresentPipeline {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::Sampler(&GLOBAL_SAMPLERS.linear_clamp()),
+                    resource: BindingResource::Sampler(&self.sampler),
                 },
             ],
         });

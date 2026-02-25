@@ -1,14 +1,40 @@
 use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
 
+use cyancia_runtime::service::Service;
+
 use crate::{
     asset::{Asset, ErasedAsset},
     error::{AssetError, AssetResult},
     store::AssetRegistry,
 };
 
+#[derive(Default)]
+pub struct AssetSerializerRegistryBuilder {
+    serializers: HashMap<&'static str, Box<dyn ErasedAssetSerializer>>,
+}
+
+impl Service for AssetSerializerRegistryBuilder {}
+
+impl AssetSerializerRegistryBuilder {
+    pub fn add_serializer<L: AssetSerializer + Default>(&mut self) {
+        let loader = Box::new(L::default());
+        self.serializers.insert(L::file_extension(), loader);
+    }
+
+    pub(crate) fn build(&mut self) -> AssetSerializerRegistry {
+        let mut registry = AssetSerializerRegistry::new();
+        for (ext, loader) in self.serializers.drain() {
+            registry.serializers.insert(ext, Arc::from(loader));
+        }
+        registry
+    }
+}
+
 pub struct AssetSerializerRegistry {
     serializers: HashMap<&'static str, Arc<dyn ErasedAssetSerializer>>,
 }
+
+impl Service for AssetSerializerRegistry {}
 
 impl AssetSerializerRegistry {
     pub fn new() -> Self {

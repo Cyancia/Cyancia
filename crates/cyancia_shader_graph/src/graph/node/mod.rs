@@ -5,12 +5,13 @@ use std::{
     sync::Arc,
 };
 
-use cyancia_id::Id;
+use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use iced_core::{Color, Element, Point};
 use iced_widget::Column;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     GraphRenderer, GraphTheme,
@@ -19,7 +20,8 @@ use crate::{
         GraphDynamicInstancesStorage, GraphSignature, GraphVarIdentGenerator,
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
-            GraphInputSlotData, GraphOutputSlotData, GraphSlots,
+            GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
+            GraphSlots,
         },
         variable::GraphVariable,
     },
@@ -28,6 +30,11 @@ use crate::{
 
 pub mod external;
 pub mod function;
+
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub GraphNodeId : Uuid
+}
 
 pub trait GraphNode: Send + Sync + 'static + DynClone {
     type State: Send + Sync + 'static + GraphSerializable;
@@ -68,7 +75,7 @@ pub trait GraphNode: Send + Sync + 'static + DynClone {
 
 pub struct ErasedGraphNodeMessage {
     pub inner: Box<dyn Any + Send + Sync>,
-    pub id: Id<GraphNodeData>,
+    pub id: GraphNodeId,
 }
 
 pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
@@ -84,7 +91,7 @@ pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     );
     fn view_inputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer>;
@@ -96,7 +103,7 @@ pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     );
     fn view_outputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer>;
@@ -156,7 +163,7 @@ impl<T: GraphNode> ErasedGraphNode for T {
 
     fn view_inputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
@@ -172,7 +179,7 @@ impl<T: GraphNode> ErasedGraphNode for T {
 
     fn view_outputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
@@ -256,7 +263,7 @@ impl StatefulGraphNode {
 
     pub fn view_inputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         self.data.view_inputs(node_id, &self.state, ctx)
@@ -264,7 +271,7 @@ impl StatefulGraphNode {
 
     fn view_outputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         self.data.view_outputs(node_id, &self.state, ctx)
@@ -390,14 +397,14 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
 pub struct GraphNodeData {
     pub position: Point,
     pub data: StatefulGraphNode,
-    pub inputs: Arc<[Id<GraphInputSlotData>]>,
-    pub outputs: Arc<[Id<GraphOutputSlotData>]>,
+    pub inputs: Arc<[GraphInputSlotId]>,
+    pub outputs: Arc<[GraphOutputSlotId]>,
 }
 
 impl GraphNodeData {
     pub fn view_inputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         slots: &GraphSlots,
         storage: &GraphDynamicInstancesStorage,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
@@ -413,7 +420,7 @@ impl GraphNodeData {
 
     pub fn view_outputs(
         &self,
-        node_id: Id<GraphNodeData>,
+        node_id: GraphNodeId,
         slots: &GraphSlots,
         storage: &GraphDynamicInstancesStorage,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
@@ -445,7 +452,7 @@ impl GraphNodeData {
 }
 
 pub struct GraphNodeInputsViewContext<'a> {
-    inputs: &'a [Id<GraphInputSlotData>],
+    inputs: &'a [GraphInputSlotId],
     slots: &'a GraphSlots,
     storage: &'a GraphDynamicInstancesStorage,
 }
@@ -484,9 +491,7 @@ impl GraphNodeInputsViewContext<'_> {
         self.inputs.len()
     }
 
-    pub fn all_inputs(
-        &self,
-    ) -> impl Iterator<Item = (&Id<GraphInputSlotData>, &GraphInputSlotData)> {
+    pub fn all_inputs(&self) -> impl Iterator<Item = (&GraphInputSlotId, &GraphInputSlotData)> {
         self.inputs
             .iter()
             .filter_map(move |id| self.slots.get_input(id).map(|slot| (id, slot)))
@@ -498,7 +503,7 @@ impl GraphNodeInputsViewContext<'_> {
 }
 
 pub struct GraphNodeOutputsViewContext<'a> {
-    outputs: &'a [Id<GraphOutputSlotData>],
+    outputs: &'a [GraphOutputSlotId],
     slots: &'a GraphSlots,
     storage: &'a GraphDynamicInstancesStorage,
 }
@@ -536,9 +541,7 @@ impl GraphNodeOutputsViewContext<'_> {
         self.outputs.len()
     }
 
-    pub fn all_outputs(
-        &self,
-    ) -> impl Iterator<Item = (&Id<GraphOutputSlotData>, &GraphOutputSlotData)> {
+    pub fn all_outputs(&self) -> impl Iterator<Item = (&GraphOutputSlotId, &GraphOutputSlotData)> {
         self.outputs
             .iter()
             .filter_map(move |id| self.slots.get_output(id).map(|slot| (id, slot)))
@@ -550,7 +553,7 @@ impl GraphNodeOutputsViewContext<'_> {
 }
 
 pub struct GraphNodeUpdateContext<'a> {
-    inputs: &'a [Id<GraphInputSlotData>],
+    inputs: &'a [GraphInputSlotId],
     slots: &'a mut GraphSlots,
     storage: &'a GraphDynamicInstancesStorage,
 }
@@ -580,8 +583,8 @@ impl GraphNodeUpdateContext<'_> {
 }
 
 pub struct GraphNodeUpdateSignatureContext<'a> {
-    pub inputs: &'a [Id<GraphInputSlotData>],
-    pub outputs: &'a [Id<GraphOutputSlotData>],
+    pub inputs: &'a [GraphInputSlotId],
+    pub outputs: &'a [GraphOutputSlotId],
     pub slots: &'a mut GraphSlots,
     pub signature: &'a mut GraphSignature,
 }
@@ -617,11 +620,11 @@ impl GraphNodeUpdateSignatureContext<'_> {
 }
 
 pub struct GraphNodeCodeGenContext<'a> {
-    pub inputs: &'a [Id<GraphInputSlotData>],
-    pub outputs: &'a [Id<GraphOutputSlotData>],
+    pub inputs: &'a [GraphInputSlotId],
+    pub outputs: &'a [GraphOutputSlotId],
     pub graph_slots: &'a GraphSlots,
     pub storage: &'a GraphDynamicInstancesStorage,
-    pub output_slot_idents: &'a mut HashMap<Id<GraphOutputSlotData>, String>,
+    pub output_slot_idents: &'a mut HashMap<GraphOutputSlotId, String>,
     pub ident_generator: &'a mut GraphVarIdentGenerator,
 }
 
@@ -752,7 +755,7 @@ pub enum GraphNodeCodeGenError {
 
 #[derive(Debug)]
 pub struct ContextualGraphNodeCodeGenError {
-    pub node_id: Id<GraphNodeData>,
+    pub node_id: GraphNodeId,
     pub node_title: String,
     pub err: GraphNodeCodeGenError,
     pub code: String,

@@ -1,8 +1,7 @@
 use std::{any::Any, cell::UnsafeCell, collections::HashMap};
 
-use cyancia_id::Id;
 use cyancia_input::{
-    action::{Action, ActionCollection},
+    action::{Action, ActionCollection, ActionId},
     key::{KeySequence, KeyboardState},
     mouse::PressedMouseState,
 };
@@ -17,13 +16,13 @@ pub mod shell;
 pub mod task;
 
 pub trait ActionFunction: Send + Sync + 'static {
-    fn id(&self) -> Id<Action>;
+    fn id(&self) -> ActionId;
     fn trigger(&self, shell: &mut ActionShell);
 }
 
 pub struct ActionFunctionCollection {
     actions: ActionCollection,
-    functions: HashMap<Id<Action>, Box<dyn ActionFunction>>,
+    functions: HashMap<ActionId, Box<dyn ActionFunction>>,
 }
 
 impl ActionFunctionCollection {

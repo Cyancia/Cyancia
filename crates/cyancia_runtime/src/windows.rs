@@ -7,13 +7,17 @@ use std::{
     },
 };
 
+use cyancia_utils::wrapper;
 use iced_core::{Element, Theme, window};
 use iced_runtime::{Task, futures::Subscription};
+use parking_lot::Mutex;
 
 use crate::{Runtime, service::Service};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct WindowViewId(String);
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub WindowViewId : &'static str
+}
 
 pub struct Window;
 
@@ -21,11 +25,15 @@ pub trait WindowView: Send + Sync + 'static {
     type Message: Send + Sync + 'static;
 
     fn id(&self) -> WindowViewId;
-    fn view(
-        &self,
+    fn view<'a>(
+        &'a self,
+        runtime: &'a Runtime,
+    ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>>;
+    fn update(
+        &mut self,
+        message: Self::Message,
         runtime: &Runtime,
-    ) -> Element<'static, Self::Message, Theme, iced_wgpu::Renderer>;
-    fn update(&self, message: Self::Message, runtime: &Runtime) -> Task<Self::Message>;
+    ) -> impl Into<Task<Self::Message>>;
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::none()
     }
@@ -33,12 +41,12 @@ pub trait WindowView: Send + Sync + 'static {
 
 pub trait ErasedWindowView: Send + Sync + 'static {
     fn id(&self) -> WindowViewId;
-    fn view(
-        &self,
-        runtime: &Runtime,
-    ) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer>;
+    fn view<'a>(
+        &'a self,
+        runtime: &'a Runtime,
+    ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer>;
     fn update(
-        &self,
+        &mut self,
         message: Box<dyn Any + Send + Sync>,
         runtime: &Runtime,
     ) -> Task<Box<dyn Any + Send + Sync>>;
@@ -55,16 +63,17 @@ where
         <T as WindowView>::id(self)
     }
 
-    fn view(
-        &self,
-        runtime: &Runtime,
-    ) -> Element<'static, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer> {
+    fn view<'a>(
+        &'a self,
+        runtime: &'a Runtime,
+    ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer> {
         <T as WindowView>::view(self, runtime)
+            .into()
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
     fn update(
-        &self,
+        &mut self,
         message: Box<dyn Any + Send + Sync>,
         runtime: &Runtime,
     ) -> Task<Box<dyn Any + Send + Sync>> {
@@ -72,6 +81,7 @@ where
             .downcast::<T::Message>()
             .expect("Cast window message failed");
         <T as WindowView>::update(self, msg, runtime)
+            .into()
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
@@ -91,6 +101,7 @@ pub enum WindowManagerMessage {
     Window(ErasedWindowMessage),
 }
 
+#[derive(Default)]
 pub struct WindowManager {
     windows: HashMap<window::Id, WindowViewId>,
     views: HashMap<WindowViewId, Box<dyn ErasedWindowView>>,
@@ -103,40 +114,31 @@ impl WindowManager
 where
     Theme: 'static,
 {
-    pub fn new() -> Self {
-        Self {
-            windows: HashMap::new(),
-            views: HashMap::new(),
-            opened_views: HashMap::new(),
-        }
-    }
-
-    pub fn register<T: WindowView + Default>(&mut self) {
-        let view = T::default();
+    pub fn register_view<T: WindowView>(&mut self, view: T) {
         self.views.insert(view.id(), Box::new(view));
     }
 
-    pub fn view(
-        &self,
+    pub fn view<'a>(
+        &'a self,
         id: window::Id,
-        runtime: &Runtime,
-    ) -> Element<'_, ErasedWindowMessage, Theme, iced_wgpu::Renderer> {
+        runtime: &'a Runtime,
+    ) -> Element<'a, ErasedWindowMessage, Theme, iced_wgpu::Renderer> {
         let window = self.windows.get(&id).expect("Window not found").clone();
         let view = self.views.get(&window).expect("Window view not found");
         view.view(runtime).map(move |msg| ErasedWindowMessage {
-            window: window.clone(),
+            window,
             message: msg,
         })
     }
 
     pub fn update(
-        &self,
+        &mut self,
         message: ErasedWindowMessage,
         runtime: &Runtime,
     ) -> Task<ErasedWindowMessage> {
         let view = self
             .views
-            .get(&message.window)
+            .get_mut(&message.window)
             .expect("Window view not found");
         view.update(message.message, runtime)
             .map(move |msg| ErasedWindowMessage {

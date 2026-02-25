@@ -1,12 +1,12 @@
 use std::{any::Any, collections::HashMap, sync::Arc, time::Instant};
 
 use cyancia_canvas::CCanvas;
-use cyancia_id::Id;
 use cyancia_input::{
-    action::Action,
+    action::{Action, ActionId},
     key::KeyboardState,
     mouse::{HoverMouseState, PressedMouseState},
 };
+use cyancia_utils::wrapper;
 use iced_core::{Point, keyboard::key, mouse};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -15,12 +15,17 @@ pub mod pan;
 pub mod rotate;
 pub mod zoom;
 
+wrapper! {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub CanvasToolId : Arc<str>
+}
+
 pub struct CanvasTool {
-    pub binded_action: Id<Action>,
+    pub binded_action: ActionId,
 }
 
 pub trait CanvasToolFunction: Send + Sync + 'static {
-    fn id(&self) -> Id<CanvasTool>;
+    fn id(&self) -> CanvasToolId;
     fn activate(&mut self, canvas: &CCanvas) {}
     fn hover(&mut self, keyboard: &KeyboardState, mouse: &HoverMouseState, canvas: &CCanvas) {}
     fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, canvas: &CCanvas) {}
@@ -30,7 +35,7 @@ pub trait CanvasToolFunction: Send + Sync + 'static {
 }
 
 pub struct CanvasToolFunctionCollection {
-    actions: HashMap<Id<CanvasTool>, Arc<RwLock<dyn CanvasToolFunction>>>,
+    actions: HashMap<CanvasToolId, Arc<RwLock<dyn CanvasToolFunction>>>,
 }
 
 impl CanvasToolFunctionCollection {
@@ -46,21 +51,21 @@ impl CanvasToolFunctionCollection {
             .insert(action.id(), Arc::new(RwLock::new(action)));
     }
 
-    pub fn get(&self, id: &Id<CanvasTool>) -> Option<RwLockReadGuard<'_, dyn CanvasToolFunction>> {
+    pub fn get(&self, id: &CanvasToolId) -> Option<RwLockReadGuard<'_, dyn CanvasToolFunction>> {
         self.actions.get(id).map(|l| l.read())
     }
 
     pub fn get_mut(
         &self,
-        id: &Id<CanvasTool>,
+        id: &CanvasToolId,
     ) -> Option<RwLockWriteGuard<'_, dyn CanvasToolFunction>> {
         self.actions.get(id).map(|l| l.write())
     }
 }
 
 struct ToolProxyState {
-    last: Id<CanvasTool>,
-    current: Id<CanvasTool>,
+    last: CanvasToolId,
+    current: CanvasToolId,
     last_switch: Instant,
 }
 
@@ -70,7 +75,7 @@ pub struct ToolProxy {
 }
 
 impl ToolProxy {
-    pub fn new(initial: Id<CanvasTool>, collection: CanvasToolFunctionCollection) -> Self {
+    pub fn new(initial: CanvasToolId, collection: CanvasToolFunctionCollection) -> Self {
         Self {
             state: RwLock::new(ToolProxyState {
                 last: initial.clone(),
@@ -81,13 +86,13 @@ impl ToolProxy {
         }
     }
 
-    pub fn switch_tool(&self, tool: Id<CanvasTool>, canvas: &CCanvas) {
+    pub fn switch_tool(&self, tool: CanvasToolId, canvas: &CCanvas) {
         let mut state = self.state.write();
         if let Some(mut current_tool) = self.tools.get_mut(&state.current) {
             current_tool.deactivate(canvas);
         }
 
-        state.last = state.current;
+        state.last = state.current.clone();
         state.current = tool;
         state.last_switch = Instant::now();
 
