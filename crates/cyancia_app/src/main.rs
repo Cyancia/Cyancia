@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::main_view::MainView;
 
-mod input_manager;
 mod main_view;
 
 use cyancia_actions::ActionPlugin;

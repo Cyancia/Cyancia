@@ -11,12 +11,15 @@ use iced_core::Point;
 use parking_lot::RwLock;
 
 use crate::{
+    brush::OpenBrushEditorAction,
     canvas_control::{CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction},
     file::OpenFileAction,
 };
 
+pub mod brush;
 pub mod canvas_control;
 pub mod file;
+pub mod input_manager;
 
 pub struct ActionPlugin;
 
@@ -26,7 +29,8 @@ impl Plugin for ActionPlugin {
             .add_action_function::<CanvasToolSwitch<PanToolAction>>()
             .add_action_function::<CanvasToolSwitch<RotateToolAction>>()
             .add_action_function::<CanvasToolSwitch<ZoomToolAction>>()
-            .add_action_function::<OpenFileAction>();
+            .add_action_function::<OpenFileAction>()
+            .add_action_function::<OpenBrushEditorAction>();
     }
 }
 

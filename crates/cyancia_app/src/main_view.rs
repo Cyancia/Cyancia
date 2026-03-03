@@ -1,13 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use cyancia_actions::{
-    ActionFunctionRegistry,
-    canvas_control::{
-        BrushToolAction, CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction,
-    },
-    file::OpenFileAction,
-};
-use cyancia_assets::{loader::AssetSerializerRegistry, store::AssetRegistry};
+use cyancia_actions::input_manager::InputManager;
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
     render::{CanvasRenderer, CanvasRenderers},
@@ -17,28 +10,21 @@ use cyancia_image::{
     CImage,
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_input::{
-    action::{Action, ActionManifest, ActionManifestCollection},
-    key::{KeySequence, KeyboardState},
-};
+use cyancia_input::action::ActionManifestCollection;
 use cyancia_runtime::{
     Services,
     service::FromRuntime,
     windows::{WindowView, WindowViewId},
 };
-use cyancia_tools::{
-    CanvasToolFunctionRegistry, CanvasToolId, CanvasToolProxies, ToolProxy, brush::BrushTool,
-    pan::PanTool, rotate::RotateTool, zoom::ZoomTool,
-};
+use cyancia_tools::{CanvasToolFunctionRegistry, CanvasToolProxies};
+
 use glam::UVec2;
 use iced::{
-    Element, Point, Renderer, Subscription, Task, Theme, event,
-    keyboard::{self, key},
+    Element, Subscription, Task, Theme, event,
+    keyboard::{self},
     mouse, window,
 };
 use uuid::Uuid;
-
-use crate::input_manager::InputManager;
 
 pub struct MainView {
     pub input_manager: InputManager,

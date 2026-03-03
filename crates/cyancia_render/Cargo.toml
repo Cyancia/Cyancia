@@ -12,6 +12,7 @@ iced_wgpu.workspace = true
 iced_widget.workspace = true
 cyancia_runtime.workspace = true
 futures.workspace = true
+iced_renderer.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

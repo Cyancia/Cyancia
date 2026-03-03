@@ -1,7 +1,8 @@
 use cyancia_widgets::spin_slider::SpinSlider;
-use glam::Vec2;
+use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
-use iced_widget::column;
+use iced_widget::{column, space};
+use serde::{Deserialize, Serialize};
 
 use crate::{GraphRenderer, GraphTheme, graph::slot::GraphValueType};
 
@@ -96,5 +97,117 @@ impl GraphValueType for Vec2FType {
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(format!("vec2f({:.5}, {:.5})", data.x, data.y))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct ColorType;
+
+#[derive(Clone)]
+pub enum ColorMessage {
+    R(f32),
+    G(f32),
+    B(f32),
+    A(f32),
+}
+
+impl GraphValueType for ColorType {
+    type AssociatedLiteralType = Vec4;
+
+    type Message = ColorMessage;
+
+    fn color(&self) -> Color {
+        color!(0x8779f2)
+    }
+
+    fn name(&self) -> &'static str {
+        "Color"
+    }
+
+    fn default_literal(&self) -> Self::AssociatedLiteralType {
+        Vec4::ZERO
+    }
+
+    fn wgsl_type(&self) -> Option<&'static str> {
+        Some("vec4f")
+    }
+
+    fn view_literal(
+        &self,
+        data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        column![
+            SpinSlider::new(0.0..=1.0, data.x, |x| ColorMessage::R(x)).step(0.01),
+            SpinSlider::new(0.0..=1.0, data.y, |x| ColorMessage::G(x)).step(0.01),
+            SpinSlider::new(0.0..=1.0, data.z, |x| ColorMessage::B(x)).step(0.01),
+            SpinSlider::new(0.0..=1.0, data.w, |x| ColorMessage::A(x)).step(0.01),
+        ]
+        .padding(2)
+        .into()
+    }
+
+    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
+        match message {
+            ColorMessage::R(r) => data.x = r,
+            ColorMessage::G(g) => data.y = g,
+            ColorMessage::B(b) => data.z = b,
+            ColorMessage::A(a) => data.w = a,
+        }
+    }
+
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        Some(format!(
+            "vec4f({:.5}, {:.5}, {:.5}, {:.5})",
+            data.x, data.y, data.z, data.w
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct TextureType;
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct TextureReference {
+    pub local_index: u32,
+}
+
+impl TextureReference {
+    pub const NULL: Self = Self {
+        local_index: u32::MAX,
+    };
+}
+
+impl GraphValueType for TextureType {
+    type AssociatedLiteralType = TextureReference;
+
+    type Message = ();
+
+    fn color(&self) -> Color {
+        color!(0x8779f2)
+    }
+
+    fn name(&self) -> &'static str {
+        "Texture"
+    }
+
+    fn default_literal(&self) -> Self::AssociatedLiteralType {
+        TextureReference::NULL
+    }
+
+    fn wgsl_type(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn view_literal(
+        &self,
+        _data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Element::new(space())
+    }
+
+    fn update_literal(&self, _data: &mut Self::AssociatedLiteralType, _message: Self::Message) {}
+
+    fn literal_to_code(&self, _data: &Self::AssociatedLiteralType) -> Option<String> {
+        None
     }
 }

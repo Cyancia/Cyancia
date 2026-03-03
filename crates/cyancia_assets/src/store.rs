@@ -150,14 +150,14 @@ impl AssetRegistry {
         self.add_erased_bundle(Arc::new(bundle))
     }
 
-    pub fn handle<T: Asset>(
-        &self,
-        bundle_id: BundleId,
-        asset_id: AssetId<T>,
-    ) -> Option<AssetHandle<T>> {
-        let bundle = self.bundles.get(&bundle_id)?;
+    pub fn handle<T: Asset>(&self, asset_id: AssetId<T>) -> AssetResult<AssetHandle<T>> {
+        let bundle_id = self.index_db.get_asset(&asset_id.into_untyped())?.bundle_id;
+        let bundle = self
+            .bundles
+            .get(&bundle_id)
+            .ok_or_else(|| AssetError::BundleNotFound(bundle_id))?;
 
-        Some(AssetHandle::new(
+        Ok(AssetHandle::new(
             asset_id,
             bundle.clone(),
             self.index_db.clone(),

@@ -15,6 +15,7 @@ use cyancia_runtime::{
 };
 use cyancia_utils::wrapper;
 use futures::executor::block_on;
+use parse_display::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::key::KeySequence;
@@ -27,7 +28,8 @@ pub struct Action {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+    #[display("{0}")]
     pub ActionId : Arc<str>
 }
 

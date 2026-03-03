@@ -1067,6 +1067,7 @@ name = "cyancia_actions"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "cyancia_brush",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_input",
@@ -1089,6 +1090,7 @@ version = "0.1.0"
 dependencies = [
  "cyancia_actions",
  "cyancia_assets",
+ "cyancia_brush",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_input",
@@ -1098,8 +1100,14 @@ dependencies = [
  "futures",
  "glam 0.30.10",
  "iced",
+ "iced_core",
+ "iced_futures",
+ "iced_runtime",
  "iced_wgpu",
+ "image",
  "log",
+ "parking_lot",
+ "rfd",
  "tracing-subscriber",
  "uuid",
  "wgpu",
@@ -1127,6 +1135,32 @@ dependencies = [
  "toml",
  "uuid",
  "xxhash-rust",
+ "zip",
+]
+
+[[package]]
+name = "cyancia_brush"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "cyancia_assets",
+ "cyancia_render",
+ "cyancia_runtime",
+ "cyancia_shader_graph",
+ "glam 0.30.10",
+ "iced_core",
+ "iced_futures",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "image",
+ "log",
+ "rfd",
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+ "wesl",
+ "wgpu",
  "zip",
 ]
 
@@ -1199,6 +1233,7 @@ dependencies = [
  "iced_core",
  "indexmap",
  "log",
+ "parse-display",
  "serde",
  "smallvec",
  "thiserror 2.0.18",
@@ -1221,6 +1256,7 @@ dependencies = [
  "cyancia_utils",
  "encase",
  "futures",
+ "iced_renderer",
  "iced_wgpu",
  "iced_widget",
  "wesl",

@@ -10,3 +10,4 @@ toml.workspace = true
 serde.workspace = true
 glam.workspace = true
 rfd.workspace = true
+cyancia_brush.workspace = true

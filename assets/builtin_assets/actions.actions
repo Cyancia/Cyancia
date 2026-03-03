@@ -17,3 +17,7 @@ enabled_in = ["main_view"]
 [open_file_action]
 shortcut = [["ControlLeft", "KeyO"]]
 enabled_in = ["main_view"]
+
+[open_brush_editor_action]
+shortcut = [["F5"]]
+enabled_in = ["main_view"]

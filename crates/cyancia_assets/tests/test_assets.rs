@@ -247,8 +247,8 @@ fn test() {
     serializers.add_serializer::<TestAssetSerializer>();
     serializers.add_serializer::<TagSerializer>();
 
-    let mut registry = AssetRegistry::new(&assets_root, serializers.consume_and_build().into())
-        .unwrap();
+    let mut registry =
+        AssetRegistry::new(&assets_root, serializers.consume_and_build().into()).unwrap();
 
     registry.add_bundle(local_bundle).unwrap();
     registry
@@ -274,10 +274,7 @@ fn test() {
     assert_eq!(test_assets_by_name.get("Test Asset 2"), Some(&84));
 
     let test_asset_handle = registry
-        .handle::<TestAsset>(
-            test_asset_locations.get("Test Asset").unwrap().0,
-            test_asset_locations.get("Test Asset").unwrap().1,
-        )
+        .handle::<TestAsset>(test_asset_locations.get("Test Asset").unwrap().1)
         .unwrap();
 
     test_asset_handle
@@ -348,9 +345,7 @@ fn test() {
         )
         .unwrap();
 
-    let new_asset_handle = registry
-        .handle::<TestAsset>(local_bundle_id, new_asset_id)
-        .unwrap();
+    let new_asset_handle = registry.handle::<TestAsset>(new_asset_id).unwrap();
     assert_eq!(
         new_asset_handle.get().unwrap().as_ref(),
         &TestAsset {
@@ -406,8 +401,8 @@ fn test() {
     serializers.add_serializer::<TestAssetSerializer>();
     serializers.add_serializer::<TagSerializer>();
 
-    let mut restarted_registry = AssetRegistry::new(&assets_root, serializers.consume_and_build().into())
-        .unwrap();
+    let mut restarted_registry =
+        AssetRegistry::new(&assets_root, serializers.consume_and_build().into()).unwrap();
 
     restarted_registry
         .add_bundle(StandardAssetBundle::new(&bundle_path).unwrap())
@@ -416,9 +411,7 @@ fn test() {
         .add_bundle(AssetDirectory::new(&local_assets_root))
         .unwrap();
 
-    let restarted_test_assets = restarted_registry
-        .all_handles_of::<TestAsset>()
-        .unwrap();
+    let restarted_test_assets = restarted_registry.all_handles_of::<TestAsset>().unwrap();
     assert_eq!(restarted_test_assets.len(), 3);
 
     let mut restarted_by_name = HashMap::new();
@@ -462,7 +455,7 @@ fn test() {
     );
 
     let restarted_new_asset_handle = restarted_registry
-        .handle::<TestAsset>(local_bundle_id, new_asset_id)
+        .handle::<TestAsset>(new_asset_id)
         .unwrap();
     assert_eq!(
         restarted_new_asset_handle.get().unwrap().as_ref(),

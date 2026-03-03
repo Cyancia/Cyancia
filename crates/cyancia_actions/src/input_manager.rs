@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use cyancia_actions::ActionFunctionRegistry;
 use cyancia_canvas::CCanvas;
 use cyancia_input::{
     action::ActionCollection,
@@ -9,11 +8,14 @@ use cyancia_input::{
 };
 use cyancia_runtime::Services;
 use cyancia_tools::ToolProxy;
-use iced::{
-    Point, Task,
+use iced_core::{
+    Point,
     keyboard::{self, key},
     mouse,
 };
+use iced_runtime::Task;
+
+use crate::ActionFunctionRegistry;
 
 pub struct InputManager {
     actions: ActionCollection,
@@ -33,7 +35,11 @@ impl InputManager {
         }
     }
 
-    pub fn on_keyboard_event(&mut self, event: keyboard::Event, runtime: Arc<Services>) -> Task<()> {
+    pub fn on_keyboard_event(
+        &mut self,
+        event: keyboard::Event,
+        runtime: Arc<Services>,
+    ) -> Task<()> {
         match event {
             keyboard::Event::KeyPressed {
                 physical_key,
@@ -55,6 +61,7 @@ impl InputManager {
                             .and_then(|k| self.actions.get_action_id(k))
                             .and_then(|id| runtime.service::<ActionFunctionRegistry>().get(id))
                         {
+                            log::info!("Triggering action: {}", action.id());
                             return Task::future(async move { action.trigger(runtime).await });
                         }
                     }
