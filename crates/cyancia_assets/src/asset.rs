@@ -1,35 +1,34 @@
-use std::{
-    any::TypeId,
-    fmt::Display,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{marker::PhantomData, sync::Arc};
 
+use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
-use downcast_rs::{Downcast, DowncastSync};
+use downcast_rs::DowncastSync;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    prelude::{FromRow, Type},
-    types::{
-        Uuid,
-        chrono::{DateTime, Utc},
-    },
-};
+use uuid::Uuid;
 
 use crate::{
-    bundle::{AssetBundle, AssetBundleCache, BundleId},
+    bundle::{AssetBundleCache, BundleId},
     error::{AssetError, AssetResult},
     index_db::AssetIndexDb,
 };
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Serialize, Deserialize, Display)]
-    #[sqlx(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
     #[display("{0}")]
     pub AssetId: Uuid
+}
+
+impl rusqlite::types::FromSql for AssetId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Ok(Self(Uuid::column_result(value)?))
+    }
+}
+
+impl rusqlite::types::ToSql for AssetId {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
 }
 
 pub trait Asset: Send + Sync + 'static + DowncastSync {
@@ -48,10 +47,9 @@ impl<T: Asset> ErasedAsset for T {
     }
 }
 
-#[derive(FromRow, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct AssetMetadata {
     pub asset_id: AssetId,
-    // TODO: Replace with Arc<str> when sqlx supports.
     pub ty: String,
     pub bundle_id: BundleId,
     pub relative_path: String,
@@ -89,12 +87,12 @@ impl<T: Asset> AssetHandle<T> {
         self.bundle.as_ref()
     }
 
-    pub async fn get(&self) -> AssetResult<Arc<T>> {
+    pub fn get(&self) -> AssetResult<Arc<T>> {
         let dynamic = match self.bundle.get_cached(&self.id) {
             Ok(cached) => cached,
             Err(_) => {
-                let metadata = self.metadata().await?;
-                self.bundle.read(self.id, metadata.revision).await?
+                let metadata = self.metadata()?;
+                self.bundle.read(self.id, metadata.revision)?
             }
         };
 
@@ -103,25 +101,23 @@ impl<T: Asset> AssetHandle<T> {
             .map_err(|_| AssetError::CastAssetError(T::TYPE_NAME.to_string()))?)
     }
 
-    pub async fn update(&self, asset: T) -> AssetResult<()> {
+    pub fn update(&self, asset: T) -> AssetResult<()> {
         self.bundle.update(self.id, Arc::new(asset))?;
-        self.index_db.update_asset(&self.id).await?;
-
+        self.index_db.update_asset(&self.id)?;
         Ok(())
     }
 
-    pub async fn write(&self) -> AssetResult<()> {
-        let metadata = self.metadata().await?;
+    pub fn write(&self) -> AssetResult<()> {
+        let metadata = self.metadata()?;
         let new_path = self.bundle.write(&self.id, metadata.revision)?;
         let last_modified =
             std::fs::metadata(self.bundle.absolute_modified_path(&new_path))?.modified()?;
         self.index_db
-            .write_asset(&self.id, new_path.to_str().unwrap(), last_modified.into())
-            .await?;
+            .write_asset(&self.id, new_path.to_str().unwrap(), last_modified.into())?;
         Ok(())
     }
 
-    pub async fn metadata(&self) -> AssetResult<AssetMetadata> {
-        Ok(self.index_db.get_asset(&self.id).await?)
+    pub fn metadata(&self) -> AssetResult<AssetMetadata> {
+        self.index_db.get_asset(&self.id)
     }
 }

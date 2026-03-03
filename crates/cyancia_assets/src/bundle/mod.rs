@@ -2,27 +2,21 @@ use std::{
     collections::HashMap,
     error::Error,
     fs::{File, create_dir_all, metadata},
-    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use parse_display::Display;
 use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    Decode, Encode, Sqlite,
-    prelude::{FromRow, Type},
-    types::Uuid,
-};
+use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, AssetId, AssetMetadata, ErasedAsset},
+    asset::{AssetId, AssetMetadata, ErasedAsset},
     error::{AssetError, AssetResult},
-    index_db::AssetIndexDb,
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
 };
 
@@ -30,13 +24,24 @@ pub mod directory;
 pub mod standard;
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Display, Serialize, Deserialize)]
-    #[sqlx(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, Serialize, Deserialize)]
     #[display("{0}")]
     pub BundleId: Uuid
 }
 
-#[derive(FromRow, Serialize, Deserialize)]
+impl rusqlite::types::FromSql for BundleId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Ok(Self(Uuid::column_result(value)?))
+    }
+}
+
+impl rusqlite::types::ToSql for BundleId {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct AssetBundleMetadata {
     pub bundle_id: BundleId,
     pub name: String,
@@ -132,7 +137,7 @@ impl AssetBundleCache {
         &self.metadata
     }
 
-    pub async fn read(&self, id: AssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
+    pub fn read(&self, id: AssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
         let id_to_path = self.id_to_path.read();
         let path = id_to_path
             .get(&id)

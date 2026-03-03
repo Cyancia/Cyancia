@@ -1,7 +1,7 @@
-use std::{collections::HashMap, fs::File, marker::PhantomData, path::Path};
+use std::{fs::File, marker::PhantomData, path::Path};
 
 use chrono::{DateTime, Utc};
-use sqlx::SqlitePool;
+use rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::{
@@ -65,26 +65,26 @@ pub struct UntypedAssetFilter {
 }
 
 pub struct AssetIndexDb {
-    pool: SqlitePool,
+    conn: Connection,
 }
 
 impl AssetIndexDb {
-    pub async fn connect(path: impl AsRef<Path>) -> AssetResult<Self> {
+    pub fn connect(path: impl AsRef<Path>) -> AssetResult<Self> {
         let path = path.as_ref();
         if !path.exists() {
             File::create(path)?;
         }
 
-        let database_url = format!("sqlite://{}", path.display());
-        let pool = SqlitePool::connect(&database_url).await?;
-        let db = Self { pool };
-        db.initialize_tables().await?;
-        db.revert_all_assets().await?;
+        let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        let db = Self { conn };
+        db.initialize_tables()?;
+        db.revert_all_assets()?;
         Ok(db)
     }
 
-    async fn initialize_tables(&self) -> AssetResult<()> {
-        sqlx::query(
+    fn initialize_tables(&self) -> AssetResult<()> {
+        self.conn.execute_batch(
             r#"
 CREATE TABLE IF NOT EXISTS bundles (
     bundle_id TEXT PRIMARY KEY,
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS asset_revisions (
     revision INTEGER NOT NULL,
     relative_path TEXT,
     last_modified TEXT NOT NULL,
-    in_memory BOOLEAN NOT NULL,
+    in_memory INTEGER NOT NULL,
 
     PRIMARY KEY (asset_id, revision),
     FOREIGN KEY (asset_id) REFERENCES assets(asset_id) ON DELETE CASCADE,
@@ -131,169 +131,144 @@ CREATE TABLE IF NOT EXISTS asset_tags (
     FOREIGN KEY (tag_id) REFERENCES tags(tag_id) ON DELETE CASCADE
 );
             "#,
-        )
-        .execute(&self.pool)
-        .await?;
+        )?;
 
         Ok(())
     }
 
-    pub fn pool(&self) -> &SqlitePool {
-        &self.pool
-    }
-
-    pub async fn upsert_bundle(&self, bundle: &AssetBundleMetadata) -> AssetResult<ItemStatus> {
-        let none_if_latest = sqlx::query_scalar::<_, u32>(
+    pub fn upsert_bundle(&self, bundle: &AssetBundleMetadata) -> AssetResult<ItemStatus> {
+        let result = self.conn.query_row(
             r#"
 INSERT INTO bundles (bundle_id, name, last_modified)
-VALUES (?, ?, ?)
+VALUES (?1, ?2, ?3)
 ON CONFLICT(bundle_id) DO UPDATE SET
     name = excluded.name,
     last_modified = excluded.last_modified
 WHERE bundles.last_modified IS NOT excluded.last_modified
 RETURNING 0;
             "#,
-        )
-        .bind(&bundle.bundle_id)
-        .bind(&bundle.name)
-        .bind(&bundle.last_modified)
-        .fetch_optional(&self.pool)
-        .await?;
+            params![bundle.bundle_id, bundle.name, bundle.last_modified,],
+            |_| Ok(()),
+        );
 
-        Ok(if none_if_latest.is_none() {
-            ItemStatus::UpToDate
-        } else {
-            ItemStatus::Outdated
-        })
+        match result {
+            Ok(_) => Ok(ItemStatus::Outdated),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(ItemStatus::UpToDate),
+            Err(e) => Err(e.into()),
+        }
     }
 
-    pub async fn replace_assets(
-        &self,
-        bundle: &BundleId,
-        assets: &[AssetMetadata],
-    ) -> AssetResult<()> {
-        let mut tx = self.pool.begin().await?;
+    pub fn replace_assets(&self, bundle: &BundleId, assets: &[AssetMetadata]) -> AssetResult<()> {
+        let tx = self.conn.unchecked_transaction()?;
 
-        sqlx::query(
-            r#"
-DELETE FROM assets WHERE bundle_id = ?
-        "#,
-        )
-        .bind(bundle)
-        .execute(&mut *tx)
-        .await?;
+        tx.execute("DELETE FROM assets WHERE bundle_id = ?1", params![bundle])?;
 
         for asset in assets {
-            sqlx::query(
+            tx.execute(
                 r#"
-INSERT INTO assets (asset_id, ty, bundle_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING;
+INSERT INTO assets (asset_id, ty, bundle_id)
+VALUES (?1, ?2, ?3)
+ON CONFLICT DO NOTHING;
+                "#,
+                params![asset.asset_id, asset.ty, asset.bundle_id,],
+            )?;
+            tx.execute(
+                r#"
 INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
-VALUES (?, ?, ?, ?, ?);
-            "#,
-            )
-            .bind(&asset.asset_id)
-            .bind(&asset.ty)
-            .bind(asset.bundle_id)
-            .bind(&asset.asset_id)
-            .bind(asset.revision)
-            .bind(&asset.relative_path)
-            .bind(&asset.last_modified)
-            .bind(asset.in_memory)
-            .execute(&mut *tx)
-            .await?;
+VALUES (?1, ?2, ?3, ?4, ?5);
+                "#,
+                params![
+                    asset.asset_id,
+                    asset.revision,
+                    asset.relative_path,
+                    asset.last_modified,
+                    asset.in_memory as i64,
+                ],
+            )?;
         }
 
-        tx.commit().await?;
-
+        tx.commit()?;
         Ok(())
     }
 
-    pub async fn upsert_tag(&self, tag: &Tag, last_modified: DateTime<Utc>) -> AssetResult<()> {
-        let none_if_latest = sqlx::query_scalar::<_, u32>(
-            r#"
+    pub fn upsert_tag(&self, tag: &Tag, last_modified: DateTime<Utc>) -> AssetResult<()> {
+        let needs_update = {
+            let result = self.conn.query_row(
+                r#"
 INSERT INTO tags (tag_id, name, last_modified)
-VALUES (?, ?, ?)
+VALUES (?1, ?2, ?3)
 ON CONFLICT(tag_id) DO UPDATE SET
     name = excluded.name,
     last_modified = excluded.last_modified
 WHERE tags.last_modified IS NOT excluded.last_modified
 RETURNING 0;
-        "#,
-        )
-        .bind(tag.id())
-        .bind(tag.name())
-        .bind(last_modified.to_rfc3339())
-        .fetch_optional(&self.pool)
-        .await?;
+                "#,
+                params![tag.id(), tag.name(), last_modified,],
+                |_| Ok(()),
+            );
+            match result {
+                Ok(_) => true,
+                Err(rusqlite::Error::QueryReturnedNoRows) => false,
+                Err(e) => return Err(e.into()),
+            }
+        };
 
-        if none_if_latest.is_none() {
+        if !needs_update {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await?;
+        let tx = self.conn.unchecked_transaction()?;
 
-        sqlx::query(
-            r#"
-DELETE FROM asset_tags WHERE tag_id = ?
-        "#,
-        )
-        .bind(tag.id())
-        .execute(&mut *tx)
-        .await?;
+        tx.execute(
+            "DELETE FROM asset_tags WHERE tag_id = ?1",
+            params![tag.id()],
+        )?;
 
         for asset_id in tag.assets() {
             println!("Associating asset {} with tag {}", asset_id, tag.name());
-            sqlx::query(
-                r#"
-INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)
-            "#,
-            )
-            .bind(asset_id)
-            .bind(tag.id())
-            .execute(&mut *tx)
-            .await?;
+            tx.execute(
+                "INSERT INTO asset_tags (asset_id, tag_id) VALUES (?1, ?2)",
+                params![asset_id, tag.id()],
+            )?;
         }
 
-        tx.commit().await?;
-
+        tx.commit()?;
         Ok(())
     }
 
-    pub async fn add_asset(&self, asset: &AssetMetadata) -> AssetResult<AssetId> {
+    pub fn add_asset(&self, asset: &AssetMetadata) -> AssetResult<AssetId> {
         let asset_id = asset.asset_id;
-        let mut tx = self.pool.begin().await?;
+        let tx = self.conn.unchecked_transaction()?;
 
-        sqlx::query(
+        tx.execute(
             r#"
-INSERT INTO assets (asset_id, ty, bundle_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING;
+INSERT INTO assets (asset_id, ty, bundle_id)
+VALUES (?1, ?2, ?3)
+ON CONFLICT DO NOTHING;
             "#,
-        )
-        .bind(&asset.asset_id)
-        .bind(&asset.ty)
-        .bind(asset.bundle_id)
-        .execute(&mut *tx)
-        .await?;
+            params![asset.asset_id, asset.ty, asset.bundle_id,],
+        )?;
 
-        sqlx::query(
+        tx.execute(
             r#"
 INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
-VALUES (?, ?, ?, ?, ?);
+VALUES (?1, ?2, ?3, ?4, ?5);
             "#,
-        )
-        .bind(&asset.asset_id)
-        .bind(asset.revision)
-        .bind(&asset.relative_path)
-        .bind(&asset.last_modified)
-        .bind(asset.in_memory)
-        .execute(&mut *tx)
-        .await?;
+            params![
+                asset.asset_id,
+                asset.revision,
+                asset.relative_path,
+                asset.last_modified,
+                asset.in_memory as i64,
+            ],
+        )?;
 
-        tx.commit().await?;
+        tx.commit()?;
         Ok(asset_id)
     }
 
-    pub async fn get_asset(&self, id: &AssetId) -> AssetResult<AssetMetadata> {
-        let asset = sqlx::query_as::<_, AssetMetadata>(
+    pub fn get_asset(&self, id: &AssetId) -> AssetResult<AssetMetadata> {
+        let asset = self.conn.query_row(
             r#"
 SELECT
     r.asset_id,
@@ -305,20 +280,29 @@ SELECT
     r.in_memory
 FROM asset_revisions r
 JOIN assets a USING (asset_id)
-WHERE r.asset_id = ?
+WHERE r.asset_id = ?1
 ORDER BY r.revision DESC
-LIMIT 1
-        "#,
-        )
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await?;
+LIMIT 1;
+            "#,
+            params![id],
+            |row| {
+                Ok(AssetMetadata {
+                    asset_id: row.get(0)?,
+                    ty: row.get(1)?,
+                    bundle_id: row.get(2)?,
+                    relative_path: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    revision: row.get(4)?,
+                    last_modified: row.get(5)?,
+                    in_memory: row.get::<_, i64>(6)? == 1,
+                })
+            },
+        )?;
 
         Ok(asset)
     }
 
-    pub async fn get_assets(&self, filter: UntypedAssetFilter) -> AssetResult<Vec<AssetMetadata>> {
-        let assets = sqlx::query_as::<_, AssetMetadata>(
+    pub fn get_assets(&self, filter: UntypedAssetFilter) -> AssetResult<Vec<AssetMetadata>> {
+        let mut stmt = self.conn.prepare(
             r#"
 WITH latest AS (
     SELECT
@@ -345,28 +329,38 @@ WHERE l.ord = 1
     AND (?2 IS NULL OR a.asset_id IN (SELECT asset_id FROM asset_tags WHERE tag_id = ?2))
     AND (?3 IS NULL OR a.bundle_id = ?3)
 ORDER BY l.relative_path ASC;
-        "#,
-        )
-        .bind(filter.ty)
-        .bind(filter.tag)
-        .bind(filter.bundle)
-        .fetch_all(&self.pool)
-        .await?;
+            "#,
+        )?;
 
-        Ok(assets)
+        let rows = stmt.query_map(
+            params![
+                filter.ty,
+                filter.tag.as_ref().map(|t| t),
+                filter.bundle.as_ref().map(|b| b),
+            ],
+            |row| {
+                Ok(AssetMetadata {
+                    asset_id: row.get(0)?,
+                    ty: row.get(1)?,
+                    bundle_id: row.get(2)?,
+                    relative_path: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    revision: row.get(4)?,
+                    last_modified: row.get(5)?,
+                    in_memory: row.get::<_, i64>(6)? == 1,
+                })
+            },
+        )?;
+
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub async fn update_asset(&self, id: &AssetId) -> AssetResult<u32> {
-        let revision = sqlx::query_scalar::<_, u32>(
+    pub fn update_asset(&self, id: &AssetId) -> AssetResult<u32> {
+        let revision = self.conn.query_row(
             r#"
 WITH latest AS (
-    SELECT
-        asset_id,
-        revision,
-        last_modified,
-        in_memory
+    SELECT asset_id, revision
     FROM asset_revisions
-    WHERE asset_id = ?
+    WHERE asset_id = ?1
     ORDER BY revision DESC
     LIMIT 1
 )
@@ -379,29 +373,27 @@ INSERT INTO asset_revisions (
 )
 SELECT
     asset_id,
-    NULL as relative_path,
+    NULL AS relative_path,
     revision + 1 AS revision,
-    ? AS last_modified,
-    true AS in_memory
+    ?2 AS last_modified,
+    1 AS in_memory
 FROM latest
 RETURNING revision;
-        "#,
-        )
-        .bind(id)
-        .bind(Utc::now())
-        .fetch_one(&self.pool)
-        .await?;
+            "#,
+            params![id, Utc::now()],
+            |row| row.get::<_, u32>(0),
+        )?;
 
         Ok(revision)
     }
 
-    pub async fn write_asset(
+    pub fn write_asset(
         &self,
         id: &AssetId,
         new_path: &str,
         last_modified: DateTime<Utc>,
     ) -> AssetResult<u32> {
-        let revision = sqlx::query_scalar::<_, u32>(
+        let revision = self.conn.query_row(
             r#"
 WITH latest AS (
     SELECT revision
@@ -411,58 +403,49 @@ WITH latest AS (
     LIMIT 1
 )
 UPDATE asset_revisions
-SET in_memory = false, relative_path = ?2, last_modified = ?3
-WHERE asset_id = ?1 AND revision = (SELECT revision FROM latest) AND in_memory = true
+SET in_memory = 0, relative_path = ?2, last_modified = ?3
+WHERE asset_id = ?1
+  AND revision = (SELECT revision FROM latest)
+  AND in_memory = 1
 RETURNING revision;
-        "#,
-        )
-        .bind(id)
-        .bind(new_path)
-        .bind(last_modified)
-        .fetch_one(&self.pool)
-        .await?;
+            "#,
+            params![id, new_path, last_modified],
+            |row| row.get::<_, u32>(0),
+        )?;
 
         Ok(revision)
     }
 
-    pub async fn revert_asset(&self, id: &Uuid) -> AssetResult<()> {
-        sqlx::query(
-            r#"
-DELETE FROM asset_revisions WHERE in_memory = true AND asset_id = ?
-        "#,
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-
+    pub fn revert_asset(&self, id: &Uuid) -> AssetResult<()> {
+        self.conn.execute(
+            "DELETE FROM asset_revisions WHERE in_memory = 1 AND asset_id = ?1",
+            params![id],
+        )?;
         Ok(())
     }
 
-    pub async fn revert_all_assets(&self) -> AssetResult<()> {
-        sqlx::query(
-            r#"
-DELETE FROM asset_revisions WHERE in_memory = true
-        "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
+    pub fn revert_all_assets(&self) -> AssetResult<()> {
+        self.conn
+            .execute("DELETE FROM asset_revisions WHERE in_memory = 1", [])?;
         Ok(())
     }
 
-    pub async fn get_bundle(&self, id: &BundleId) -> AssetResult<AssetBundleMetadata> {
-        let bundle = sqlx::query_as::<_, AssetBundleMetadata>(
+    pub fn get_bundle(&self, id: &BundleId) -> AssetResult<AssetBundleMetadata> {
+        let bundle = self.conn.query_row(
             r#"
-SELECT
-    bundle_id,
-    name
+SELECT bundle_id, name, last_modified
 FROM bundles
-WHERE bundle_id = ?
-        "#,
-        )
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await?;
+WHERE bundle_id = ?1;
+            "#,
+            params![id],
+            |row| {
+                Ok(AssetBundleMetadata {
+                    bundle_id: row.get(0)?,
+                    name: row.get(1)?,
+                    last_modified: row.get(2)?,
+                })
+            },
+        )?;
 
         Ok(bundle)
     }

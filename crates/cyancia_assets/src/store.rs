@@ -1,6 +1,5 @@
 use std::{
-    any::{Any, TypeId},
-    collections::{HashMap, hash_map::Entry},
+    collections::HashMap,
     fs::metadata,
     path::{Path, PathBuf},
     sync::Arc,
@@ -11,13 +10,13 @@ use chrono::{DateTime, Utc};
 use crate::{
     asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset},
     bundle::{
-        AssetBundle, AssetBundleCache, AssetBundleMetadata, BundleId, ErasedAssetBundle,
+        AssetBundle, AssetBundleCache, BundleId, ErasedAssetBundle,
         modified_bundle_absolute_path, scan_bundle_assets,
     },
     error::{AssetError, AssetResult},
     index_db::{AssetFilter, AssetIndexDb, ItemStatus, UntypedAssetFilter},
-    loader::{AssetSerializer, AssetSerializerRegistry, ErasedAssetSerializer},
-    tag::{Tag, TagId},
+    loader::AssetSerializerRegistry,
+    tag::Tag,
 };
 
 pub struct AssetRegistry {
@@ -28,13 +27,13 @@ pub struct AssetRegistry {
 }
 
 impl AssetRegistry {
-    pub async fn new(
+    pub fn new(
         root: impl AsRef<Path>,
         serializers: Arc<AssetSerializerRegistry>,
     ) -> AssetResult<Self> {
         let root = root.as_ref();
         let bundles = HashMap::new();
-        let index_db = AssetIndexDb::connect(root.join("index.sqlite3")).await?;
+        let index_db = AssetIndexDb::connect(root.join("index.sqlite3"))?;
 
         Ok(Self {
             root: root.to_path_buf(),
@@ -52,7 +51,7 @@ impl AssetRegistry {
         self.bundles.values()
     }
 
-    pub async fn add_asset<T: Asset>(
+    pub fn add_asset<T: Asset>(
         &self,
         bundle_id: BundleId,
         path: impl AsRef<Path>,
@@ -74,12 +73,11 @@ impl AssetRegistry {
                 //       Probably fix it?
                 last_modified: Utc::now(),
                 in_memory: false,
-            })
-            .await?;
+            })?;
         Ok(asset_id)
     }
 
-    pub async fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
+    pub fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
         let bundle = Arc::new(bundle) as Arc<dyn ErasedAssetBundle>;
         let mut bundle_meta = bundle.metadata().map_err(AssetError::BundleError)?;
         let modified = modified_bundle_absolute_path(&self.root, &bundle_meta.bundle_id);
@@ -90,21 +88,19 @@ impl AssetRegistry {
             }
         }
 
-        let status = self.index_db.upsert_bundle(&bundle_meta).await?;
+        let status = self.index_db.upsert_bundle(&bundle_meta)?;
         let manifest = match status {
             ItemStatus::UpToDate => {
                 self.index_db
                     .get_assets(UntypedAssetFilter {
                         bundle: Some(bundle_meta.bundle_id),
                         ..Default::default()
-                    })
-                    .await?
+                    })?
             }
             ItemStatus::Outdated => {
                 let manifest = scan_bundle_assets(&self.root, bundle.as_ref(), &self.serializers)?;
                 self.index_db
-                    .replace_assets(&bundle_meta.bundle_id, &manifest)
-                    .await?;
+                    .replace_assets(&bundle_meta.bundle_id, &manifest)?;
                 manifest
             }
         };
@@ -132,10 +128,8 @@ impl AssetRegistry {
                 for tag in tags {
                     let handle =
                         AssetHandle::<Tag>::new(tag.asset_id, cache.clone(), self.index_db.clone());
-                    let tag_asset = handle.get().await?;
-                    self.index_db
-                        .upsert_tag(&tag_asset, tag.last_modified)
-                        .await?;
+                    let tag_asset = handle.get()?;
+                    self.index_db.upsert_tag(&tag_asset, tag.last_modified)?;
                 }
             }
         }
@@ -158,22 +152,21 @@ impl AssetRegistry {
         ))
     }
 
-    pub async fn all_handles_of<T: Asset>(&self) -> AssetResult<Vec<AssetHandle<T>>> {
+    pub fn all_handles_of<T: Asset>(&self) -> AssetResult<Vec<AssetHandle<T>>> {
         Ok(self.metadata_to_handles(
             self.index_db
                 .get_assets(UntypedAssetFilter {
                     ty: Some(T::TYPE_NAME.to_string()),
                     ..Default::default()
-                })
-                .await?,
+                })?,
         ))
     }
 
-    pub async fn all_handles_of_filtered<T: Asset>(
+    pub fn all_handles_of_filtered<T: Asset>(
         &self,
         filter: AssetFilter<T>,
     ) -> AssetResult<Vec<AssetHandle<T>>> {
-        Ok(self.metadata_to_handles(self.index_db.get_assets(filter.into_untyped()).await?))
+        Ok(self.metadata_to_handles(self.index_db.get_assets(filter.into_untyped())?))
     }
 
     pub fn serializers(&self) -> &AssetSerializerRegistry {

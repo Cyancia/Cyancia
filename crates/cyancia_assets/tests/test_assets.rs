@@ -210,8 +210,8 @@ fn parse_test_asset(path: impl AsRef<Path>) -> TestAsset {
     toml::from_str::<TestAsset>(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-#[tokio::test]
-async fn test() {
+#[test]
+fn test() {
     init_logger();
 
     let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -248,22 +248,20 @@ async fn test() {
     serializers.register::<TagSerializer>();
 
     let mut registry = AssetRegistry::new(&assets_root, serializers.into())
-        .await
         .unwrap();
 
-    registry.add_bundle(local_bundle).await.unwrap();
+    registry.add_bundle(local_bundle).unwrap();
     registry
         .add_bundle(StandardAssetBundle::new(&bundle_path).unwrap())
-        .await
         .unwrap();
 
-    let test_asset_handles = registry.all_handles_of::<TestAsset>().await.unwrap();
+    let test_asset_handles = registry.all_handles_of::<TestAsset>().unwrap();
     assert_eq!(test_asset_handles.len(), 3);
 
     let mut test_assets_by_name = HashMap::new();
     let mut test_asset_locations = HashMap::new();
     for handle in &test_asset_handles {
-        let asset = handle.get().await.unwrap();
+        let asset = handle.get().unwrap();
         test_asset_locations.insert(
             asset.name.clone(),
             (handle.bundle().metadata().bundle_id, handle.id()),
@@ -287,10 +285,9 @@ async fn test() {
             name: "Test Asset".to_string(),
             value: 420,
         })
-        .await
         .unwrap();
     assert_eq!(
-        test_asset_handle.get().await.unwrap().as_ref(),
+        test_asset_handle.get().unwrap().as_ref(),
         &TestAsset {
             name: "Test Asset".to_string(),
             value: 420,
@@ -302,18 +299,17 @@ async fn test() {
             name: "Test Asset".to_string(),
             value: 421,
         })
-        .await
         .unwrap();
     assert_eq!(
-        test_asset_handle.get().await.unwrap().as_ref(),
+        test_asset_handle.get().unwrap().as_ref(),
         &TestAsset {
             name: "Test Asset".to_string(),
             value: 421,
         }
     );
 
-    test_asset_handle.write().await.unwrap();
-    let written_meta = test_asset_handle.metadata().await.unwrap();
+    test_asset_handle.write().unwrap();
+    let written_meta = test_asset_handle.metadata().unwrap();
     assert_eq!(written_meta.revision, 2);
     assert!(!written_meta.in_memory);
 
@@ -328,19 +324,18 @@ async fn test() {
         }
     );
 
-    let tag_handles = registry.all_handles_of::<Tag>().await.unwrap();
+    let tag_handles = registry.all_handles_of::<Tag>().unwrap();
     assert_eq!(tag_handles.len(), 1);
 
-    let my_tag = tag_handles[0].get().await.unwrap();
+    let my_tag = tag_handles[0].get().unwrap();
     assert_eq!(my_tag.name(), "My Tag");
     assert_eq!(my_tag.assets().len(), 1);
 
     let tagged_assets = registry
         .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(my_tag.id().clone()))
-        .await
         .unwrap();
     assert_eq!(tagged_assets.len(), 1);
-    assert_eq!(tagged_assets[0].get().await.unwrap().name, "Test Asset");
+    assert_eq!(tagged_assets[0].get().unwrap().name, "Test Asset");
 
     let new_asset_id = registry
         .add_asset::<TestAsset>(
@@ -351,14 +346,13 @@ async fn test() {
                 value: 999,
             }),
         )
-        .await
         .unwrap();
 
     let new_asset_handle = registry
         .handle::<TestAsset>(local_bundle_id, new_asset_id)
         .unwrap();
     assert_eq!(
-        new_asset_handle.get().await.unwrap().as_ref(),
+        new_asset_handle.get().unwrap().as_ref(),
         &TestAsset {
             name: "Added Asset".to_string(),
             value: 999,
@@ -370,18 +364,17 @@ async fn test() {
             name: "Added Asset".to_string(),
             value: 1000,
         })
-        .await
         .unwrap();
     assert_eq!(
-        new_asset_handle.get().await.unwrap().as_ref(),
+        new_asset_handle.get().unwrap().as_ref(),
         &TestAsset {
             name: "Added Asset".to_string(),
             value: 1000,
         }
     );
 
-    new_asset_handle.write().await.unwrap();
-    let new_asset_meta = new_asset_handle.metadata().await.unwrap();
+    new_asset_handle.write().unwrap();
+    let new_asset_meta = new_asset_handle.metadata().unwrap();
     assert_eq!(new_asset_meta.revision, 1);
     assert!(!new_asset_meta.in_memory);
     let new_asset_written_file =
@@ -415,27 +408,23 @@ async fn test() {
     serializers.register::<TagSerializer>();
 
     let mut restarted_registry = AssetRegistry::new(&assets_root, serializers.into())
-        .await
         .unwrap();
 
     restarted_registry
         .add_bundle(StandardAssetBundle::new(&bundle_path).unwrap())
-        .await
         .unwrap();
     restarted_registry
         .add_bundle(AssetDirectory::new(&local_assets_root))
-        .await
         .unwrap();
 
     let restarted_test_assets = restarted_registry
         .all_handles_of::<TestAsset>()
-        .await
         .unwrap();
     assert_eq!(restarted_test_assets.len(), 3);
 
     let mut restarted_by_name = HashMap::new();
     for handle in &restarted_test_assets {
-        let asset = handle.get().await.unwrap();
+        let asset = handle.get().unwrap();
         restarted_by_name.insert(asset.name.clone(), asset.value);
     }
 
@@ -444,9 +433,9 @@ async fn test() {
     assert_eq!(restarted_by_name.get("Hello World"), None);
     assert_eq!(restarted_by_name.get("Added Asset"), Some(&999));
 
-    let restarted_tag_handles = restarted_registry.all_handles_of::<Tag>().await.unwrap();
+    let restarted_tag_handles = restarted_registry.all_handles_of::<Tag>().unwrap();
     assert_eq!(restarted_tag_handles.len(), 1);
-    let restarted_tag = restarted_tag_handles[0].get().await.unwrap();
+    let restarted_tag = restarted_tag_handles[0].get().unwrap();
     assert_eq!(restarted_tag.name(), "My Tag");
     assert_eq!(restarted_tag.assets().len(), 2);
     assert!(
@@ -460,18 +449,13 @@ async fn test() {
         .all_handles_of_filtered::<TestAsset>(
             AssetFilter::new().with_tag(restarted_tag.id().clone()),
         )
-        .await
         .unwrap();
     assert_eq!(restarted_tagged_assets.len(), 2);
 
-    let mut restarted_tagged_names = restarted_tagged_assets
+    let mut names = restarted_tagged_assets
         .iter()
-        .map(|h| h.get())
+        .map(|h| h.get().unwrap().name.clone())
         .collect::<Vec<_>>();
-    let mut names = Vec::new();
-    for future in restarted_tagged_names.drain(..) {
-        names.push(future.await.unwrap().name.clone());
-    }
     names.sort();
     assert_eq!(
         names,
@@ -482,7 +466,7 @@ async fn test() {
         .handle::<TestAsset>(local_bundle_id, new_asset_id)
         .unwrap();
     assert_eq!(
-        restarted_new_asset_handle.get().await.unwrap().as_ref(),
+        restarted_new_asset_handle.get().unwrap().as_ref(),
         &TestAsset {
             name: "Added Asset".to_string(),
             value: 999,

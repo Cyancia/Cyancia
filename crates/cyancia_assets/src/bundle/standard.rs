@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::{
-    asset::{AssetId, AssetMetadata, ErasedAsset},
+    asset::{AssetId, ErasedAsset},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId},
-    loader::{AssetSerializerRegistry, ErasedAssetSerializer},
+    loader::ErasedAssetSerializer,
 };
 
 pub struct StandardAssetBundle {
@@ -33,17 +33,17 @@ impl StandardAssetBundle {
         })
     }
 
-    pub async fn scan_bundles(
+    pub fn scan_bundles(
         root: impl AsRef<Path>,
     ) -> (Vec<Self>, Vec<StandardAssetBundleError>) {
         let mut bundles = Vec::new();
         let mut errors = Vec::new();
-        scan_bundles(root, &mut bundles, &mut errors).await;
+        scan_bundles(root, &mut bundles, &mut errors);
         (bundles, errors)
     }
 }
 
-async fn scan_bundles(
+fn scan_bundles(
     root: impl AsRef<Path>,
     bundles: &mut Vec<StandardAssetBundle>,
     errors: &mut Vec<StandardAssetBundleError>,
@@ -71,7 +71,7 @@ async fn scan_bundles(
                 }
             }
         } else if path.is_dir() {
-            Box::pin(scan_bundles(path, bundles, errors)).await;
+            scan_bundles(path, bundles, errors);
         }
     }
 }
@@ -139,9 +139,9 @@ impl AssetBundle for StandardAssetBundle {
 
     fn add(
         &self,
-        path: &Path,
-        asset: &dyn ErasedAsset,
-        serializer: &dyn ErasedAssetSerializer,
+        _path: &Path,
+        _asset: &dyn ErasedAsset,
+        _serializer: &dyn ErasedAssetSerializer,
     ) -> Result<AssetId, StandardAssetBundleError> {
         Err(StandardAssetBundleError::UnsupportedWriting)
     }

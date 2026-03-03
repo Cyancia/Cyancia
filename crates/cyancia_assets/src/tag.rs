@@ -3,7 +3,6 @@ use std::io::{Read, Write, read_to_string};
 use cyancia_utils::wrapper;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
-use sqlx::prelude::{FromRow, Type};
 use uuid::Uuid;
 
 use crate::{
@@ -12,13 +11,24 @@ use crate::{
 };
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Display)]
-    #[sqlx(transparent)]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
     #[display("{0}")]
     pub TagId : Uuid
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+impl rusqlite::types::FromSql for TagId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Ok(Self(Uuid::column_result(value)?))
+    }
+}
+
+impl rusqlite::types::ToSql for TagId {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tag {
     tag_id: TagId,
     name: String,
@@ -32,7 +42,7 @@ impl Asset for Tag {
 impl Tag {
     pub fn new(name: String) -> Self {
         Self {
-            tag_id: TagId(Uuid::new_v4()),
+            tag_id: TagId::new(Uuid::new_v4()),
             name,
             assets: Vec::new(),
         }

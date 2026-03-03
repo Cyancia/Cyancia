@@ -88,13 +88,6 @@ half = "2"
 rfd = "0.16"
 anyhow = "1"
 dyn-clone = "1"
-sqlx = { version = "0.8", default-features = false, features = [
-    "derive",
-    "sqlite",
-    "chrono",
-    "uuid",
-    "runtime-tokio",
-] }
 chrono = { version = "0.4", features = ["serde"] }
 atomicow = "1"
 tokio = { version = "1", default-features = false }
@@ -103,6 +96,9 @@ zip = "8"
 parse-display = "0.10"
 env_logger = "0.11"
 path-clean = "1"
+rusqlite = { version = "0.38", features = [
+    "bundled-full",
+] }
 
 # [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }

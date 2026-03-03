@@ -3,7 +3,6 @@ use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
 use crate::{
     asset::{Asset, ErasedAsset},
     error::{AssetError, AssetResult},
-    store::AssetRegistry,
 };
 
 pub struct AssetSerializerRegistry {
