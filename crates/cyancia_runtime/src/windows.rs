@@ -106,6 +106,7 @@ pub struct WindowManager {
     windows: HashMap<window::Id, WindowViewId>,
     views: HashMap<WindowViewId, Box<dyn ErasedWindowView>>,
     opened_views: HashMap<WindowViewId, window::Id>,
+    root_view: Option<WindowViewId>,
 }
 
 impl Service for WindowManager {}
@@ -116,6 +117,14 @@ where
 {
     pub fn register_view<T: WindowView>(&mut self, view: T) {
         self.views.insert(view.id(), Box::new(view));
+    }
+
+    pub fn set_root_view(&mut self, view_id: WindowViewId) {
+        self.root_view = Some(view_id);
+    }
+
+    pub fn root_view(&self) -> Option<WindowViewId> {
+        self.root_view
     }
 
     pub fn view<'a>(
@@ -168,11 +177,24 @@ where
     }
 
     pub fn close_window(&mut self, view_id: WindowViewId) -> Task<()> {
-        if let Some(window_id) = self.opened_views.remove(&view_id) {
+        if Some(view_id) == self.root_view {
+            iced_runtime::exit()
+        } else if let Some(window_id) = self.opened_views.remove(&view_id) {
             self.windows.remove(&window_id);
             iced_runtime::window::close::<()>(window_id).discard()
         } else {
             Task::none()
         }
+    }
+
+    pub fn window_closed(&mut self, window_id: window::Id) -> Task<()> {
+        if let Some(view_id) = self.windows.remove(&window_id) {
+            self.opened_views.remove(&view_id);
+            if Some(view_id) == self.root_view {
+                return iced_runtime::exit();
+            }
+        }
+
+        Task::none()
     }
 }

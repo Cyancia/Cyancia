@@ -123,8 +123,11 @@ impl Program for Application {
 
     fn boot(&self) -> (Self::State, Task<Self::Message>) {
         let mut rt = std::mem::take::<Runtime>(&mut self.runtime.borrow_mut());
-        // TODO ugly
-        let task = rt.wm.open_window(WindowViewId::new("main_view"));
+        let Some(root_view) = rt.window_manager().root_view() else {
+            panic!("Root view needs to be set.")
+        };
+
+        let task = rt.wm.open_window(root_view);
         (rt, task.discard())
     }
 
@@ -134,6 +137,7 @@ impl Program for Application {
                 .wm
                 .update(m, state.services.clone())
                 .map(ApplicationMessage::Window),
+            ApplicationMessage::WindowClosed(id) => state.wm.window_closed(id).discard(),
         }
     }
 
@@ -149,7 +153,16 @@ impl Program for Application {
     }
 
     fn subscription(&self, state: &Self::State) -> Subscription<Self::Message> {
-        state.wm.subscription().map(ApplicationMessage::Window)
+        let windows = state.wm.subscription().map(ApplicationMessage::Window);
+        let closed = iced_futures::event::listen_with(|e, _, window| {
+            if let iced_core::Event::Window(window::Event::Closed) = e {
+                Some(ApplicationMessage::WindowClosed(window))
+            } else {
+                None
+            }
+        });
+
+        Subscription::batch([windows, closed])
     }
 
     fn compositor_context(&self, state: &Self::State) -> Option<WgpuContext> {
@@ -200,6 +213,7 @@ impl Runtime {
 
 pub enum ApplicationMessage {
     Window(ErasedWindowMessage),
+    WindowClosed(window::Id),
 }
 
 #[derive(Default)]

@@ -16,7 +16,9 @@ use cyancia_image::ImagePlugin;
 use cyancia_input::InputPlugin;
 use cyancia_render::RenderPlugin;
 use cyancia_runtime::{
-    Application, Runtime, Services, service::RenderContext, windows::WindowManager,
+    Application, Runtime, Services,
+    service::RenderContext,
+    windows::{WindowManager, WindowView},
 };
 use cyancia_tools::ToolsPlugin;
 
@@ -43,6 +45,7 @@ fn main() {
         let mut rt = app.runtime_mut();
 
         let main_view = MainView::new(rt.services());
+        rt.window_manager_mut().set_root_view(main_view.id());
         rt.window_manager_mut().register_view(main_view);
     }
 

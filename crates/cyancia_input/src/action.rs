@@ -76,7 +76,6 @@ impl AssetSerializer for ActionManifestLoader {
         let manifest = toml::from_slice::<HashMap<String, SerializableAction>>(&buf)?;
         let mut actions_in_view = HashMap::new();
         for (name, action) in manifest {
-            dbg!(&name, &action.enabled_in);
             let action_arc = Arc::new(Action {
                 name: ActionId::new(name.into()),
                 shortcut: action.shortcut.clone(),
