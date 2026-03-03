@@ -6,13 +6,13 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::DateTime;
 use uuid::Uuid;
 
 use crate::{
-    asset::{UntypedAssetId, AssetMetadata, ErasedAsset},
+    asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId},
-    loader::{AssetSerializerRegistry, ErasedAssetSerializer},
+    loader::ErasedAssetSerializer,
 };
 
 pub struct AssetDirectory {

@@ -2,27 +2,21 @@ use std::{
     collections::HashMap,
     error::Error,
     fs::{File, create_dir_all, metadata},
-    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use parse_display::Display;
 use path_clean::PathClean;
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    Decode, Encode, Sqlite,
-    prelude::{FromRow, Type},
-    types::Uuid,
-};
+use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, UntypedAssetId, AssetMetadata, ErasedAsset},
+    asset::{Asset, AssetMetadata, ErasedAsset, UntypedAssetId},
     error::{AssetError, AssetResult},
-    index_db::AssetIndexDb,
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
 };
 
@@ -30,13 +24,24 @@ pub mod directory;
 pub mod standard;
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Display, Serialize, Deserialize)]
-    #[sqlx(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, Serialize, Deserialize)]
     #[display("{0}")]
     pub BundleId: Uuid
 }
 
-#[derive(FromRow, Serialize, Deserialize)]
+impl rusqlite::types::FromSql for BundleId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Ok(Self(Uuid::column_result(value)?))
+    }
+}
+
+impl rusqlite::types::ToSql for BundleId {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct AssetBundleMetadata {
     pub bundle_id: BundleId,
     pub name: String,
@@ -113,7 +118,11 @@ impl AssetBundleCache {
         self.bundle.is_readonly()
     }
 
-    pub fn add(&self, path: impl AsRef<Path>, asset: Arc<dyn ErasedAsset>) -> AssetResult<UntypedAssetId> {
+    pub fn add(
+        &self,
+        path: impl AsRef<Path>,
+        asset: Arc<dyn ErasedAsset>,
+    ) -> AssetResult<UntypedAssetId> {
         let path = path.as_ref().clean();
         let serializer = self.serializers.get_for_path(&path)?;
         let id = self
@@ -132,7 +141,7 @@ impl AssetBundleCache {
         &self.metadata
     }
 
-    pub async fn read(&self, id: UntypedAssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
+    pub fn read(&self, id: UntypedAssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
         let id_to_path = self.id_to_path.read();
         let path = id_to_path
             .get(&id)
@@ -391,8 +400,9 @@ pub trait AssetBundle: Send + Sync + 'static {
 pub trait ErasedAssetBundle: Send + Sync + 'static {
     fn is_readonly(&self) -> bool;
     fn metadata(&self) -> Result<AssetBundleMetadata, Box<dyn Error + Send + Sync + 'static>>;
-    fn manifest(&self)
-    -> Result<HashMap<UntypedAssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
+    fn manifest(
+        &self,
+    ) -> Result<HashMap<UntypedAssetId, PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
     fn read(
         &self,
         path: &Path,

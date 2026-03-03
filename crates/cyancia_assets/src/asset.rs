@@ -1,33 +1,20 @@
-use std::{
-    any::TypeId,
-    fmt::Display,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{marker::PhantomData, sync::Arc};
 
+use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
-use downcast_rs::{Downcast, DowncastSync};
+use downcast_rs::DowncastSync;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    prelude::{FromRow, Type},
-    types::{
-        Uuid,
-        chrono::{DateTime, Utc},
-    },
-};
+use uuid::Uuid;
 
 use crate::{
-    bundle::{AssetBundle, AssetBundleCache, BundleId},
+    bundle::{AssetBundleCache, BundleId},
     error::{AssetError, AssetResult},
     index_db::AssetIndexDb,
 };
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Type, Serialize, Deserialize, Display)]
-    #[sqlx(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
     #[display("{0}")]
     pub UntypedAssetId: Uuid
 }
@@ -35,6 +22,18 @@ wrapper! {
 impl UntypedAssetId {
     pub fn into_typed<T: Asset>(self) -> AssetId<T> {
         AssetId::new(self.0)
+    }
+}
+
+impl rusqlite::types::FromSql for UntypedAssetId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Ok(Self(Uuid::column_result(value)?))
+    }
+}
+
+impl rusqlite::types::ToSql for UntypedAssetId {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
     }
 }
 
@@ -129,7 +128,7 @@ impl<T: Asset> ErasedAsset for T {
     }
 }
 
-#[derive(FromRow, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct AssetMetadata {
     pub asset_id: UntypedAssetId,
     // TODO: Replace with Arc<str> when sqlx supports.
@@ -165,17 +164,20 @@ impl<T: Asset> AssetHandle<T> {
         self.id
     }
 
+    pub fn untyped_id(&self) -> UntypedAssetId {
+        self.id.into_untyped()
+    }
+
     pub fn bundle(&self) -> &AssetBundleCache {
         self.bundle.as_ref()
     }
 
-    pub async fn get(&self) -> AssetResult<Arc<T>> {
-        let untyped = self.id.into_untyped();
-        let dynamic = match self.bundle.get_cached(&untyped) {
+    pub fn get(&self) -> AssetResult<Arc<T>> {
+        let dynamic = match self.bundle.get_cached(&self.untyped_id()) {
             Ok(cached) => cached,
             Err(_) => {
-                let metadata = self.metadata().await?;
-                self.bundle.read(untyped, metadata.revision).await?
+                let metadata = self.metadata()?;
+                self.bundle.read(self.untyped_id(), metadata.revision)?
             }
         };
 
@@ -184,27 +186,27 @@ impl<T: Asset> AssetHandle<T> {
             .map_err(|_| AssetError::CastAssetError(T::TYPE_NAME.to_string()))?)
     }
 
-    pub async fn update(&self, asset: T) -> AssetResult<()> {
-        let untyped = self.id.into_untyped();
-        self.bundle.update(untyped, Arc::new(asset))?;
-        self.index_db.update_asset(&untyped).await?;
+    pub fn update(&self, asset: T) -> AssetResult<()> {
+        self.bundle.update(self.untyped_id(), Arc::new(asset))?;
+        self.index_db.update_asset(&self.untyped_id())?;
 
         Ok(())
     }
 
-    pub async fn write(&self) -> AssetResult<()> {
-        let untyped = self.id.into_untyped();
-        let metadata = self.metadata().await?;
-        let new_path = self.bundle.write(&untyped, metadata.revision)?;
+    pub fn write(&self) -> AssetResult<()> {
+        let metadata = self.metadata()?;
+        let new_path = self.bundle.write(&self.untyped_id(), metadata.revision)?;
         let last_modified =
             std::fs::metadata(self.bundle.absolute_modified_path(&new_path))?.modified()?;
-        self.index_db
-            .write_asset(&untyped, new_path.to_str().unwrap(), last_modified.into())
-            .await?;
+        self.index_db.write_asset(
+            &self.untyped_id(),
+            new_path.to_str().unwrap(),
+            last_modified.into(),
+        )?;
         Ok(())
     }
 
-    pub async fn metadata(&self) -> AssetResult<AssetMetadata> {
-        Ok(self.index_db.get_asset(&self.id.into_untyped()).await?)
+    pub fn metadata(&self) -> AssetResult<AssetMetadata> {
+        Ok(self.index_db.get_asset(&self.untyped_id())?)
     }
 }

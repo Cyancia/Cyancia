@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use cyancia_runtime::{Application, plugin::Plugin};
-use futures::executor::block_on;
 
 use crate::{
     loader::{AssetSerializerRegistry, AssetSerializerRegistryBuilder},
@@ -32,8 +31,6 @@ impl Plugin for AssetsPlugin {
             .service_mut::<AssetSerializerRegistryBuilder>();
         let serializers = builder.build();
         drop(builder);
-        app.add_service_instance(
-            block_on(AssetRegistry::new(&self.asset_root, serializers.into())).unwrap(),
-        );
+        app.add_service_instance(AssetRegistry::new(&self.asset_root, serializers.into()).unwrap());
     }
 }

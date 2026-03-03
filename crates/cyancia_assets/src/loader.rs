@@ -5,7 +5,6 @@ use cyancia_runtime::service::Service;
 use crate::{
     asset::{Asset, ErasedAsset},
     error::{AssetError, AssetResult},
-    store::AssetRegistry,
 };
 
 #[derive(Default)]

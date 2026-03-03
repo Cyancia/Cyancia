@@ -35,8 +35,8 @@ pub enum AssetError {
     TomlDeError(#[from] toml::de::Error),
     #[error("Failed to serialize toml: {0}")]
     TomlSerError(#[from] toml::ser::Error),
-    #[error("SQLx error: {0}")]
-    SqlxError(#[from] sqlx::Error),
+    #[error("Sqlite error: {0}")]
+    SqliteError(#[from] rusqlite::Error),
 }
 
 pub struct AssetErrorWithBacktrace {
@@ -75,7 +75,7 @@ from_error!(
     zip::result::ZipError,
     toml::de::Error,
     toml::ser::Error,
-    sqlx::Error
+    rusqlite::Error
 );
 
 pub type AssetResult<T> = std::result::Result<T, AssetErrorWithBacktrace>;
