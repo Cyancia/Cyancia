@@ -5,7 +5,7 @@ use futures::executor::block_on;
 
 use crate::{
     bundle::ErasedAssetBundle,
-    loader::{AssetSerializerRegistry, AssetSerializerRegistryBuilder},
+    loader::{AssetSerializer, AssetSerializerRegistry, AssetSerializerRegistryBuilder},
     store::AssetRegistry,
 };
 
@@ -39,5 +39,19 @@ impl Plugin for AssetsPlugin {
             registry.add_erased_bundle(bundle).unwrap();
         }
         app.add_service_instance(registry);
+    }
+}
+
+pub trait AssetAppExt {
+    fn add_asset_serializer<A: AssetSerializer + Default>(&mut self) -> &mut Self;
+}
+
+impl AssetAppExt for Application {
+    fn add_asset_serializer<A: AssetSerializer + Default>(&mut self) -> &mut Self {
+        self.runtime()
+            .services()
+            .service_mut::<AssetSerializerRegistryBuilder>()
+            .add_serializer::<A>();
+        self
     }
 }

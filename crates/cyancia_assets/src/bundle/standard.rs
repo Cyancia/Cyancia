@@ -41,6 +41,10 @@ impl StandardAssetBundle {
         scan_bundles(root, &mut bundles, &mut errors);
         (bundles, errors)
     }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 fn scan_bundles(

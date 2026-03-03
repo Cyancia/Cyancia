@@ -31,10 +31,10 @@ impl Asset for BrushPreset {
 }
 
 #[derive(Default)]
-pub struct BrushPresetLoader {}
+pub struct BrushPresetSerializer;
 
 #[derive(Debug, thiserror::Error)]
-pub enum BrushPresetLoaderError {
+pub enum BrushPresetSerializerError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -45,10 +45,10 @@ pub enum BrushPresetLoaderError {
     Image(#[from] image::ImageError),
 }
 
-impl AssetSerializer for BrushPresetLoader {
+impl AssetSerializer for BrushPresetSerializer {
     type Asset = BrushPreset;
 
-    type Error = BrushPresetLoaderError;
+    type Error = BrushPresetSerializerError;
 
     fn file_extension() -> &'static str {
         "cbp"

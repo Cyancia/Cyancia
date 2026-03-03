@@ -7,10 +7,10 @@ mod main_view;
 use cyancia_actions::ActionPlugin;
 use cyancia_assets::{
     AssetsPlugin,
-    bundle::{ErasedAssetBundle, directory::AssetDirectory},
+    bundle::{ErasedAssetBundle, directory::AssetDirectory, standard::StandardAssetBundle},
     store::AssetRegistry,
 };
-use cyancia_brush::editor::BrushEditorView;
+use cyancia_brush::{BrushPlugin, editor::BrushEditorView};
 use cyancia_canvas::CanvasPlugin;
 use cyancia_image::ImagePlugin;
 use cyancia_input::InputPlugin;
@@ -28,17 +28,41 @@ fn main() {
         .init();
 
     let mut app = Application::default();
+    let mut asset_bundles = Vec::<Arc<dyn ErasedAssetBundle>>::new();
+    asset_bundles.push(Arc::new(AssetDirectory::new("assets/builtin_assets")));
+
+    {
+        let (standard_bundles, errs) = StandardAssetBundle::scan_bundles("assets");
+        log::info!(
+            "Loaded {} asset bundles with {} errors",
+            standard_bundles.len(),
+            errs.len()
+        );
+        for err in errs {
+            log::error!("Error loading asset bundle: {}", err);
+        }
+        for bundle in &standard_bundles {
+            log::info!("Loaded asset bundle: {}", bundle.path().display());
+        }
+        asset_bundles.extend(
+            standard_bundles
+                .into_iter()
+                .map(|b| Arc::new(b) as Arc<dyn ErasedAssetBundle>),
+        );
+    }
+
     app.add_service::<RenderContext>()
         .add_service::<WindowCommandBuffer>()
         .add_plugin(RenderPlugin)
         .add_plugin(AssetsPlugin {
             asset_root: "assets".into(),
-            bundles: vec![Arc::new(AssetDirectory::new("assets/builtin_assets"))],
+            bundles: asset_bundles,
         })
         .add_plugin(ImagePlugin)
         .add_plugin(CanvasPlugin)
         .add_plugin(InputPlugin)
         .add_plugin(ToolsPlugin)
+        .add_plugin(BrushPlugin)
         .add_plugin(ActionPlugin);
     app.build_plugins();
 
