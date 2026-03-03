@@ -16,7 +16,7 @@ fn main() {
         app.add_plugin(RenderPlugin)
             .add_plugin(ImagePlugin)
             .add_plugin(CanvasPlugin);
-        let main_view = futures::executor::block_on(MainView::new(app.runtime()));
+        let main_view = MainView::new(app.runtime());
         app.window_manager_mut().register_view(main_view);
 
         app

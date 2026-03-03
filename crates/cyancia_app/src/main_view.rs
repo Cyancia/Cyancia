@@ -69,21 +69,18 @@ impl Debug for MainViewMessage {
 }
 
 impl MainView {
-    pub async fn new(runtime: &Runtime) -> Self {
+    pub fn new(runtime: &Runtime) -> Self {
         let mut loaders = AssetSerializerRegistry::new();
         cyancia_input::register_loaders(&mut loaders);
-        let assets = AssetRegistry::new("assets", loaders.into()).await.unwrap();
+        let assets = AssetRegistry::new("assets", loaders.into()).unwrap();
 
         let actions = {
-            let manifests = futures::future::join_all(
-                assets
-                    .all_handles_of::<ActionManifest>()
-                    .await
-                    .unwrap()
-                    .into_iter()
-                    .map(async |h| h.get().await.unwrap()),
-            )
-            .await;
+            let manifests = assets
+                .all_handles_of::<ActionManifest>()
+                .unwrap()
+                .into_iter()
+                .map(|h| h.get().unwrap())
+                .collect::<Vec<_>>();
             let mut collection = ActionFunctionCollection::new(ActionCollection::new(manifests));
             collection.register::<OpenFileAction>();
             collection.register::<CanvasToolSwitch<PanToolAction>>();
