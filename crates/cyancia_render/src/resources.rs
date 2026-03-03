@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use cyancia_runtime::{
-    Runtime,
+    Services,
     service::{FromRuntime, RenderContext, Service},
 };
 use cyancia_utils::include_shader;
@@ -22,7 +22,7 @@ pub struct GlobalSamplers {
 impl Service for GlobalSamplers {}
 
 impl FromRuntime for GlobalSamplers {
-    fn from_runtime(runtime: &Runtime) -> Self {
+    fn from_runtime(runtime: &Services) -> Self {
         let render_context = runtime.service::<RenderContext>();
         Self::new(&render_context.device)
     }
@@ -107,7 +107,7 @@ pub struct FullscreenVertex {
 impl Service for FullscreenVertex {}
 
 impl FromRuntime for FullscreenVertex {
-    fn from_runtime(runtime: &Runtime) -> Self {
+    fn from_runtime(runtime: &Services) -> Self {
         let render_context = runtime.service::<RenderContext>();
         Self::new(&render_context.device)
     }

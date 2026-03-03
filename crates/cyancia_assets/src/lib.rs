@@ -1,8 +1,10 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
-use cyancia_runtime::{Application, plugin::Plugin};
+use cyancia_runtime::{Application, Runtime, plugin::Plugin};
+use futures::executor::block_on;
 
 use crate::{
+    bundle::ErasedAssetBundle,
     loader::{AssetSerializerRegistry, AssetSerializerRegistryBuilder},
     store::AssetRegistry,
 };
@@ -17,7 +19,7 @@ pub mod tag;
 
 pub struct AssetsPlugin {
     pub asset_root: PathBuf,
-    pub serializers: AssetSerializerRegistry,
+    pub bundles: Vec<Arc<dyn ErasedAssetBundle>>,
 }
 
 impl Plugin for AssetsPlugin {
@@ -28,9 +30,14 @@ impl Plugin for AssetsPlugin {
     fn finish(&self, app: &mut Application) {
         let mut builder = app
             .runtime()
+            .services()
             .service_mut::<AssetSerializerRegistryBuilder>();
-        let serializers = builder.build();
+        let serializers = builder.consume_and_build();
         drop(builder);
-        app.add_service_instance(AssetRegistry::new(&self.asset_root, serializers.into()).unwrap());
+        let mut registry = AssetRegistry::new(&self.asset_root, serializers.into()).unwrap();
+        for bundle in self.bundles.clone() {
+            registry.add_erased_bundle(bundle).unwrap();
+        }
+        app.add_service_instance(registry);
     }
 }

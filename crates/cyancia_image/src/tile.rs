@@ -1,7 +1,7 @@
 use std::{cell::OnceCell, collections::HashMap, ops::Deref, sync::Arc};
 
 use cyancia_runtime::{
-    Runtime,
+    Services,
     service::{FromRuntime, RenderContext, Service},
 };
 use dashmap::DashMap;
@@ -60,7 +60,7 @@ pub struct GpuTileStorage {
 impl Service for GpuTileStorage {}
 
 impl FromRuntime for GpuTileStorage {
-    fn from_runtime(runtime: &Runtime) -> Self {
+    fn from_runtime(runtime: &Services) -> Self {
         Self {
             inner: Arc::new(GpuTileStorageInner::from_runtime(runtime)),
         }
@@ -87,7 +87,7 @@ pub struct GpuTileStorageInner {
 // impl Service for GpuTileStorageInner {}
 
 impl FromRuntime for GpuTileStorageInner {
-    fn from_runtime(runtime: &Runtime) -> Self {
+    fn from_runtime(runtime: &Services) -> Self {
         let render_context = runtime.service::<RenderContext>();
         Self::new(render_context.device.clone(), render_context.queue.clone())
     }

@@ -1,9 +1,12 @@
-use std::{marker::PhantomData, time::Instant};
+use std::{marker::PhantomData, sync::Arc, time::Instant};
 
+use async_trait::async_trait;
+use cyancia_canvas::CanvasManager;
 use cyancia_input::action::{Action, ActionId};
-use cyancia_tools::{CanvasTool, CanvasToolId};
+use cyancia_runtime::Services;
+use cyancia_tools::{CanvasTool, CanvasToolId, CanvasToolProxies};
 
-use crate::{ActionFunction, shell::ActionShell};
+use crate::{ActionFunction};
 
 pub trait CanvasToolAction: Send + Sync + 'static {
     fn action() -> ActionId;
@@ -12,6 +15,7 @@ pub trait CanvasToolAction: Send + Sync + 'static {
 
 macro_rules! canvas_tool_action {
     ($name:ident, $action:literal, $tool: literal) => {
+        #[derive(Default)]
         pub struct $name;
         impl CanvasToolAction for $name {
             fn action() -> ActionId {
@@ -42,13 +46,20 @@ impl<T: CanvasToolAction> Default for CanvasToolSwitch<T> {
     }
 }
 
+#[async_trait]
 impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
     fn id(&self) -> ActionId {
         T::action()
     }
 
-    fn trigger(&self, shell: &mut ActionShell) {
-        let canvas = shell.canvas();
-        shell.tool_proxy().switch_tool(T::tool(), &canvas);
+    async fn trigger(&self, services: Arc<Services>) {
+        let canvases = services.service::<CanvasManager>();
+        let (Some(canvas_id), Some(canvas)) = (canvases.current_id(), canvases.current()) else {
+            return;
+        };
+
+        let mut tool_proxies = services.service_mut::<CanvasToolProxies>();
+        let tool_proxy = tool_proxies.get_mut(&canvas_id);
+        tool_proxy.switch_tool(T::tool(), &canvas);
     }
 }

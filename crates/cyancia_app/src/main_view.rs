@@ -1,17 +1,15 @@
 use std::{fmt::Debug, sync::Arc};
 
 use cyancia_actions::{
-    ActionFunctionCollection,
+    ActionFunctionRegistry,
     canvas_control::{
         BrushToolAction, CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction,
     },
     file::OpenFileAction,
-    shell::{ActionShell, DestructedShell},
-    task::ActionTask,
 };
 use cyancia_assets::{loader::AssetSerializerRegistry, store::AssetRegistry};
 use cyancia_canvas::{
-    CCanvas, CanvasId,
+    CCanvas, CanvasId, CanvasManager,
     render::{CanvasRenderer, CanvasRenderers},
     widget::CanvasWidget,
 };
@@ -20,17 +18,17 @@ use cyancia_image::{
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_input::{
-    action::{Action, ActionCollection, ActionManifest},
+    action::{Action, ActionManifest, ActionManifestCollection},
     key::{KeySequence, KeyboardState},
 };
 use cyancia_runtime::{
-    Runtime,
+    Services,
     service::FromRuntime,
     windows::{WindowView, WindowViewId},
 };
 use cyancia_tools::{
-    CanvasToolFunctionCollection, CanvasToolId, ToolProxy, brush::BrushTool, pan::PanTool,
-    rotate::RotateTool, zoom::ZoomTool,
+    CanvasToolFunctionRegistry, CanvasToolId, CanvasToolProxies, ToolProxy, brush::BrushTool,
+    pan::PanTool, rotate::RotateTool, zoom::ZoomTool,
 };
 use glam::UVec2;
 use iced::{
@@ -43,78 +41,37 @@ use uuid::Uuid;
 use crate::input_manager::InputManager;
 
 pub struct MainView {
-    pub assets: AssetRegistry,
     pub input_manager: InputManager,
-    pub canvas: Arc<CCanvas>,
-
-    pub renderer_acquired: bool,
 }
 
+#[derive(Debug)]
 pub enum MainViewMessage {
-    WindowOpened(window::Id),
     KeyboardEvent(keyboard::Event),
     MouseEvent(mouse::Event),
-    ActionTaskCompleted(Box<dyn ActionTask>),
-}
-
-impl Debug for MainViewMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::WindowOpened(arg0) => f.debug_tuple("WindowOpened").field(arg0).finish(),
-            Self::KeyboardEvent(arg0) => f.debug_tuple("KeyboardEvent").field(arg0).finish(),
-            Self::MouseEvent(arg0) => f.debug_tuple("MouseEvent").field(arg0).finish(),
-            Self::ActionTaskCompleted(arg0) => f.debug_tuple("ActionTaskCompleted").finish(),
-        }
-    }
 }
 
 impl MainView {
-    pub fn new(runtime: &Runtime) -> Self {
-        let mut loaders = AssetSerializerRegistry::new();
-        cyancia_input::register_loaders(&mut loaders);
-        let assets = AssetRegistry::new("assets", loaders.into()).unwrap();
-
-        let actions = {
-            let manifests = assets
-                .all_handles_of::<ActionManifest>()
-                .unwrap()
-                .into_iter()
-                .map(|h| h.get().unwrap())
-                .collect::<Vec<_>>();
-            let mut collection = ActionFunctionCollection::new(ActionCollection::new(manifests));
-            collection.register::<OpenFileAction>();
-            collection.register::<CanvasToolSwitch<PanToolAction>>();
-            collection.register::<CanvasToolSwitch<RotateToolAction>>();
-            collection.register::<CanvasToolSwitch<ZoomToolAction>>();
-            collection.register::<CanvasToolSwitch<BrushToolAction>>();
-            collection
+    pub fn new(services: &Services) -> Self {
+        let actions = services
+            .service::<ActionManifestCollection>()
+            .subset_for_view("main_view");
+        let canvas = CCanvas {
+            id: CanvasId::new(Uuid::new_v4()),
+            image: Arc::new(CImage::new(UVec2 { x: 1024, y: 768 })),
+            transform: Default::default(),
         };
-        let tool_functions = {
-            let mut c = CanvasToolFunctionCollection::new();
-            c.register::<BrushTool>();
-            c.register::<PanTool>();
-            c.register::<RotateTool>();
-            c.register::<ZoomTool>();
-            c
-        };
-        let tools = { ToolProxy::new(CanvasToolId::new("brush_tool".into()), tool_functions) };
+        services.service_mut::<CanvasToolProxies>().add(
+            &canvas.id,
+            &services.service::<CanvasToolFunctionRegistry>(),
+        );
+        services
+            .service_mut::<CanvasRenderers>()
+            .insert(canvas.id, CanvasRenderer::from_runtime(services));
+        services.service_mut::<CanvasManager>().add_canvas(canvas);
 
         Self {
-            assets,
-            canvas: Arc::new(CCanvas {
-                id: CanvasId::new(Uuid::new_v4()),
-                image: Arc::new(CImage::new(UVec2 { x: 1024, y: 768 })),
-                transform: Default::default(),
-            }),
-            input_manager: InputManager::new(actions, tools),
-
-            renderer_acquired: false,
+            input_manager: InputManager::new(actions),
         }
-    }
-
-    fn apply_shell(&mut self, shell: DestructedShell) -> Task<MainViewMessage> {
-        self.canvas = shell.current_canvas;
-        Task::batch(shell.tasks).map(|t| MainViewMessage::ActionTaskCompleted(t))
     }
 }
 
@@ -127,19 +84,15 @@ impl WindowView for MainView {
 
     fn view<'a>(
         &'a self,
-        runtime: &'a Runtime,
+        runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>> {
-        let renderers = runtime.service_mut::<CanvasRenderers>();
-        if renderers.get(&self.canvas.id).is_none() {
-            renderers.insert(self.canvas.id, CanvasRenderer::from_runtime(runtime));
-        }
-        let renderer = renderers.get(&self.canvas.id).unwrap();
-        // let Some(renderer) = runtime.service::<CanvasRenderers>().get(&self.canvas.id) else {
-        //     return None;
-        // };
+        let canvas_manager = runtime.service::<CanvasManager>();
+        let renderers = runtime.service::<CanvasRenderers>();
+        let current_canvas = canvas_manager.current().unwrap();
+        let renderer = renderers.get(&current_canvas.id).unwrap();
 
         Some(CanvasWidget {
-            canvas: self.canvas.clone(),
+            canvas: current_canvas,
             renderer,
             tile_storage: runtime.service::<GpuTileStorage>().clone(),
         })
@@ -148,24 +101,27 @@ impl WindowView for MainView {
     fn update(
         &mut self,
         message: Self::Message,
-        runtime: &Runtime,
+        runtime: Arc<Services>,
     ) -> impl Into<Task<Self::Message>> {
-        let mut shell = ActionShell::new(self.canvas.clone(), self.input_manager.tools.clone());
-
         match message {
-            MainViewMessage::WindowOpened(id) => {}
             MainViewMessage::KeyboardEvent(event) => {
-                self.input_manager.on_keyboard_event(event, &mut shell);
+                return self
+                    .input_manager
+                    .on_keyboard_event(event, runtime)
+                    .discard();
             }
             MainViewMessage::MouseEvent(event) => {
-                self.input_manager.on_mouse_event(event, &self.canvas);
-            }
-            MainViewMessage::ActionTaskCompleted(action_task) => {
-                action_task.apply(&mut shell);
+                let mut tool_proxies = runtime.service_mut::<CanvasToolProxies>();
+                let canvas_manager = runtime.service::<CanvasManager>();
+                let current_canvas = canvas_manager.current().unwrap();
+                let tool_proxy = tool_proxies.get_mut(&current_canvas.id);
+
+                self.input_manager
+                    .on_mouse_event(event, &current_canvas, tool_proxy);
             }
         }
 
-        self.apply_shell(shell.destruct())
+        Task::none()
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {

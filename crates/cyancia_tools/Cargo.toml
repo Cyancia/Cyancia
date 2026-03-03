@@ -11,3 +11,4 @@ cyancia_canvas.workspace = true
 glam.workspace = true
 cyancia_math.workspace = true
 cyancia_utils.workspace = true
+cyancia_runtime.workspace = true

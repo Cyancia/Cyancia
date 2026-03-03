@@ -1,14 +1,19 @@
 [pan_tool]
 shortcut = [["KeyH"]]
+enabled_in = ["main_view"]
 
 [rotate_tool]
 shortcut = [["KeyR"]]
+enabled_in = ["main_view"]
 
 [zoom_tool]
 shortcut = [["KeyZ"]]
+enabled_in = ["main_view"]
 
 [brush_tool]
 shortcut = [["KeyB"]]
+enabled_in = ["main_view"]
 
 [open_file_action]
 shortcut = [["ControlLeft", "KeyO"]]
+enabled_in = ["main_view"]

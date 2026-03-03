@@ -1,12 +1,23 @@
-use cyancia_assets::loader::AssetSerializerRegistry;
+use cyancia_assets::loader::{AssetSerializerRegistry, AssetSerializerRegistryBuilder};
+use cyancia_runtime::{Application, Runtime, plugin::Plugin};
 
-use crate::action::ActionManifestLoader;
+use crate::action::{ActionManifestCollection, ActionManifestLoader};
 
 pub mod action;
 pub mod key;
 pub mod mouse;
 
-// TODO: use plugin system
-pub fn register_loaders(loaders: &mut AssetSerializerRegistry) {
-    loaders.register::<ActionManifestLoader>();
+pub struct InputPlugin;
+
+impl Plugin for InputPlugin {
+    fn build(&self, app: &mut Application) {
+        app.runtime()
+            .services()
+            .service_mut::<AssetSerializerRegistryBuilder>()
+            .add_serializer::<ActionManifestLoader>();
+    }
+
+    fn finish(&self, app: &mut Application) {
+        app.add_service::<ActionManifestCollection>();
+    }
 }

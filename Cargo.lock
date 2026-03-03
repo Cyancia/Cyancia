@@ -1066,9 +1066,11 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 name = "cyancia_actions"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_input",
+ "cyancia_runtime",
  "cyancia_tools",
  "futures",
  "glam 0.30.10",
@@ -1078,6 +1080,7 @@ dependencies = [
  "log",
  "parking_lot",
  "rfd",
+ "uuid",
 ]
 
 [[package]]
@@ -1190,7 +1193,9 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.11.0",
  "cyancia_assets",
+ "cyancia_runtime",
  "cyancia_utils",
+ "futures",
  "iced_core",
  "indexmap",
  "log",
@@ -1228,6 +1233,7 @@ version = "0.1.0"
 dependencies = [
  "cyancia_utils",
  "downcast-rs 2.0.2",
+ "futures",
  "iced_core",
  "iced_futures",
  "iced_graphics",
@@ -1271,6 +1277,7 @@ dependencies = [
  "cyancia_canvas",
  "cyancia_input",
  "cyancia_math",
+ "cyancia_runtime",
  "cyancia_utils",
  "glam 0.30.10",
  "iced_core",

@@ -1,6 +1,8 @@
 use std::{
     any::TypeId,
-    collections::HashMap,
+    cell::{Ref, RefCell, RefMut},
+    collections::{HashMap, VecDeque},
+    marker::PhantomData,
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -22,24 +24,82 @@ pub mod plugin;
 pub mod service;
 pub mod windows;
 
-pub struct ApplicationProgram {
-    build: Box<dyn Fn() -> Application>,
+pub enum ApplicationState {
+    Adding,
+    Built,
+    Finished,
 }
 
-impl ApplicationProgram {
-    pub fn new(build: impl Fn() -> Application + 'static) -> Self {
-        Self {
-            build: Box::new(build),
+pub struct Application {
+    state: ApplicationState,
+    // TODO remove this ref cell
+    runtime: RefCell<Runtime>,
+    plugins: VecDeque<Box<dyn Plugin>>,
+}
+
+impl Application {
+    pub fn add_plugin<P: Plugin>(&mut self, plugin: P) -> &mut Self {
+        if !matches!(self.state, ApplicationState::Adding) {
+            panic!("Plugins can only be added in the Adding state");
         }
+
+        self.plugins.push_back(Box::new(plugin));
+        self
+    }
+
+    pub fn add_service<T: Service + FromRuntime>(&mut self) -> &mut Self {
+        self.runtime.borrow_mut().add_service::<T>();
+        self
+    }
+
+    pub fn add_service_instance<T: Service>(&mut self, service: T) -> &mut Self {
+        self.runtime.borrow_mut().add_service_instance(service);
+        self
+    }
+
+    pub fn runtime(&self) -> Ref<'_, Runtime> {
+        self.runtime.borrow()
+    }
+
+    pub fn runtime_mut(&self) -> RefMut<'_, Runtime> {
+        self.runtime.borrow_mut()
+    }
+
+    pub fn build_plugins(&mut self) {
+        let mut plugins = Vec::with_capacity(self.plugins.len());
+        while let Some(plugin) = self.plugins.pop_front() {
+            plugin.build(self);
+            plugins.push(plugin);
+        }
+        self.state = ApplicationState::Built;
+
+        for plugin in plugins {
+            plugin.finish(self);
+        }
+        self.state = ApplicationState::Finished;
     }
 
     pub fn run(self) -> Result<(), iced_winit::Error> {
+        if !matches!(self.state, ApplicationState::Finished) {
+            panic!("Plugins must be built before running the application");
+        }
+
         iced_winit::run(self)
     }
 }
 
-impl Program for ApplicationProgram {
-    type State = Application;
+impl Default for Application {
+    fn default() -> Self {
+        Self {
+            state: ApplicationState::Adding,
+            runtime: RefCell::new(Runtime::default()),
+            plugins: VecDeque::new(),
+        }
+    }
+}
+
+impl Program for Application {
+    type State = Runtime;
 
     type Message = ApplicationMessage;
 
@@ -62,19 +122,17 @@ impl Program for ApplicationProgram {
     }
 
     fn boot(&self) -> (Self::State, Task<Self::Message>) {
-        let mut app = (self.build)();
-        app.add_service::<RenderContext>();
-        app.prepare();
+        let mut rt = std::mem::take::<Runtime>(&mut self.runtime.borrow_mut());
         // TODO ugly
-        let task = app.wm.open_window(WindowViewId::new("main_view"));
-        (app, task.discard())
+        let task = rt.wm.open_window(WindowViewId::new("main_view"));
+        (rt, task.discard())
     }
 
     fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
         match message {
             ApplicationMessage::Window(m) => state
                 .wm
-                .update(m, &state.runtime)
+                .update(m, state.services.clone())
                 .map(ApplicationMessage::Window),
         }
     }
@@ -86,7 +144,7 @@ impl Program for ApplicationProgram {
     ) -> Element<'a, Self::Message, Self::Theme, Self::Renderer> {
         state
             .wm
-            .view(window, &state.runtime)
+            .view(window, state.services.clone())
             .map(ApplicationMessage::Window)
     }
 
@@ -95,7 +153,7 @@ impl Program for ApplicationProgram {
     }
 
     fn compositor_context(&self, state: &Self::State) -> Option<WgpuContext> {
-        let render_context = state.runtime.service::<RenderContext>();
+        let render_context = state.services.service::<RenderContext>();
         let context = WgpuContext {
             instance: render_context.instance.as_ref().clone(),
             adapter: render_context.adapter.as_ref().clone(),
@@ -107,41 +165,28 @@ impl Program for ApplicationProgram {
 }
 
 #[derive(Default)]
-pub struct Application {
-    plugins: Vec<Box<dyn Plugin>>,
-    runtime: Runtime,
+pub struct Runtime {
+    services: Arc<Services>,
     wm: WindowManager,
 }
 
-impl Application {
-    pub fn add_plugin<P: Plugin>(&mut self, plugin: P) -> &mut Self {
-        self.plugins.push(Box::new(plugin));
-        self
-    }
-
+impl Runtime {
     pub fn add_service<T: Service + FromRuntime>(&mut self) -> &mut Self {
-        self.runtime.services.insert(
-            TypeId::of::<T>(),
-            Arc::new(RwLock::new(T::from_runtime(&self.runtime))),
-        );
+        let instance = T::from_runtime(&self.services);
+        self.add_service_instance(instance);
         self
     }
 
     pub fn add_service_instance<T: Service>(&mut self, service: T) -> &mut Self {
-        self.runtime
+        self.services
             .services
+            .write()
             .insert(TypeId::of::<T>(), Arc::new(RwLock::new(service)));
         self
     }
 
-    pub fn prepare(&mut self) {
-        for plugin in std::mem::take(&mut self.plugins) {
-            plugin.build(self);
-        }
-    }
-
-    pub fn runtime(&self) -> &Runtime {
-        &self.runtime
+    pub fn services(&self) -> &Services {
+        &self.services
     }
 
     pub fn window_manager(&self) -> &WindowManager {
@@ -158,32 +203,34 @@ pub enum ApplicationMessage {
 }
 
 #[derive(Default)]
-pub struct Runtime {
-    services: HashMap<TypeId, Arc<RwLock<dyn Service>>>,
+pub struct Services {
+    services: RwLock<HashMap<TypeId, Arc<RwLock<dyn Service>>>>,
 }
 
-impl Runtime {
-    pub fn service<T: Service>(&self) -> ServiceRef<'_, T> {
-        let x = self
+impl Services {
+    pub fn service<T: Service>(&self) -> ServiceRef<T> {
+        let arc = self
             .services
+            .read()
             .get(&TypeId::of::<T>())
             .expect(&format!(
                 "Service of type {} not found",
                 std::any::type_name::<T>()
             ))
-            .read();
-        ServiceRef::from_dynamic(x)
+            .clone();
+        ServiceRef::from_arc(arc)
     }
 
-    pub fn service_mut<T: Service>(&self) -> ServiceMut<'_, T> {
-        let x = self
+    pub fn service_mut<T: Service>(&self) -> ServiceMut<T> {
+        let arc = self
             .services
+            .read()
             .get(&TypeId::of::<T>())
             .expect(&format!(
                 "Service of type {} not found",
                 std::any::type_name::<T>()
             ))
-            .write();
-        ServiceMut::from_dynamic(x)
+            .clone();
+        ServiceMut::from_arc(arc)
     }
 }

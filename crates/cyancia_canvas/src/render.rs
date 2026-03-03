@@ -10,7 +10,7 @@ use cyancia_render::{
     resources::{FullscreenVertex, GlobalSamplers},
 };
 use cyancia_runtime::{
-    Runtime,
+    Services,
     service::{FromRuntime, RenderContext, Service},
 };
 use cyancia_utils::include_shader;
@@ -66,7 +66,7 @@ pub struct CanvasRenderer {
 impl Service for CanvasRenderer {}
 
 impl FromRuntime for CanvasRenderer {
-    fn from_runtime(runtime: &Runtime) -> Self {
+    fn from_runtime(runtime: &Services) -> Self {
         let render_context = runtime.service::<RenderContext>();
         let render_pipeline = CanvasRenderPipeline::new(
             &render_context.device,

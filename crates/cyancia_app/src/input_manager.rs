@@ -1,25 +1,22 @@
 use std::sync::Arc;
 
-use cyancia_actions::{
-    ActionFunctionCollection,
-    shell::{ActionShell, DestructedShell},
-};
+use cyancia_actions::ActionFunctionRegistry;
 use cyancia_canvas::CCanvas;
 use cyancia_input::{
+    action::ActionCollection,
     key::KeyboardState,
     mouse::{HoverMouseState, PressedMouseState},
 };
+use cyancia_runtime::Services;
 use cyancia_tools::ToolProxy;
 use iced::{
-    Point,
+    Point, Task,
     keyboard::{self, key},
     mouse,
 };
 
 pub struct InputManager {
-    pub actions: ActionFunctionCollection,
-    pub tools: Arc<ToolProxy>,
-
+    actions: ActionCollection,
     keyboard_state: KeyboardState,
 
     is_pressed: bool,
@@ -27,21 +24,16 @@ pub struct InputManager {
 }
 
 impl InputManager {
-    pub fn new(actions: ActionFunctionCollection, tools: ToolProxy) -> Self {
+    pub fn new(actions: ActionCollection) -> Self {
         Self {
             actions,
-            tools: Arc::new(tools),
             keyboard_state: KeyboardState::default(),
             is_pressed: false,
             cursor_position: Point::default(),
         }
     }
 
-    pub fn on_keyboard_event(
-        &mut self,
-        event: keyboard::Event,
-        shell: &mut ActionShell,
-    ) {
+    pub fn on_keyboard_event(&mut self, event: keyboard::Event, runtime: Arc<Services>) -> Task<()> {
         match event {
             keyboard::Event::KeyPressed {
                 physical_key,
@@ -49,15 +41,21 @@ impl InputManager {
                 ..
             } => {
                 if repeat {
-                    return;
+                    return Task::none();
                 }
 
                 match physical_key {
                     key::Physical::Code(code) => {
                         self.keyboard_state.press(code);
 
-                        if let Ok(keys) = self.keyboard_state.get_sequence() {
-                            self.actions.trigger(keys, shell);
+                        if let Some(action) = self
+                            .keyboard_state
+                            .get_sequence()
+                            .ok()
+                            .and_then(|k| self.actions.get_action_id(k))
+                            .and_then(|id| runtime.service::<ActionFunctionRegistry>().get(id))
+                        {
+                            return Task::future(async move { action.trigger(runtime).await });
                         }
                     }
                     key::Physical::Unidentified(native_code) => {
@@ -75,9 +73,16 @@ impl InputManager {
             },
             _ => {}
         }
+
+        Task::none()
     }
 
-    pub fn on_mouse_event(&mut self, event: mouse::Event, canvas: &CCanvas) {
+    pub fn on_mouse_event(
+        &mut self,
+        event: mouse::Event,
+        canvas: &CCanvas,
+        tool_proxy: &mut ToolProxy,
+    ) {
         match event {
             mouse::Event::ButtonPressed(button) => {
                 if button != mouse::Button::Left {
@@ -85,7 +90,7 @@ impl InputManager {
                 }
 
                 self.is_pressed = true;
-                self.tools.mouse_pressed(
+                tool_proxy.mouse_pressed(
                     &self.keyboard_state,
                     &PressedMouseState {
                         position: self.cursor_position,
@@ -99,7 +104,7 @@ impl InputManager {
                 }
 
                 self.is_pressed = false;
-                self.tools.mouse_released(
+                tool_proxy.mouse_released(
                     &self.keyboard_state,
                     &PressedMouseState {
                         position: self.cursor_position,
@@ -111,7 +116,7 @@ impl InputManager {
                 self.cursor_position = position;
 
                 if self.is_pressed {
-                    self.tools.mouse_moved_pressing(
+                    tool_proxy.mouse_moved_pressing(
                         &self.keyboard_state,
                         &PressedMouseState {
                             position: self.cursor_position,
@@ -119,7 +124,7 @@ impl InputManager {
                         canvas,
                     );
                 } else {
-                    self.tools.mouse_moved_hovering(
+                    tool_proxy.mouse_moved_hovering(
                         &self.keyboard_state,
                         &HoverMouseState {
                             position: self.cursor_position,

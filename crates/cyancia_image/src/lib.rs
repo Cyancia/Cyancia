@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use cyancia_runtime::{Application, plugin::Plugin};
+use cyancia_runtime::{Application, Runtime, plugin::Plugin};
 use glam::UVec2;
 use image::DynamicImage;
 

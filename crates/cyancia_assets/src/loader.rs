@@ -20,7 +20,7 @@ impl AssetSerializerRegistryBuilder {
         self.serializers.insert(L::file_extension(), loader);
     }
 
-    pub(crate) fn build(&mut self) -> AssetSerializerRegistry {
+    pub fn consume_and_build(&mut self) -> AssetSerializerRegistry {
         let mut registry = AssetSerializerRegistry::new();
         for (ext, loader) in self.serializers.drain() {
             registry.serializers.insert(ext, Arc::from(loader));
@@ -40,11 +40,6 @@ impl AssetSerializerRegistry {
         Self {
             serializers: HashMap::new(),
         }
-    }
-
-    pub fn register<L: AssetSerializer + Default>(&mut self) {
-        let loader = Arc::new(L::default());
-        self.serializers.insert(L::file_extension(), loader.clone());
     }
 
     pub fn get(&self, ext: &str) -> Option<Arc<dyn ErasedAssetSerializer>> {

@@ -14,7 +14,7 @@ use cyancia_assets::{
         standard::StandardAssetBundle,
     },
     index_db::AssetFilter,
-    loader::{AssetSerializer, AssetSerializerRegistry},
+    loader::{AssetSerializer, AssetSerializerRegistry, AssetSerializerRegistryBuilder},
     store::AssetRegistry,
     tag::{Tag, TagSerializer},
 };
@@ -243,11 +243,11 @@ fn test() {
         fs::remove_file(&local_manifest_path).unwrap();
     }
 
-    let mut serializers = AssetSerializerRegistry::new();
-    serializers.register::<TestAssetSerializer>();
-    serializers.register::<TagSerializer>();
+    let mut serializers = AssetSerializerRegistryBuilder::default();
+    serializers.add_serializer::<TestAssetSerializer>();
+    serializers.add_serializer::<TagSerializer>();
 
-    let mut registry = AssetRegistry::new(&assets_root, serializers.into())
+    let mut registry = AssetRegistry::new(&assets_root, serializers.consume_and_build().into())
         .unwrap();
 
     registry.add_bundle(local_bundle).unwrap();
@@ -377,9 +377,8 @@ fn test() {
     let new_asset_meta = new_asset_handle.metadata().unwrap();
     assert_eq!(new_asset_meta.revision, 1);
     assert!(!new_asset_meta.in_memory);
-    let new_asset_written_file =
-        modified_bundle_absolute_path(&assets_root, &local_bundle_id)
-            .join(&new_asset_meta.relative_path);
+    let new_asset_written_file = modified_bundle_absolute_path(&assets_root, &local_bundle_id)
+        .join(&new_asset_meta.relative_path);
     assert!(new_asset_written_file.exists());
     assert_eq!(
         parse_test_asset(&new_asset_written_file),
@@ -403,11 +402,11 @@ fn test() {
     TagSerializer.write(&offline_tag, &mut tag_content).unwrap();
     fs::write(&local_tag_path, tag_content).unwrap();
 
-    let mut serializers = AssetSerializerRegistry::new();
-    serializers.register::<TestAssetSerializer>();
-    serializers.register::<TagSerializer>();
+    let mut serializers = AssetSerializerRegistryBuilder::default();
+    serializers.add_serializer::<TestAssetSerializer>();
+    serializers.add_serializer::<TagSerializer>();
 
-    let mut restarted_registry = AssetRegistry::new(&assets_root, serializers.into())
+    let mut restarted_registry = AssetRegistry::new(&assets_root, serializers.consume_and_build().into())
         .unwrap();
 
     restarted_registry

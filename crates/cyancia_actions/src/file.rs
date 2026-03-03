@@ -1,59 +1,64 @@
 use std::sync::Arc;
 
-use cyancia_canvas::CCanvas;
-use cyancia_image::{CImage, layer::Layer};
-use cyancia_input::{action::{Action, ActionId}, key::KeySequence};
+use async_trait::async_trait;
+use cyancia_canvas::{
+    CCanvas, CanvasId, CanvasManager,
+    render::{CanvasRenderer, CanvasRenderers},
+};
+use cyancia_image::{CImage, layer::Layer, tile::GpuTileStorage};
+use cyancia_input::{
+    action::{Action, ActionId},
+    key::KeySequence,
+};
+use cyancia_runtime::{Services, service::FromRuntime};
+use cyancia_tools::{CanvasToolFunctionRegistry, CanvasToolProxies};
 use glam::UVec2;
 use iced_runtime::Task;
 use rfd::{AsyncFileDialog, FileDialog};
+use uuid::Uuid;
 
-use crate::{ActionFunction, shell::ActionShell, task::ActionTask};
+use crate::ActionFunction;
 
 #[derive(Default)]
 pub struct OpenFileAction {}
 
+#[async_trait]
 impl ActionFunction for OpenFileAction {
     fn id(&self) -> ActionId {
         ActionId::new("open_file_action".into())
     }
 
-    fn trigger(&self, shell: &mut ActionShell) {
-        // shell.queue_task(Task::future(load_image()));
+    async fn trigger(&self, services: Arc<Services>) {
+        let Some(file) = AsyncFileDialog::new().pick_file().await else {
+            log::error!("Unable to get selected file path.");
+            return;
+        };
+
+        let img = match image::load_from_memory(&file.read().await) {
+            Ok(i) => i,
+            Err(e) => {
+                log::error!("Unable to open image from file {:?}: {}", file, e);
+                return;
+            }
+        };
+        log::info!("Opened image from file {:?}.", file);
+
+        let width = img.width();
+        let height = img.height();
+        let layer = Layer::from_image(img, services.service::<GpuTileStorage>().as_ref());
+        let canvas = CCanvas {
+            id: CanvasId::new(Uuid::new_v4()),
+            image: Arc::new(CImage::from_layer(UVec2::new(width, height), layer)),
+            transform: Default::default(),
+        };
+
+        services.service_mut::<CanvasToolProxies>().add(
+            &canvas.id,
+            &services.service::<CanvasToolFunctionRegistry>(),
+        );
+        services
+            .service_mut::<CanvasRenderers>()
+            .insert(canvas.id, CanvasRenderer::from_runtime(&services));
+        services.service_mut::<CanvasManager>().add_canvas(canvas);
     }
 }
-
-pub struct OpenFileTask {
-    canvas: CCanvas,
-}
-
-impl ActionTask for OpenFileTask {
-    fn apply(self: Box<Self>, shell: &mut ActionShell) {
-        shell.set_current_canvas(Arc::new(self.canvas));
-    }
-}
-
-// async fn load_image() -> Option<OpenFileTask> {
-//     let Some(file) = AsyncFileDialog::new().pick_file().await else {
-//         log::error!("Unable to get selected file path.");
-//         return None;
-//     };
-
-//     let img = match image::load_from_memory(&file.read().await) {
-//         Ok(i) => i,
-//         Err(e) => {
-//             log::error!("Unable to open image from file {:?}: {}", file, e);
-//             return None;
-//         }
-//     };
-//     log::info!("Opened image from file {:?}.", file);
-
-//     let width = img.width();
-//     let height = img.height();
-//     let layer = Layer::from_image(img, &GPU_TILE_STORAGE);
-//     let canvas = CCanvas {
-//         image: Arc::new(CImage::from_layer(UVec2::new(width, height), layer)),
-//         transform: Default::default(),
-//     };
-
-//     Some(OpenFileTask { canvas })
-// }

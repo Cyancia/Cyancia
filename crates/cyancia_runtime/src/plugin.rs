@@ -1,4 +1,4 @@
-use crate::{Application, Runtime};
+use crate::{Application, Runtime, Services};
 
 pub trait Plugin: 'static {
     fn build(&self, app: &mut Application);

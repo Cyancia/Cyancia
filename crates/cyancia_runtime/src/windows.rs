@@ -12,7 +12,7 @@ use iced_core::{Element, Theme, window};
 use iced_runtime::{Task, futures::Subscription};
 use parking_lot::Mutex;
 
-use crate::{Runtime, service::Service};
+use crate::{Services, service::Service};
 
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -27,12 +27,12 @@ pub trait WindowView: Send + Sync + 'static {
     fn id(&self) -> WindowViewId;
     fn view<'a>(
         &'a self,
-        runtime: &'a Runtime,
+        runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>>;
     fn update(
         &mut self,
         message: Self::Message,
-        runtime: &Runtime,
+        runtime: Arc<Services>,
     ) -> impl Into<Task<Self::Message>>;
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::none()
@@ -43,12 +43,12 @@ pub trait ErasedWindowView: Send + Sync + 'static {
     fn id(&self) -> WindowViewId;
     fn view<'a>(
         &'a self,
-        runtime: &'a Runtime,
+        runtime: Arc<Services>,
     ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer>;
     fn update(
         &mut self,
         message: Box<dyn Any + Send + Sync>,
-        runtime: &Runtime,
+        runtime: Arc<Services>,
     ) -> Task<Box<dyn Any + Send + Sync>>;
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>> {
         Subscription::none()
@@ -65,7 +65,7 @@ where
 
     fn view<'a>(
         &'a self,
-        runtime: &'a Runtime,
+        runtime: Arc<Services>,
     ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer> {
         <T as WindowView>::view(self, runtime)
             .into()
@@ -75,7 +75,7 @@ where
     fn update(
         &mut self,
         message: Box<dyn Any + Send + Sync>,
-        runtime: &Runtime,
+        runtime: Arc<Services>,
     ) -> Task<Box<dyn Any + Send + Sync>> {
         let msg = *message
             .downcast::<T::Message>()
@@ -121,7 +121,7 @@ where
     pub fn view<'a>(
         &'a self,
         id: window::Id,
-        runtime: &'a Runtime,
+        runtime: Arc<Services>,
     ) -> Element<'a, ErasedWindowMessage, Theme, iced_wgpu::Renderer> {
         let window = self.windows.get(&id).expect("Window not found").clone();
         let view = self.views.get(&window).expect("Window view not found");
@@ -134,7 +134,7 @@ where
     pub fn update(
         &mut self,
         message: ErasedWindowMessage,
-        runtime: &Runtime,
+        runtime: Arc<Services>,
     ) -> Task<ErasedWindowMessage> {
         let view = self
             .views

@@ -1,17 +1,27 @@
-use std::{borrow::Borrow, collections::HashMap, sync::Arc};
+use std::{
+    borrow::Borrow,
+    collections::{HashMap, hash_map::Entry},
+    sync::Arc,
+};
 
 use cyancia_assets::{
     asset::{Asset, AssetId, UntypedAssetId},
     loader::AssetSerializer,
+    store::AssetRegistry,
+};
+use cyancia_runtime::{
+    Services,
+    service::{FromRuntime, Service},
 };
 use cyancia_utils::wrapper;
+use futures::executor::block_on;
 use serde::{Deserialize, Serialize};
 
 use crate::key::KeySequence;
 
 #[derive(Debug, Clone)]
 pub struct Action {
-    pub name: Arc<str>,
+    pub name: ActionId,
     pub shortcut: Vec<KeySequence>,
     pub priority: u8,
 }
@@ -23,7 +33,7 @@ wrapper! {
 
 #[derive(Debug, Clone)]
 pub struct ActionManifest {
-    pub actions: Vec<Action>,
+    pub actions_in_view: HashMap<String, Vec<Arc<Action>>>,
 }
 
 impl Asset for ActionManifest {
@@ -35,6 +45,7 @@ pub struct SerializableAction {
     pub shortcut: Vec<KeySequence>,
     #[serde(default)]
     pub priority: Option<u8>,
+    pub enabled_in: Vec<String>,
 }
 
 #[derive(Default)]
@@ -62,15 +73,24 @@ impl AssetSerializer for ActionManifestLoader {
     fn read(&self, reader: &mut dyn std::io::Read) -> Result<Self::Asset, Self::Error> {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
-        let actions = toml::from_slice::<HashMap<String, SerializableAction>>(&buf)?
-            .into_iter()
-            .map(|(name, a)| Action {
-                name: Arc::from(name),
-                shortcut: a.shortcut,
-                priority: a.priority.unwrap_or(0),
-            })
-            .collect();
-        Ok(ActionManifest { actions })
+        let manifest = toml::from_slice::<HashMap<String, SerializableAction>>(&buf)?;
+        let mut actions_in_view = HashMap::new();
+        for (name, action) in manifest {
+            dbg!(&name, &action.enabled_in);
+            let action_arc = Arc::new(Action {
+                name: ActionId::new(name.into()),
+                shortcut: action.shortcut.clone(),
+                priority: action.priority.unwrap_or(0),
+            });
+
+            for view in action.enabled_in.iter().cloned() {
+                actions_in_view
+                    .entry(view)
+                    .or_insert_with(Vec::new)
+                    .push(action_arc.clone());
+            }
+        }
+        Ok(ActionManifest { actions_in_view })
     }
 
     fn write(
@@ -78,26 +98,78 @@ impl AssetSerializer for ActionManifestLoader {
         asset: &Self::Asset,
         writer: &mut dyn std::io::Write,
     ) -> Result<(), Self::Error> {
-        let actions = asset
-            .actions
-            .iter()
-            .map(|a| {
-                (
-                    a.name.to_string(),
-                    SerializableAction {
-                        shortcut: a.shortcut.clone(),
-                        priority: if a.priority == 0 {
-                            None
-                        } else {
-                            Some(a.priority)
-                        },
-                    },
-                )
-            })
-            .collect::<HashMap<_, _>>();
-        let toml = toml::to_string(&actions)?;
+        let mut manifest = HashMap::<String, SerializableAction>::new();
+        for (view, actions) in &asset.actions_in_view {
+            for action in actions {
+                match manifest.entry(action.name.to_string()) {
+                    Entry::Occupied(mut e) => {
+                        e.get_mut().enabled_in.push(view.clone());
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(SerializableAction {
+                            shortcut: action.shortcut.clone(),
+                            priority: Some(action.priority),
+                            enabled_in: vec![view.clone()],
+                        });
+                    }
+                }
+            }
+        }
+        let toml = toml::to_string(&manifest)?;
         writer.write_all(toml.as_bytes())?;
         Ok(())
+    }
+}
+
+pub struct ActionManifestCollection {
+    manifests: Vec<Arc<ActionManifest>>,
+}
+
+impl Service for ActionManifestCollection {}
+
+impl FromRuntime for ActionManifestCollection {
+    fn from_runtime(runtime: &Services) -> Self {
+        let assets = runtime.service::<AssetRegistry>();
+        let handles = assets.all_handles_of::<ActionManifest>().unwrap();
+        let manifests = handles
+            .into_iter()
+            .map(|handle| handle.get().unwrap())
+            .collect();
+
+        Self::new(manifests)
+    }
+}
+
+impl ActionManifestCollection {
+    pub fn new(manifests: Vec<Arc<ActionManifest>>) -> Self {
+        Self { manifests }
+    }
+
+    pub fn subset_for_view(&self, view: &str) -> ActionCollection {
+        let mut shortcuts = HashMap::new();
+        let mut actions = HashMap::new();
+
+        for manifest in &self.manifests {
+            let Some(manifest) = manifest.actions_in_view.get(view) else {
+                continue;
+            };
+
+            for action in manifest {
+                for shortcut in &action.shortcut {
+                    shortcuts
+                        .entry(shortcut.clone())
+                        .or_insert_with(Vec::new)
+                        .push(action.name.clone());
+                }
+                actions.insert(action.name.clone(), action.clone());
+            }
+        }
+
+        for shortcuts in shortcuts.values_mut() {
+            shortcuts.sort_by_key(|id| actions.get(id).map(|a| a.priority).unwrap_or(0));
+        }
+
+        ActionCollection { shortcuts, actions }
     }
 }
 
@@ -107,31 +179,6 @@ pub struct ActionCollection {
 }
 
 impl ActionCollection {
-    pub fn new(manifests: impl IntoIterator<Item = impl Borrow<ActionManifest>>) -> Self {
-        let actions = manifests
-            .into_iter()
-            .flat_map(|manifest| manifest.borrow().actions.clone())
-            .map(|action| (ActionId::new(action.name.clone()), Arc::new(action)))
-            .collect::<HashMap<_, _>>();
-        let mut shortcuts = actions.iter().fold(
-            HashMap::<KeySequence, Vec<ActionId>>::default(),
-            |mut acc, (id, a)| {
-                for shortcut in &a.shortcut {
-                    acc.entry(*shortcut).or_default().push(id.clone());
-                }
-                acc
-            },
-        );
-
-        for ids in shortcuts.values_mut() {
-            if ids.len() > 1 {
-                ids.sort_by_key(|a| actions.get(a).unwrap().priority);
-            }
-        }
-
-        Self { shortcuts, actions }
-    }
-
     pub fn get_action_id(&self, shortcut: KeySequence) -> Option<ActionId> {
         let ids = self.shortcuts.get(&shortcut)?;
         ids.first().cloned()

@@ -1,19 +1,49 @@
 use std::{any::Any, collections::HashMap, sync::Arc, time::Instant};
 
-use cyancia_canvas::CCanvas;
+use cyancia_canvas::{CCanvas, CanvasId};
 use cyancia_input::{
     action::{Action, ActionId},
     key::KeyboardState,
     mouse::{HoverMouseState, PressedMouseState},
 };
+use cyancia_runtime::{Application, Runtime, plugin::Plugin, service::Service};
 use cyancia_utils::wrapper;
 use iced_core::{Point, keyboard::key, mouse};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+use crate::{brush::BrushTool, pan::PanTool, rotate::RotateTool, zoom::ZoomTool};
 
 pub mod brush;
 pub mod pan;
 pub mod rotate;
 pub mod zoom;
+
+pub struct ToolsPlugin;
+
+impl Plugin for ToolsPlugin {
+    fn build(&self, app: &mut Application) {
+        app.add_service::<CanvasToolFunctionRegistry>()
+            .add_service::<CanvasToolProxies>()
+            .add_canvas_tool_function::<BrushTool>()
+            .add_canvas_tool_function::<PanTool>()
+            .add_canvas_tool_function::<RotateTool>()
+            .add_canvas_tool_function::<ZoomTool>();
+    }
+}
+
+pub trait ToolsAppExt {
+    fn add_canvas_tool_function<T: CanvasToolFunction + Default>(&mut self) -> &mut Self;
+}
+
+impl ToolsAppExt for Application {
+    fn add_canvas_tool_function<T: CanvasToolFunction + Default>(&mut self) -> &mut Self {
+        self.runtime()
+            .services()
+            .service_mut::<CanvasToolFunctionRegistry>()
+            .register::<T>();
+        self
+    }
+}
 
 wrapper! {
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -34,34 +64,22 @@ pub trait CanvasToolFunction: Send + Sync + 'static {
     fn deactivate(&mut self, canvas: &CCanvas) {}
 }
 
-pub struct CanvasToolFunctionCollection {
-    actions: HashMap<CanvasToolId, Arc<RwLock<dyn CanvasToolFunction>>>,
+#[derive(Default)]
+pub struct CanvasToolFunctionRegistry {
+    spawners: Vec<Box<dyn Fn() -> Box<dyn CanvasToolFunction> + Send + Sync>>,
 }
 
-impl CanvasToolFunctionCollection {
-    pub fn new() -> Self {
-        Self {
-            actions: HashMap::new(),
-        }
+impl CanvasToolFunctionRegistry {
+    pub fn register<T: CanvasToolFunction + Default>(&mut self) {
+        self.spawners.push(Box::new(|| Box::new(T::default())));
     }
 
-    pub fn register<A: CanvasToolFunction + Default>(&mut self) {
-        let action = A::default();
-        self.actions
-            .insert(action.id(), Arc::new(RwLock::new(action)));
-    }
-
-    pub fn get(&self, id: &CanvasToolId) -> Option<RwLockReadGuard<'_, dyn CanvasToolFunction>> {
-        self.actions.get(id).map(|l| l.read())
-    }
-
-    pub fn get_mut(
-        &self,
-        id: &CanvasToolId,
-    ) -> Option<RwLockWriteGuard<'_, dyn CanvasToolFunction>> {
-        self.actions.get(id).map(|l| l.write())
+    pub fn create(&self) -> Vec<Box<dyn CanvasToolFunction>> {
+        self.spawners.iter().map(|spawner| spawner()).collect()
     }
 }
+
+impl Service for CanvasToolFunctionRegistry {}
 
 struct ToolProxyState {
     last: CanvasToolId,
@@ -70,82 +88,106 @@ struct ToolProxyState {
 }
 
 pub struct ToolProxy {
-    state: RwLock<ToolProxyState>,
-    tools: CanvasToolFunctionCollection,
+    state: ToolProxyState,
+    tools: HashMap<CanvasToolId, Box<dyn CanvasToolFunction>>,
 }
 
 impl ToolProxy {
-    pub fn new(initial: CanvasToolId, collection: CanvasToolFunctionCollection) -> Self {
+    pub fn new(initial: CanvasToolId, collection: &CanvasToolFunctionRegistry) -> Self {
         Self {
-            state: RwLock::new(ToolProxyState {
+            state: ToolProxyState {
                 last: initial.clone(),
                 current: initial,
                 last_switch: Instant::now(),
-            }),
-            tools: collection,
+            },
+            tools: collection
+                .create()
+                .into_iter()
+                .map(|tool| (tool.id(), tool))
+                .collect(),
         }
     }
 
-    pub fn switch_tool(&self, tool: CanvasToolId, canvas: &CCanvas) {
-        let mut state = self.state.write();
-        if let Some(mut current_tool) = self.tools.get_mut(&state.current) {
+    pub fn switch_tool(&mut self, tool: CanvasToolId, canvas: &CCanvas) {
+        if let Some(current_tool) = self.tools.get_mut(&self.state.current) {
             current_tool.deactivate(canvas);
         }
 
-        state.last = state.current.clone();
-        state.current = tool;
-        state.last_switch = Instant::now();
+        self.state.last = self.state.current.clone();
+        self.state.current = tool;
+        self.state.last_switch = Instant::now();
 
-        if let Some(mut new_tool) = self.tools.get_mut(&state.current) {
+        if let Some(new_tool) = self.tools.get_mut(&self.state.current) {
             new_tool.activate(canvas);
         }
     }
 
     pub fn mouse_pressed(
-        &self,
+        &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         canvas: &CCanvas,
     ) {
-        let state = self.state.read();
-        if let Some(mut tool) = self.tools.get_mut(&state.current) {
+        if let Some(tool) = self.tools.get_mut(&self.state.current) {
             tool.begin(keyboard, mouse, canvas);
         }
     }
 
     pub fn mouse_moved_pressing(
-        &self,
+        &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         canvas: &CCanvas,
     ) {
-        let state = self.state.read();
-        if let Some(mut tool) = self.tools.get_mut(&state.current) {
+        if let Some(tool) = self.tools.get_mut(&self.state.current) {
             tool.update(keyboard, mouse, canvas);
         }
     }
 
     pub fn mouse_moved_hovering(
-        &self,
+        &mut self,
         keyboard: &KeyboardState,
         mouse: &HoverMouseState,
         canvas: &CCanvas,
     ) {
-        let state = self.state.read();
-        if let Some(mut tool) = self.tools.get_mut(&state.current) {
+        if let Some(tool) = self.tools.get_mut(&self.state.current) {
             tool.hover(keyboard, mouse, canvas);
         }
     }
 
     pub fn mouse_released(
-        &self,
+        &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         canvas: &CCanvas,
     ) {
-        let state = self.state.read();
-        if let Some(mut tool) = self.tools.get_mut(&state.current) {
+        if let Some(tool) = self.tools.get_mut(&self.state.current) {
             tool.end(keyboard, mouse, canvas);
         }
+    }
+}
+
+#[derive(Default)]
+pub struct CanvasToolProxies {
+    proxies: HashMap<CanvasId, ToolProxy>,
+}
+
+impl Service for CanvasToolProxies {}
+
+impl CanvasToolProxies {
+    pub fn get(&self, canvas_id: &CanvasId) -> &ToolProxy {
+        self.proxies.get(canvas_id).unwrap()
+    }
+
+    pub fn get_mut(&mut self, canvas_id: &CanvasId) -> &mut ToolProxy {
+        self.proxies.get_mut(canvas_id).unwrap()
+    }
+
+    pub fn add(&mut self, canvas_id: &CanvasId, collection: &CanvasToolFunctionRegistry) {
+        self.proxies.insert(
+            *canvas_id,
+            // TODO don't hard code this
+            ToolProxy::new(CanvasToolId::new("pan_tool".into()), collection),
+        );
     }
 }

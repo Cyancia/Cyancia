@@ -16,3 +16,6 @@ glam.workspace = true
 log.workspace = true
 cyancia_tools.workspace = true
 iced_runtime.workspace = true
+cyancia_runtime.workspace = true
+async-trait.workspace = true
+uuid.workspace = true

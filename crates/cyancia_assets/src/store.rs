@@ -79,8 +79,7 @@ impl AssetRegistry {
         Ok(asset_id.into_typed())
     }
 
-    pub fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
-        let bundle = Arc::new(bundle) as Arc<dyn ErasedAssetBundle>;
+    pub fn add_erased_bundle(&mut self, bundle: Arc<dyn ErasedAssetBundle>) -> AssetResult<()> {
         let mut bundle_meta = bundle.metadata().map_err(AssetError::BundleError)?;
         let modified = modified_bundle_absolute_path(&self.root, &bundle_meta.bundle_id);
         if modified.exists() {
@@ -145,6 +144,10 @@ impl AssetRegistry {
 
         self.bundles.insert(cache.metadata().bundle_id, cache);
         Ok(())
+    }
+
+    pub fn add_bundle<B: AssetBundle>(&mut self, bundle: B) -> AssetResult<()> {
+        self.add_erased_bundle(Arc::new(bundle))
     }
 
     pub fn handle<T: Asset>(

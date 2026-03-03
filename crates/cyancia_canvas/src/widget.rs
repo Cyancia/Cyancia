@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cyancia_assets::store::AssetRegistry;
 use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner};
 use cyancia_render::resources::{FullscreenVertex, GlobalSamplers};
-use cyancia_runtime::Runtime;
+use cyancia_runtime::Services;
 use glam::{UVec2, Vec2};
 use iced_core::{
     Clipboard, Element, Event, Layout, Length, Rectangle, Shell, Size, Widget,
