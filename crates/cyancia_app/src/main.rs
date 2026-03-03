@@ -10,6 +10,7 @@ use cyancia_assets::{
     bundle::{ErasedAssetBundle, directory::AssetDirectory},
     store::AssetRegistry,
 };
+use cyancia_brush::editor::BrushEditorView;
 use cyancia_canvas::CanvasPlugin;
 use cyancia_image::ImagePlugin;
 use cyancia_input::InputPlugin;
@@ -17,7 +18,7 @@ use cyancia_render::RenderPlugin;
 use cyancia_runtime::{
     Application, Runtime, Services,
     service::RenderContext,
-    windows::{WindowManager, WindowView},
+    windows::{WindowCommandBuffer, WindowManager, WindowView},
 };
 use cyancia_tools::ToolsPlugin;
 
@@ -27,8 +28,9 @@ fn main() {
         .init();
 
     let mut app = Application::default();
-    app.add_service::<RenderContext>();
-    app.add_plugin(RenderPlugin)
+    app.add_service::<RenderContext>()
+        .add_service::<WindowCommandBuffer>()
+        .add_plugin(RenderPlugin)
         .add_plugin(AssetsPlugin {
             asset_root: "assets".into(),
             bundles: vec![Arc::new(AssetDirectory::new("assets/builtin_assets"))],
@@ -46,6 +48,8 @@ fn main() {
         let main_view = MainView::new(rt.services());
         rt.window_manager_mut().set_root_view(main_view.id());
         rt.window_manager_mut().register_view(main_view);
+        rt.window_manager_mut()
+            .register_view(BrushEditorView::default());
     }
 
     app.run().unwrap();

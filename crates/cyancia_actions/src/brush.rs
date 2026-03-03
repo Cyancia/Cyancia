@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use cyancia_input::action::{Action, ActionId};
-use cyancia_runtime::Services;
+use cyancia_runtime::{
+    Services,
+    windows::{OpenWindowCommand, WindowCommandBuffer, WindowViewId},
+};
 
 use crate::ActionFunction;
 
@@ -16,6 +19,8 @@ impl ActionFunction for OpenBrushEditorAction {
     }
 
     async fn trigger(&self, services: Arc<Services>) {
-        todo!()
+        services
+            .service_mut::<WindowCommandBuffer>()
+            .push(OpenWindowCommand::new(WindowViewId::new("brush_editor")));
     }
 }

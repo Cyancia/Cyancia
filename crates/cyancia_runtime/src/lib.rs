@@ -17,7 +17,7 @@ use parking_lot::RwLock;
 use crate::{
     plugin::Plugin,
     service::{FromRuntime, RenderContext, Service, ServiceMut, ServiceRef},
-    windows::{ErasedWindowMessage, WindowManager, WindowViewId},
+    windows::{ErasedWindowMessage, WindowCommandBuffer, WindowManager, WindowViewId},
 };
 
 pub mod plugin;
@@ -132,13 +132,23 @@ impl Program for Application {
     }
 
     fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
-        match message {
+        let mut task = match message {
             ApplicationMessage::Window(m) => state
                 .wm
                 .update(m, state.services.clone())
                 .map(ApplicationMessage::Window),
             ApplicationMessage::WindowClosed(id) => state.wm.window_closed(id).discard(),
-        }
+        };
+
+        task = task.chain(
+            state
+                .services
+                .service_mut::<WindowCommandBuffer>()
+                .execute(&mut state.wm, state.services.clone())
+                .discard(),
+        );
+
+        task
     }
 
     fn view<'a>(

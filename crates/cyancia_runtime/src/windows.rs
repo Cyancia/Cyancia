@@ -219,3 +219,95 @@ where
         Task::none()
     }
 }
+
+pub trait WindowCommand: Send + Sync + 'static {
+    fn execute(self: Box<Self>, wm: &mut WindowManager, runtime: Arc<Services>)
+    -> Option<Task<()>>;
+}
+
+#[derive(Default)]
+pub struct WindowCommandBuffer {
+    commands: Vec<Box<dyn WindowCommand>>,
+}
+
+impl Service for WindowCommandBuffer {}
+
+impl WindowCommandBuffer {
+    pub fn push<T: WindowCommand>(&mut self, command: T) {
+        self.commands.push(Box::new(command));
+    }
+
+    pub fn execute(&mut self, wm: &mut WindowManager, runtime: Arc<Services>) -> Task<()> {
+        let mut tasks = Vec::new();
+        for command in self.commands.drain(..) {
+            if let Some(task) = command.execute(wm, runtime.clone()) {
+                tasks.push(task);
+            }
+        }
+        Task::batch(tasks)
+    }
+}
+
+pub struct OpenWindowCommand {
+    view_id: WindowViewId,
+}
+
+impl WindowCommand for OpenWindowCommand {
+    fn execute(
+        self: Box<Self>,
+        wm: &mut WindowManager,
+        runtime: Arc<Services>,
+    ) -> Option<Task<()>> {
+        Some(wm.open_window(self.view_id))
+    }
+}
+
+impl OpenWindowCommand {
+    pub fn new(view_id: WindowViewId) -> Self {
+        Self { view_id }
+    }
+}
+
+pub struct CloseWindowCommand {
+    view_id: WindowViewId,
+}
+
+impl WindowCommand for CloseWindowCommand {
+    fn execute(
+        self: Box<Self>,
+        wm: &mut WindowManager,
+        runtime: Arc<Services>,
+    ) -> Option<Task<()>> {
+        Some(wm.close_window(self.view_id))
+    }
+}
+
+impl CloseWindowCommand {
+    pub fn new(view_id: WindowViewId) -> Self {
+        Self { view_id }
+    }
+}
+
+pub struct ToggleWindowCommand {
+    view_id: WindowViewId,
+}
+
+impl WindowCommand for ToggleWindowCommand {
+    fn execute(
+        self: Box<Self>,
+        wm: &mut WindowManager,
+        runtime: Arc<Services>,
+    ) -> Option<Task<()>> {
+        if wm.opened_views.contains_key(&self.view_id) {
+            Some(wm.close_window(self.view_id))
+        } else {
+            Some(wm.open_window(self.view_id))
+        }
+    }
+}
+
+impl ToggleWindowCommand {
+    pub fn new(view_id: WindowViewId) -> Self {
+        Self { view_id }
+    }
+}

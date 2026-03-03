@@ -3,7 +3,7 @@ use std::{fs::read_to_string, sync::Arc};
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
 use cyancia_runtime::{
     Services,
-    service::RenderContext,
+    service::{FromRuntime, RenderContext},
     windows::{WindowView, WindowViewId},
 };
 use cyancia_shader_graph::{
@@ -33,14 +33,13 @@ pub struct SelectedBrush {
 }
 
 pub struct BrushEditorView {
-    assets: Arc<AssetRegistry>,
     main_graph_storage: Arc<GraphDynamicInstancesStorage>,
     function_graph_storage: Arc<GraphDynamicInstancesStorage>,
     selected: Option<SelectedBrush>,
 }
 
-impl BrushEditorView {
-    pub fn new(assets: Arc<AssetRegistry>) -> Self {
+impl Default for BrushEditorView {
+    fn default() -> Self {
         let main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
@@ -56,7 +55,6 @@ impl BrushEditorView {
         };
 
         Self {
-            assets,
             selected: None,
             main_graph_storage,
             function_graph_storage,
