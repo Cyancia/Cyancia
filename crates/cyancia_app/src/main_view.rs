@@ -124,10 +124,10 @@ impl WindowView for MainView {
         Task::none()
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
-        event::listen().filter_map(|event| match event {
-            iced::Event::Keyboard(event) => Some(MainViewMessage::KeyboardEvent(event)),
-            iced::Event::Mouse(event) => Some(MainViewMessage::MouseEvent(event)),
+    fn subscription(&self) -> Subscription<(window::Id, MainViewMessage)> {
+        event::listen_with(|event, _, window| match event {
+            iced::Event::Keyboard(event) => Some((window, MainViewMessage::KeyboardEvent(event))),
+            iced::Event::Mouse(event) => Some((window, MainViewMessage::MouseEvent(event))),
             _ => None,
         })
     }

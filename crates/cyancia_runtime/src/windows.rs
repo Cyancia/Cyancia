@@ -1,13 +1,14 @@
 use std::{
     any::Any,
     collections::HashMap,
+    hash::Hash,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
 };
 
-use cyancia_utils::wrapper;
+use cyancia_utils::{Deref, DerefMut, wrapper};
 use iced_core::{Element, Theme, window};
 use iced_runtime::{Task, futures::Subscription};
 use parking_lot::Mutex;
@@ -34,7 +35,9 @@ pub trait WindowView: Send + Sync + 'static {
         message: Self::Message,
         runtime: Arc<Services>,
     ) -> impl Into<Task<Self::Message>>;
-    fn subscription(&self) -> Subscription<Self::Message> {
+    // TODO: Iced subscriptions are global, and we need the implementation to provide the window id.
+    //       Is it possible to distinguish between windows without the id?
+    fn subscription(&self) -> Subscription<(window::Id, Self::Message)> {
         Subscription::none()
     }
 }
@@ -50,7 +53,7 @@ pub trait ErasedWindowView: Send + Sync + 'static {
         message: Box<dyn Any + Send + Sync>,
         runtime: Arc<Services>,
     ) -> Task<Box<dyn Any + Send + Sync>>;
-    fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>> {
+    fn subscription(&self) -> Subscription<(window::Id, Box<dyn Any + Send + Sync>)> {
         Subscription::none()
     }
 }
@@ -85,8 +88,9 @@ where
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
-    fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>> {
-        <T as WindowView>::subscription(self).map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    fn subscription(&self) -> Subscription<(window::Id, Box<dyn Any + Send + Sync>)> {
+        <T as WindowView>::subscription(self)
+            .map(|msg| (msg.0, Box::new(msg.1) as Box<dyn Any + Send + Sync>))
     }
 }
 
@@ -101,11 +105,22 @@ pub enum WindowManagerMessage {
     Window(ErasedWindowMessage),
 }
 
+#[derive(Default, Clone, Deref, DerefMut)]
+pub struct OpenedViewMap(HashMap<WindowViewId, window::Id>);
+
+impl Hash for OpenedViewMap {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for key in self.0.keys() {
+            key.hash(state);
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct WindowManager {
     windows: HashMap<window::Id, WindowViewId>,
     views: HashMap<WindowViewId, Box<dyn ErasedWindowView>>,
-    opened_views: HashMap<WindowViewId, window::Id>,
+    opened_views: OpenedViewMap,
     root_view: Option<WindowViewId>,
 }
 
@@ -159,10 +174,16 @@ where
     pub fn subscription(&self) -> Subscription<ErasedWindowMessage> {
         let subscriptions = self.views.iter().map(|(id, view)| {
             view.subscription()
-                .with(id.clone())
-                .map(|(window, msg)| ErasedWindowMessage {
-                    window,
-                    message: msg,
+                .with((id.clone(), self.opened_views.clone()))
+                .filter_map(|((view_id, opened_windows), (window_id, msg))| {
+                    if Some(&window_id) == opened_windows.get(&view_id) {
+                        Some(ErasedWindowMessage {
+                            window: view_id,
+                            message: msg,
+                        })
+                    } else {
+                        None
+                    }
                 })
         });
 
