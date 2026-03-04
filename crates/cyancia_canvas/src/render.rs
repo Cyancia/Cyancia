@@ -192,11 +192,6 @@ impl shader::Primitive for CanvasPrimitive {
         if renderer.render_pipeline.max_tile_count.x < tile_count.x
             || renderer.render_pipeline.max_tile_count.y < tile_count.y
         {
-            dbg!(
-                self.canvas.image.size(),
-                tile_count,
-                renderer.render_pipeline.max_tile_count
-            );
             renderer
                 .render_pipeline
                 .resize_canvas(device, self.canvas.image.size());

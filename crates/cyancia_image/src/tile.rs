@@ -27,6 +27,7 @@ use crate::layer::{Layer, LayerId};
 
 #[derive(Debug, Clone)]
 pub struct Tile {
+    pub index: TileIndex,
     pub texture: Arc<Texture>,
     pub view: Arc<TextureView>,
 }
@@ -80,11 +81,13 @@ impl FromRuntime for GpuTileStorageInner {
     }
 }
 
-fn create_tile(device: &Device) -> Tile {
+fn create_tile(index: TileIndex, device: &Device) -> Tile {
     let t = device.create_texture(&GpuTileStorageInner::TILE_DESC);
     let v = t.create_view(&Default::default());
 
     Tile {
+        index,
+
         texture: Arc::new(t),
         view: Arc::new(v),
     }
@@ -125,7 +128,7 @@ impl GpuTileStorageInner {
     }
 
     pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
-        let empty = create_tile(&device);
+        let empty = create_tile(Self::EMPTY_TILE_ID, &device);
         let tiles = DashMap::from_iter([(Self::EMPTY_TILE_ID, empty.clone())]);
 
         Self {
@@ -147,7 +150,7 @@ impl GpuTileStorageInner {
     pub fn get_tile_mut(&self, index: TileIndex) -> Tile {
         self.tiles
             .entry(index)
-            .or_insert_with(|| create_tile(&self.device))
+            .or_insert_with(|| create_tile(index, &self.device))
             .clone()
     }
 

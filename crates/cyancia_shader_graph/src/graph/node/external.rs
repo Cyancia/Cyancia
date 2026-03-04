@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::anyhow;
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, pick_list};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -13,9 +13,7 @@ use crate::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
             GraphNodeOutputsViewContext, GraphNodeUpdateContext,
         },
-        slot::{
-            ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
-        },
+        slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
         variable::GraphLiteral,
     },
 };
@@ -26,6 +24,12 @@ pub struct ExternalDataStorage {
 }
 
 impl ExternalDataStorage {
+    pub fn from_hashmap(contents: HashMap<ExternalLiteralId, Arc<GraphLiteral>>) -> Self {
+        Self {
+            contents: RwLock::new(contents),
+        }
+    }
+
     pub fn insert(&self, id: ExternalLiteralId, value: GraphLiteral) {
         let mut contents = self.contents.write();
 
@@ -36,8 +40,20 @@ impl ExternalDataStorage {
         self.contents.read().get(id).cloned()
     }
 
+    pub fn remove(&self, id: &ExternalLiteralId) {
+        self.contents.write().remove(id);
+    }
+
     pub fn all_id(&self) -> Vec<ExternalLiteralId> {
         self.contents.read().keys().cloned().collect()
+    }
+
+    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<ExternalLiteralId, Arc<GraphLiteral>>> {
+        self.contents.read()
+    }
+
+    pub fn all_mut(&self) -> RwLockWriteGuard<'_, HashMap<ExternalLiteralId, Arc<GraphLiteral>>> {
+        self.contents.write()
     }
 }
 
@@ -172,7 +188,6 @@ impl GraphNode for ExternalNode {
         state: &Self::State,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        dbg!();
         Column::with_children(ctx.view_all_outputs(&["Value"])).into()
     }
 

@@ -1,16 +1,29 @@
 use std::{
+    collections::{HashMap, HashSet},
     io::{Cursor, Read},
     path::Path,
     sync::Arc,
 };
 
-use cyancia_assets::{asset::Asset, loader::AssetSerializer};
-use cyancia_shader_graph::{
-    graph::{Graph, GraphDynamicInstancesStorage},
-    save::{GraphDeserializeError, GraphSerializable, SerializableGraph},
+use cyancia_assets::{
+    asset::{Asset, AssetHandle, AssetId},
+    loader::AssetSerializer,
+    store::AssetRegistry,
 };
+use cyancia_shader_graph::{
+    graph::{
+        Graph, GraphCompileError, GraphDynamicInstancesStorage,
+        node::external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
+        variable::GraphLiteral,
+    },
+    save::{GraphDeserializeError, GraphSerializable, SerializableGraph, SerializableGraphLiteral},
+    wgsl_std::types::{TextureReference, TextureType},
+};
+use glam::UVec2;
 use image::{DynamicImage, ImageFormat};
+use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use wgpu::{
     Device, Extent3d, Queue, Texture, TextureDimension, TextureFormat, TextureUsages,
     util::DeviceExt,
@@ -18,11 +31,14 @@ use wgpu::{
 };
 use zip::ZipArchive;
 
+use crate::render::graph::generate_brush_shader;
+
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
     pub main_graph: SerializableGraph,
     pub textures: Vec<Image>,
     pub functions: Vec<SerializableGraph>,
+    pub external_vars: HashMap<ExternalLiteralId, SerializableGraphLiteral>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -106,12 +122,21 @@ impl AssetSerializer for BrushPresetSerializer {
             .by_name("metadata.toml")?
             .read_to_string(&mut metadata_buffer)?;
         let metadata = toml::from_str::<BrushPresetMetadata>(&metadata_buffer)?;
+        let mut external_vars_buffer = String::new();
+        if let Ok(mut f) = archive.by_name("external_vars.toml") {
+            f.read_to_string(&mut external_vars_buffer)?;
+        }
+
+        let external_vars = toml::from_str::<HashMap<ExternalLiteralId, SerializableGraphLiteral>>(
+            &external_vars_buffer,
+        )?;
 
         Ok(BrushPreset {
             metadata,
             main_graph,
             textures,
             functions,
+            external_vars,
         })
     }
 
@@ -211,23 +236,51 @@ impl AssetSerializer for ImageSerializer {
 }
 
 pub struct BrushPresetInstance {
-    pub metadata: BrushPresetMetadata,
-    pub main_graph: Graph,
-    pub textures: Vec<GpuImage>,
-    pub functions: Vec<Graph>,
+    metadata: BrushPresetMetadata,
+    main_graph: Graph,
+    functions: Vec<Graph>,
+    external_vars: Arc<ExternalDataStorage>,
+    referenced_textures: IndexSet<AssetHandle<Image>>,
+    dirty_texture_variables: bool,
 }
 
 impl BrushPresetInstance {
     pub fn from_asset(
         preset: &BrushPreset,
-        main_storage: Arc<GraphDynamicInstancesStorage>,
-        function_storage: Arc<GraphDynamicInstancesStorage>,
-        device: &Device,
-        queue: &Queue,
+        mut main_storage: GraphDynamicInstancesStorage,
+        function_storage: GraphDynamicInstancesStorage,
+        asset_registry: &AssetRegistry,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
+        let external_vars = preset
+            .external_vars
+            .iter()
+            .map(|(id, var)| {
+                // TODO Err handling
+                (
+                    id.clone(),
+                    Arc::new(var.deserialize(&main_storage).unwrap()),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut referenced_textures = IndexSet::new();
+        for var in external_vars.values() {
+            if let Some(texture_ref) = var.try_as_ref::<TextureReference>() {
+                let Ok(handle) = asset_registry.handle(AssetId::new(texture_ref.global_id)) else {
+                    continue;
+                };
+                referenced_textures.insert(handle);
+            }
+        }
+
+        let external_vars = Arc::new(ExternalDataStorage::from_hashmap(external_vars));
+        main_storage
+            .nodes
+            .register_non_default(ExternalNode::new(external_vars.clone()));
+
         let mut errors = Vec::new();
         let main_graph = {
-            let (g, e) = Graph::from_serialized(main_storage, preset.main_graph.clone());
+            let (g, e) = Graph::from_serialized(Arc::new(main_storage), preset.main_graph.clone());
             errors.extend(e);
             match g {
                 Some(g) => g,
@@ -237,28 +290,86 @@ impl BrushPresetInstance {
 
         let mut functions = Vec::with_capacity(preset.functions.len());
         for function in &preset.functions {
-            let (f, e) = Graph::from_serialized(function_storage.clone(), function.clone());
+            let (f, e) =
+                Graph::from_serialized(Arc::new(function_storage.clone()), function.clone());
             if let Some(f) = f {
                 functions.push(f);
             }
             errors.extend(e);
         }
 
-        let textures = preset
-            .textures
-            .iter()
-            .map(|tex| GpuImage::from_asset(device, queue, tex))
-            .collect();
-
         (
             Some(Self {
                 metadata: preset.metadata.clone(),
                 main_graph,
-                textures,
                 functions,
+                external_vars,
+                referenced_textures,
+                dirty_texture_variables: false,
             }),
             errors,
         )
+    }
+
+    pub fn add_texture_reference(&mut self, asset: AssetHandle<Image>) {
+        self.referenced_textures.insert(asset);
+        self.dirty_texture_variables = true;
+    }
+
+    pub fn remove_texture_reference(&mut self, asset_id: &AssetHandle<Image>) {
+        self.referenced_textures.swap_remove(asset_id);
+        self.dirty_texture_variables = true;
+    }
+
+    pub fn estimate_size(&self) -> UVec2 {
+        // TODO
+        UVec2::splat(512)
+    }
+
+    pub fn compile(&mut self) -> Result<String, anyhow::Error> {
+        if self.dirty_texture_variables {
+            self.reset_external_texture_variables();
+        }
+        generate_brush_shader(&mut self.main_graph)
+    }
+
+    fn reset_external_texture_variables(&mut self) {
+        let all = self.external_vars.all();
+        let texture_refs = all
+            .iter()
+            .filter_map(|(id, var)| var.try_as_ref::<TextureReference>().map(|_| id))
+            .collect::<Vec<_>>();
+
+        for id in texture_refs {
+            self.external_vars.remove(&id);
+        }
+
+        for (local_index, handle) in self.referenced_textures.iter().enumerate() {
+            let Ok(asset) = handle.get() else {
+                continue;
+            };
+
+            let reference = TextureReference {
+                global_id: *handle.id(),
+                local_index: local_index as u32,
+            };
+            self.external_vars.insert(
+                ExternalLiteralId::new(asset.metadata.name.clone()),
+                GraphLiteral::new::<TextureType>(reference),
+            );
+        }
+    }
+
+    pub fn main_graph(&self) -> &Graph {
+        &self.main_graph
+    }
+
+    pub fn main_graph_mut(&mut self) -> &mut Graph {
+        &mut self.main_graph
+    }
+
+    pub fn referenced_textures(&self) -> &IndexSet<AssetHandle<Image>> {
+        &self.referenced_textures
     }
 }
 

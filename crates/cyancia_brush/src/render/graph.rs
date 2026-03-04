@@ -6,26 +6,24 @@ use cyancia_shader_graph::{
     },
     wgsl_std::types::{ColorType, Vec2FType},
 };
-use glam::Vec4;
+use glam::{Vec2, Vec4};
 use iced_core::{Color, color};
 use wesl::{VirtualResolver, Wesl};
 
-pub fn generate_brush_shader(graph: &mut Graph) -> Result<String, GraphCompileError> {
-    let template = include_str!("brush_template.wgsl");
+pub fn generate_brush_shader(graph: &mut Graph) -> Result<String, anyhow::Error> {
+    let template = include_str!("brush_template.wesl");
     let (_, graph_code) = graph.compile(Vec::new(), Default::default())?;
     let code = template.replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code);
+    println!("Generated shader code:\n{}", code);
 
-    // TODO: Use wesl later. Currently it has problem with resolving `binding_array`. Seems to be a bug.
-    Ok(code)
+    let mut resolver = VirtualResolver::new();
+    resolver.add_module("template.wesl".parse().unwrap(), code.into());
+    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
+    compiler.set_mangler(Default::default());
+    compiler.set_options(Default::default());
 
-    // let mut resolver = VirtualResolver::new();
-    // resolver.add_module("template.wesl".parse().unwrap(), code.into());
-    // let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-    // compiler.set_mangler(Default::default());
-    // compiler.set_options(Default::default());
-
-    // let shader = compiler.compile(&"template.wesl".parse().unwrap()).unwrap();
-    // Ok(shader.to_string())
+    let shader = compiler.compile(&"template.wesl".parse().unwrap())?;
+    Ok(shader.to_string())
 }
 
 pub fn brush_graph_storage() -> GraphDynamicInstancesStorage {
@@ -34,6 +32,10 @@ pub fn brush_graph_storage() -> GraphDynamicInstancesStorage {
     storage.nodes.register::<PixelPosition>();
     storage.nodes.register::<OutputPixelColor>();
     storage
+}
+
+pub struct GraphInputParams {
+    pub pen_position: Vec2,
 }
 
 #[derive(Default, Clone)]
@@ -107,10 +109,7 @@ impl StatelessCommonGraphNode for PixelPosition {
         &self,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!(
-            "let {} = tile_info.tile_index.xy * tile_info.tile_size.xy + id.xy;",
-            ctx.get_output(0)?
-        ))
+        Ok(format!("let {} = id.xy;", ctx.get_output(0)?))
     }
 }
 
@@ -142,12 +141,17 @@ impl StatelessCommonGraphNode for OutputPixelColor {
         vec![]
     }
 
-    fn generate_code(
-        &self,
-        mut ctx: GraphNodeCodeGenContext,
-    ) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+        let layer = ctx.ident_generator.next_output();
+        let coord = ctx.ident_generator.next_output();
+
         Ok(format!(
-            "textureStore(output, id.xy, {});\n",
+            r#"
+            let {layer} = 0u;
+            let {coord} = vec2u(0u);
+            convert_pixel_to_tile(id.xy, &{layer}, &{coord});
+            textureStore(outputs[{layer}], {coord}, {});
+            "#,
             ctx.get_input(0)?
         ))
     }

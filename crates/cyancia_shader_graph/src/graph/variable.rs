@@ -148,6 +148,14 @@ impl GraphLiteral {
             .expect("Failed to downcast Literal")
     }
 
+    pub fn try_as_ref<T: 'static>(&self) -> Option<&T> {
+        self.value.downcast_ref::<T>()
+    }
+
+    pub fn try_as_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.value.downcast_mut::<T>()
+    }
+
     pub fn ty(&self) -> &dyn ErasedGraphValueType {
         self.ty.as_ref()
     }

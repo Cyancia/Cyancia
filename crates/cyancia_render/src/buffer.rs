@@ -14,6 +14,18 @@ pub struct DynamicBuffer<T: ShaderType + WriteInto> {
     _marker: PhantomData<T>,
 }
 
+impl<T: ShaderType + WriteInto> Default for DynamicBuffer<T> {
+    fn default() -> Self {
+        Self {
+            label: Default::default(),
+            usage: BufferUsages::COPY_DST,
+            buffer: Default::default(),
+            wrapper: encase::DynamicStorageBuffer::new(Vec::new()),
+            _marker: Default::default(),
+        }
+    }
+}
+
 impl<T: ShaderType + WriteInto> std::fmt::Debug for DynamicBuffer<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicBuffer")
@@ -82,5 +94,10 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
 
     pub fn usage_mut(&mut self) -> &mut BufferUsages {
         &mut self.usage
+    }
+
+    pub fn with_usage(mut self, usage: BufferUsages) -> Self {
+        self.usage = usage;
+        self
     }
 }

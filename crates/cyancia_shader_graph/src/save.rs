@@ -365,3 +365,33 @@ pub struct SerializableGraphVariable {
     pub identifier: String,
     pub ty: GraphValueTypeId,
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum SerializableGraphLiteralError {
+    #[error("Type not found: {0}")]
+    TypeNotFound(String),
+    #[error("Failed to deserialize literal data: {0}")]
+    LiteralDeserializeError(#[from] toml::de::Error),
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SerializableGraphLiteral {
+    pub ty: String,
+    pub value: toml::Value,
+}
+
+impl SerializableGraphLiteral {
+    pub fn deserialize(
+        &self,
+        storage: &GraphDynamicInstancesStorage,
+    ) -> Result<GraphLiteral, SerializableGraphLiteralError> {
+        let ty = storage
+            .types
+            .get(&self.ty)
+            .ok_or_else(|| SerializableGraphLiteralError::TypeNotFound(self.ty.clone()))?;
+
+        let literal_value = ty.deserialize_literal(self.value.clone())?;
+
+        Ok(GraphLiteral::new_boxed(literal_value, ty.clone()))
+    }
+}

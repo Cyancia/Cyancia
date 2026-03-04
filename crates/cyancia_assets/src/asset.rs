@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{hash::Hash, marker::PhantomData, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
@@ -145,6 +145,20 @@ pub struct AssetHandle<T: Asset> {
     id: AssetId<T>,
     bundle: Arc<AssetBundleCache>,
     index_db: Arc<AssetIndexDb>,
+}
+
+impl<T: Asset> PartialEq for AssetHandle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T: Asset> Eq for AssetHandle<T> {}
+
+impl<T: Asset> Hash for AssetHandle<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 impl<T: Asset> AssetHandle<T> {

@@ -11,11 +11,11 @@ use cyancia_runtime::{
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
-    graph::{Graph, GraphDynamicInstancesStorage, node::function::functioning},
-    wgsl_std::{
-        nodes::{TextureNode, TextureObject, TextureStorage},
-        std_storage,
+    graph::{
+        Graph, GraphDynamicInstancesStorage,
+        node::{external::ExternalNode, function::functioning},
     },
+    wgsl_std::std_storage,
 };
 use iced_core::{
     Element,
@@ -41,13 +41,12 @@ pub struct BrushEditorView {
     input_manager: InputManager,
     main_graph_storage: GraphDynamicInstancesStorage,
     function_graph_storage: GraphDynamicInstancesStorage,
-    texture_storage: Arc<TextureStorage>,
     selected: Option<SelectedBrush>,
 }
 
 impl FromRuntime for BrushEditorView {
     fn from_runtime(runtime: &Services) -> Self {
-        let mut main_graph_storage = {
+        let main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
             storage.merge(brush_graph_storage());
@@ -68,19 +67,6 @@ impl FromRuntime for BrushEditorView {
         let assets = runtime.service::<AssetRegistry>();
         // TODO: Update if assets change
         let images = assets.all_handles_of::<Image>().unwrap();
-        let texture_storage = TextureStorage::new(images.into_iter().map(|h| {
-            let img = h.get().unwrap();
-            let id = *h.id().into_untyped();
-
-            TextureObject {
-                id,
-                name: img.metadata.name.clone(),
-            }
-        }));
-        let texture_storage = Arc::new(texture_storage);
-        main_graph_storage
-            .nodes
-            .register_non_default(TextureNode::new(texture_storage.clone()));
 
         Self {
             input_manager: InputManager::new(actions),
@@ -88,7 +74,6 @@ impl FromRuntime for BrushEditorView {
             selected: None,
             main_graph_storage,
             function_graph_storage,
-            texture_storage,
         }
     }
 }
@@ -130,7 +115,7 @@ impl WindowView for BrushEditorView {
 
         if let Some(brush) = &self.selected {
             editor = editor.push(
-                Element::new(GraphView::new(&brush.instance.main_graph))
+                Element::new(GraphView::new(&brush.instance.main_graph()))
                     .map(BrushEditorMessage::GraphView),
             );
         }
@@ -156,7 +141,7 @@ impl WindowView for BrushEditorView {
                             && modifiers.control()
                         {
                             if let Some(brush) = &mut self.selected {
-                                match generate_brush_shader(&mut brush.instance.main_graph) {
+                                match brush.instance.compile() {
                                     Ok(shader) => println!("Generated shader:\n{}", shader),
                                     Err(e) => println!("Failed to generate shader: {:?}", e),
                                 }
@@ -180,7 +165,7 @@ impl WindowView for BrushEditorView {
                 let Some(brush) = &mut self.selected else {
                     return Task::none();
                 };
-                let graph = &mut brush.instance.main_graph;
+                let graph = brush.instance.main_graph_mut();
 
                 match message {
                     GraphViewMessage::NodeMoveRequest(point, id) => {
@@ -205,21 +190,18 @@ impl WindowView for BrushEditorView {
                     }
                 }
 
-                dbg!(self.texture_storage.used_textures());
+                // dbg!(self.texture_storage.used_textures());
             }
             BrushEditorMessage::BrushSelected(brush_id) => {
                 let assets = runtime.service::<AssetRegistry>();
                 let Ok(brush) = assets.handle(brush_id) else {
                     return Task::none();
                 };
-                let render_context = runtime.service::<RenderContext>();
-
                 let (instance, errors) = BrushPresetInstance::from_asset(
                     &brush.get().unwrap(),
-                    Arc::new(self.main_graph_storage.clone()),
-                    Arc::new(self.function_graph_storage.clone()),
-                    &render_context.device,
-                    &render_context.queue,
+                    self.main_graph_storage.clone(),
+                    self.function_graph_storage.clone(),
+                    runtime.service::<AssetRegistry>().as_ref(),
                 );
 
                 if let Some(instance) = instance {

@@ -3,6 +3,7 @@ use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
 use iced_widget::{column, space};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{GraphRenderer, GraphTheme, graph::slot::GraphValueType};
 
@@ -168,11 +169,13 @@ pub struct TextureType;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct TextureReference {
+    pub global_id: Uuid,
     pub local_index: u32,
 }
 
 impl TextureReference {
     pub const NULL: Self = Self {
+        global_id: Uuid::nil(),
         local_index: u32::MAX,
     };
 }
@@ -207,7 +210,7 @@ impl GraphValueType for TextureType {
 
     fn update_literal(&self, _data: &mut Self::AssociatedLiteralType, _message: Self::Message) {}
 
-    fn literal_to_code(&self, _data: &Self::AssociatedLiteralType) -> Option<String> {
-        None
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        Some(data.local_index.to_string())
     }
 }
