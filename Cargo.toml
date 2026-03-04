@@ -81,7 +81,7 @@ bitflags = "2"
 wgpu = "27"
 glam = { version = "0.30", features = ["encase", "serde"] }
 dashmap = "6"
-wesl = { version = "0.3", features = ["package"] }
+wesl = { version = "0.3", features = ["package", "naga-ext"] }
 encase = "0.12"
 bytemuck = "1"
 image = "0.25"
@@ -101,10 +101,13 @@ env_logger = "0.11"
 path-clean = "1"
 winit = "0.30"
 rustc-hash = "1"
-rusqlite = { version = "0.38", features = [
-    "bundled-full",
-] }
+rusqlite = { version = "0.38", features = ["bundled-full"] }
 async-trait = "0.1"
+bevy_math = { version = "0.18", default-features = false, features = [
+    "serialize",
+    "std",
+    "curve",
+] }
 
 # [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }

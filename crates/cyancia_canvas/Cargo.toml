@@ -21,6 +21,7 @@ iced_wgpu.workspace = true
 cyancia_runtime.workspace = true
 uuid.workspace = true
 serde.workspace = true
+bevy_math.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

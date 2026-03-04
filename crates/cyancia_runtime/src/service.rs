@@ -5,7 +5,9 @@ use std::{
 
 use downcast_rs::DowncastSync;
 use futures::executor::block_on;
-use parking_lot::{MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 use wgpu::{Adapter, Backends, Device, Features, Instance, Limits, Queue};
 
 use crate::Services;
@@ -42,10 +44,8 @@ impl<T: Service> ServiceRef<T> {
             // `arc` lives on the heap and will be stored in the struct alongside
             // this guard. Because `guard` is declared before `_arc`, it is
             // dropped first, so the RwLock is always valid while the guard lives.
-            let raw: MappedRwLockReadGuard<'_, T> = RwLockReadGuard::map(
-                arc.read(),
-                |x: &dyn Service| x.downcast_ref::<T>().unwrap(),
-            );
+            let raw: MappedRwLockReadGuard<'_, T> =
+                RwLockReadGuard::map(arc.read(), |x: &dyn Service| x.downcast_ref::<T>().unwrap());
             std::mem::transmute::<MappedRwLockReadGuard<'_, T>, MappedRwLockReadGuard<'static, T>>(
                 raw,
             )
@@ -77,14 +77,13 @@ pub struct ServiceMut<T: Service> {
 impl<T: Service> ServiceMut<T> {
     pub(crate) fn from_arc(arc: Arc<RwLock<dyn Service>>) -> Self {
         let guard = unsafe {
-            let raw: MappedRwLockWriteGuard<'_, T> = RwLockWriteGuard::map(
-                arc.write(),
-                |x: &mut dyn Service| x.downcast_mut::<T>().unwrap(),
-            );
-            std::mem::transmute::<
-                MappedRwLockWriteGuard<'_, T>,
-                MappedRwLockWriteGuard<'static, T>,
-            >(raw)
+            let raw: MappedRwLockWriteGuard<'_, T> =
+                RwLockWriteGuard::map(arc.write(), |x: &mut dyn Service| {
+                    x.downcast_mut::<T>().unwrap()
+                });
+            std::mem::transmute::<MappedRwLockWriteGuard<'_, T>, MappedRwLockWriteGuard<'static, T>>(
+                raw,
+            )
         };
         ServiceMut { guard, _arc: arc }
     }
@@ -140,8 +139,12 @@ impl Default for RenderContext {
                 .unwrap();
             let (device, queue) = adapter
                 .request_device(&wgpu::DeviceDescriptor {
-                    required_features: Features::empty(),
-                    required_limits: Limits::downlevel_defaults(),
+                    required_features: Features::TEXTURE_BINDING_ARRAY
+                        | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+                    required_limits: Limits {
+                        max_binding_array_elements_per_shader_stage: 500_000,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 })
                 .await
