@@ -1067,7 +1067,6 @@ name = "cyancia_actions"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "cyancia_brush",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_input",
@@ -1143,7 +1142,9 @@ name = "cyancia_brush"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "cyancia_actions",
  "cyancia_assets",
+ "cyancia_input",
  "cyancia_render",
  "cyancia_runtime",
  "cyancia_shader_graph",

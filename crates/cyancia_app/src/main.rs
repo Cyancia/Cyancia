@@ -17,7 +17,7 @@ use cyancia_input::InputPlugin;
 use cyancia_render::RenderPlugin;
 use cyancia_runtime::{
     Application, Runtime, Services,
-    service::RenderContext,
+    service::{FromRuntime, RenderContext},
     windows::{WindowCommandBuffer, WindowManager, WindowView},
 };
 use cyancia_tools::ToolsPlugin;
@@ -70,10 +70,10 @@ fn main() {
         let mut rt = app.runtime_mut();
 
         let main_view = MainView::new(rt.services());
+        let brush_editor_view = BrushEditorView::from_runtime(rt.services());
         rt.window_manager_mut().set_root_view(main_view.id());
         rt.window_manager_mut().register_view(main_view);
-        rt.window_manager_mut()
-            .register_view(BrushEditorView::default());
+        rt.window_manager_mut().register_view(brush_editor_view);
     }
 
     app.run().unwrap();

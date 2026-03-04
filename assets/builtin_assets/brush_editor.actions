@@ -1,0 +1,3 @@
+[save_preset]
+shortcuts = ["Ctrl+S"]
+enabled_in = ["brush_editor"]

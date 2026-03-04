@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use cyancia_canvas::CCanvas;
+use cyancia_canvas::{CCanvas, CanvasManager};
 use cyancia_input::{
     action::ActionCollection,
     key::KeyboardState,
     mouse::{HoverMouseState, PressedMouseState},
 };
 use cyancia_runtime::Services;
-use cyancia_tools::ToolProxy;
+use cyancia_tools::{CanvasToolProxies, ToolProxy};
 use iced_core::{
     Point,
     keyboard::{self, key},
@@ -84,12 +84,15 @@ impl InputManager {
         Task::none()
     }
 
-    pub fn on_mouse_event(
-        &mut self,
-        event: mouse::Event,
-        canvas: &CCanvas,
-        tool_proxy: &mut ToolProxy,
-    ) {
+    pub fn on_mouse_event(&mut self, event: mouse::Event, runtime: &Services) {
+        let mut tool_proxies = runtime.service_mut::<CanvasToolProxies>();
+        let canvas_manager = runtime.service::<CanvasManager>();
+        let Some(canvas) = canvas_manager.current() else {
+            return;
+        };
+        let canvas = canvas.as_ref();
+        let tool_proxy = tool_proxies.get_mut(&canvas.id);
+
         match event {
             mouse::Event::ButtonPressed(button) => {
                 if button != mouse::Button::Left {

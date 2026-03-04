@@ -1,6 +1,8 @@
 use std::{fs::read_to_string, sync::Arc};
 
+use cyancia_actions::input_manager::InputManager;
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
+use cyancia_input::action::ActionManifestCollection;
 use cyancia_runtime::{
     Services,
     service::{FromRuntime, RenderContext},
@@ -33,13 +35,14 @@ pub struct SelectedBrush {
 }
 
 pub struct BrushEditorView {
+    input_manager: InputManager,
     main_graph_storage: Arc<GraphDynamicInstancesStorage>,
     function_graph_storage: Arc<GraphDynamicInstancesStorage>,
     selected: Option<SelectedBrush>,
 }
 
-impl Default for BrushEditorView {
-    fn default() -> Self {
+impl FromRuntime for BrushEditorView {
+    fn from_runtime(runtime: &Services) -> Self {
         let main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
@@ -54,7 +57,13 @@ impl Default for BrushEditorView {
             Arc::new(storage)
         };
 
+        let actions = runtime
+            .service::<ActionManifestCollection>()
+            .subset_for_view("brush_editor");
+
         Self {
+            input_manager: InputManager::new(actions),
+
             selected: None,
             main_graph_storage,
             function_graph_storage,
@@ -78,7 +87,7 @@ impl WindowView for BrushEditorView {
 
     fn view<'a>(
         &'a self,
-        runtime: Arc<cyancia_runtime::Services>,
+        runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>> {
         let Ok(assets) = runtime
             .service::<AssetRegistry>()
@@ -114,24 +123,38 @@ impl WindowView for BrushEditorView {
         runtime: Arc<Services>,
     ) -> impl Into<Task<Self::Message>> {
         match message {
-            BrushEditorMessage::KeyboardEvent(keyboard::Event::KeyPressed {
-                physical_key,
-                modifiers,
-                ..
-            }) => {
-                // TODO: with custom keybinds and actions.
-                if physical_key == key::Physical::Code(key::Code::KeyP) && modifiers.control() {
-                    if let Some(brush) = &mut self.selected {
-                        match generate_brush_shader(&mut brush.instance.main_graph) {
-                            Ok(shader) => println!("Generated shader:\n{}", shader),
-                            Err(e) => println!("Failed to generate shader: {:?}", e),
+            BrushEditorMessage::KeyboardEvent(event) => {
+                match event {
+                    keyboard::Event::KeyPressed {
+                        physical_key,
+                        modifiers,
+                        ..
+                    } => {
+                        // Just for debugging purpose :)
+                        if physical_key == key::Physical::Code(key::Code::KeyP)
+                            && modifiers.control()
+                        {
+                            if let Some(brush) = &mut self.selected {
+                                match generate_brush_shader(&mut brush.instance.main_graph) {
+                                    Ok(shader) => println!("Generated shader:\n{}", shader),
+                                    Err(e) => println!("Failed to generate shader: {:?}", e),
+                                }
+                            } else {
+                                println!("No brush graph to generate shader from.");
+                            }
                         }
-                    } else {
-                        println!("No brush graph to generate shader from.");
                     }
+                    _ => {}
                 }
+
+                return self
+                    .input_manager
+                    .on_keyboard_event(event, runtime)
+                    .discard();
             }
-            BrushEditorMessage::MouseEvent(event) => {}
+            BrushEditorMessage::MouseEvent(event) => {
+                self.input_manager.on_mouse_event(event, &runtime);
+            }
             BrushEditorMessage::GraphView(message) => {
                 let Some(brush) = &mut self.selected else {
                     return Task::none();
@@ -190,7 +213,6 @@ impl WindowView for BrushEditorView {
                     }
                 }
             }
-            _ => {}
         }
 
         Task::none()

@@ -97,13 +97,7 @@ impl WindowView for MainView {
                     .discard();
             }
             MainViewMessage::MouseEvent(event) => {
-                let mut tool_proxies = runtime.service_mut::<CanvasToolProxies>();
-                let canvas_manager = runtime.service::<CanvasManager>();
-                let current_canvas = canvas_manager.current().unwrap();
-                let tool_proxy = tool_proxies.get_mut(&current_canvas.id);
-
-                self.input_manager
-                    .on_mouse_event(event, &current_canvas, tool_proxy);
+                self.input_manager.on_mouse_event(event, &runtime);
             }
         }
 

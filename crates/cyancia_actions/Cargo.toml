@@ -19,4 +19,3 @@ iced_runtime.workspace = true
 cyancia_runtime.workspace = true
 async-trait.workspace = true
 uuid.workspace = true
-cyancia_brush.workspace = true

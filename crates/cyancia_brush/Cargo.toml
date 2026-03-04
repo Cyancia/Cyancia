@@ -24,3 +24,5 @@ serde.workspace = true
 cyancia_render.workspace = true
 log.workspace = true
 cyancia_runtime.workspace = true
+cyancia_input.workspace = true
+cyancia_actions.workspace = true
