@@ -541,7 +541,7 @@ fn delete_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[GraphOutputSlot
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GraphDynamicInstancesStorage {
     pub nodes: GraphNodesStorage,
     pub types: GraphValueTypeStorage,

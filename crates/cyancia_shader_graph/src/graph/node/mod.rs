@@ -123,6 +123,8 @@ pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error>;
 }
 
+dyn_clone::clone_trait_object!(ErasedGraphNode);
+
 impl<T: GraphNode> ErasedGraphNode for T {
     fn name(&self) -> &'static str {
         self.name()
@@ -700,7 +702,7 @@ impl GraphNodeCodeGenContext<'_> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GraphNodesStorage {
     nodes: IndexMap<&'static str, Box<dyn ErasedGraphNode>>,
 }

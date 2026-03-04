@@ -10,7 +10,7 @@ struct TileInfo {
 @group(0) @binding(0) var<uniform> graph_input: GraphInput;
 @group(0) @binding(1) var output: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var<uniform> tile_info: TileInfo;
-@group(0) @binding(3) var textures: binding_array<texture_2d<f32>, 4>;
+@group(0) @binding(3) var textures: binding_array<texture_2d<f32>>;
 
 @compute
 @workgroup_size(16, 16, 1)

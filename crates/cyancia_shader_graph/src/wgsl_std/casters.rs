@@ -3,7 +3,7 @@ use crate::{
     wgsl_std::types::{F32Type, Vec2FType},
 };
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct F32ToVec2FCaster;
 
 impl GraphVariableCaster for F32ToVec2FCaster {
@@ -16,7 +16,7 @@ impl GraphVariableCaster for F32ToVec2FCaster {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Vec2FToF32Caster;
 
 impl GraphVariableCaster for Vec2FToF32Caster {

@@ -46,7 +46,7 @@ pub enum BrushPresetSerializerError {
     #[error(transparent)]
     Toml(#[from] toml::de::Error),
     #[error(transparent)]
-    Image(#[from] image::ImageError),
+    Image(#[from] ImageSerializerError),
 }
 
 impl AssetSerializer for BrushPresetSerializer {
@@ -82,7 +82,7 @@ impl AssetSerializer for BrushPresetSerializer {
             .map(|path| {
                 let mut data = Vec::new();
                 archive.by_name(&path)?.read_to_end(&mut data)?;
-                Ok(Image::from_buffer(&data)?)
+                Ok(ImageSerializer.read(&mut Cursor::new(data))?)
             })
             .collect::<Result<Vec<_>, Self::Error>>()?;
 
@@ -125,8 +125,14 @@ impl AssetSerializer for BrushPresetSerializer {
 }
 
 pub struct Image {
+    pub metadata: ImageMetadata,
     pub image: DynamicImage,
     pub format: ImageFormat,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ImageMetadata {
+    pub name: String,
 }
 
 impl Asset for Image {
@@ -134,10 +140,14 @@ impl Asset for Image {
 }
 
 impl Image {
-    pub fn from_buffer(buffer: &[u8]) -> Result<Self, image::ImageError> {
+    pub fn from_buffer(metadata: ImageMetadata, buffer: &[u8]) -> Result<Self, image::ImageError> {
         let format = image::guess_format(buffer)?;
         let image = image::load_from_memory_with_format(buffer, format)?;
-        Ok(Self { image, format })
+        Ok(Self {
+            metadata,
+            image,
+            format,
+        })
     }
 }
 
@@ -150,6 +160,10 @@ pub enum ImageSerializerError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Image(#[from] image::ImageError),
+    #[error(transparent)]
+    Zip(#[from] zip::result::ZipError),
+    #[error(transparent)]
+    Toml(#[from] toml::de::Error),
 }
 
 impl AssetSerializer for ImageSerializer {
@@ -164,7 +178,27 @@ impl AssetSerializer for ImageSerializer {
     fn read(&self, reader: &mut dyn Read) -> Result<Self::Asset, Self::Error> {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
-        Ok(Image::from_buffer(&buf)?)
+        let mut archive = ZipArchive::new(Cursor::new(buf))?;
+
+        let metadata = {
+            let mut buf = Vec::new();
+            archive.by_name("metadata.toml")?.read_to_end(&mut buf)?;
+            toml::from_slice::<ImageMetadata>(&buf)?
+        };
+
+        let (format, image) = {
+            let mut buf = Vec::new();
+            archive.by_name("image")?.read_to_end(&mut buf)?;
+            let format = image::guess_format(&buf)?;
+            let image = image::load_from_memory_with_format(&buf, format)?;
+            (format, image)
+        };
+
+        Ok(Image {
+            metadata,
+            image,
+            format,
+        })
     }
 
     fn write(
@@ -172,10 +206,7 @@ impl AssetSerializer for ImageSerializer {
         asset: &Self::Asset,
         writer: &mut dyn std::io::Write,
     ) -> Result<(), Self::Error> {
-        let mut buf = Vec::new();
-        asset.image.write_to(Cursor::new(&mut buf), asset.format)?;
-        writer.write_all(&buf)?;
-        Ok(())
+        todo!()
     }
 }
 

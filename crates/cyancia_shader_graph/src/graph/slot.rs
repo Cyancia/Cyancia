@@ -186,6 +186,8 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     ) -> Result<Box<dyn Any + Send + Sync>, <toml::Value as Deserializer<'a>>::Error>;
 }
 
+dyn_clone::clone_trait_object!(ErasedGraphValueType);
+
 impl<T: GraphValueType> ErasedGraphValueType for T {
     fn color(&self) -> Color {
         self.color()

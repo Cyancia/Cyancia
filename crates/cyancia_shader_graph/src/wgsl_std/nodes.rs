@@ -1,8 +1,13 @@
+use std::{collections::HashMap, sync::Arc};
+
 use cyancia_utils::count;
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
-use iced_widget::{Column, pick_list};
+use iced_widget::{Column, pick_list, space};
+use indexmap::{IndexMap, map::Entry};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     GraphRenderer, GraphTheme,
@@ -653,8 +658,171 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
         let output_color = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = textureLoad(textures, {}, {}, 0);\n",
-            output_color, input_position, input_texture
+            "let {} = textureLoad(textures[{}], {}, 0);\n",
+            output_color, input_texture, input_position
+        ))
+    }
+}
+
+#[derive(Clone)]
+pub struct TextureNode {
+    storage: Arc<TextureStorage>,
+}
+
+impl TextureNode {
+    pub fn new(storage: Arc<TextureStorage>) -> Self {
+        Self { storage }
+    }
+}
+
+#[derive(Clone)]
+pub struct TextureObject {
+    pub id: Uuid,
+    pub name: String,
+}
+
+impl PartialEq for TextureObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl ToString for TextureObject {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+pub struct TextureStorage {
+    all: HashMap<Uuid, TextureObject>,
+    used: RwLock<IndexMap<Uuid, usize>>,
+}
+
+impl TextureStorage {
+    pub fn new(all: impl IntoIterator<Item = TextureObject>) -> Self {
+        Self {
+            all: all.into_iter().map(|t| (t.id, t)).collect(),
+            used: RwLock::new(IndexMap::new()),
+        }
+    }
+
+    pub fn use_texture(&self, id: Uuid) {
+        let mut used = self.used.write();
+        match used.entry(id) {
+            Entry::Occupied(mut e) => {
+                *e.get_mut() += 1;
+            }
+            Entry::Vacant(e) => {
+                e.insert(1);
+            }
+        }
+    }
+
+    pub fn release_texture(&self, id: Uuid) {
+        let mut used = self.used.write();
+        if let Entry::Occupied(mut e) = used.entry(id) {
+            let count = e.get_mut();
+            *count -= 1;
+            if *count == 0 {
+                e.shift_remove();
+            }
+        }
+    }
+
+    pub fn index_of(&self, id: &Uuid) -> Option<usize> {
+        let used = self.used.read();
+        used.get_index_of(id)
+    }
+
+    pub fn used_textures(&self) -> Vec<Uuid> {
+        self.used.read().keys().cloned().collect()
+    }
+}
+
+#[derive(Clone)]
+pub enum TextureNodeMessage {
+    TextureChanged(Uuid),
+}
+
+impl GraphNode for TextureNode {
+    type State = Option<Uuid>;
+
+    type Message = TextureNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Texture"
+    }
+
+    fn default_state(&self) -> Self::State {
+        None
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xbd79f2)
+    }
+
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+        if state.is_some() {
+            vec![GraphDefaultOutputSlot::new::<TextureType>()]
+        } else {
+            vec![]
+        }
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        pick_list(
+            self.storage.all.values().cloned().collect::<Vec<_>>(),
+            state.and_then(|id| self.storage.all.get(&id)).cloned(),
+            |tex| TextureNodeMessage::TextureChanged(tex.id),
+        )
+        .into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Texture"])).into()
+    }
+
+    fn update(&self, state: &mut Self::State, message: Self::Message, ctx: GraphNodeUpdateContext) {
+        match message {
+            TextureNodeMessage::TextureChanged(id) => {
+                if let Some(old_id) = state.replace(id) {
+                    self.storage.release_texture(old_id);
+                }
+                self.storage.use_texture(id);
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let Some(id) = state else {
+            return Err(GraphNodeCodeGenError::Custom(anyhow::anyhow!(
+                "No texture selected."
+            )));
+        };
+
+        // It's the external user's responsibility to generate the correct texture binding.
+        // The binding should be a texture binding_array. The index of each used texture in graph
+        // is corresponding to array index returned by TextureStorage::used_textures()
+        Ok(format!(
+            "let {} = {};\n",
+            ctx.get_output(0)?,
+            self.storage.index_of(id).unwrap()
         ))
     }
 }

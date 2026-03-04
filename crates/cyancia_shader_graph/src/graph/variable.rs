@@ -1,8 +1,10 @@
 use std::{any::Any, collections::HashMap};
 
+use dyn_clone::DynClone;
+
 use crate::graph::slot::{ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphValueType};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GraphValueTypeStorage {
     types: HashMap<&'static str, Box<dyn ErasedGraphValueType>>,
 }
@@ -32,7 +34,7 @@ impl GraphValueTypeStorage {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GraphTypeCastersStorage {
     casters: HashMap<&'static str, HashMap<&'static str, Box<dyn ErasedGraphVariableCaster>>>,
 }
@@ -89,15 +91,17 @@ impl GraphTypeCastersStorage {
     }
 }
 
-pub trait GraphVariableCaster: Send + Sync + 'static {
+pub trait GraphVariableCaster: Send + Sync + 'static + Clone {
     type FromType: GraphValueType + Default;
     type ToType: GraphValueType + Default;
     fn cast(&self, variable: &String) -> String;
 }
 
-pub trait ErasedGraphVariableCaster: Send + Sync + 'static {
+pub trait ErasedGraphVariableCaster: Send + Sync + 'static + DynClone {
     fn cast(&self, variable: &String) -> String;
 }
+
+dyn_clone::clone_trait_object!(ErasedGraphVariableCaster);
 
 impl<T: GraphVariableCaster> ErasedGraphVariableCaster for T {
     fn cast(&self, variable: &String) -> String {

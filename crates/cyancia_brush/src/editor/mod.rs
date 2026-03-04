@@ -12,7 +12,10 @@ use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
     graph::{Graph, GraphDynamicInstancesStorage, node::function::functioning},
-    wgsl_std::std_storage,
+    wgsl_std::{
+        nodes::{TextureNode, TextureObject, TextureStorage},
+        std_storage,
+    },
 };
 use iced_core::{
     Element,
@@ -36,30 +39,48 @@ pub struct SelectedBrush {
 
 pub struct BrushEditorView {
     input_manager: InputManager,
-    main_graph_storage: Arc<GraphDynamicInstancesStorage>,
-    function_graph_storage: Arc<GraphDynamicInstancesStorage>,
+    main_graph_storage: GraphDynamicInstancesStorage,
+    function_graph_storage: GraphDynamicInstancesStorage,
+    texture_storage: Arc<TextureStorage>,
     selected: Option<SelectedBrush>,
 }
 
 impl FromRuntime for BrushEditorView {
     fn from_runtime(runtime: &Services) -> Self {
-        let main_graph_storage = {
+        let mut main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
             storage.merge(brush_graph_storage());
-            Arc::new(storage)
+            storage
         };
 
         let function_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
             storage.merge(functioning());
-            Arc::new(storage)
+            storage
         };
 
         let actions = runtime
             .service::<ActionManifestCollection>()
             .subset_for_view("brush_editor");
+
+        let assets = runtime.service::<AssetRegistry>();
+        // TODO: Update if assets change
+        let images = assets.all_handles_of::<Image>().unwrap();
+        let texture_storage = TextureStorage::new(images.into_iter().map(|h| {
+            let img = h.get().unwrap();
+            let id = *h.id().into_untyped();
+
+            TextureObject {
+                id,
+                name: img.metadata.name.clone(),
+            }
+        }));
+        let texture_storage = Arc::new(texture_storage);
+        main_graph_storage
+            .nodes
+            .register_non_default(TextureNode::new(texture_storage.clone()));
 
         Self {
             input_manager: InputManager::new(actions),
@@ -67,6 +88,7 @@ impl FromRuntime for BrushEditorView {
             selected: None,
             main_graph_storage,
             function_graph_storage,
+            texture_storage,
         }
     }
 }
@@ -91,14 +113,9 @@ impl WindowView for BrushEditorView {
     ) -> impl Into<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>> {
         let assets = runtime.service::<AssetRegistry>();
 
-        let (Ok(presets), Ok(images)) = (
-            assets.all_handles_of::<BrushPreset>(),
-            assets.all_handles_of::<Image>(),
-        ) else {
+        let Ok(presets) = assets.all_handles_of::<BrushPreset>() else {
             return None;
         };
-
-        dbg!(images.len());
 
         let mut editor = row![
             brush_asset_browser(
@@ -187,6 +204,8 @@ impl WindowView for BrushEditorView {
                         graph.update_node(message);
                     }
                 }
+
+                dbg!(self.texture_storage.used_textures());
             }
             BrushEditorMessage::BrushSelected(brush_id) => {
                 let assets = runtime.service::<AssetRegistry>();
@@ -197,8 +216,8 @@ impl WindowView for BrushEditorView {
 
                 let (instance, errors) = BrushPresetInstance::from_asset(
                     &brush.get().unwrap(),
-                    self.main_graph_storage.clone(),
-                    self.function_graph_storage.clone(),
+                    Arc::new(self.main_graph_storage.clone()),
+                    Arc::new(self.function_graph_storage.clone()),
                     &render_context.device,
                     &render_context.queue,
                 );
