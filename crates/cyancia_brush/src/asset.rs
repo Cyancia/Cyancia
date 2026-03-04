@@ -1,11 +1,15 @@
-use std::{io::Read, path::Path, sync::Arc};
+use std::{
+    io::{Cursor, Read},
+    path::Path,
+    sync::Arc,
+};
 
 use cyancia_assets::{asset::Asset, loader::AssetSerializer};
 use cyancia_shader_graph::{
     graph::{Graph, GraphDynamicInstancesStorage},
     save::{GraphDeserializeError, GraphSerializable, SerializableGraph},
 };
-use image::DynamicImage;
+use image::{DynamicImage, ImageFormat};
 use serde::{Deserialize, Serialize};
 use wgpu::{
     Device, Extent3d, Queue, Texture, TextureDimension, TextureFormat, TextureUsages,
@@ -17,7 +21,7 @@ use zip::ZipArchive;
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
     pub main_graph: SerializableGraph,
-    pub textures: Vec<TextureResource>,
+    pub textures: Vec<Image>,
     pub functions: Vec<SerializableGraph>,
 }
 
@@ -78,9 +82,7 @@ impl AssetSerializer for BrushPresetSerializer {
             .map(|path| {
                 let mut data = Vec::new();
                 archive.by_name(&path)?.read_to_end(&mut data)?;
-                Ok(TextureResource {
-                    image: image::load_from_memory(&data)?,
-                })
+                Ok(Image::from_buffer(&data)?)
             })
             .collect::<Result<Vec<_>, Self::Error>>()?;
 
@@ -122,14 +124,65 @@ impl AssetSerializer for BrushPresetSerializer {
     }
 }
 
-pub struct TextureResource {
+pub struct Image {
     pub image: DynamicImage,
+    pub format: ImageFormat,
+}
+
+impl Asset for Image {
+    const TYPE_NAME: &'static str = "texture";
+}
+
+impl Image {
+    pub fn from_buffer(buffer: &[u8]) -> Result<Self, image::ImageError> {
+        let format = image::guess_format(buffer)?;
+        let image = image::load_from_memory_with_format(buffer, format)?;
+        Ok(Self { image, format })
+    }
+}
+
+#[derive(Default)]
+pub struct ImageSerializer;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ImageSerializerError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Image(#[from] image::ImageError),
+}
+
+impl AssetSerializer for ImageSerializer {
+    type Asset = Image;
+
+    type Error = ImageSerializerError;
+
+    fn file_extension() -> &'static str {
+        "cig"
+    }
+
+    fn read(&self, reader: &mut dyn Read) -> Result<Self::Asset, Self::Error> {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        Ok(Image::from_buffer(&buf)?)
+    }
+
+    fn write(
+        &self,
+        asset: &Self::Asset,
+        writer: &mut dyn std::io::Write,
+    ) -> Result<(), Self::Error> {
+        let mut buf = Vec::new();
+        asset.image.write_to(Cursor::new(&mut buf), asset.format)?;
+        writer.write_all(&buf)?;
+        Ok(())
+    }
 }
 
 pub struct BrushPresetInstance {
     pub metadata: BrushPresetMetadata,
     pub main_graph: Graph,
-    pub textures: Vec<BrushGpuTexture>,
+    pub textures: Vec<GpuImage>,
     pub functions: Vec<Graph>,
 }
 
@@ -163,7 +216,7 @@ impl BrushPresetInstance {
         let textures = preset
             .textures
             .iter()
-            .map(|tex| BrushGpuTexture::from_asset(device, queue, tex))
+            .map(|tex| GpuImage::from_asset(device, queue, tex))
             .collect();
 
         (
@@ -178,12 +231,12 @@ impl BrushPresetInstance {
     }
 }
 
-pub struct BrushGpuTexture {
+pub struct GpuImage {
     pub texture: Texture,
 }
 
-impl BrushGpuTexture {
-    pub fn from_asset(device: &Device, queue: &Queue, asset: &TextureResource) -> Self {
+impl GpuImage {
+    pub fn from_asset(device: &Device, queue: &Queue, asset: &Image) -> Self {
         use bytemuck::cast_slice;
         let width;
         let height;

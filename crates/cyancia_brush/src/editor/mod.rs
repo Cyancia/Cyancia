@@ -24,7 +24,7 @@ use iced_widget::{container, row, space};
 use wgpu::{Device, Queue};
 
 use crate::{
-    asset::{BrushPreset, BrushPresetInstance},
+    asset::{BrushPreset, BrushPresetInstance, GpuImage, Image},
     browser::brush_asset_browser,
     render::graph::{brush_graph_storage, generate_brush_shader},
 };
@@ -89,16 +89,20 @@ impl WindowView for BrushEditorView {
         &'a self,
         runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>> {
-        let Ok(assets) = runtime
-            .service::<AssetRegistry>()
-            .all_handles_of::<BrushPreset>()
-        else {
+        let assets = runtime.service::<AssetRegistry>();
+
+        let (Ok(presets), Ok(images)) = (
+            assets.all_handles_of::<BrushPreset>(),
+            assets.all_handles_of::<Image>(),
+        ) else {
             return None;
         };
 
+        dbg!(images.len());
+
         let mut editor = row![
             brush_asset_browser(
-                assets
+                presets
                     .into_iter()
                     // TODO: Notify failure
                     .filter_map(|handle| handle.get().ok().map(|preset| (handle.id(), preset))),
