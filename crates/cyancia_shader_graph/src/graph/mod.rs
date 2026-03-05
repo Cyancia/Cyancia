@@ -560,7 +560,6 @@ impl GraphDynamicInstancesStorage {
 #[derive(Default)]
 pub struct GraphFunctionsStorage {
     functions: RwLock<HashMap<GraphFunctionId, Arc<RwLock<GraphFunction>>>>,
-    modified: RwLock<HashSet<GraphFunctionId>>,
 }
 
 impl GraphFunctionsStorage {
@@ -572,7 +571,6 @@ impl GraphFunctionsStorage {
                     .map(|(id, graph)| (id, Arc::new(RwLock::new(graph))))
                     .collect(),
             ),
-            modified: RwLock::new(HashSet::new()),
         }
     }
 
@@ -580,7 +578,6 @@ impl GraphFunctionsStorage {
         self.functions
             .write()
             .insert(id, Arc::new(RwLock::new(graph)));
-        self.modified.write().insert(id);
     }
 
     pub fn get(&self, id: &GraphFunctionId) -> Option<Arc<RwLock<GraphFunction>>> {
@@ -589,10 +586,6 @@ impl GraphFunctionsStorage {
 
     pub fn all(&self) -> RwLockReadGuard<'_, HashMap<GraphFunctionId, Arc<RwLock<GraphFunction>>>> {
         self.functions.read()
-    }
-
-    pub fn all_modified(&self) -> RwLockReadGuard<'_, HashSet<GraphFunctionId>> {
-        self.modified.read()
     }
 }
 

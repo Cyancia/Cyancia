@@ -13,7 +13,9 @@ use cyancia_assets::{
 use cyancia_shader_graph::{
     graph::{
         Graph, GraphCompileError, GraphDynamicInstancesStorage,
-        node::external::{ExternalVariableStorage, ExternalVariable, ExternalVariableId, ExternalNode},
+        node::external::{
+            ExternalNode, ExternalVariable, ExternalVariableId, ExternalVariableStorage,
+        },
         variable::GraphLiteral,
     },
     save::{
@@ -212,6 +214,19 @@ pub struct BrushPresetInstance {
 }
 
 impl BrushPresetInstance {
+    pub fn new(
+        metadata: BrushPresetMetadata,
+        main_graph_storage: Arc<GraphDynamicInstancesStorage>,
+    ) -> Self {
+        Self {
+            metadata,
+            main_graph: Graph::new(main_graph_storage),
+            external_vars: Arc::new(ExternalVariableStorage::default()),
+            referenced_textures: IndexSet::new(),
+            dirty_texture_variables: false,
+        }
+    }
+
     pub fn from_asset(
         preset: &BrushPreset,
         mut main_graph_storage: GraphDynamicInstancesStorage,
@@ -332,6 +347,10 @@ impl BrushPresetInstance {
 
     pub fn external_vars(&self) -> &Arc<ExternalVariableStorage> {
         &self.external_vars
+    }
+
+    pub fn metadata(&self) -> &BrushPresetMetadata {
+        &self.metadata
     }
 }
 

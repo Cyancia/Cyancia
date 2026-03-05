@@ -1285,6 +1285,7 @@ dependencies = [
  "image",
  "indexmap",
  "log",
+ "parking_lot",
  "rfd",
  "serde",
  "thiserror 2.0.18",

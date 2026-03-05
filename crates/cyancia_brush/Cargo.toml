@@ -31,3 +31,4 @@ cyancia_image.workspace = true
 uuid.workspace = true
 indexmap.workspace = true
 anyhow.workspace = true
+parking_lot.workspace = true

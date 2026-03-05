@@ -1,7 +1,10 @@
-use std::{fs::read_to_string, sync::Arc};
+use std::{collections::HashMap, fs::read_to_string, sync::Arc};
 
 use cyancia_actions::input_manager::InputManager;
-use cyancia_assets::{asset::AssetId, store::AssetRegistry};
+use cyancia_assets::{
+    asset::{AssetHandle, AssetId},
+    store::AssetRegistry,
+};
 use cyancia_input::action::ActionManifestCollection;
 use cyancia_runtime::{
     Services,
@@ -15,7 +18,7 @@ use cyancia_shader_graph::{
         Graph, GraphDynamicInstancesStorage, GraphFunctionsStorage,
         node::{
             external::{ExternalNode, ExternalVariable, ExternalVariableId},
-            function::{GraphFunctionNode, functioning},
+            function::{GraphFunction, GraphFunctionId, GraphFunctionNode, functioning},
         },
         variable::GraphLiteral,
     },
@@ -23,17 +26,17 @@ use cyancia_shader_graph::{
     wgsl_std::std_storage,
 };
 use iced_core::{
-    Element,
+    Element, Length,
     keyboard::{self, key},
     mouse, window,
 };
 use iced_runtime::{Task, futures::Subscription};
-use iced_widget::{container, row, space};
+use iced_widget::{Column, button, column, container, row, space, text};
 use uuid::Uuid;
 use wgpu::{Device, Queue};
 
 use crate::{
-    asset::{BrushPreset, BrushPresetInstance, GpuImage, Image},
+    asset::{BrushPreset, BrushPresetInstance, BrushPresetMetadata, GpuImage, Image},
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
     render::graph::{brush_graph_storage, generate_brush_shader},
 };
@@ -43,12 +46,23 @@ pub struct SelectedBrush {
     pub instance: BrushPresetInstance,
 }
 
+pub struct SelectedFunction {
+    pub id: GraphFunctionId,
+    pub instance: GraphFunction,
+}
+
+pub enum Selected {
+    Brush(SelectedBrush),
+    Function(SelectedFunction),
+}
+
 pub struct BrushEditorView {
     input_manager: InputManager,
     main_graph_storage: GraphDynamicInstancesStorage,
     function_graph_storage: Arc<GraphDynamicInstancesStorage>,
     function_storage: Arc<GraphFunctionsStorage>,
-    selected: Option<SelectedBrush>,
+    function_id_to_asset: HashMap<GraphFunctionId, AssetHandle<SerializableGraphFunction>>,
+    selected: Option<Selected>,
 
     create_new_name: String,
     create_new_type: Option<&'static str>,
@@ -64,11 +78,12 @@ impl FromRuntime for BrushEditorView {
             Arc::new(storage)
         };
 
-        let functions = runtime
+        let function_assets = runtime
             .service::<AssetRegistry>()
             .all_handles_of::<SerializableGraphFunction>()
-            .unwrap()
-            .into_iter()
+            .unwrap();
+        let functions = function_assets
+            .iter()
             .map(|handle| {
                 let func = handle.get().unwrap();
                 // TODO err handling
@@ -79,6 +94,10 @@ impl FromRuntime for BrushEditorView {
             })
             .collect();
         let function_storage = Arc::new(GraphFunctionsStorage::new(functions));
+        let function_id_to_asset = function_assets
+            .into_iter()
+            .map(|handle| (handle.get().unwrap().id, handle))
+            .collect();
 
         let main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
@@ -105,6 +124,7 @@ impl FromRuntime for BrushEditorView {
             main_graph_storage,
             function_graph_storage,
             function_storage,
+            function_id_to_asset,
 
             create_new_name: String::new(),
             create_new_type: None,
@@ -117,7 +137,10 @@ pub enum BrushEditorMessage {
     MouseEvent(mouse::Event),
     GraphView(GraphViewMessage),
     BrushSelected(AssetId<BrushPreset>),
+    FunctionSelected(GraphFunctionId),
     ExternalVarView(ExternalVarViewMessage),
+    CreateNewBrushPreset,
+    CreateNewFunction,
 }
 
 impl WindowView for BrushEditorView {
@@ -137,33 +160,80 @@ impl WindowView for BrushEditorView {
             return None;
         };
 
+        let brushes = brush_asset_browser(
+            presets
+                .into_iter()
+                // TODO: Notify failure
+                .filter_map(|handle| handle.get().ok().map(|preset| (handle.id(), preset))),
+            std::convert::identity,
+        )
+        .map(BrushEditorMessage::BrushSelected);
+
+        let functions = Column::from_iter(
+            self.function_storage
+                .all()
+                .iter()
+                .map(|(id, func)| {
+                    let id = *id;
+                    Element::new(button(text(func.read().name.clone())).on_press_with(move || id))
+                        .map(BrushEditorMessage::FunctionSelected)
+                })
+                .collect::<Vec<_>>(),
+        );
+
         let mut editor = row![
-            brush_asset_browser(
-                presets
-                    .into_iter()
-                    // TODO: Notify failure
-                    .filter_map(|handle| handle.get().ok().map(|preset| (handle.id(), preset))),
-                std::convert::identity
-            )
-            .map(BrushEditorMessage::BrushSelected)
+            column![
+                row![
+                    // TODO: This is an ugly workaround
+                    // TODO: Warn user if there are unsaved changes when creating new preset/function
+                    Element::new(button("New Brush").on_press(()))
+                        .map(|_| BrushEditorMessage::CreateNewBrushPreset),
+                    Element::new(button("New Function").on_press(()))
+                        .map(|_| BrushEditorMessage::CreateNewFunction),
+                ],
+                brushes,
+                functions,
+            ]
+            .spacing(2),
         ];
 
         if let Some(brush) = &self.selected {
-            editor = editor.push(
-                Element::new(GraphView::new(&brush.instance.main_graph()))
-                    .map(BrushEditorMessage::GraphView),
-            );
-            // TODO: External var browser may not be placed in editor. They're modifiable values for the user.
-            //       For example the brush size and opacity.
-            editor = editor.push(
-                external_var_view(
-                    brush.instance.external_vars(),
-                    &self.main_graph_storage.types,
-                    self.create_new_name.clone(),
-                    self.create_new_type,
-                )
-                .map(BrushEditorMessage::ExternalVarView),
-            );
+            match brush {
+                Selected::Brush(brush) => {
+                    let graph = Element::new(GraphView::new(&brush.instance.main_graph()))
+                        .map(BrushEditorMessage::GraphView);
+                    // TODO: External var browser may not be placed in editor. They're modifiable values for the user.
+                    //       For example the brush size and opacity.
+                    let ext_vars = external_var_view(
+                        brush.instance.external_vars(),
+                        &self.main_graph_storage.types,
+                        self.create_new_name.clone(),
+                        self.create_new_type,
+                    )
+                    .map(BrushEditorMessage::ExternalVarView);
+
+                    editor = editor
+                        .push(column![
+                            text(brush.instance.metadata().name.clone())
+                                .width(Length::Fill)
+                                .center()
+                                .size(30),
+                            graph,
+                        ])
+                        .push(ext_vars);
+                }
+                Selected::Function(func) => {
+                    let graph = Element::new(GraphView::new(&func.instance.graph))
+                        .map(BrushEditorMessage::GraphView);
+                    editor = editor.push(column![
+                        text(func.instance.name.clone())
+                            .width(Length::Fill)
+                            .center()
+                            .size(30),
+                        graph,
+                    ]);
+                }
+            }
         }
 
         editor.into()
@@ -186,7 +256,7 @@ impl WindowView for BrushEditorView {
                         if physical_key == key::Physical::Code(key::Code::KeyP)
                             && modifiers.control()
                         {
-                            if let Some(brush) = &mut self.selected {
+                            if let Some(Selected::Brush(brush)) = &mut self.selected {
                                 match brush.instance.compile() {
                                     Ok(shader) => println!("Generated shader:\n{}", shader),
                                     Err(e) => println!("Failed to generate shader: {:?}", e),
@@ -195,6 +265,8 @@ impl WindowView for BrushEditorView {
                                 println!("No brush graph to generate shader from.");
                             }
                         }
+
+                        // TODO: Saving modified preset/function
                     }
                     _ => {}
                 }
@@ -208,10 +280,13 @@ impl WindowView for BrushEditorView {
                 self.input_manager.on_mouse_event(event, &runtime);
             }
             BrushEditorMessage::GraphView(message) => {
-                let Some(brush) = &mut self.selected else {
+                let Some(selected) = &mut self.selected else {
                     return Task::none();
                 };
-                let graph = brush.instance.main_graph_mut();
+                let graph = match selected {
+                    Selected::Brush(brush) => brush.instance.main_graph_mut(),
+                    Selected::Function(func) => &mut func.instance.graph,
+                };
 
                 match message {
                     GraphViewMessage::NodeMoveRequest(point, id) => {
@@ -250,10 +325,10 @@ impl WindowView for BrushEditorView {
                 );
 
                 if let Some(instance) = instance {
-                    self.selected = Some(SelectedBrush {
+                    self.selected = Some(Selected::Brush(SelectedBrush {
                         id: brush_id,
                         instance,
-                    });
+                    }));
                 }
 
                 if !errors.is_empty() {
@@ -263,8 +338,49 @@ impl WindowView for BrushEditorView {
                     }
                 }
             }
+            BrushEditorMessage::FunctionSelected(func_id) => {
+                let Some(ser_func) = self
+                    .function_id_to_asset
+                    .get(&func_id)
+                    .and_then(|handle| handle.get().ok())
+                else {
+                    return Task::none();
+                };
+                let (maybe_func, errs) = ser_func.deserialize(self.function_graph_storage.clone());
+                let Some(func) = maybe_func else {
+                    for err in errs {
+                        log::error!("Error deserializing function {:?}: {:?}", func_id, err);
+                    }
+                    return Task::none();
+                };
+
+                self.selected = Some(Selected::Function(SelectedFunction {
+                    id: func_id,
+                    instance: func,
+                }));
+            }
             BrushEditorMessage::ExternalVarView(message) => {
                 self.handle_external_var_update(message);
+            }
+            BrushEditorMessage::CreateNewFunction => {
+                self.selected = Some(Selected::Function(SelectedFunction {
+                    id: GraphFunctionId::new(Uuid::new_v4()),
+                    instance: GraphFunction {
+                        name: "[Unnamed Function]".to_string(),
+                        graph: Graph::new(self.function_graph_storage.clone()),
+                    },
+                }));
+            }
+            BrushEditorMessage::CreateNewBrushPreset => {
+                self.selected = Some(Selected::Brush(SelectedBrush {
+                    id: AssetId::new(Uuid::new_v4()),
+                    instance: BrushPresetInstance::new(
+                        BrushPresetMetadata {
+                            name: "[Unnamed Brush]".to_string(),
+                        },
+                        Arc::new(self.main_graph_storage.clone()),
+                    ),
+                }));
             }
         }
 
@@ -286,7 +402,7 @@ impl BrushEditorView {
     pub fn handle_external_var_update(&mut self, message: ExternalVarViewMessage) {
         match message {
             ExternalVarViewMessage::LiteralChanged(id, message) => {
-                let Some(brush) = self.selected.as_mut() else {
+                let Some(Selected::Brush(brush)) = self.selected.as_mut() else {
                     return;
                 };
 
@@ -300,7 +416,7 @@ impl BrushEditorView {
                 self.create_new_type = Some(t);
             }
             ExternalVarViewMessage::RequestCreateNew => {
-                let Some(brush) = self.selected.as_mut() else {
+                let Some(Selected::Brush(brush)) = self.selected.as_mut() else {
                     return;
                 };
 
