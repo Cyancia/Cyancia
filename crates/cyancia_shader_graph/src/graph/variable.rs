@@ -1,5 +1,6 @@
 use std::{any::Any, collections::HashMap};
 
+use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 
 use crate::graph::slot::{ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphValueType};
@@ -109,8 +110,16 @@ impl<T: GraphVariableCaster> ErasedGraphVariableCaster for T {
     }
 }
 
+pub trait GraphLiteralValue: DynClone + Send + Sync + 'static + Downcast {}
+
+downcast_rs::impl_downcast!(GraphLiteralValue);
+dyn_clone::clone_trait_object!(GraphLiteralValue);
+
+impl<T: Send + Sync + 'static + DynClone> GraphLiteralValue for T {}
+
+#[derive(Clone)]
 pub struct GraphLiteral {
-    value: Box<dyn Any + Send + Sync>,
+    value: Box<dyn GraphLiteralValue>,
     ty: Box<dyn ErasedGraphValueType>,
 }
 
@@ -130,29 +139,29 @@ impl GraphLiteral {
     }
 
     pub(crate) fn new_boxed(
-        value: Box<dyn Any + Send + Sync>,
+        value: Box<dyn GraphLiteralValue>,
         ty: Box<dyn ErasedGraphValueType>,
     ) -> Self {
         Self { value, ty }
     }
 
-    pub fn as_ref<T: 'static>(&self) -> &T {
+    pub fn as_ref<T: GraphLiteralValue>(&self) -> &T {
         self.value
             .downcast_ref::<T>()
             .expect("Failed to downcast Literal")
     }
 
-    pub fn as_mut<T: 'static>(&mut self) -> &mut T {
+    pub fn as_mut<T: GraphLiteralValue>(&mut self) -> &mut T {
         self.value
             .downcast_mut::<T>()
             .expect("Failed to downcast Literal")
     }
 
-    pub fn try_as_ref<T: 'static>(&self) -> Option<&T> {
+    pub fn try_as_ref<T: GraphLiteralValue>(&self) -> Option<&T> {
         self.value.downcast_ref::<T>()
     }
 
-    pub fn try_as_mut<T: 'static>(&mut self) -> Option<&mut T> {
+    pub fn try_as_mut<T: GraphLiteralValue>(&mut self) -> Option<&mut T> {
         self.value.downcast_mut::<T>()
     }
 
@@ -160,11 +169,11 @@ impl GraphLiteral {
         self.ty.as_ref()
     }
 
-    pub fn value(&self) -> &Box<dyn Any + Send + Sync> {
+    pub fn value(&self) -> &Box<dyn GraphLiteralValue> {
         &self.value
     }
 
-    pub fn set<T: 'static>(&mut self, value: T) {
+    pub fn set<T: GraphLiteralValue>(&mut self, value: T) {
         if let Some(x) = self.value.downcast_mut() {
             *x = value;
         } else {

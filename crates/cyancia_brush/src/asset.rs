@@ -371,6 +371,10 @@ impl BrushPresetInstance {
     pub fn referenced_textures(&self) -> &IndexSet<AssetHandle<Image>> {
         &self.referenced_textures
     }
+
+    pub fn external_vars(&self) -> &Arc<ExternalDataStorage> {
+        &self.external_vars
+    }
 }
 
 pub struct GpuImage {

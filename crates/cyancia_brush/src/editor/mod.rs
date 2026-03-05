@@ -28,7 +28,7 @@ use wgpu::{Device, Queue};
 
 use crate::{
     asset::{BrushPreset, BrushPresetInstance, GpuImage, Image},
-    browser::brush_asset_browser,
+    browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
     render::graph::{brush_graph_storage, generate_brush_shader},
 };
 
@@ -42,6 +42,9 @@ pub struct BrushEditorView {
     main_graph_storage: GraphDynamicInstancesStorage,
     function_graph_storage: GraphDynamicInstancesStorage,
     selected: Option<SelectedBrush>,
+
+    create_new_name: String,
+    create_new_type: Option<&'static str>,
 }
 
 impl FromRuntime for BrushEditorView {
@@ -74,6 +77,9 @@ impl FromRuntime for BrushEditorView {
             selected: None,
             main_graph_storage,
             function_graph_storage,
+
+            create_new_name: String::new(),
+            create_new_type: None,
         }
     }
 }
@@ -83,6 +89,7 @@ pub enum BrushEditorMessage {
     MouseEvent(mouse::Event),
     GraphView(GraphViewMessage),
     BrushSelected(AssetId<BrushPreset>),
+    ExternalVarView(ExternalVarViewMessage),
 }
 
 impl WindowView for BrushEditorView {
@@ -117,6 +124,15 @@ impl WindowView for BrushEditorView {
             editor = editor.push(
                 Element::new(GraphView::new(&brush.instance.main_graph()))
                     .map(BrushEditorMessage::GraphView),
+            );
+            editor = editor.push(
+                external_var_view(
+                    brush.instance.external_vars(),
+                    &self.main_graph_storage.types,
+                    self.create_new_name.clone(),
+                    self.create_new_type,
+                )
+                .map(BrushEditorMessage::ExternalVarView),
             );
         }
 
@@ -218,6 +234,9 @@ impl WindowView for BrushEditorView {
                     }
                 }
             }
+            BrushEditorMessage::ExternalVarView(message) => {
+                self.handle_external_var_update(message);
+            }
         }
 
         Task::none()
@@ -231,5 +250,32 @@ impl WindowView for BrushEditorView {
             iced_core::Event::Mouse(event) => Some((window, BrushEditorMessage::MouseEvent(event))),
             _ => None,
         })
+    }
+}
+
+impl BrushEditorView {
+    pub fn handle_external_var_update(&mut self, message: ExternalVarViewMessage) {
+        match message {
+            ExternalVarViewMessage::LiteralChanged(id, message) => {
+                let Some(brush) = self.selected.as_mut() else {
+                    return;
+                };
+
+                let ext_vars = brush.instance.external_vars();
+                ext_vars.update(id, message);
+            }
+            ExternalVarViewMessage::CreateNewNameChanged(name) => {
+                self.create_new_name = name;
+            }
+            ExternalVarViewMessage::CreateNewSelectedType(t) => {
+                self.create_new_type = Some(t);
+            }
+            ExternalVarViewMessage::RequestCreateNew => {
+                println!(
+                    "Request to create new external variable: name={}, type={:?}",
+                    self.create_new_name, self.create_new_type
+                );
+            }
+        }
     }
 }

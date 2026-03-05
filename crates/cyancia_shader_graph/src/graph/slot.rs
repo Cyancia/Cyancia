@@ -14,7 +14,7 @@ use crate::{
     GraphRenderer, GraphTheme,
     graph::{
         node::{GraphNodeData, GraphNodeId},
-        variable::GraphLiteral,
+        variable::{GraphLiteral, GraphLiteralValue},
     },
 };
 
@@ -107,7 +107,7 @@ pub struct GraphOutputSlotData {
 }
 
 pub trait GraphValueType: Send + Sync + 'static + DynClone {
-    type AssociatedLiteralType: Send + Sync + 'static + Serialize + DeserializeOwned;
+    type AssociatedLiteralType: GraphLiteralValue + Serialize + DeserializeOwned;
     type Message: GraphLiteralUpdateMessage;
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
@@ -163,27 +163,28 @@ impl Clone for ErasedGraphLiteralUpdateMessage {
 pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn color(&self) -> Color;
     fn name(&self) -> &'static str;
-    fn default_literal(&self) -> Box<dyn Any + Send + Sync>;
+    fn default_literal(&self) -> Box<dyn GraphLiteralValue>;
     fn wgsl_type(&self) -> Option<&'static str>;
     fn view_literal(
         &self,
         slot_id: GraphInputSlotId,
-        data: &Box<dyn Any + Send + Sync>,
+        data: &Box<dyn GraphLiteralValue>,
     ) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer>;
     fn update_literal(
         &self,
-        data: &mut Box<dyn Any + Send + Sync>,
+        data: &mut Box<dyn GraphLiteralValue>,
+        // TODO: Don't need the slot id, just pass the message.
         message: ErasedGraphLiteralUpdateMessage,
     );
-    fn literal_to_code(&self, data: &Box<dyn Any + Send + Sync>) -> Option<String>;
+    fn literal_to_code(&self, data: &Box<dyn GraphLiteralValue>) -> Option<String>;
     fn serialize_literal<'a>(
         &self,
-        data: &Box<dyn Any + Send + Sync>,
+        data: &Box<dyn GraphLiteralValue>,
     ) -> Result<toml::Value, toml::ser::Error>;
     fn deserialize_literal<'a>(
         &self,
         deserializer: toml::Value,
-    ) -> Result<Box<dyn Any + Send + Sync>, <toml::Value as Deserializer<'a>>::Error>;
+    ) -> Result<Box<dyn GraphLiteralValue>, <toml::Value as Deserializer<'a>>::Error>;
 }
 
 dyn_clone::clone_trait_object!(ErasedGraphValueType);
@@ -197,7 +198,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
         self.name()
     }
 
-    fn default_literal(&self) -> Box<dyn Any + Send + Sync> {
+    fn default_literal(&self) -> Box<dyn GraphLiteralValue> {
         Box::new(self.default_literal())
     }
 
@@ -208,7 +209,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
     fn view_literal(
         &self,
         slot_id: GraphInputSlotId,
-        data: &Box<dyn Any + Send + Sync>,
+        data: &Box<dyn GraphLiteralValue>,
     ) -> Element<'static, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()
@@ -222,7 +223,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
 
     fn update_literal(
         &self,
-        data: &mut Box<dyn Any + Send + Sync>,
+        data: &mut Box<dyn GraphLiteralValue>,
         message: ErasedGraphLiteralUpdateMessage,
     ) {
         let literal = data
@@ -237,7 +238,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
         self.update_literal(literal, *msg);
     }
 
-    fn literal_to_code(&self, data: &Box<dyn Any + Send + Sync>) -> Option<String> {
+    fn literal_to_code(&self, data: &Box<dyn GraphLiteralValue>) -> Option<String> {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()
             .expect("Failed to downcast literal.");
@@ -246,7 +247,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
 
     fn serialize_literal<'a>(
         &self,
-        data: &Box<dyn Any + Send + Sync>,
+        data: &Box<dyn GraphLiteralValue>,
     ) -> Result<toml::Value, toml::ser::Error> {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()
@@ -257,7 +258,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
     fn deserialize_literal<'a>(
         &self,
         deserializer: toml::Value,
-    ) -> Result<Box<dyn Any + Send + Sync>, <toml::Value as Deserializer<'a>>::Error> {
+    ) -> Result<Box<dyn GraphLiteralValue>, <toml::Value as Deserializer<'a>>::Error> {
         let literal = self.deserialize_literal(deserializer)?;
         Ok(Box::new(literal))
     }

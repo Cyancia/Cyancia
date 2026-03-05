@@ -40,6 +40,16 @@ impl ExternalDataStorage {
         self.contents.read().get(id).cloned()
     }
 
+    pub fn update(&self, id: ExternalLiteralId, message: ErasedGraphLiteralUpdateMessage) {
+        let mut contents = self.contents.write();
+        let Some(lit) = contents.get(&id) else {
+            return;
+        };
+        let mut lit = lit.as_ref().clone();
+        lit.update(message);
+        contents.insert(id, Arc::new(lit));
+    }
+
     pub fn remove(&self, id: &ExternalLiteralId) {
         self.contents.write().remove(id);
     }

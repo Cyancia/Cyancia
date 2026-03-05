@@ -23,7 +23,7 @@ use crate::{
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
             GraphSlots,
         },
-        variable::GraphVariable,
+        variable::{GraphLiteralValue, GraphVariable},
     },
     save::GraphSerializable,
 };
@@ -670,7 +670,10 @@ impl GraphNodeCodeGenContext<'_> {
         }
     }
 
-    pub fn get_input_raw<T: 'static>(&self, index: usize) -> Result<&T, GraphNodeCodeGenError> {
+    pub fn get_input_raw<T: GraphLiteralValue>(
+        &self,
+        index: usize,
+    ) -> Result<&T, GraphNodeCodeGenError> {
         let slot_id = self
             .inputs
             .get(index)
