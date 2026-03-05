@@ -1,10 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::anyhow;
+use cyancia_utils::wrapper;
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, pick_list};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     GraphRenderer, GraphTheme,
@@ -16,117 +18,104 @@ use crate::{
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
         variable::GraphLiteral,
     },
+    save::SerializableGraphLiteral,
 };
 
 #[derive(Default)]
-pub struct ExternalDataStorage {
-    contents: RwLock<HashMap<ExternalLiteralId, Arc<GraphLiteral>>>,
+pub struct ExternalVariableStorage {
+    contents: RwLock<HashMap<ExternalVariableId, Arc<ExternalVariable>>>,
 }
 
-impl ExternalDataStorage {
-    pub fn from_hashmap(contents: HashMap<ExternalLiteralId, Arc<GraphLiteral>>) -> Self {
+impl ExternalVariableStorage {
+    pub fn from_hashmap(contents: HashMap<ExternalVariableId, Arc<ExternalVariable>>) -> Self {
         Self {
             contents: RwLock::new(contents),
         }
     }
 
-    pub fn insert(&self, id: ExternalLiteralId, value: GraphLiteral) {
+    pub fn insert(&self, id: ExternalVariableId, value: ExternalVariable) {
         let mut contents = self.contents.write();
 
         contents.insert(id.clone(), Arc::new(value));
     }
 
-    pub fn get(&self, id: &ExternalLiteralId) -> Option<Arc<GraphLiteral>> {
+    pub fn get(&self, id: &ExternalVariableId) -> Option<Arc<ExternalVariable>> {
         self.contents.read().get(id).cloned()
     }
 
-    pub fn update(&self, id: ExternalLiteralId, message: ErasedGraphLiteralUpdateMessage) {
+    pub fn update(&self, id: ExternalVariableId, message: ErasedGraphLiteralUpdateMessage) {
         let mut contents = self.contents.write();
         let Some(lit) = contents.get(&id) else {
             return;
         };
         let mut lit = lit.as_ref().clone();
-        lit.update(message);
+        lit.value.update(message);
         contents.insert(id, Arc::new(lit));
     }
 
-    pub fn remove(&self, id: &ExternalLiteralId) {
+    pub fn remove(&self, id: &ExternalVariableId) {
         self.contents.write().remove(id);
     }
 
-    pub fn all_id(&self) -> Vec<ExternalLiteralId> {
-        self.contents.read().keys().cloned().collect()
-    }
-
-    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<ExternalLiteralId, Arc<GraphLiteral>>> {
+    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<ExternalVariableId, Arc<ExternalVariable>>> {
         self.contents.read()
     }
 
-    pub fn all_mut(&self) -> RwLockWriteGuard<'_, HashMap<ExternalLiteralId, Arc<GraphLiteral>>> {
+    pub fn all_mut(
+        &self,
+    ) -> RwLockWriteGuard<'_, HashMap<ExternalVariableId, Arc<ExternalVariable>>> {
         self.contents.write()
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct ExternalLiteralId {
-    name: String,
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub ExternalVariableId : Uuid
 }
 
-impl ExternalLiteralId {
-    pub fn new(name: String) -> Self {
-        Self { name }
+#[derive(Clone)]
+pub struct ExternalVariable {
+    pub name: String,
+    pub value: GraphLiteral,
+}
+
+#[derive(Clone)]
+pub struct ExternalVariableReference {
+    pub id: ExternalVariableId,
+    pub name: String,
+}
+
+impl PartialEq for ExternalVariableReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 
-impl ToString for ExternalLiteralId {
+impl ToString for ExternalVariableReference {
     fn to_string(&self) -> String {
         self.name.clone()
     }
 }
 
-impl Serialize for ExternalLiteralId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.name.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ExternalLiteralId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let name = String::deserialize(deserializer)?;
-        Ok(ExternalLiteralId { name })
-    }
-}
-
-#[derive(Clone)]
-pub struct ExternalLiteralType {
-    storage: Arc<ExternalDataStorage>,
-}
-
 #[derive(Clone)]
 pub struct ExternalNode {
-    pub storage: Arc<ExternalDataStorage>,
+    pub storage: Arc<ExternalVariableStorage>,
 }
 
 impl ExternalNode {
-    pub fn new(storage: Arc<ExternalDataStorage>) -> Self {
+    pub fn new(storage: Arc<ExternalVariableStorage>) -> Self {
         Self { storage }
     }
 }
 
 #[derive(Clone)]
 pub enum ExternalNodeMessage {
-    IdChanged(ExternalLiteralId),
+    IdChanged(ExternalVariableId),
     LiteralUpdate(ErasedGraphLiteralUpdateMessage),
 }
 
 impl GraphNode for ExternalNode {
-    type State = Option<ExternalLiteralId>;
+    type State = Option<ExternalVariableId>;
 
     type Message = ExternalNodeMessage;
 
@@ -145,7 +134,7 @@ impl GraphNode for ExternalNode {
     fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
         if let Some(v) = state.as_ref().and_then(|id| self.storage.get(&id)) {
             vec![GraphDefaultOutputSlot::new_boxed(dyn_clone::clone_box(
-                v.ty(),
+                v.value.ty(),
             ))]
         } else {
             vec![]
@@ -165,6 +154,7 @@ impl GraphNode for ExternalNode {
             .get(id)
             .ok_or(anyhow!("External literal not found"))?;
         let code = literal
+            .value
             .to_code()
             .ok_or(anyhow!("Cannot convert literal to code"))?;
         let output = ctx.get_output(0)?;
@@ -182,11 +172,23 @@ impl GraphNode for ExternalNode {
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         let mut column = column![];
 
-        column = column.push(pick_list(
-            self.storage.all_id(),
-            state.clone(),
-            ExternalNodeMessage::IdChanged,
-        ));
+        let vars = self.storage.all();
+        let refs = vars
+            .iter()
+            .map(|(id, lit)| ExternalVariableReference {
+                id: id.clone(),
+                name: lit.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let selected = state.as_ref().and_then(|id| {
+            self.storage.get(id).map(|v| ExternalVariableReference {
+                id: id.clone(),
+                name: v.name.clone(),
+            })
+        });
+        column = column.push(pick_list(refs, selected, |v| {
+            ExternalNodeMessage::IdChanged(v.id)
+        }));
 
         column
             .extend(ctx.view_all_inputs(&["Var"], ExternalNodeMessage::LiteralUpdate))

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cyancia_assets::asset::{AssetHandle, AssetId};
 use cyancia_shader_graph::graph::{
-    node::external::{ExternalDataStorage, ExternalLiteralId},
+    node::external::{ExternalVariableStorage, ExternalVariableId},
     slot::{ErasedGraphLiteralUpdateMessage, GraphInputSlotId, GraphLiteralUpdateMessage},
     variable::GraphValueTypeStorage,
 };
@@ -43,14 +43,14 @@ where
 
 #[derive(Clone)]
 pub enum ExternalVarViewMessage {
-    LiteralChanged(ExternalLiteralId, ErasedGraphLiteralUpdateMessage),
+    LiteralChanged(ExternalVariableId, ErasedGraphLiteralUpdateMessage),
     CreateNewNameChanged(String),
     CreateNewSelectedType(&'static str),
     RequestCreateNew,
 }
 
 pub fn external_var_view<'a>(
-    storage: &ExternalDataStorage,
+    storage: &ExternalVariableStorage,
     types: &GraphValueTypeStorage,
 
     create_new_name: String,
@@ -65,9 +65,10 @@ pub fn external_var_view<'a>(
             .into_iter()
             .map(|(id, var)| {
                 column![
-                    text(id.to_string()),
-                    var.ty()
-                        .view_literal(GraphInputSlotId::new(Uuid::nil()), &var.value())
+                    text(var.name.clone()),
+                    var.value
+                        .ty()
+                        .view_literal(GraphInputSlotId::new(Uuid::nil()), &var.value.value())
                         .map(move |m| ExternalVarViewMessage::LiteralChanged(id.clone(), m))
                 ]
                 .spacing(2)

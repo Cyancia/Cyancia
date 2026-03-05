@@ -14,7 +14,7 @@ use cyancia_shader_graph::{
     graph::{
         Graph, GraphDynamicInstancesStorage,
         node::{
-            external::{ExternalLiteralId, ExternalNode},
+            external::{ExternalVariable, ExternalVariableId, ExternalNode},
             function::functioning,
         },
         variable::GraphLiteral,
@@ -28,6 +28,7 @@ use iced_core::{
 };
 use iced_runtime::{Task, futures::Subscription};
 use iced_widget::{container, row, space};
+use uuid::Uuid;
 use wgpu::{Device, Queue};
 
 use crate::{
@@ -291,8 +292,11 @@ impl BrushEditorView {
                 };
 
                 brush.instance.external_vars().insert(
-                    ExternalLiteralId::new(self.create_new_name.clone()),
-                    GraphLiteral::new_boxed(ty.default_literal(), ty.clone()),
+                    ExternalVariableId::new(Uuid::new_v4()),
+                    ExternalVariable {
+                        name: self.create_new_name.clone(),
+                        value: GraphLiteral::new_boxed(ty.default_literal(), ty.clone()),
+                    },
                 );
 
                 self.create_new_name.clear();

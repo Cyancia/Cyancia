@@ -13,10 +13,13 @@ use cyancia_assets::{
 use cyancia_shader_graph::{
     graph::{
         Graph, GraphCompileError, GraphDynamicInstancesStorage,
-        node::external::{ExternalDataStorage, ExternalLiteralId, ExternalNode},
+        node::external::{ExternalVariableStorage, ExternalVariable, ExternalVariableId, ExternalNode},
         variable::GraphLiteral,
     },
-    save::{GraphDeserializeError, GraphSerializable, SerializableGraph, SerializableGraphLiteral},
+    save::{
+        GraphDeserializeError, GraphSerializable, SerializableExternalLiteral, SerializableGraph,
+        SerializableGraphLiteral,
+    },
     wgsl_std::types::{TextureReference, TextureType},
 };
 use glam::UVec2;
@@ -38,7 +41,7 @@ pub struct BrushPreset {
     pub main_graph: SerializableGraph,
     pub textures: Vec<Image>,
     pub functions: Vec<SerializableGraph>,
-    pub external_vars: HashMap<ExternalLiteralId, SerializableGraphLiteral>,
+    pub external_vars: HashMap<ExternalVariableId, SerializableExternalLiteral>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -127,9 +130,9 @@ impl AssetSerializer for BrushPresetSerializer {
             f.read_to_string(&mut external_vars_buffer)?;
         }
 
-        let external_vars = toml::from_str::<HashMap<ExternalLiteralId, SerializableGraphLiteral>>(
-            &external_vars_buffer,
-        )?;
+        let external_vars = toml::from_str::<
+            HashMap<ExternalVariableId, SerializableExternalLiteral>,
+        >(&external_vars_buffer)?;
 
         Ok(BrushPreset {
             metadata,
@@ -239,7 +242,7 @@ pub struct BrushPresetInstance {
     metadata: BrushPresetMetadata,
     main_graph: Graph,
     functions: Vec<Graph>,
-    external_vars: Arc<ExternalDataStorage>,
+    external_vars: Arc<ExternalVariableStorage>,
     referenced_textures: IndexSet<AssetHandle<Image>>,
     dirty_texture_variables: bool,
 }
@@ -265,7 +268,7 @@ impl BrushPresetInstance {
 
         let mut referenced_textures = IndexSet::new();
         for var in external_vars.values() {
-            if let Some(texture_ref) = var.try_as_ref::<TextureReference>() {
+            if let Some(texture_ref) = var.value.try_as_ref::<TextureReference>() {
                 let Ok(handle) = asset_registry.handle(AssetId::new(texture_ref.global_id)) else {
                     continue;
                 };
@@ -273,7 +276,7 @@ impl BrushPresetInstance {
             }
         }
 
-        let external_vars = Arc::new(ExternalDataStorage::from_hashmap(external_vars));
+        let external_vars = Arc::new(ExternalVariableStorage::from_hashmap(external_vars));
         main_storage
             .nodes
             .register_non_default(ExternalNode::new(external_vars.clone()));
@@ -337,7 +340,7 @@ impl BrushPresetInstance {
         let all = self.external_vars.all();
         let texture_refs = all
             .iter()
-            .filter_map(|(id, var)| var.try_as_ref::<TextureReference>().map(|_| id))
+            .filter_map(|(id, var)| var.value.try_as_ref::<TextureReference>().map(|_| id))
             .collect::<Vec<_>>();
 
         for id in texture_refs {
@@ -354,8 +357,11 @@ impl BrushPresetInstance {
                 local_index: local_index as u32,
             };
             self.external_vars.insert(
-                ExternalLiteralId::new(asset.metadata.name.clone()),
-                GraphLiteral::new::<TextureType>(reference),
+                ExternalVariableId::new(Uuid::new_v4()),
+                ExternalVariable {
+                    name: asset.metadata.name.clone(),
+                    value: GraphLiteral::new::<TextureType>(reference),
+                },
             );
         }
     }
@@ -372,7 +378,7 @@ impl BrushPresetInstance {
         &self.referenced_textures
     }
 
-    pub fn external_vars(&self) -> &Arc<ExternalDataStorage> {
+    pub fn external_vars(&self) -> &Arc<ExternalVariableStorage> {
         &self.external_vars
     }
 }

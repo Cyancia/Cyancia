@@ -10,7 +10,7 @@ use crate::{
     GraphSerializer,
     graph::{
         Graph, GraphDynamicInstancesStorage, GraphSignature,
-        node::{GraphNodeData, GraphNodeId, StatefulGraphNode},
+        node::{GraphNodeData, GraphNodeId, StatefulGraphNode, external::ExternalVariable},
         slot::{
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
             GraphSlots,
@@ -393,5 +393,23 @@ impl SerializableGraphLiteral {
         let literal_value = ty.deserialize_literal(self.value.clone())?;
 
         Ok(GraphLiteral::new_boxed(literal_value, ty.clone()))
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SerializableExternalLiteral {
+    pub name: String,
+    pub value: SerializableGraphLiteral,
+}
+
+impl SerializableExternalLiteral {
+    pub fn deserialize(
+        &self,
+        storage: &GraphDynamicInstancesStorage,
+    ) -> Result<ExternalVariable, SerializableGraphLiteralError> {
+        Ok(ExternalVariable {
+            name: self.name.clone(),
+            value: self.value.deserialize(storage)?,
+        })
     }
 }
