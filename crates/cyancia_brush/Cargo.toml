@@ -32,3 +32,4 @@ uuid.workspace = true
 indexmap.workspace = true
 anyhow.workspace = true
 parking_lot.workspace = true
+cyancia_tools.workspace = true

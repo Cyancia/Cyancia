@@ -7,7 +7,7 @@ use cyancia_input::{
     mouse::{HoverMouseState, PressedMouseState},
 };
 use cyancia_runtime::Services;
-use cyancia_tools::{CanvasToolProxies, ToolProxy};
+use cyancia_tools::{ToolProxies, ToolProxy};
 use iced_core::{
     Point,
     keyboard::{self, key},
@@ -84,14 +84,14 @@ impl InputManager {
         Task::none()
     }
 
-    pub fn on_mouse_event(&mut self, event: mouse::Event, runtime: &Services) {
-        let mut tool_proxies = runtime.service_mut::<CanvasToolProxies>();
-        let canvas_manager = runtime.service::<CanvasManager>();
+    pub fn on_mouse_event(&mut self, event: mouse::Event, services: &Services) {
+        let mut tool_proxies = services.service_mut::<ToolProxies>();
+        let canvas_manager = services.service::<CanvasManager>();
         let Some(canvas) = canvas_manager.current() else {
             return;
         };
         let canvas = canvas.as_ref();
-        let tool_proxy = tool_proxies.get_mut(&canvas.id);
+        let tool_proxy = tool_proxies.get_mut(&canvas.tool_proxy_id);
 
         match event {
             mouse::Event::ButtonPressed(button) => {
@@ -105,7 +105,7 @@ impl InputManager {
                     &PressedMouseState {
                         position: self.cursor_position,
                     },
-                    canvas,
+                    services,
                 );
             }
             mouse::Event::ButtonReleased(button) => {
@@ -119,7 +119,7 @@ impl InputManager {
                     &PressedMouseState {
                         position: self.cursor_position,
                     },
-                    canvas,
+                    services,
                 );
             }
             mouse::Event::CursorMoved { position } => {
@@ -131,7 +131,7 @@ impl InputManager {
                         &PressedMouseState {
                             position: self.cursor_position,
                         },
-                        canvas,
+                        services,
                     );
                 } else {
                     tool_proxy.mouse_moved_hovering(
@@ -139,7 +139,7 @@ impl InputManager {
                         &HoverMouseState {
                             position: self.cursor_position,
                         },
-                        canvas,
+                        services,
                     );
                 }
             }

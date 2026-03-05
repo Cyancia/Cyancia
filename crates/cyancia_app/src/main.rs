@@ -58,10 +58,10 @@ fn main() {
             asset_root: "assets".into(),
             bundles: asset_bundles,
         })
+        .add_plugin(ToolsPlugin)
         .add_plugin(ImagePlugin)
         .add_plugin(CanvasPlugin)
         .add_plugin(InputPlugin)
-        .add_plugin(ToolsPlugin)
         .add_plugin(BrushPlugin)
         .add_plugin(ActionPlugin);
     app.build_plugins();

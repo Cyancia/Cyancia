@@ -16,7 +16,7 @@ use cyancia_runtime::{
     service::FromRuntime,
     windows::{WindowView, WindowViewId},
 };
-use cyancia_tools::{CanvasToolFunctionRegistry, CanvasToolProxies};
+use cyancia_tools::{ToolFunctionRegistry, ToolProxies};
 
 use glam::UVec2;
 use iced::{
@@ -43,13 +43,12 @@ impl MainView {
             .subset_for_view("main_view");
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
+            tool_proxy_id: services
+                .service_mut::<ToolProxies>()
+                .add(&services.service::<ToolFunctionRegistry>()),
             image: Arc::new(CImage::new(UVec2 { x: 1024, y: 768 })),
             transform: Default::default(),
         };
-        services.service_mut::<CanvasToolProxies>().add(
-            &canvas.id,
-            &services.service::<CanvasToolFunctionRegistry>(),
-        );
         services
             .service_mut::<CanvasRenderers>()
             .insert(canvas.id, CanvasRenderer::from_runtime(services));

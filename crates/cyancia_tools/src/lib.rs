@@ -1,45 +1,34 @@
 use std::{any::Any, collections::HashMap, sync::Arc, time::Instant};
 
-use cyancia_canvas::{CCanvas, CanvasId};
 use cyancia_input::{
     action::{Action, ActionId},
     key::KeyboardState,
     mouse::{HoverMouseState, PressedMouseState},
 };
-use cyancia_runtime::{Application, Runtime, plugin::Plugin, service::Service};
+use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::Service};
 use cyancia_utils::wrapper;
 use iced_core::{Point, keyboard::key, mouse};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-
-use crate::{brush::BrushTool, pan::PanTool, rotate::RotateTool, zoom::ZoomTool};
-
-pub mod brush;
-pub mod pan;
-pub mod rotate;
-pub mod zoom;
+use uuid::Uuid;
 
 pub struct ToolsPlugin;
 
 impl Plugin for ToolsPlugin {
     fn build(&self, app: &mut Application) {
-        app.add_service::<CanvasToolFunctionRegistry>()
-            .add_service::<CanvasToolProxies>()
-            .add_canvas_tool_function::<BrushTool>()
-            .add_canvas_tool_function::<PanTool>()
-            .add_canvas_tool_function::<RotateTool>()
-            .add_canvas_tool_function::<ZoomTool>();
+        app.add_service::<ToolFunctionRegistry>()
+            .add_service::<ToolProxies>();
     }
 }
 
 pub trait ToolsAppExt {
-    fn add_canvas_tool_function<T: CanvasToolFunction + Default>(&mut self) -> &mut Self;
+    fn add_tool_function<T: ToolFunction + Default>(&mut self) -> &mut Self;
 }
 
 impl ToolsAppExt for Application {
-    fn add_canvas_tool_function<T: CanvasToolFunction + Default>(&mut self) -> &mut Self {
+    fn add_tool_function<T: ToolFunction + Default>(&mut self) -> &mut Self {
         self.runtime()
             .services()
-            .service_mut::<CanvasToolFunctionRegistry>()
+            .service_mut::<ToolFunctionRegistry>()
             .register::<T>();
         self
     }
@@ -47,53 +36,54 @@ impl ToolsAppExt for Application {
 
 wrapper! {
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    pub CanvasToolId : Arc<str>
+    pub ToolId : Arc<str>
 }
 
-pub struct CanvasTool {
+pub struct Tool {
     pub binded_action: ActionId,
 }
 
-pub trait CanvasToolFunction: Send + Sync + 'static {
-    fn id(&self) -> CanvasToolId;
-    fn activate(&mut self, canvas: &CCanvas) {}
-    fn hover(&mut self, keyboard: &KeyboardState, mouse: &HoverMouseState, canvas: &CCanvas) {}
-    fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, canvas: &CCanvas) {}
-    fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, canvas: &CCanvas) {}
-    fn end(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, canvas: &CCanvas) {}
-    fn deactivate(&mut self, canvas: &CCanvas) {}
+pub trait ToolFunction: Send + Sync + 'static {
+    fn id(&self) -> ToolId;
+    fn activate(&mut self, services: &Services) {}
+    fn hover(&mut self, keyboard: &KeyboardState, mouse: &HoverMouseState, services: &Services) {}
+    fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {}
+    fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
+    }
+    fn end(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {}
+    fn deactivate(&mut self, services: &Services) {}
 }
 
 #[derive(Default)]
-pub struct CanvasToolFunctionRegistry {
-    spawners: Vec<Box<dyn Fn() -> Box<dyn CanvasToolFunction> + Send + Sync>>,
+pub struct ToolFunctionRegistry {
+    spawners: Vec<Box<dyn Fn() -> Box<dyn ToolFunction> + Send + Sync>>,
 }
 
-impl CanvasToolFunctionRegistry {
-    pub fn register<T: CanvasToolFunction + Default>(&mut self) {
+impl ToolFunctionRegistry {
+    pub fn register<T: ToolFunction + Default>(&mut self) {
         self.spawners.push(Box::new(|| Box::new(T::default())));
     }
 
-    pub fn create(&self) -> Vec<Box<dyn CanvasToolFunction>> {
+    pub fn create(&self) -> Vec<Box<dyn ToolFunction>> {
         self.spawners.iter().map(|spawner| spawner()).collect()
     }
 }
 
-impl Service for CanvasToolFunctionRegistry {}
+impl Service for ToolFunctionRegistry {}
 
 struct ToolProxyState {
-    last: CanvasToolId,
-    current: CanvasToolId,
+    last: ToolId,
+    current: ToolId,
     last_switch: Instant,
 }
 
 pub struct ToolProxy {
     state: ToolProxyState,
-    tools: HashMap<CanvasToolId, Box<dyn CanvasToolFunction>>,
+    tools: HashMap<ToolId, Box<dyn ToolFunction>>,
 }
 
 impl ToolProxy {
-    pub fn new(initial: CanvasToolId, collection: &CanvasToolFunctionRegistry) -> Self {
+    pub fn new(initial: ToolId, collection: &ToolFunctionRegistry) -> Self {
         Self {
             state: ToolProxyState {
                 last: initial.clone(),
@@ -108,9 +98,9 @@ impl ToolProxy {
         }
     }
 
-    pub fn switch_tool(&mut self, tool: CanvasToolId, canvas: &CCanvas) {
+    pub fn switch_tool(&mut self, tool: ToolId, services: &Services) {
         if let Some(current_tool) = self.tools.get_mut(&self.state.current) {
-            current_tool.deactivate(canvas);
+            current_tool.deactivate(services);
         }
 
         self.state.last = self.state.current.clone();
@@ -118,7 +108,7 @@ impl ToolProxy {
         self.state.last_switch = Instant::now();
 
         if let Some(new_tool) = self.tools.get_mut(&self.state.current) {
-            new_tool.activate(canvas);
+            new_tool.activate(services);
         }
     }
 
@@ -126,10 +116,10 @@ impl ToolProxy {
         &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
-        canvas: &CCanvas,
+        services: &Services,
     ) {
         if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.begin(keyboard, mouse, canvas);
+            tool.begin(keyboard, mouse, services);
         }
     }
 
@@ -137,10 +127,10 @@ impl ToolProxy {
         &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
-        canvas: &CCanvas,
+        services: &Services,
     ) {
         if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.update(keyboard, mouse, canvas);
+            tool.update(keyboard, mouse, services);
         }
     }
 
@@ -148,10 +138,10 @@ impl ToolProxy {
         &mut self,
         keyboard: &KeyboardState,
         mouse: &HoverMouseState,
-        canvas: &CCanvas,
+        services: &Services,
     ) {
         if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.hover(keyboard, mouse, canvas);
+            tool.hover(keyboard, mouse, services);
         }
     }
 
@@ -159,35 +149,43 @@ impl ToolProxy {
         &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
-        canvas: &CCanvas,
+        services: &Services,
     ) {
         if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.end(keyboard, mouse, canvas);
+            tool.end(keyboard, mouse, services);
         }
     }
 }
 
-#[derive(Default)]
-pub struct CanvasToolProxies {
-    proxies: HashMap<CanvasId, ToolProxy>,
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq,Hash)]
+    pub ToolProxyId : Uuid
 }
 
-impl Service for CanvasToolProxies {}
+#[derive(Default)]
+pub struct ToolProxies {
+    proxies: HashMap<ToolProxyId, ToolProxy>,
+}
 
-impl CanvasToolProxies {
-    pub fn get(&self, canvas_id: &CanvasId) -> &ToolProxy {
-        self.proxies.get(canvas_id).unwrap()
+impl Service for ToolProxies {}
+
+impl ToolProxies {
+    pub fn get(&self, id: &ToolProxyId) -> &ToolProxy {
+        self.proxies.get(id).unwrap()
     }
 
-    pub fn get_mut(&mut self, canvas_id: &CanvasId) -> &mut ToolProxy {
-        self.proxies.get_mut(canvas_id).unwrap()
+    pub fn get_mut(&mut self, id: &ToolProxyId) -> &mut ToolProxy {
+        self.proxies.get_mut(id).unwrap()
     }
 
-    pub fn add(&mut self, canvas_id: &CanvasId, collection: &CanvasToolFunctionRegistry) {
+    pub fn add(&mut self, collection: &ToolFunctionRegistry) -> ToolProxyId {
+        let id = ToolProxyId::new(Uuid::new_v4());
         self.proxies.insert(
-            *canvas_id,
+            id,
             // TODO don't hard code this
-            ToolProxy::new(CanvasToolId::new("pan_tool".into()), collection),
+            ToolProxy::new(ToolId::new("pan_tool".into()), collection),
         );
+
+        id
     }
 }

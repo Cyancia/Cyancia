@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use cyancia_canvas::CanvasManager;
 use cyancia_input::action::{Action, ActionId};
 use cyancia_runtime::Services;
-use cyancia_tools::{CanvasTool, CanvasToolId, CanvasToolProxies};
+use cyancia_tools::{Tool, ToolId, ToolProxies};
 
-use crate::{ActionFunction};
+use crate::ActionFunction;
 
 pub trait CanvasToolAction: Send + Sync + 'static {
     fn action() -> ActionId;
-    fn tool() -> CanvasToolId;
+    fn tool() -> ToolId;
 }
 
 macro_rules! canvas_tool_action {
@@ -21,8 +21,8 @@ macro_rules! canvas_tool_action {
             fn action() -> ActionId {
                 ActionId::new($action.into())
             }
-            fn tool() -> CanvasToolId {
-                CanvasToolId::new($tool.into())
+            fn tool() -> ToolId {
+                ToolId::new($tool.into())
             }
         }
     };
@@ -54,12 +54,12 @@ impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
 
     async fn trigger(&self, services: Arc<Services>) {
         let canvases = services.service::<CanvasManager>();
-        let (Some(canvas_id), Some(canvas)) = (canvases.current_id(), canvases.current()) else {
+        let Some(canvas) = canvases.current() else {
             return;
         };
 
-        let mut tool_proxies = services.service_mut::<CanvasToolProxies>();
-        let tool_proxy = tool_proxies.get_mut(&canvas_id);
-        tool_proxy.switch_tool(T::tool(), &canvas);
+        let mut tool_proxies = services.service_mut::<ToolProxies>();
+        let tool_proxy = tool_proxies.get_mut(&canvas.tool_proxy_id);
+        tool_proxy.switch_tool(T::tool(), &services);
     }
 }

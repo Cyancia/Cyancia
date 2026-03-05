@@ -11,7 +11,7 @@ use cyancia_input::{
     key::KeySequence,
 };
 use cyancia_runtime::{Services, service::FromRuntime};
-use cyancia_tools::{CanvasToolFunctionRegistry, CanvasToolProxies};
+use cyancia_tools::{ToolFunctionRegistry, ToolProxies};
 use glam::UVec2;
 use iced_runtime::Task;
 use rfd::{AsyncFileDialog, FileDialog};
@@ -46,16 +46,16 @@ impl ActionFunction for OpenFileAction {
         let width = img.width();
         let height = img.height();
         let layer = Layer::from_image(img, services.service::<GpuTileStorage>().as_ref());
+        let tool_proxy_id = services
+            .service_mut::<ToolProxies>()
+            .add(&services.service::<ToolFunctionRegistry>());
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
+            tool_proxy_id,
             image: Arc::new(CImage::from_layer(UVec2::new(width, height), layer)),
             transform: Default::default(),
         };
 
-        services.service_mut::<CanvasToolProxies>().add(
-            &canvas.id,
-            &services.service::<CanvasToolFunctionRegistry>(),
-        );
         services
             .service_mut::<CanvasRenderers>()
             .insert(canvas.id, CanvasRenderer::from_runtime(&services));

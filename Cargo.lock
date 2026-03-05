@@ -1275,6 +1275,7 @@ dependencies = [
  "cyancia_render",
  "cyancia_runtime",
  "cyancia_shader_graph",
+ "cyancia_tools",
  "encase",
  "glam 0.30.10",
  "iced_core",
@@ -1304,9 +1305,11 @@ dependencies = [
  "bytemuck",
  "cyancia_assets",
  "cyancia_image",
+ "cyancia_input",
  "cyancia_math",
  "cyancia_render",
  "cyancia_runtime",
+ "cyancia_tools",
  "cyancia_utils",
  "encase",
  "glam 0.30.10",
@@ -1447,7 +1450,6 @@ dependencies = [
 name = "cyancia_tools"
 version = "0.1.0"
 dependencies = [
- "cyancia_canvas",
  "cyancia_input",
  "cyancia_math",
  "cyancia_runtime",
@@ -1455,6 +1457,7 @@ dependencies = [
  "glam 0.30.10",
  "iced_core",
  "parking_lot",
+ "uuid",
 ]
 
 [[package]]

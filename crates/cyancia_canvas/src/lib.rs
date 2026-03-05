@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use cyancia_image::CImage;
 use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::Service};
+use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_utils::wrapper;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -10,11 +11,13 @@ use uuid::Uuid;
 use crate::{
     control::CanvasTransform,
     render::{CanvasRenderer, CanvasRenderers},
+    tools::{PanTool, RotateTool, ZoomTool},
 };
 
 pub mod control;
 pub mod render;
 pub mod resource;
+pub mod tools;
 pub mod widget;
 
 wrapper! {
@@ -25,6 +28,7 @@ wrapper! {
 #[derive(Debug)]
 pub struct CCanvas {
     pub id: CanvasId,
+    pub tool_proxy_id: ToolProxyId,
     pub image: Arc<CImage>,
     pub transform: RwLock<CanvasTransform>,
 }
@@ -34,7 +38,10 @@ pub struct CanvasPlugin;
 impl Plugin for CanvasPlugin {
     fn build(&self, app: &mut Application) {
         app.add_service::<CanvasRenderers>()
-            .add_service::<CanvasManager>();
+            .add_service::<CanvasManager>()
+            .add_tool_function::<PanTool>()
+            .add_tool_function::<RotateTool>()
+            .add_tool_function::<ZoomTool>();
     }
 }
 
