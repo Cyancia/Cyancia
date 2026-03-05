@@ -39,8 +39,6 @@ use crate::render::graph::generate_brush_shader;
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
     pub main_graph: SerializableGraph,
-    pub textures: Vec<Image>,
-    pub functions: Vec<SerializableGraph>,
     pub external_vars: HashMap<ExternalVariableId, SerializableExternalLiteral>,
 }
 
@@ -78,42 +76,11 @@ impl AssetSerializer for BrushPresetSerializer {
     }
 
     // TODO: Final .cbp file definition.
+    // TODO: Support embedded textures and shader graph functions.
     fn read(&self, reader: &mut dyn Read) -> Result<Self::Asset, Self::Error> {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
         let mut archive = ZipArchive::new(std::io::Cursor::new(buf))?;
-
-        let mut textures = Vec::new();
-        let mut functions = Vec::new();
-
-        for path_str in archive.file_names() {
-            let path = Path::new(path_str);
-            if path.starts_with("textures") && path.is_file() {
-                textures.push(path_str.to_string());
-            }
-            if path.starts_with("functions") && path.is_file() {
-                functions.push(path_str.to_string());
-            }
-        }
-
-        let textures = textures
-            .into_iter()
-            .map(|path| {
-                let mut data = Vec::new();
-                archive.by_name(&path)?.read_to_end(&mut data)?;
-                Ok(ImageSerializer.read(&mut Cursor::new(data))?)
-            })
-            .collect::<Result<Vec<_>, Self::Error>>()?;
-
-        let functions = functions
-            .into_iter()
-            .map(|path| {
-                let mut buffer = String::new();
-                archive.by_name(&path)?.read_to_string(&mut buffer)?;
-                let graph = toml::from_str::<SerializableGraph>(&buffer)?;
-                Ok(graph)
-            })
-            .collect::<Result<Vec<_>, Self::Error>>()?;
 
         let mut main_graph_buffer = String::new();
         archive
@@ -137,8 +104,6 @@ impl AssetSerializer for BrushPresetSerializer {
         Ok(BrushPreset {
             metadata,
             main_graph,
-            textures,
-            functions,
             external_vars,
         })
     }
@@ -241,7 +206,6 @@ impl AssetSerializer for ImageSerializer {
 pub struct BrushPresetInstance {
     metadata: BrushPresetMetadata,
     main_graph: Graph,
-    functions: Vec<Graph>,
     external_vars: Arc<ExternalVariableStorage>,
     referenced_textures: IndexSet<AssetHandle<Image>>,
     dirty_texture_variables: bool,
@@ -250,8 +214,7 @@ pub struct BrushPresetInstance {
 impl BrushPresetInstance {
     pub fn from_asset(
         preset: &BrushPreset,
-        mut main_storage: GraphDynamicInstancesStorage,
-        function_storage: GraphDynamicInstancesStorage,
+        mut main_graph_storage: GraphDynamicInstancesStorage,
         asset_registry: &AssetRegistry,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let external_vars = preset
@@ -261,7 +224,7 @@ impl BrushPresetInstance {
                 // TODO Err handling
                 (
                     id.clone(),
-                    Arc::new(var.deserialize(&main_storage).unwrap()),
+                    Arc::new(var.deserialize(&main_graph_storage).unwrap()),
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -277,13 +240,13 @@ impl BrushPresetInstance {
         }
 
         let external_vars = Arc::new(ExternalVariableStorage::from_hashmap(external_vars));
-        main_storage
+        main_graph_storage
             .nodes
             .register_non_default(ExternalNode::new(external_vars.clone()));
 
         let mut errors = Vec::new();
         let main_graph = {
-            let (g, e) = Graph::from_serialized(Arc::new(main_storage), preset.main_graph.clone());
+            let (g, e) = Graph::from_serialized(Arc::new(main_graph_storage), &preset.main_graph);
             errors.extend(e);
             match g {
                 Some(g) => g,
@@ -291,21 +254,10 @@ impl BrushPresetInstance {
             }
         };
 
-        let mut functions = Vec::with_capacity(preset.functions.len());
-        for function in &preset.functions {
-            let (f, e) =
-                Graph::from_serialized(Arc::new(function_storage.clone()), function.clone());
-            if let Some(f) = f {
-                functions.push(f);
-            }
-            errors.extend(e);
-        }
-
         (
             Some(Self {
                 metadata: preset.metadata.clone(),
                 main_graph,
-                functions,
                 external_vars,
                 referenced_textures,
                 dirty_texture_variables: false,

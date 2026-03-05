@@ -1422,6 +1422,7 @@ name = "cyancia_shader_graph"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cyancia_assets",
  "cyancia_utils",
  "cyancia_widgets",
  "downcast-rs 2.0.2",
@@ -1434,6 +1435,7 @@ dependencies = [
  "indexmap",
  "log",
  "parking_lot",
+ "parse-display",
  "serde",
  "thiserror 2.0.18",
  "toml",

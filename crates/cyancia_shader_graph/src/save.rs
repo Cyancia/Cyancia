@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use cyancia_assets::asset::Asset;
 use serde::{Deserialize, Serialize};
 use toml::ser::Buffer;
 
@@ -10,7 +11,11 @@ use crate::{
     GraphSerializer,
     graph::{
         Graph, GraphDynamicInstancesStorage, GraphSignature,
-        node::{GraphNodeData, GraphNodeId, StatefulGraphNode, external::ExternalVariable},
+        node::{
+            GraphNodeData, GraphNodeId, StatefulGraphNode,
+            external::ExternalVariable,
+            function::{GraphFunction, GraphFunctionId},
+        },
         slot::{
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
             GraphSlots,
@@ -109,12 +114,12 @@ impl Graph {
             }
         };
 
-        Self::from_serialized(storage, sg)
+        Self::from_serialized(storage, &sg)
     }
 
     pub fn from_serialized(
         storage: Arc<GraphDynamicInstancesStorage>,
-        serialized: SerializableGraph,
+        serialized: &SerializableGraph,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let SerializableGraph {
             nodes,
@@ -138,7 +143,7 @@ impl Graph {
             };
 
             let mut node = StatefulGraphNode::new(node_inst);
-            match node.deserialize_state(ser_node.state, &storage) {
+            match node.deserialize_state(ser_node.state.clone(), &storage) {
                 Ok(_) => {}
                 Err(e) => {
                     errs.push(GraphDeserializeError::NodeStateDeserializeError(e));
@@ -227,8 +232,8 @@ impl Graph {
                 GraphNodeData {
                     position: ser_node.position.into(),
                     data: node,
-                    inputs: ser_node.inputs,
-                    outputs: ser_node.outputs,
+                    inputs: ser_node.inputs.clone(),
+                    outputs: ser_node.outputs.clone(),
                 },
             );
             graph_inputs.extend(node_inputs);
@@ -412,4 +417,30 @@ impl SerializableExternalLiteral {
             value: self.value.deserialize(storage)?,
         })
     }
+}
+
+pub struct SerializableGraphFunction {
+    pub id: GraphFunctionId,
+    pub name: String,
+    pub graph: SerializableGraph,
+}
+
+impl SerializableGraphFunction {
+    pub fn deserialize(
+        &self,
+        storage: Arc<GraphDynamicInstancesStorage>,
+    ) -> (Option<GraphFunction>, Vec<GraphDeserializeError>) {
+        let (maybe_graph, err) = Graph::from_serialized(storage, &self.graph);
+
+        let func = maybe_graph.map(|graph| GraphFunction {
+            name: self.name.clone(),
+            graph,
+        });
+
+        (func, err)
+    }
+}
+
+impl Asset for SerializableGraphFunction {
+    const TYPE_NAME: &'static str = "shader_graph_function";
 }

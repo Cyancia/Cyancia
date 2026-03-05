@@ -12,13 +12,14 @@ use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
     graph::{
-        Graph, GraphDynamicInstancesStorage,
+        Graph, GraphDynamicInstancesStorage, GraphFunctionsStorage,
         node::{
-            external::{ExternalVariable, ExternalVariableId, ExternalNode},
-            function::functioning,
+            external::{ExternalNode, ExternalVariable, ExternalVariableId},
+            function::{GraphFunctionNode, functioning},
         },
         variable::GraphLiteral,
     },
+    save::SerializableGraphFunction,
     wgsl_std::std_storage,
 };
 use iced_core::{
@@ -45,7 +46,8 @@ pub struct SelectedBrush {
 pub struct BrushEditorView {
     input_manager: InputManager,
     main_graph_storage: GraphDynamicInstancesStorage,
-    function_graph_storage: GraphDynamicInstancesStorage,
+    function_graph_storage: Arc<GraphDynamicInstancesStorage>,
+    function_storage: Arc<GraphFunctionsStorage>,
     selected: Option<SelectedBrush>,
 
     create_new_name: String,
@@ -54,17 +56,37 @@ pub struct BrushEditorView {
 
 impl FromRuntime for BrushEditorView {
     fn from_runtime(runtime: &Services) -> Self {
+        let function_graph_storage = {
+            // TODO: Support using function inside function.
+            let mut storage = GraphDynamicInstancesStorage::default();
+            storage.merge(std_storage());
+            storage.merge(functioning());
+            Arc::new(storage)
+        };
+
+        let functions = runtime
+            .service::<AssetRegistry>()
+            .all_handles_of::<SerializableGraphFunction>()
+            .unwrap()
+            .into_iter()
+            .map(|handle| {
+                let func = handle.get().unwrap();
+                // TODO err handling
+                (
+                    func.id,
+                    func.deserialize(function_graph_storage.clone()).0.unwrap(),
+                )
+            })
+            .collect();
+        let function_storage = Arc::new(GraphFunctionsStorage::new(functions));
+
         let main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
             storage.merge(brush_graph_storage());
             storage
-        };
-
-        let function_graph_storage = {
-            let mut storage = GraphDynamicInstancesStorage::default();
-            storage.merge(std_storage());
-            storage.merge(functioning());
+                .nodes
+                .register_non_default(GraphFunctionNode::new(function_storage.clone()));
             storage
         };
 
@@ -82,6 +104,7 @@ impl FromRuntime for BrushEditorView {
             selected: None,
             main_graph_storage,
             function_graph_storage,
+            function_storage,
 
             create_new_name: String::new(),
             create_new_type: None,
@@ -130,6 +153,8 @@ impl WindowView for BrushEditorView {
                 Element::new(GraphView::new(&brush.instance.main_graph()))
                     .map(BrushEditorMessage::GraphView),
             );
+            // TODO: External var browser may not be placed in editor. They're modifiable values for the user.
+            //       For example the brush size and opacity.
             editor = editor.push(
                 external_var_view(
                     brush.instance.external_vars(),
@@ -221,7 +246,6 @@ impl WindowView for BrushEditorView {
                 let (instance, errors) = BrushPresetInstance::from_asset(
                     &brush.get().unwrap(),
                     self.main_graph_storage.clone(),
-                    self.function_graph_storage.clone(),
                     runtime.service::<AssetRegistry>().as_ref(),
                 );
 

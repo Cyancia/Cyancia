@@ -6,10 +6,14 @@ use std::{
     },
 };
 
+use cyancia_assets::asset::Asset;
+use cyancia_utils::wrapper;
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, pick_list, space, text_input};
 use parking_lot::{RwLock, RwLockReadGuard};
+use parse_display::Display;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     GraphRenderer, GraphTheme,
@@ -25,7 +29,7 @@ use crate::{
             GraphDefaultOutputSlot,
         },
     },
-    save::GraphSerializable,
+    save::{GraphDeserializeError, GraphSerializable, SerializableGraph},
 };
 
 pub fn functioning() -> GraphDynamicInstancesStorage {
@@ -39,6 +43,11 @@ pub fn functioning() -> GraphDynamicInstancesStorage {
 
 static UNIQUE_COUNTER: AtomicU32 = AtomicU32::new(0);
 
+pub struct GraphFunction {
+    pub name: String,
+    pub graph: Graph,
+}
+
 #[derive(Clone)]
 pub struct GraphFunctionNode {
     pub storage: Arc<GraphFunctionsStorage>,
@@ -50,14 +59,27 @@ impl GraphFunctionNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct GraphFunctionId {
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+    #[display("{0}")]
+    pub GraphFunctionId : Uuid
+}
+
+#[derive(Clone)]
+pub struct GraphFunctionReference {
+    pub id: GraphFunctionId,
     pub name: String,
 }
 
-impl ToString for GraphFunctionId {
+impl ToString for GraphFunctionReference {
     fn to_string(&self) -> String {
         self.name.clone()
+    }
+}
+
+impl PartialEq for GraphFunctionReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 
@@ -90,11 +112,12 @@ impl GraphNode for GraphFunctionNode {
     }
 
     fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
-        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+        let Some(func) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
             return Vec::new();
         };
 
-        let mut graph = graph.write();
+        let mut func = func.write();
+        let graph = &mut func.graph;
         if graph.signature().is_none() {
             graph.update_signature_cache();
         }
@@ -110,11 +133,12 @@ impl GraphNode for GraphFunctionNode {
     }
 
     fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
-        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+        let Some(func) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
             return Vec::new();
         };
 
-        let mut graph = graph.write();
+        let mut func = func.write();
+        let graph = &mut func.graph;
         if graph.signature().is_none() {
             graph.update_signature_cache();
         }
@@ -132,16 +156,34 @@ impl GraphNode for GraphFunctionNode {
         state: &Self::State,
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        let column = column![pick_list(
-            self.storage.all().keys().cloned().collect::<Vec<_>>(),
-            state.id.clone(),
-            GraphFunctionNodeMessage::FunctionChanged,
-        )];
-        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+        let all_refs = self
+            .storage
+            .all()
+            .iter()
+            .map(|(id, graph)| GraphFunctionReference {
+                id: id.clone(),
+                name: graph.read().name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let cur_ref = state.id.as_ref().and_then(|id| {
+            self.storage.get(id).map(|f| {
+                let graph = f.read();
+                GraphFunctionReference {
+                    id: id.clone(),
+                    name: graph.name.clone(),
+                }
+            })
+        });
+
+        let column = column![pick_list(all_refs, cur_ref, |r| {
+            GraphFunctionNodeMessage::FunctionChanged(r.id)
+        },)];
+        let Some(func) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
             return column.into();
         };
 
-        let mut graph = graph.write();
+        let mut func = func.write();
+        let graph = &mut func.graph;
         if graph.signature().is_none() {
             graph.update_signature_cache();
         }
@@ -163,11 +205,12 @@ impl GraphNode for GraphFunctionNode {
         state: &Self::State,
         ctx: GraphNodeOutputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        let Some(graph) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
+        let Some(func) = state.id.as_ref().and_then(|id| self.storage.get(id)) else {
             return space().into();
         };
 
-        let mut graph = graph.write();
+        let mut func = func.write();
+        let graph = &mut func.graph;
         if graph.signature().is_none() {
             graph.update_signature_cache();
         }
@@ -197,7 +240,7 @@ impl GraphNode for GraphFunctionNode {
         let Some(id) = state.id.as_ref() else {
             return Ok(Default::default());
         };
-        let Some(graph) = self.storage.get(id) else {
+        let Some(func) = self.storage.get(id) else {
             return Ok(Default::default());
         };
 
@@ -209,13 +252,14 @@ impl GraphNode for GraphFunctionNode {
             },
         )?;
 
-        let mut graph = graph.write();
-        let (output_idents, code) = graph
+        let mut func = func.write();
+        let (output_idents, code) = func
+            .graph
             .compile(
                 input_idents,
                 GraphVarIdentGenerator::new(format!(
                     "{}_{}",
-                    id.name,
+                    id,
                     UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed)
                 )),
             )

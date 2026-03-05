@@ -158,6 +158,8 @@ impl GraphNode for ExternalNode {
             .to_code()
             .ok_or(anyhow!("Cannot convert literal to code"))?;
         let output = ctx.get_output(0)?;
+        // TODO: Use uniform buffer to transfer external variables into shader.
+        //       For current architecture, everytime user modifies them, the whole shader needs to be recompiled.
         Ok(format!("let {} = {};\n", output, code))
     }
 

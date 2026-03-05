@@ -12,7 +12,8 @@ use crate::graph::{
     node::{
         ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
         GraphNodeCodeGenContext, GraphNodeData, GraphNodeId, GraphNodeUpdateSignatureContext,
-        GraphNodesStorage, StatefulGraphNode, function::GraphFunctionId,
+        GraphNodesStorage, StatefulGraphNode,
+        function::{GraphFunction, GraphFunctionId},
     },
     slot::{
         ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData,
@@ -558,22 +559,40 @@ impl GraphDynamicInstancesStorage {
 
 #[derive(Default)]
 pub struct GraphFunctionsStorage {
-    functions: RwLock<HashMap<GraphFunctionId, Arc<RwLock<Graph>>>>,
+    functions: RwLock<HashMap<GraphFunctionId, Arc<RwLock<GraphFunction>>>>,
+    modified: RwLock<HashSet<GraphFunctionId>>,
 }
 
 impl GraphFunctionsStorage {
-    pub fn insert(&self, id: GraphFunctionId, graph: Graph) {
+    pub fn new(functions: HashMap<GraphFunctionId, GraphFunction>) -> Self {
+        Self {
+            functions: RwLock::new(
+                functions
+                    .into_iter()
+                    .map(|(id, graph)| (id, Arc::new(RwLock::new(graph))))
+                    .collect(),
+            ),
+            modified: RwLock::new(HashSet::new()),
+        }
+    }
+
+    pub fn insert(&self, id: GraphFunctionId, graph: GraphFunction) {
         self.functions
             .write()
             .insert(id, Arc::new(RwLock::new(graph)));
+        self.modified.write().insert(id);
     }
 
-    pub fn get(&self, id: &GraphFunctionId) -> Option<Arc<RwLock<Graph>>> {
+    pub fn get(&self, id: &GraphFunctionId) -> Option<Arc<RwLock<GraphFunction>>> {
         self.functions.read().get(id).cloned()
     }
 
-    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<GraphFunctionId, Arc<RwLock<Graph>>>> {
+    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<GraphFunctionId, Arc<RwLock<GraphFunction>>>> {
         self.functions.read()
+    }
+
+    pub fn all_modified(&self) -> RwLockReadGuard<'_, HashSet<GraphFunctionId>> {
+        self.modified.read()
     }
 }
 

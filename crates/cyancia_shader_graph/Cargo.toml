@@ -21,3 +21,5 @@ toml.workspace = true
 downcast-rs.workspace = true
 glam.workspace = true
 parking_lot.workspace = true
+cyancia_assets.workspace = true
+parse-display.workspace = true
