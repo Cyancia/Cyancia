@@ -20,7 +20,7 @@ use cyancia_shader_graph::{
         variable::GraphLiteral,
     },
     save::{
-        GraphDeserializeError, GraphSerializable, SerializableExternalLiteral, SerializableGraph,
+        GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
         SerializableGraphLiteral,
     },
     wgsl_std::nodes::{TextureNode, TextureStorage, TextureUsageRecorder},
@@ -42,7 +42,7 @@ use crate::render::graph::{GraphInputParams, generate_brush_shader};
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
     pub main_graph: SerializableGraph,
-    pub external_vars: HashMap<ExternalVariableId, SerializableExternalLiteral>,
+    pub external_vars: HashMap<ExternalVariableId, SerializableExternalVariable>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -101,7 +101,7 @@ impl AssetSerializer for BrushPresetSerializer {
         }
 
         let external_vars = toml::from_str::<
-            HashMap<ExternalVariableId, SerializableExternalLiteral>,
+            HashMap<ExternalVariableId, SerializableExternalVariable>,
         >(&external_vars_buffer)?;
 
         Ok(BrushPreset {
@@ -288,6 +288,27 @@ impl BrushPresetInstance {
             }),
             errors,
         )
+    }
+
+    pub fn as_asset(&self) -> anyhow::Result<BrushPreset> {
+        let main_graph = self.main_graph.as_serialized()?;
+        let external_vars = self
+            .external_vars
+            .all()
+            .iter()
+            .map(|(id, value)| {
+                Result::<_, toml::ser::Error>::Ok((
+                    *id,
+                    SerializableExternalVariable::serialize(value.as_ref())?,
+                ))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        Ok(BrushPreset {
+            metadata: self.metadata.clone(),
+            main_graph,
+            external_vars,
+        })
     }
 
     pub fn estimate_size(&self) -> UVec2 {

@@ -402,12 +402,12 @@ impl SerializableGraphLiteral {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct SerializableExternalLiteral {
+pub struct SerializableExternalVariable {
     pub name: String,
     pub value: SerializableGraphLiteral,
 }
 
-impl SerializableExternalLiteral {
+impl SerializableExternalVariable {
     pub fn deserialize(
         &self,
         storage: &GraphDynamicInstancesStorage,
@@ -415,6 +415,18 @@ impl SerializableExternalLiteral {
         Ok(ExternalVariable {
             name: self.name.clone(),
             value: self.value.deserialize(storage)?,
+        })
+    }
+
+    pub fn serialize(
+        var: &ExternalVariable,
+    ) -> Result<SerializableExternalVariable, toml::ser::Error> {
+        Ok(SerializableExternalVariable {
+            name: var.name.clone(),
+            value: SerializableGraphLiteral {
+                ty: var.value.ty().name().to_string(),
+                value: var.value.ty().serialize_literal(var.value.value())?,
+            },
         })
     }
 }

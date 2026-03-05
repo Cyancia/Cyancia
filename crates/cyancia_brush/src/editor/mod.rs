@@ -75,6 +75,7 @@ pub struct BrushEditorView {
 
     create_new_name: String,
     create_new_type: Option<&'static str>,
+    has_unsaved_changes: bool,
 }
 
 impl FromRuntime for BrushEditorView {
@@ -146,6 +147,7 @@ impl FromRuntime for BrushEditorView {
 
             create_new_name: String::new(),
             create_new_type: None,
+            has_unsaved_changes: false,
         }
     }
 }
@@ -215,8 +217,8 @@ impl WindowView for BrushEditorView {
             .spacing(2),
         ];
 
-        if let Some(brush) = &self.selected {
-            match brush {
+        if let Some(selected) = &self.selected {
+            match selected {
                 Selected::Brush(brush) => {
                     let graph = Element::new(GraphView::new(&brush.instance.main_graph()))
                         .map(BrushEditorMessage::GraphView);
@@ -230,12 +232,15 @@ impl WindowView for BrushEditorView {
                     )
                     .map(BrushEditorMessage::ExternalVarView);
 
+                    let title = if self.has_unsaved_changes {
+                        format!("{} *", brush.instance.metadata().name)
+                    } else {
+                        brush.instance.metadata().name.clone()
+                    };
+
                     editor = editor
                         .push(column![
-                            text(brush.instance.metadata().name.clone())
-                                .width(Length::Fill)
-                                .center()
-                                .size(30),
+                            text(title).width(Length::Fill).center().size(30),
                             graph,
                         ])
                         .push(ext_vars);
@@ -243,11 +248,15 @@ impl WindowView for BrushEditorView {
                 Selected::Function(func) => {
                     let graph = Element::new(GraphView::new(&func.instance.graph))
                         .map(BrushEditorMessage::GraphView);
+
+                    let title = if self.has_unsaved_changes {
+                        format!("{} *", func.instance.name)
+                    } else {
+                        func.instance.name.clone()
+                    };
+
                     editor = editor.push(column![
-                        text(func.instance.name.clone())
-                            .width(Length::Fill)
-                            .center()
-                            .size(30),
+                        text(title).width(Length::Fill).center().size(30),
                         graph,
                     ]);
                 }
@@ -281,6 +290,32 @@ impl WindowView for BrushEditorView {
                                 }
                             } else {
                                 println!("No brush graph to generate shader from.");
+                            }
+                        }
+                        if physical_key == key::Physical::Code(key::Code::KeyS)
+                            && modifiers.control()
+                        {
+                            if let Some(Selected::Brush(brush)) = &mut self.selected {
+                                let assets = runtime.service_mut::<AssetRegistry>();
+                                let handle = assets.handle(brush.id).unwrap();
+                                handle.update(brush.instance.as_asset().unwrap()).unwrap();
+                                self.has_unsaved_changes = false;
+
+                                let ctx = runtime.service::<RenderContext>();
+                                // TODO This is sooooo ugly
+                                runtime.insert_service(CurrentBrushPresetOperator::new(
+                                    BrushPresetOperator::new(
+                                        BrushPresetInstance::from_asset(
+                                            &handle.get().unwrap(),
+                                            self.main_graph_storage.clone(),
+                                            self.texture_storage.clone(),
+                                        )
+                                        .0
+                                        .unwrap(),
+                                        ctx.device.clone(),
+                                        ctx.queue.clone(),
+                                    ),
+                                ));
                             }
                         }
 
@@ -328,6 +363,7 @@ impl WindowView for BrushEditorView {
                         graph.update_node(message);
                     }
                 }
+                self.has_unsaved_changes = true;
 
                 // dbg!(self.texture_storage.used_textures());
             }
@@ -404,6 +440,7 @@ impl WindowView for BrushEditorView {
                         graph: Graph::new(self.function_graph_storage.clone()),
                     },
                 }));
+                self.has_unsaved_changes = true;
             }
             BrushEditorMessage::CreateNewBrushPreset => {
                 self.selected = Some(Selected::Brush(SelectedBrush {
@@ -416,6 +453,7 @@ impl WindowView for BrushEditorView {
                         self.texture_storage.clone(),
                     ),
                 }));
+                self.has_unsaved_changes = true;
             }
         }
 
