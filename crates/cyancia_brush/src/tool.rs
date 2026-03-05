@@ -1,7 +1,16 @@
-use cyancia_canvas::CCanvas;
+use cyancia_assets::store::AssetRegistry;
+use cyancia_canvas::{CCanvas, CanvasManager};
+use cyancia_image::tile::GpuTileStorage;
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
-use cyancia_runtime::Services;
+use cyancia_runtime::{Services, service::Service};
 use cyancia_tools::{ToolFunction, ToolId};
+use cyancia_utils::wrapper;
+use glam::Vec2;
+
+use crate::{
+    asset::BrushPresetInstance,
+    render::{BrushPresetOperator, graph::GraphInputParams},
+};
 
 #[derive(Default)]
 pub struct BrushTool;
@@ -12,6 +21,29 @@ impl ToolFunction for BrushTool {
     }
 
     fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
-        dbg!();
+        let Some(canvas) = services.service::<CanvasManager>().current() else {
+            return;
+        };
+        let Some(mut brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
+            log::error!("No current brush preset operator found.");
+            return;
+        };
+
+        let params = GraphInputParams {
+            pen_position: Vec2::new(mouse.position.x, mouse.position.y),
+        };
+        brush.prepare(
+            params,
+            canvas.image.root().id(),
+            services.service::<GpuTileStorage>().as_ref(),
+            services.service::<AssetRegistry>().as_ref(),
+        );
+        brush.draw();
     }
 }
+
+wrapper! {
+    pub mut CurrentBrushPresetOperator : BrushPresetOperator
+}
+
+impl Service for CurrentBrushPresetOperator {}

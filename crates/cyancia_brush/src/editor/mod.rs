@@ -41,7 +41,11 @@ use wgpu::{Device, Queue};
 use crate::{
     asset::{BrushPreset, BrushPresetInstance, BrushPresetMetadata, GpuImage, Image},
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
-    render::graph::{brush_graph_storage, generate_brush_shader},
+    render::{
+        BrushPresetOperator,
+        graph::{brush_graph_storage, generate_brush_shader},
+    },
+    tool::CurrentBrushPresetOperator,
 };
 
 pub struct SelectedBrush {
@@ -63,9 +67,10 @@ pub struct BrushEditorView {
     input_manager: InputManager,
     main_graph_storage: GraphDynamicInstancesStorage,
     function_graph_storage: Arc<GraphDynamicInstancesStorage>,
+    texture_storage: Arc<TextureStorage>,
+
     function_storage: Arc<GraphFunctionsStorage>,
     function_id_to_asset: HashMap<GraphFunctionId, AssetHandle<SerializableGraphFunction>>,
-    texture_usage_recorder: Arc<TextureUsageRecorder>,
     selected: Option<Selected>,
 
     create_new_name: String,
@@ -103,7 +108,6 @@ impl FromRuntime for BrushEditorView {
             .map(|handle| (handle.get().unwrap().id, handle))
             .collect();
 
-        let recorder = Arc::new(TextureUsageRecorder::default());
         // TODO: Update this storage when asset changes.
         let textures = runtime
             .service::<AssetRegistry>()
@@ -124,9 +128,6 @@ impl FromRuntime for BrushEditorView {
                 .nodes
                 .register_non_default(GraphFunctionNode::new(function_storage.clone()));
             storage
-                .nodes
-                .register_non_default(TextureNode::new(texture_storage, recorder.clone()));
-            storage
         };
 
         let actions = runtime
@@ -138,10 +139,10 @@ impl FromRuntime for BrushEditorView {
 
             selected: None,
             main_graph_storage,
+            texture_storage,
             function_graph_storage,
             function_storage,
             function_id_to_asset,
-            texture_usage_recorder: recorder,
 
             create_new_name: String::new(),
             create_new_type: None,
@@ -274,9 +275,8 @@ impl WindowView for BrushEditorView {
                             && modifiers.control()
                         {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
-                                self.texture_usage_recorder.reset();
                                 match brush.instance.compile() {
-                                    Ok(shader) => println!("Generated shader:\n{}", shader),
+                                    Ok((shader, _)) => println!("Generated shader:\n{}", shader),
                                     Err(e) => println!("Failed to generate shader: {:?}", e),
                                 }
                             } else {
@@ -339,6 +339,7 @@ impl WindowView for BrushEditorView {
                 let (instance, errors) = BrushPresetInstance::from_asset(
                     &brush.get().unwrap(),
                     self.main_graph_storage.clone(),
+                    self.texture_storage.clone(),
                 );
 
                 if let Some(instance) = instance {
@@ -346,6 +347,22 @@ impl WindowView for BrushEditorView {
                         id: brush_id,
                         instance,
                     }));
+
+                    let ctx = runtime.service::<RenderContext>();
+                    // TODO This is sooooo ugly
+                    runtime.insert_service(CurrentBrushPresetOperator::new(
+                        BrushPresetOperator::new(
+                            BrushPresetInstance::from_asset(
+                                &brush.get().unwrap(),
+                                self.main_graph_storage.clone(),
+                                self.texture_storage.clone(),
+                            )
+                            .0
+                            .unwrap(),
+                            ctx.device.clone(),
+                            ctx.queue.clone(),
+                        ),
+                    ));
                 }
 
                 if !errors.is_empty() {
@@ -395,7 +412,8 @@ impl WindowView for BrushEditorView {
                         BrushPresetMetadata {
                             name: "[Unnamed Brush]".to_string(),
                         },
-                        Arc::new(self.main_graph_storage.clone()),
+                        self.main_graph_storage.clone(),
+                        self.texture_storage.clone(),
                     ),
                 }));
             }

@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use bevy_math::IRect;
 use cyancia_assets::{
     asset::{Asset, AssetHandle, AssetId},
     loader::AssetSerializer,
@@ -22,8 +23,9 @@ use cyancia_shader_graph::{
         GraphDeserializeError, GraphSerializable, SerializableExternalLiteral, SerializableGraph,
         SerializableGraphLiteral,
     },
+    wgsl_std::nodes::{TextureNode, TextureStorage, TextureUsageRecorder},
 };
-use glam::UVec2;
+use glam::{IVec2, UVec2};
 use image::{DynamicImage, ImageFormat};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
@@ -35,7 +37,7 @@ use wgpu::{
 };
 use zip::ZipArchive;
 
-use crate::render::graph::generate_brush_shader;
+use crate::render::graph::{GraphInputParams, generate_brush_shader};
 
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
@@ -208,16 +210,33 @@ pub struct BrushPresetInstance {
     metadata: BrushPresetMetadata,
     main_graph: Graph,
     external_vars: Arc<ExternalVariableStorage>,
+
+    main_graph_storage: Arc<GraphDynamicInstancesStorage>,
+    texture_usage_recorder: Arc<TextureUsageRecorder>,
 }
 
 impl BrushPresetInstance {
     pub fn new(
         metadata: BrushPresetMetadata,
-        main_graph_storage: Arc<GraphDynamicInstancesStorage>,
+        mut main_graph_storage: GraphDynamicInstancesStorage,
+        texture_storage: Arc<TextureStorage>,
     ) -> Self {
+        let external_vars = Arc::new(ExternalVariableStorage::default());
+        let texture_usage_recorder = Arc::new(TextureUsageRecorder::default());
+
+        register_extra_nodes(
+            &mut main_graph_storage,
+            external_vars.clone(),
+            texture_storage,
+            texture_usage_recorder.clone(),
+        );
+        let main_graph_storage = Arc::new(main_graph_storage);
+
         Self {
             metadata,
-            main_graph: Graph::new(main_graph_storage),
+            main_graph: Graph::new(main_graph_storage.clone()),
+            main_graph_storage,
+            texture_usage_recorder,
             external_vars: Arc::new(ExternalVariableStorage::default()),
         }
     }
@@ -225,6 +244,7 @@ impl BrushPresetInstance {
     pub fn from_asset(
         preset: &BrushPreset,
         mut main_graph_storage: GraphDynamicInstancesStorage,
+        texture_storage: Arc<TextureStorage>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let external_vars = preset
             .external_vars
@@ -239,13 +259,18 @@ impl BrushPresetInstance {
             .collect::<HashMap<_, _>>();
 
         let external_vars = Arc::new(ExternalVariableStorage::from_hashmap(external_vars));
-        main_graph_storage
-            .nodes
-            .register_non_default(ExternalNode::new(external_vars.clone()));
+        let texture_usage_recorder = Arc::new(TextureUsageRecorder::default());
+        register_extra_nodes(
+            &mut main_graph_storage,
+            external_vars.clone(),
+            texture_storage.clone(),
+            texture_usage_recorder.clone(),
+        );
 
+        let main_graph_storage = Arc::new(main_graph_storage);
         let mut errors = Vec::new();
         let main_graph = {
-            let (g, e) = Graph::from_serialized(Arc::new(main_graph_storage), &preset.main_graph);
+            let (g, e) = Graph::from_serialized(main_graph_storage.clone(), &preset.main_graph);
             errors.extend(e);
             match g {
                 Some(g) => g,
@@ -258,6 +283,8 @@ impl BrushPresetInstance {
                 metadata: preset.metadata.clone(),
                 main_graph,
                 external_vars,
+                main_graph_storage,
+                texture_usage_recorder,
             }),
             errors,
         )
@@ -268,8 +295,15 @@ impl BrushPresetInstance {
         UVec2::splat(512)
     }
 
-    pub fn compile(&mut self) -> Result<String, anyhow::Error> {
-        generate_brush_shader(&mut self.main_graph)
+    pub fn estimate_area(&self, params: &GraphInputParams) -> IRect {
+        // TODO
+        IRect::from_center_half_size(params.pen_position.as_ivec2(), IVec2::splat(512))
+    }
+
+    pub fn compile(&mut self) -> Result<(String, Arc<TextureUsageRecorder>), anyhow::Error> {
+        self.texture_usage_recorder.reset();
+        let shader = generate_brush_shader(&mut self.main_graph)?;
+        Ok((shader, self.texture_usage_recorder.clone()))
     }
 
     pub fn main_graph(&self) -> &Graph {
@@ -289,6 +323,21 @@ impl BrushPresetInstance {
     }
 }
 
+fn register_extra_nodes(
+    storage: &mut GraphDynamicInstancesStorage,
+    external_vars: Arc<ExternalVariableStorage>,
+    texture_storage: Arc<TextureStorage>,
+    texture_usage_recorder: Arc<TextureUsageRecorder>,
+) {
+    storage
+        .nodes
+        .register_non_default(ExternalNode::new(external_vars));
+    storage
+        .nodes
+        .register_non_default(TextureNode::new(texture_storage, texture_usage_recorder));
+}
+
+#[derive(Debug, Clone)]
 pub struct GpuImage {
     pub texture: Texture,
 }

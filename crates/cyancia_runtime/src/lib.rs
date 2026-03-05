@@ -257,4 +257,24 @@ impl Services {
             .clone();
         ServiceMut::from_arc(arc)
     }
+
+    pub fn get_service<T: Service>(&self) -> Option<ServiceRef<T>> {
+        self.services
+            .read()
+            .get(&TypeId::of::<T>())
+            .map(|arc| ServiceRef::from_arc(arc.clone()))
+    }
+
+    pub fn get_service_mut<T: Service>(&self) -> Option<ServiceMut<T>> {
+        self.services
+            .read()
+            .get(&TypeId::of::<T>())
+            .map(|arc| ServiceMut::from_arc(arc.clone()))
+    }
+
+    pub fn insert_service<T: Service>(&self, service: T) {
+        self.services
+            .write()
+            .insert(TypeId::of::<T>(), Arc::new(RwLock::new(service)));
+    }
 }

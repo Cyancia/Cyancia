@@ -34,3 +34,5 @@ anyhow.workspace = true
 parking_lot.workspace = true
 cyancia_tools.workspace = true
 cyancia_canvas.workspace = true
+bevy_math.workspace = true
+cyancia_utils.workspace = true

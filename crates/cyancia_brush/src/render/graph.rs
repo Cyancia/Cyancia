@@ -109,7 +109,7 @@ impl StatelessCommonGraphNode for PixelPosition {
         &self,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!("let {} = id.xy;", ctx.get_output(0)?))
+        Ok(format!("let {} = vec2i(id.xy) + graph_input.shader_origin;", ctx.get_output(0)?))
     }
 }
 
@@ -147,12 +147,18 @@ impl StatelessCommonGraphNode for OutputPixelColor {
 
         Ok(format!(
             r#"
-            let {layer} = 0u;
-            let {coord} = vec2u(0u);
-            convert_pixel_to_tile(id.xy, &{layer}, &{coord});
-            textureStore(outputs[{layer}], {coord}, {});
+            textureStore(outputs[0], id.xy, vec4f(1.0));
             "#,
-            ctx.get_input(0)?
+            // ctx.get_input(0)?
         ))
+        // Ok(format!(
+        //     r#"
+        //     var {layer} = 0u;
+        //     var {coord} = vec2u(0u);
+        //     convert_pixel_to_tile(vec2i(id.xy) + graph_input.shader_origin, &{layer}, &{coord});
+        //     textureStore(outputs[{layer}], {coord}, {});
+        //     "#,
+        //     ctx.get_input(0)?
+        // ))
     }
 }

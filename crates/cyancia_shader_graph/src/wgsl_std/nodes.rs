@@ -733,7 +733,10 @@ impl TextureUsageRecorder {
     }
 
     pub fn reset(&self) {
-        self.inner.write().clear();
+        let mut inner = self.inner.write();
+        inner.clear();
+        // We will always have at lease an empty texture.
+        inner.insert(TextureId::NULL, 0);
     }
 
     pub fn get_usage(&self) -> RwLockReadGuard<'_, IndexMap<TextureId, u32>> {

@@ -1,16 +1,21 @@
 use std::{num::NonZeroU32, sync::Arc};
 
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
-use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner, Tile};
+use cyancia_image::{
+    layer::LayerId,
+    tile::{GpuTileStorage, GpuTileStorageInner, Tile},
+};
 use cyancia_render::buffer::DynamicBuffer;
-use cyancia_shader_graph::wgsl_std::nodes::TextureUsageRecorder;
+use cyancia_shader_graph::wgsl_std::nodes::{TextureId, TextureUsageRecorder};
 use encase::ShaderType;
-use glam::{UVec2, Vec2};
+use glam::{IVec2, UVec2, Vec2};
+use uuid::Uuid;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
-    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureFormat,
+    ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, PipelineLayoutDescriptor, Queue,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
     TextureView, TextureViewDimension, naga::StorageAccess,
 };
 
@@ -21,8 +26,40 @@ use crate::{
 
 pub mod graph;
 
+pub const BRUSH_RENDER_TARGET: LayerId =
+    LayerId::new(Uuid::from_u128(85004653408671049643065089641532));
+
+pub struct BrushPresetOperator {
+    instance: BrushPresetInstance,
+    renderer: BrushPresetRenderer,
+}
+
+impl BrushPresetOperator {
+    pub fn new(instance: BrushPresetInstance, device: Arc<Device>, queue: Arc<Queue>) -> Self {
+        let renderer = BrushPresetRenderer::new(device, queue);
+        Self { instance, renderer }
+    }
+
+    pub fn prepare(
+        &mut self,
+        params: GraphInputParams,
+        output_layer: LayerId,
+        tiles: &GpuTileStorage,
+        assets: &AssetRegistry,
+    ) {
+        self.renderer.initialize(&mut self.instance, assets);
+        self.renderer
+            .prepare(&mut self.instance, params, output_layer, tiles);
+    }
+
+    pub fn draw(&self) {
+        self.renderer.draw();
+    }
+}
+
 #[derive(ShaderType)]
 pub struct GraphInputUniform {
+    pub shader_origin: IVec2,
     pub estimated_brush_size: UVec2,
     pub pen_position: Vec2,
     pub tile_size: u32,
@@ -30,16 +67,17 @@ pub struct GraphInputUniform {
 
 #[derive(ShaderType)]
 pub struct TileInfo {
-    pub tile_origin: UVec2,
+    pub tile_origin: IVec2,
 }
 
 struct PreparedRenderer {
     estimated_size: UVec2,
+    output_len_in_layout: u32,
     pipeline: ComputePipeline,
     main_layout: BindGroupLayout,
 }
 
-pub struct BrushRenderer {
+pub struct BrushPresetRenderer {
     device: Arc<Device>,
     queue: Arc<Queue>,
     graph_input: DynamicBuffer<GraphInputUniform>,
@@ -48,10 +86,27 @@ pub struct BrushRenderer {
     main_bind_group: Option<BindGroup>,
     textures: Vec<GpuImage>,
     tile_info: DynamicBuffer<TileInfo>,
+
+    empty_texture: GpuImage,
 }
 
-impl BrushRenderer {
+impl BrushPresetRenderer {
     pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
+        let empty_texture = device.create_texture(&TextureDescriptor {
+            label: None,
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: GpuTileStorageInner::TILE_FORMAT,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+
         Self {
             device,
             queue,
@@ -61,14 +116,13 @@ impl BrushRenderer {
             main_bind_group: None,
             textures: Vec::new(),
             tile_info: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
+            empty_texture: GpuImage {
+                texture: empty_texture,
+            },
         }
     }
 
-    pub fn brush_resize(
-        &mut self,
-        brush: &mut BrushPresetInstance,
-        recorder: &TextureUsageRecorder,
-    ) {
+    pub fn initialize(&mut self, brush: &mut BrushPresetInstance, assets: &AssetRegistry) {
         let estimated_size = brush.estimate_size();
         if let Some(prepared) = self.prepared.as_ref() {
             if prepared.estimated_size == estimated_size {
@@ -76,7 +130,9 @@ impl BrushRenderer {
             }
         }
 
-        let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size());
+        let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size()) + 2;
+        let output_len = estimated_tile_count.element_product();
+        let (shader, texture_usage_recorder) = brush.compile().unwrap();
 
         let main_layout = self
             .device
@@ -103,20 +159,21 @@ impl BrushRenderer {
                             format: TextureFormat::Rgba16Float,
                             view_dimension: TextureViewDimension::D2,
                         },
-                        count: Some(
-                            NonZeroU32::new(estimated_tile_count.element_product()).unwrap(),
-                        ),
+                        count: Some(NonZeroU32::new(output_len).unwrap()),
                     },
                     // Textures
                     BindGroupLayoutEntry {
                         binding: 2,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            sample_type: TextureSampleType::Float { filterable: true },
                             view_dimension: TextureViewDimension::D2,
                             multisampled: false,
                         },
-                        count: Some(NonZeroU32::new(recorder.get_usage().len() as u32).unwrap()),
+                        count: Some(
+                            NonZeroU32::new(texture_usage_recorder.get_usage().len() as u32)
+                                .unwrap(),
+                        ),
                     },
                     // Tile Info
                     BindGroupLayoutEntry {
@@ -144,7 +201,7 @@ impl BrushRenderer {
             label: Some("brush shader"),
             source: ShaderSource::Wgsl(
                 // TODO: Handle shader compile error
-                brush.compile().unwrap().into(),
+                shader.into(),
             ),
         });
 
@@ -161,14 +218,18 @@ impl BrushRenderer {
 
         self.prepared = Some(PreparedRenderer {
             estimated_size,
+            output_len_in_layout: output_len,
             pipeline,
             main_layout,
         });
-    }
 
-    pub fn upload_textures(&mut self, assets: &AssetRegistry, recorder: &TextureUsageRecorder) {
         self.textures.clear();
-        for id in recorder.get_usage().keys() {
+        for id in texture_usage_recorder.get_usage().keys() {
+            if id == &TextureId::NULL {
+                self.textures.push(self.empty_texture.clone());
+                continue;
+            }
+
             let handle = assets.handle(AssetId::new(**id)).unwrap();
             self.textures.push(GpuImage::from_asset(
                 &self.device,
@@ -178,14 +239,22 @@ impl BrushRenderer {
         }
     }
 
-    pub fn prepare(&mut self, params: GraphInputParams, outputs: &[Tile]) {
+    pub fn prepare(
+        &mut self,
+        brush: &mut BrushPresetInstance,
+        params: GraphInputParams,
+        output_layer: LayerId,
+        tiles: &GpuTileStorage,
+    ) {
         let Some(prepared) = self.prepared.as_ref() else {
             return;
         };
 
+        let estimated_area = brush.estimate_area(&params);
         self.graph_input.clear();
         self.graph_input
             .push(&GraphInputUniform {
+                shader_origin: estimated_area.min,
                 estimated_brush_size: prepared.estimated_size,
                 tile_size: GpuTileStorageInner::TILE_SIZE,
                 pen_position: params.pen_position,
@@ -193,17 +262,22 @@ impl BrushRenderer {
             .unwrap();
         self.graph_input.write_buffer(&self.device);
 
+        let outputs = tiles.get_tiles_ordered(output_layer, estimated_area);
         self.tile_info.clear();
-        for tile in outputs {
+        for tile in &outputs {
             self.tile_info
                 .push(&TileInfo {
-                    tile_origin: tile.index.coord.as_uvec2() * GpuTileStorageInner::TILE_SIZE,
+                    tile_origin: tile.index.coord * GpuTileStorageInner::TILE_SIZE as i32,
                 })
                 .unwrap();
         }
         self.tile_info.write_buffer(&self.device);
 
-        let outputs = outputs.iter().map(|t| t.view.as_ref()).collect::<Vec<_>>();
+        let mut outputs = outputs.iter().map(|t| t.view.as_ref()).collect::<Vec<_>>();
+        let empty_view = self.empty_texture.texture.create_view(&Default::default());
+        if outputs.len() < prepared.output_len_in_layout as usize {
+            outputs.resize(prepared.output_len_in_layout as usize, &empty_view);
+        }
 
         let referenced_textures = self
             .textures
@@ -231,6 +305,10 @@ impl BrushRenderer {
                     binding: 2,
                     resource: BindingResource::TextureViewArray(&referenced_texture_views),
                 },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: self.tile_info.entire_binding().unwrap(),
+                },
             ],
         });
         self.main_bind_group = Some(main_bind_group);
@@ -244,6 +322,7 @@ impl BrushRenderer {
         };
 
         let mut ec = self.device.create_command_encoder(&Default::default());
+        dbg!();
 
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
