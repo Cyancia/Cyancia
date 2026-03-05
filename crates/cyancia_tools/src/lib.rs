@@ -109,6 +109,11 @@ impl ToolProxy {
 
         if let Some(new_tool) = self.tools.get_mut(&self.state.current) {
             new_tool.activate(services);
+        } else {
+            log::error!(
+                "Unable to switch to tool {:?}: not found in registry.",
+                self.state.current
+            );
         }
     }
 

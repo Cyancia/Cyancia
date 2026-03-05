@@ -33,3 +33,4 @@ indexmap.workspace = true
 anyhow.workspace = true
 parking_lot.workspace = true
 cyancia_tools.workspace = true
+cyancia_canvas.workspace = true

@@ -12,3 +12,4 @@ cyancia_math.workspace = true
 cyancia_utils.workspace = true
 cyancia_runtime.workspace = true
 uuid.workspace = true
+log.workspace = true

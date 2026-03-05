@@ -1270,6 +1270,7 @@ dependencies = [
  "bytemuck",
  "cyancia_actions",
  "cyancia_assets",
+ "cyancia_canvas",
  "cyancia_image",
  "cyancia_input",
  "cyancia_render",
@@ -1456,6 +1457,7 @@ dependencies = [
  "cyancia_utils",
  "glam 0.30.10",
  "iced_core",
+ "log",
  "parking_lot",
  "uuid",
 ]

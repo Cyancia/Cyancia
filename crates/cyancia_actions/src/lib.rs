@@ -12,7 +12,9 @@ use parking_lot::RwLock;
 
 use crate::{
     brush::OpenBrushEditorAction,
-    canvas_control::{CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction},
+    canvas_control::{
+        BrushToolAction, CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction,
+    },
     file::OpenFileAction,
 };
 
@@ -29,6 +31,7 @@ impl Plugin for ActionPlugin {
             .add_action_function::<CanvasToolSwitch<PanToolAction>>()
             .add_action_function::<CanvasToolSwitch<RotateToolAction>>()
             .add_action_function::<CanvasToolSwitch<ZoomToolAction>>()
+            .add_action_function::<CanvasToolSwitch<BrushToolAction>>()
             .add_action_function::<OpenFileAction>()
             .add_action_function::<OpenBrushEditorAction>();
     }
