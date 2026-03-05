@@ -35,6 +35,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         return;
     }
     let pixel_pos = vec2i(id.xy) + graph_input.shader_origin;
+    let pixel_posf = vec2f(pixel_pos);
 
     //CODEGENFLAG_COMPILED_GRAPH
 }

@@ -22,11 +22,14 @@ use crate::{
 };
 
 macro_rules! impl_math_format {
-    ($fmt:expr, $a:expr, $b:expr, ($one:literal)) => {
+    ($fmt:expr, $a:expr, $b:expr, $c:expr, ($one:literal)) => {
         format!($fmt, $a)
     };
-    ($fmt:expr, $a:expr, $b:expr, ($one:literal, $two:literal)) => {
+    ($fmt:expr, $a:expr, $b:expr, $c:expr, ($one:literal, $two:literal)) => {
         format!($fmt, $a, $b)
+    };
+    ($fmt:expr, $a:expr, $b:expr, $c:expr, ($one:literal, $two:literal, $three:literal)) => {
+        format!($fmt, $a, $b, $c)
     };
 }
 
@@ -60,11 +63,12 @@ macro_rules! math_node {
                 }
             }
 
-            pub fn func_call(&self, input_a: &str, input_b: &str) -> String {
+            #[allow(unused_variables)]
+            pub fn func_call(&self, input_a: &str, input_b: &str, input_c: &str) -> String {
                 match self {
                     $(
                         $node_mode_name::$op_name => {
-                            impl_math_format!($func_call, input_a, input_b, ($($operands_name),*))
+                            impl_math_format!($func_call, input_a, input_b, input_c, ($($operands_name),*))
                         },
                     )*
                 }
@@ -105,6 +109,7 @@ macro_rules! math_node {
 
             fn create_inputs(&self, _state: &Self::State) -> Vec<GraphDefaultInputSlot> {
                 vec![
+                    GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                 ]
@@ -172,12 +177,13 @@ macro_rules! math_node {
             ) -> Result<String, GraphNodeCodeGenError> {
                 let input_a = ctx.get_input(0)?;
                 let input_b = ctx.get_input(1)?;
+                let input_c = ctx.get_input(2)?;
                 let output = ctx.get_output(0)?;
 
                 Ok(format!(
                     "let {} = {};\n",
                     output,
-                    state.func_call(&input_a, &input_b)
+                    state.func_call(&input_a, &input_b, &input_c)
                 ))
             }
         }
@@ -228,53 +234,374 @@ math_node!(
     Trunc, "Trunc" => ("trunc({})", "X"),
 );
 
-math_node!(
-    VectorMathNode,
-    VectorMathNodeMode,
-    VectorMathNodeMessage,
-    "Vector Math",
-    color!(0x79caf2),
-    Vec2FType = Vec2::ZERO,
+#[derive(Default, Clone)]
+pub struct VectorMathNode;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VectorMathNodeMode {
     Add,
-    Add, "Add" => ("{} + {}", "A", "B"),
-    Subtract, "Subtract" => ("{} - {}", "Minuend", "Subtrahend"),
-    Multiply, "Multiply" => ("{} * {}", "A", "B"),
-    Divide, "Divide" => ("{} / {}", "Dividend", "Divisor"),
-    Acos, "Acos" => ("acos({})", "X"),
-    Acosh, "Acosh" => ("acosh({})", "X"),
-    Asin, "Asin" => ("asin({})", "X"),
-    Asinh, "Asinh" => ("asinh({})", "X"),
-    Atan, "Atan" => ("atan({})", "X"),
-    Atanh, "Atanh" => ("atanh({})", "X"),
-    Ceil, "Ceil" => ("ceil({})", "X"),
-    Cos, "Cos" => ("cos({})", "X"),
-    Cosh, "Cosh" => ("cosh({})", "X"),
-    Degrees, "Degrees" => ("degrees({})", "X"),
-    Distance, "Distance" => ("distance({}, {})", "A", "B"),
-    Dot, "Dot" => ("dot({}, {})", "A", "B"),
-    Exp, "Exp" => ("exp({})", "X"),
-    Exp2, "Exp2" => ("exp2({})", "X"),
-    Floor, "Floor" => ("floor({})", "X"),
-    Fract, "Fract" => ("fract({})", "X"),
-    InverseSqrt, "Inverse Sqrt" => ("inverseSqrt({})", "X"),
-    Ln, "Ln" => ("log({})", "X"),
-    Length, "Length" => ("length({})", "X"),
-    Log2, "Log2" => ("log2({})", "X"),
-    Max, "Max" => ("max({}, {})", "A", "B"),
-    Min, "Min" => ("min({}, {})", "A", "B"),
-    Pow, "Pow" => ("pow({}, {})", "Base", "Exponent"),
-    Radians, "Radians" => ("radians({})", "X"),
-    Reflect, "Reflect" => ("reflect({}, {})", "Incident", "Normal"),
-    Round, "Round" => ("round({})", "X"),
-    Saturate, "Saturate" => ("saturate({})", "X"),
-    Sign, "Sign" => ("sign({})", "X"),
-    Sin, "Sin" => ("sin({})", "X"),
-    Sinh, "Sinh" => ("sinh({})", "X"),
-    Sqrt, "Sqrt" => ("sqrt({})", "X"),
-    Tan, "Tan" => ("tan({})", "X"),
-    Tanh, "Tanh" => ("tanh({})", "X"),
-    Trunc, "Trunc" => ("trunc({})", "X"),
-);
+    Subtract,
+    Multiply,
+    Divide,
+    Acos,
+    Acosh,
+    Asin,
+    Asinh,
+    Atan,
+    Atanh,
+    Ceil,
+    Cos,
+    Cosh,
+    Degrees,
+    Distance,
+    Dot,
+    Exp,
+    Exp2,
+    Floor,
+    Fract,
+    InverseSqrt,
+    Ln,
+    Length,
+    Log2,
+    Max,
+    Min,
+    Mix,
+    Pow,
+    Radians,
+    Reflect,
+    Round,
+    Saturate,
+    Sign,
+    Sin,
+    Sinh,
+    Sqrt,
+    Tan,
+    Tanh,
+    Trunc,
+}
+
+impl VectorMathNodeMode {
+    pub const ALL: [VectorMathNodeMode; 39] = [
+        VectorMathNodeMode::Add,
+        VectorMathNodeMode::Subtract,
+        VectorMathNodeMode::Multiply,
+        VectorMathNodeMode::Divide,
+        VectorMathNodeMode::Acos,
+        VectorMathNodeMode::Acosh,
+        VectorMathNodeMode::Asin,
+        VectorMathNodeMode::Asinh,
+        VectorMathNodeMode::Atan,
+        VectorMathNodeMode::Atanh,
+        VectorMathNodeMode::Ceil,
+        VectorMathNodeMode::Cos,
+        VectorMathNodeMode::Cosh,
+        VectorMathNodeMode::Degrees,
+        VectorMathNodeMode::Distance,
+        VectorMathNodeMode::Dot,
+        VectorMathNodeMode::Exp,
+        VectorMathNodeMode::Exp2,
+        VectorMathNodeMode::Floor,
+        VectorMathNodeMode::Fract,
+        VectorMathNodeMode::InverseSqrt,
+        VectorMathNodeMode::Ln,
+        VectorMathNodeMode::Length,
+        VectorMathNodeMode::Log2,
+        VectorMathNodeMode::Max,
+        VectorMathNodeMode::Min,
+        VectorMathNodeMode::Mix,
+        VectorMathNodeMode::Pow,
+        VectorMathNodeMode::Radians,
+        VectorMathNodeMode::Reflect,
+        VectorMathNodeMode::Round,
+        VectorMathNodeMode::Saturate,
+        VectorMathNodeMode::Sign,
+        VectorMathNodeMode::Sin,
+        VectorMathNodeMode::Sinh,
+        VectorMathNodeMode::Sqrt,
+        VectorMathNodeMode::Tan,
+        VectorMathNodeMode::Tanh,
+        VectorMathNodeMode::Trunc,
+    ];
+
+    pub fn operands_names(&self) -> &[&'static str] {
+        match self {
+            VectorMathNodeMode::Add => &["A", "B"],
+            VectorMathNodeMode::Subtract => &["Minuend", "Subtrahend"],
+            VectorMathNodeMode::Multiply => &["A", "B"],
+            VectorMathNodeMode::Divide => &["Dividend", "Divisor"],
+            VectorMathNodeMode::Acos => &["X"],
+            VectorMathNodeMode::Acosh => &["X"],
+            VectorMathNodeMode::Asin => &["X"],
+            VectorMathNodeMode::Asinh => &["X"],
+            VectorMathNodeMode::Atan => &["X"],
+            VectorMathNodeMode::Atanh => &["X"],
+            VectorMathNodeMode::Ceil => &["X"],
+            VectorMathNodeMode::Cos => &["X"],
+            VectorMathNodeMode::Cosh => &["X"],
+            VectorMathNodeMode::Degrees => &["X"],
+            VectorMathNodeMode::Distance => &["A", "B"],
+            VectorMathNodeMode::Dot => &["A", "B"],
+            VectorMathNodeMode::Exp => &["X"],
+            VectorMathNodeMode::Exp2 => &["X"],
+            VectorMathNodeMode::Floor => &["X"],
+            VectorMathNodeMode::Fract => &["X"],
+            VectorMathNodeMode::InverseSqrt => &["X"],
+            VectorMathNodeMode::Ln => &["X"],
+            VectorMathNodeMode::Length => &["X"],
+            VectorMathNodeMode::Log2 => &["X"],
+            VectorMathNodeMode::Max => &["A", "B"],
+            VectorMathNodeMode::Min => &["A", "B"],
+            VectorMathNodeMode::Mix => &["A", "B", "T"],
+            VectorMathNodeMode::Pow => &["Base", "Exponent"],
+            VectorMathNodeMode::Radians => &["X"],
+            VectorMathNodeMode::Reflect => &["Incident", "Normal"],
+            VectorMathNodeMode::Round => &["X"],
+            VectorMathNodeMode::Saturate => &["X"],
+            VectorMathNodeMode::Sign => &["X"],
+            VectorMathNodeMode::Sin => &["X"],
+            VectorMathNodeMode::Sinh => &["X"],
+            VectorMathNodeMode::Sqrt => &["X"],
+            VectorMathNodeMode::Tan => &["X"],
+            VectorMathNodeMode::Tanh => &["X"],
+            VectorMathNodeMode::Trunc => &["X"],
+        }
+    }
+}
+
+impl ToString for VectorMathNodeMode {
+    fn to_string(&self) -> String {
+        match self {
+            VectorMathNodeMode::Add => "Add",
+            VectorMathNodeMode::Subtract => "Subtract",
+            VectorMathNodeMode::Multiply => "Multiply",
+            VectorMathNodeMode::Divide => "Divide",
+            VectorMathNodeMode::Acos => "Acos",
+            VectorMathNodeMode::Acosh => "Acosh",
+            VectorMathNodeMode::Asin => "Asin",
+            VectorMathNodeMode::Asinh => "Asinh",
+            VectorMathNodeMode::Atan => "Atan",
+            VectorMathNodeMode::Atanh => "Atanh",
+            VectorMathNodeMode::Ceil => "Ceil",
+            VectorMathNodeMode::Cos => "Cos",
+            VectorMathNodeMode::Cosh => "Cosh",
+            VectorMathNodeMode::Degrees => "Degrees",
+            VectorMathNodeMode::Distance => "Distance",
+            VectorMathNodeMode::Dot => "Dot",
+            VectorMathNodeMode::Exp => "Exp",
+            VectorMathNodeMode::Exp2 => "Exp2",
+            VectorMathNodeMode::Floor => "Floor",
+            VectorMathNodeMode::Fract => "Fract",
+            VectorMathNodeMode::InverseSqrt => "Inverse Sqrt",
+            VectorMathNodeMode::Ln => "Ln",
+            VectorMathNodeMode::Length => "Length",
+            VectorMathNodeMode::Log2 => "Log2",
+            VectorMathNodeMode::Max => "Max",
+            VectorMathNodeMode::Min => "Min",
+            VectorMathNodeMode::Mix => "Mix",
+            VectorMathNodeMode::Pow => "Pow",
+            VectorMathNodeMode::Radians => "Radians",
+            VectorMathNodeMode::Reflect => "Reflect",
+            VectorMathNodeMode::Round => "Round",
+            VectorMathNodeMode::Saturate => "Saturate",
+            VectorMathNodeMode::Sign => "Sign",
+            VectorMathNodeMode::Sin => "Sin",
+            VectorMathNodeMode::Sinh => "Sinh",
+            VectorMathNodeMode::Sqrt => "Sqrt",
+            VectorMathNodeMode::Tan => "Tan",
+            VectorMathNodeMode::Tanh => "Tanh",
+            VectorMathNodeMode::Trunc => "Trunc",
+        }
+        .to_string()
+    }
+}
+
+#[derive(Clone)]
+pub enum VectorMathNodeMessage {
+    ModeChanged(VectorMathNodeMode),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
+impl GraphNode for VectorMathNode {
+    type State = VectorMathNodeMode;
+
+    type Message = VectorMathNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Vector Math"
+    }
+
+    fn default_state(&self) -> Self::State {
+        VectorMathNodeMode::Add
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79caf2)
+    }
+
+    fn create_inputs(&self, _state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+        ]
+    }
+
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+        match state {
+            VectorMathNodeMode::Add
+            | VectorMathNodeMode::Subtract
+            | VectorMathNodeMode::Multiply
+            | VectorMathNodeMode::Divide
+            | VectorMathNodeMode::Acos
+            | VectorMathNodeMode::Acosh
+            | VectorMathNodeMode::Asin
+            | VectorMathNodeMode::Asinh
+            | VectorMathNodeMode::Atan
+            | VectorMathNodeMode::Atanh
+            | VectorMathNodeMode::Ceil
+            | VectorMathNodeMode::Cos
+            | VectorMathNodeMode::Cosh
+            | VectorMathNodeMode::Degrees
+            | VectorMathNodeMode::Exp
+            | VectorMathNodeMode::Exp2
+            | VectorMathNodeMode::Floor
+            | VectorMathNodeMode::Fract
+            | VectorMathNodeMode::InverseSqrt
+            | VectorMathNodeMode::Ln
+            | VectorMathNodeMode::Length
+            | VectorMathNodeMode::Log2
+            | VectorMathNodeMode::Max
+            | VectorMathNodeMode::Min
+            | VectorMathNodeMode::Mix
+            | VectorMathNodeMode::Pow
+            | VectorMathNodeMode::Radians
+            | VectorMathNodeMode::Reflect
+            | VectorMathNodeMode::Round
+            | VectorMathNodeMode::Saturate
+            | VectorMathNodeMode::Sign
+            | VectorMathNodeMode::Sin
+            | VectorMathNodeMode::Sinh
+            | VectorMathNodeMode::Sqrt
+            | VectorMathNodeMode::Tan
+            | VectorMathNodeMode::Tanh
+            | VectorMathNodeMode::Trunc => vec![GraphDefaultOutputSlot::new::<Vec2FType>()],
+
+            VectorMathNodeMode::Dot | VectorMathNodeMode::Distance => {
+                vec![
+                    GraphDefaultOutputSlot::new::<F32Type>(),
+                ]
+            }
+        }
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = Column::new().spacing(2);
+        column = column.push(pick_list(
+            VectorMathNodeMode::ALL,
+            Some(*state),
+            VectorMathNodeMessage::ModeChanged,
+        ));
+
+        for (i, slot_name) in state.operands_names().iter().enumerate() {
+            if let Some(elem) = ctx.view_input(slot_name, i) {
+                column = column.push(elem.map(VectorMathNodeMessage::LiteralUpdate));
+            }
+        }
+
+        column.spacing(2).into()
+    }
+
+    fn view_outputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = Column::new().spacing(2);
+
+        if let Some(elem) = ctx.view_output("Result", 0) {
+            column = column.push(elem.map(VectorMathNodeMessage::LiteralUpdate));
+        }
+
+        column.into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            VectorMathNodeMessage::ModeChanged(mode) => {
+                *state = mode;
+            }
+            VectorMathNodeMessage::LiteralUpdate(msg) => {
+                ctx.update_literal(msg);
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input_a = ctx.get_input(0)?;
+        let input_b = ctx.get_input(1)?;
+        let input_c = ctx.get_input(2)?;
+        let output = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = {};\n",
+            output,
+            match state {
+                VectorMathNodeMode::Add => format!("{} + {}", input_a, input_b),
+                VectorMathNodeMode::Subtract => format!("{} - {}", input_a, input_b),
+                VectorMathNodeMode::Multiply => format!("{} * {}", input_a, input_b),
+                VectorMathNodeMode::Divide => format!("{} / {}", input_a, input_b),
+                VectorMathNodeMode::Acos => format!("acos({})", input_a),
+                VectorMathNodeMode::Acosh => format!("acosh({})", input_a),
+                VectorMathNodeMode::Asin => format!("asin({})", input_a),
+                VectorMathNodeMode::Asinh => format!("asinh({})", input_a),
+                VectorMathNodeMode::Atan => format!("atan({})", input_a),
+                VectorMathNodeMode::Atanh => format!("atanh({})", input_a),
+                VectorMathNodeMode::Ceil => format!("ceil({})", input_a),
+                VectorMathNodeMode::Cos => format!("cos({})", input_a),
+                VectorMathNodeMode::Cosh => format!("cosh({})", input_a),
+                VectorMathNodeMode::Degrees => format!("degrees({})", input_a),
+                VectorMathNodeMode::Distance => format!("distance({}, {})", input_a, input_b),
+                VectorMathNodeMode::Dot => format!("dot({}, {})", input_a, input_b),
+                VectorMathNodeMode::Exp => format!("exp({})", input_a),
+                VectorMathNodeMode::Exp2 => format!("exp2({})", input_a),
+                VectorMathNodeMode::Floor => format!("floor({})", input_a),
+                VectorMathNodeMode::Fract => format!("fract({})", input_a),
+                VectorMathNodeMode::InverseSqrt => format!("inverseSqrt({})", input_a),
+                VectorMathNodeMode::Ln => format!("log({})", input_a),
+                VectorMathNodeMode::Length => format!("length({})", input_a),
+                VectorMathNodeMode::Log2 => format!("log2({})", input_a),
+                VectorMathNodeMode::Max => format!("max({}, {})", input_a, input_b),
+                VectorMathNodeMode::Min => format!("min({}, {})", input_a, input_b),
+                VectorMathNodeMode::Mix => format!("mix({}, {}, {})", input_a, input_b, input_c),
+                VectorMathNodeMode::Pow => format!("pow({}, {})", input_a, input_b),
+                VectorMathNodeMode::Radians => format!("radians({})", input_a),
+                VectorMathNodeMode::Reflect => format!("reflect({}, {})", input_a, input_b),
+                VectorMathNodeMode::Round => format!("round({})", input_a),
+                VectorMathNodeMode::Saturate => format!("saturate({})", input_a),
+                VectorMathNodeMode::Sign => format!("sign({})", input_a),
+                VectorMathNodeMode::Sin => format!("sin({})", input_a),
+                VectorMathNodeMode::Sinh => format!("sinh({})", input_a),
+                VectorMathNodeMode::Sqrt => format!("sqrt({})", input_a),
+                VectorMathNodeMode::Tan => format!("tan({})", input_a),
+                VectorMathNodeMode::Tanh => format!("tanh({})", input_a),
+                VectorMathNodeMode::Trunc => format!("trunc({})", input_a),
+            }
+        ))
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct ClampNode;

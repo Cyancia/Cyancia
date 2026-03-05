@@ -114,7 +114,7 @@ impl StatelessCommonGraphNode for PixelPosition {
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = pixel_pos;",
+            "let {} = pixel_posf;",
             ctx.get_output(0)?
         ))
     }
