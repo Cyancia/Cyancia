@@ -487,9 +487,7 @@ impl GraphNode for VectorMathNode {
             | VectorMathNodeMode::Trunc => vec![GraphDefaultOutputSlot::new::<Vec2FType>()],
 
             VectorMathNodeMode::Dot | VectorMathNodeMode::Distance => {
-                vec![
-                    GraphDefaultOutputSlot::new::<F32Type>(),
-                ]
+                vec![GraphDefaultOutputSlot::new::<F32Type>()]
             }
         }
     }
@@ -1152,5 +1150,54 @@ impl GraphNode for TextureNode {
         // is corresponding to array index returned by TextureStorage::used_textures()
         let index = self.recorder.use_texture(*state);
         Ok(format!("let {} = {};\n", ctx.get_output(0)?, index))
+    }
+}
+
+// TODO: Mixing in different color spaces.
+#[derive(Default, Clone)]
+pub struct ColorMixNode;
+
+impl StatelessCommonGraphNode for ColorMixNode {
+    fn name(&self) -> &'static str {
+        "Color Mix"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Color A", "Color B", "Factor"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Result"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79caf2)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
+            GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+        ]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input_color_a = ctx.get_input(0)?;
+        let input_color_b = ctx.get_input(1)?;
+        let input_factor = ctx.get_input(2)?;
+        let output = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = mix({}, {}, {});\n",
+            output, input_color_a, input_color_b, input_factor
+        ))
     }
 }
