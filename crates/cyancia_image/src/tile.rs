@@ -332,10 +332,43 @@ impl GpuTileStorageInner {
         let tile_min = pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32);
         let tile_max = pixel_rect.max / IVec2::splat(Self::TILE_SIZE as i32);
 
-        (tile_min.y..tile_max.y)
+        (tile_min.y..=tile_max.y)
             .flat_map(|y| {
-                (tile_min.x..tile_max.x).map(move |x| {
+                (tile_min.x..=tile_max.x).map(move |x| {
                     self.get_tile(TileIndex {
+                        layer: layer_id,
+                        coord: IVec2::new(x, y),
+                    })
+                })
+            })
+            .collect()
+    }
+
+    pub fn get_tiles_mut_ordered_by_tile_rect(
+        &self,
+        layer_id: LayerId,
+        tile_rect: IRect,
+    ) -> Vec<Tile> {
+        (tile_rect.min.y..tile_rect.max.y)
+            .flat_map(|y| {
+                (tile_rect.min.x..tile_rect.max.x).map(move |x| {
+                    self.get_tile_mut(TileIndex {
+                        layer: layer_id,
+                        coord: IVec2::new(x, y),
+                    })
+                })
+            })
+            .collect()
+    }
+
+    pub fn get_tiles_mut_ordered(&self, layer_id: LayerId, pixel_rect: IRect) -> Vec<Tile> {
+        let tile_min = pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32);
+        let tile_max = pixel_rect.max / IVec2::splat(Self::TILE_SIZE as i32);
+
+        (tile_min.y..=tile_max.y)
+            .flat_map(|y| {
+                (tile_min.x..=tile_max.x).map(move |x| {
+                    self.get_tile_mut(TileIndex {
                         layer: layer_id,
                         coord: IVec2::new(x, y),
                     })

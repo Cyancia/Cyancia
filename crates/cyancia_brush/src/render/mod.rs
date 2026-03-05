@@ -5,7 +5,7 @@ use cyancia_image::{
     layer::LayerId,
     tile::{GpuTileStorage, GpuTileStorageInner, Tile},
 };
-use cyancia_render::buffer::DynamicBuffer;
+use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use cyancia_shader_graph::wgsl_std::nodes::{TextureId, TextureUsageRecorder};
 use encase::ShaderType;
 use glam::{IVec2, UVec2, Vec2};
@@ -57,7 +57,7 @@ impl BrushPresetOperator {
     }
 }
 
-#[derive(ShaderType)]
+#[derive(ShaderType, Debug)]
 pub struct GraphInputUniform {
     pub shader_origin: IVec2,
     pub estimated_brush_size: UVec2,
@@ -70,7 +70,7 @@ pub struct TileInfo {
     pub tile_origin: IVec2,
 }
 
-struct PreparedRenderer {
+struct InitializedData {
     estimated_size: UVec2,
     output_len_in_layout: u32,
     pipeline: ComputePipeline,
@@ -82,10 +82,10 @@ pub struct BrushPresetRenderer {
     queue: Arc<Queue>,
     graph_input: DynamicBuffer<GraphInputUniform>,
 
-    prepared: Option<PreparedRenderer>,
+    initialized: Option<InitializedData>,
     main_bind_group: Option<BindGroup>,
     textures: Vec<GpuImage>,
-    tile_info: DynamicBuffer<TileInfo>,
+    tile_info: BufferVec<TileInfo>,
 
     empty_texture: GpuImage,
 }
@@ -112,10 +112,10 @@ impl BrushPresetRenderer {
             queue,
             graph_input: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
 
-            prepared: None,
+            initialized: None,
             main_bind_group: None,
             textures: Vec::new(),
-            tile_info: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
+            tile_info: BufferVec::default().with_usage(BufferUsages::STORAGE),
             empty_texture: GpuImage {
                 texture: empty_texture,
             },
@@ -124,15 +124,17 @@ impl BrushPresetRenderer {
 
     pub fn initialize(&mut self, brush: &mut BrushPresetInstance, assets: &AssetRegistry) {
         let estimated_size = brush.estimate_size();
-        if let Some(prepared) = self.prepared.as_ref() {
-            if prepared.estimated_size == estimated_size {
+        if let Some(initialized) = self.initialized.as_ref() {
+            if initialized.estimated_size == estimated_size {
                 return;
             }
         }
 
         let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size()) + 2;
         let output_len = estimated_tile_count.element_product();
-        let (shader, texture_usage_recorder) = brush.compile().unwrap();
+        // TODO: Handle shader compile error
+        let (shader, texture_usage_recorder) = brush.compile(output_len).unwrap();
+        println!("Generated shader:\n{}", shader);
 
         let main_layout = self
             .device
@@ -199,10 +201,7 @@ impl BrushPresetRenderer {
 
         let shader = self.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("brush shader"),
-            source: ShaderSource::Wgsl(
-                // TODO: Handle shader compile error
-                shader.into(),
-            ),
+            source: ShaderSource::Wgsl(shader.into()),
         });
 
         let pipeline = self
@@ -216,7 +215,7 @@ impl BrushPresetRenderer {
                 cache: None,
             });
 
-        self.prepared = Some(PreparedRenderer {
+        self.initialized = Some(InitializedData {
             estimated_size,
             output_len_in_layout: output_len,
             pipeline,
@@ -246,37 +245,53 @@ impl BrushPresetRenderer {
         output_layer: LayerId,
         tiles: &GpuTileStorage,
     ) {
-        let Some(prepared) = self.prepared.as_ref() else {
+        let Some(initialized) = self.initialized.as_ref() else {
             return;
         };
 
         let estimated_area = brush.estimate_area(&params);
         self.graph_input.clear();
-        self.graph_input
-            .push(&GraphInputUniform {
-                shader_origin: estimated_area.min,
-                estimated_brush_size: prepared.estimated_size,
-                tile_size: GpuTileStorageInner::TILE_SIZE,
-                pen_position: params.pen_position,
-            })
-            .unwrap();
+        self.graph_input.push(&GraphInputUniform {
+            shader_origin: estimated_area.min,
+            estimated_brush_size: initialized.estimated_size,
+            tile_size: GpuTileStorageInner::TILE_SIZE,
+            pen_position: params.pen_position,
+        });
         self.graph_input.write_buffer(&self.device);
 
-        let outputs = tiles.get_tiles_ordered(output_layer, estimated_area);
+        let outputs = tiles.get_tiles_mut_ordered(output_layer, dbg!(estimated_area));
         self.tile_info.clear();
         for tile in &outputs {
-            self.tile_info
-                .push(&TileInfo {
-                    tile_origin: tile.index.coord * GpuTileStorageInner::TILE_SIZE as i32,
-                })
-                .unwrap();
+            self.tile_info.push(&TileInfo {
+                tile_origin: tile.index.coord * GpuTileStorageInner::TILE_SIZE as i32,
+            });
         }
         self.tile_info.write_buffer(&self.device);
 
+        let mut empty_placeholders = Vec::new();
         let mut outputs = outputs.iter().map(|t| t.view.as_ref()).collect::<Vec<_>>();
-        let empty_view = self.empty_texture.texture.create_view(&Default::default());
-        if outputs.len() < prepared.output_len_in_layout as usize {
-            outputs.resize(prepared.output_len_in_layout as usize, &empty_view);
+        if outputs.len() < initialized.output_len_in_layout as usize {
+            for _ in outputs.len()..initialized.output_len_in_layout as usize {
+                let view = self
+                    .device
+                    .create_texture(&TextureDescriptor {
+                        label: Some("empty placeholder texture"),
+                        size: Extent3d {
+                            width: 1,
+                            height: 1,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: TextureDimension::D2,
+                        format: GpuTileStorageInner::TILE_FORMAT,
+                        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+                        view_formats: &[],
+                    })
+                    .create_view(&Default::default());
+                empty_placeholders.push(view);
+            }
+            outputs.extend(&empty_placeholders);
         }
 
         let referenced_textures = self
@@ -291,11 +306,11 @@ impl BrushPresetRenderer {
 
         let main_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group"),
-            layout: &prepared.main_layout,
+            layout: &initialized.main_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: self.graph_input.entire_binding().unwrap(),
+                    resource: self.graph_input.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -307,7 +322,7 @@ impl BrushPresetRenderer {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: self.tile_info.entire_binding().unwrap(),
+                    resource: self.tile_info.binding().unwrap(),
                 },
             ],
         });
@@ -315,8 +330,8 @@ impl BrushPresetRenderer {
     }
 
     pub fn draw(&self) {
-        let (Some(prepared), Some(main_bind_group)) =
-            (self.prepared.as_ref(), self.main_bind_group.as_ref())
+        let (Some(initialized), Some(main_bind_group)) =
+            (self.initialized.as_ref(), self.main_bind_group.as_ref())
         else {
             return;
         };
@@ -326,13 +341,15 @@ impl BrushPresetRenderer {
 
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
-            pass.set_pipeline(&prepared.pipeline);
+            pass.set_pipeline(&initialized.pipeline);
             pass.set_bind_group(0, main_bind_group, &[]);
             pass.dispatch_workgroups(
-                prepared.estimated_size.x.div_ceil(16),
-                prepared.estimated_size.y.div_ceil(16),
+                initialized.estimated_size.x.div_ceil(16),
+                initialized.estimated_size.y.div_ceil(16),
                 1,
             );
         }
+
+        self.queue.submit([ec.finish()]);
     }
 }

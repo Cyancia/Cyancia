@@ -30,7 +30,12 @@ impl ToolFunction for BrushTool {
         };
 
         let params = GraphInputParams {
-            pen_position: Vec2::new(mouse.position.x, mouse.position.y),
+            pen_position: canvas
+                .transform
+                .read()
+                .pixel_to_widget
+                .inverse()
+                .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
         };
         brush.prepare(
             params,

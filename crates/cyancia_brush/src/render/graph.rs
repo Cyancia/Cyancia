@@ -10,11 +10,15 @@ use glam::{Vec2, Vec4};
 use iced_core::{Color, color};
 use wesl::{VirtualResolver, Wesl};
 
-pub fn generate_brush_shader(graph: &mut Graph) -> Result<String, anyhow::Error> {
+pub fn generate_brush_shader(
+    graph: &mut Graph,
+    output_count: u32,
+) -> Result<String, anyhow::Error> {
     let template = include_str!("brush_template.wesl");
     let (_, graph_code) = graph.compile(Vec::new(), Default::default())?;
-    let code = template.replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code);
-    println!("Generated shader code:\n{}", code);
+    let code = template
+        .replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code)
+        .replace("//CODEGENFLAG_OUTPUT_COUNT", &output_count.to_string());
 
     let mut resolver = VirtualResolver::new();
     resolver.add_module("template.wesl".parse().unwrap(), code.into());
@@ -109,7 +113,10 @@ impl StatelessCommonGraphNode for PixelPosition {
         &self,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!("let {} = vec2i(id.xy) + graph_input.shader_origin;", ctx.get_output(0)?))
+        Ok(format!(
+            "let {} = pixel_pos;",
+            ctx.get_output(0)?
+        ))
     }
 }
 
@@ -147,18 +154,12 @@ impl StatelessCommonGraphNode for OutputPixelColor {
 
         Ok(format!(
             r#"
-            textureStore(outputs[0], id.xy, vec4f(1.0));
+            var {layer} = 0u;
+            var {coord} = vec2u(0u);
+            convert_pixel_to_tile(pixel_pos, &{layer}, &{coord});
+            textureStore(outputs[{layer}], {coord}, {});
             "#,
-            // ctx.get_input(0)?
+            ctx.get_input(0)?
         ))
-        // Ok(format!(
-        //     r#"
-        //     var {layer} = 0u;
-        //     var {coord} = vec2u(0u);
-        //     convert_pixel_to_tile(vec2i(id.xy) + graph_input.shader_origin, &{layer}, &{coord});
-        //     textureStore(outputs[{layer}], {coord}, {});
-        //     "#,
-        //     ctx.get_input(0)?
-        // ))
     }
 }

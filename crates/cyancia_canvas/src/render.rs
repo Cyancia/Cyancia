@@ -354,7 +354,7 @@ impl CanvasRenderPipeline {
         else {
             return;
         };
-        let Some(uniform_buffer) = self.uniform_buffer.entire_binding() else {
+        let Some(uniform_buffer) = self.uniform_buffer.binding() else {
             return;
         };
         let target_size = target.texture().size();

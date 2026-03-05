@@ -292,17 +292,23 @@ impl BrushPresetInstance {
 
     pub fn estimate_size(&self) -> UVec2 {
         // TODO
-        UVec2::splat(512)
+        UVec2::splat(16)
     }
 
     pub fn estimate_area(&self, params: &GraphInputParams) -> IRect {
         // TODO
-        IRect::from_center_half_size(params.pen_position.as_ivec2(), IVec2::splat(512))
+        IRect::from_center_size(
+            params.pen_position.as_ivec2(),
+            self.estimate_size().as_ivec2(),
+        )
     }
 
-    pub fn compile(&mut self) -> Result<(String, Arc<TextureUsageRecorder>), anyhow::Error> {
+    pub fn compile(
+        &mut self,
+        output_count: u32,
+    ) -> Result<(String, Arc<TextureUsageRecorder>), anyhow::Error> {
         self.texture_usage_recorder.reset();
-        let shader = generate_brush_shader(&mut self.main_graph)?;
+        let shader = generate_brush_shader(&mut self.main_graph, output_count)?;
         Ok((shader, self.texture_usage_recorder.clone()))
     }
 

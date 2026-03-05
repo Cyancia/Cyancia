@@ -231,7 +231,7 @@ impl Graph {
         }
 
         run_order.reverse();
-        self.cached_run_order = Some(dbg!(run_order));
+        self.cached_run_order = Some(run_order );
     }
 
     pub fn find_loops(&self) -> Vec<Vec<GraphNodeId>> {

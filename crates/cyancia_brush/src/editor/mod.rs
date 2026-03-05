@@ -275,7 +275,7 @@ impl WindowView for BrushEditorView {
                             && modifiers.control()
                         {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
-                                match brush.instance.compile() {
+                                match brush.instance.compile(0) {
                                     Ok((shader, _)) => println!("Generated shader:\n{}", shader),
                                     Err(e) => println!("Failed to generate shader: {:?}", e),
                                 }
