@@ -13,7 +13,11 @@ use cyancia_shader_graph::{
     editor::{GraphView, GraphViewMessage},
     graph::{
         Graph, GraphDynamicInstancesStorage,
-        node::{external::ExternalNode, function::functioning},
+        node::{
+            external::{ExternalLiteralId, ExternalNode},
+            function::functioning,
+        },
+        variable::GraphLiteral,
     },
     wgsl_std::std_storage,
 };
@@ -271,10 +275,28 @@ impl BrushEditorView {
                 self.create_new_type = Some(t);
             }
             ExternalVarViewMessage::RequestCreateNew => {
-                println!(
-                    "Request to create new external variable: name={}, type={:?}",
-                    self.create_new_name, self.create_new_type
+                let Some(brush) = self.selected.as_mut() else {
+                    return;
+                };
+
+                if self.create_new_name.is_empty() {
+                    return;
+                }
+
+                let Some(ty) = self
+                    .create_new_type
+                    .and_then(|t| self.main_graph_storage.types.get(t))
+                else {
+                    return;
+                };
+
+                brush.instance.external_vars().insert(
+                    ExternalLiteralId::new(self.create_new_name.clone()),
+                    GraphLiteral::new_boxed(ty.default_literal(), ty.clone()),
                 );
+
+                self.create_new_name.clear();
+                self.create_new_type = None;
             }
         }
     }

@@ -138,7 +138,7 @@ impl GraphLiteral {
         }
     }
 
-    pub(crate) fn new_boxed(
+    pub fn new_boxed(
         value: Box<dyn GraphLiteralValue>,
         ty: Box<dyn ErasedGraphValueType>,
     ) -> Self {
