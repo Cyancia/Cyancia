@@ -64,9 +64,14 @@ pub fn external_var_view<'a>(
         let elems = all
             .into_iter()
             .map(|(id, var)| {
-                var.ty()
-                    .view_literal(GraphInputSlotId::new(Uuid::nil()), &var.value())
-                    .map(move |m| ExternalVarViewMessage::LiteralChanged(id.clone(), m))
+                column![
+                    text(id.to_string()),
+                    var.ty()
+                        .view_literal(GraphInputSlotId::new(Uuid::nil()), &var.value())
+                        .map(move |m| ExternalVarViewMessage::LiteralChanged(id.clone(), m))
+                ]
+                .spacing(2)
+                .into()
             })
             .collect::<Vec<_>>();
 
