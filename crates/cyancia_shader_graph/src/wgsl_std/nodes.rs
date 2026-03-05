@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use cyancia_utils::count;
+use cyancia_utils::{count, wrapper};
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, pick_list, space};
 use indexmap::{IndexMap, map::Entry};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -18,7 +18,7 @@ use crate::{
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
-    wgsl_std::types::{ColorType, F32Type, TextureReference, TextureType, Vec2FType},
+    wgsl_std::types::{ColorType, F32Type, TextureLocalIndex, TextureType, Vec2FType},
 };
 
 macro_rules! impl_math_format {
@@ -640,7 +640,7 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
 
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<TextureType>(TextureReference::NULL),
+            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
         ]
     }
@@ -661,5 +661,166 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
             "let {} = textureLoad(textures[{}], {}, 0);\n",
             output_color, input_texture, input_position
         ))
+    }
+}
+
+wrapper! {
+    #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub TextureId : Uuid
+}
+
+impl TextureId {
+    // Null texture should have a default fallback, so they're also valid.
+    pub const NULL: Self = Self(Uuid::nil());
+}
+
+#[derive(Clone)]
+pub struct TextureObject {
+    pub external_id: TextureId,
+    pub name: String,
+}
+
+impl PartialEq for TextureObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.external_id == other.external_id
+    }
+}
+
+impl ToString for TextureObject {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+#[derive(Default)]
+pub struct TextureStorage {
+    inner: RwLock<HashMap<TextureId, TextureObject>>,
+}
+
+impl TextureStorage {
+    pub fn new(map: Vec<TextureObject>) -> Self {
+        Self {
+            inner: RwLock::new(map.into_iter().map(|obj| (obj.external_id, obj)).collect()),
+        }
+    }
+
+    pub fn insert(&self, object: TextureObject) {
+        self.inner.write().insert(object.external_id, object);
+    }
+
+    pub fn get(&self, id: &TextureId) -> Option<TextureObject> {
+        self.inner.read().get(id).cloned()
+    }
+
+    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<TextureId, TextureObject>> {
+        self.inner.read()
+    }
+}
+
+// TODO: Is there any better way to compute local indices?
+#[derive(Default)]
+pub struct TextureUsageRecorder {
+    inner: RwLock<IndexMap<TextureId, u32>>,
+}
+
+impl TextureUsageRecorder {
+    pub fn use_texture(&self, id: TextureId) -> u32 {
+        let mut inner = self.inner.write();
+        let e = inner.entry(id);
+        let local_index = e.index() as u32;
+        e.and_modify(|index| *index += 1).or_insert(0);
+        local_index
+    }
+
+    pub fn reset(&self) {
+        self.inner.write().clear();
+    }
+
+    pub fn get_usage(&self) -> RwLockReadGuard<'_, IndexMap<TextureId, u32>> {
+        self.inner.read()
+    }
+}
+
+#[derive(Clone)]
+pub struct TextureNode {
+    storage: Arc<TextureStorage>,
+    recorder: Arc<TextureUsageRecorder>,
+}
+
+impl TextureNode {
+    pub fn new(storage: Arc<TextureStorage>, recorder: Arc<TextureUsageRecorder>) -> Self {
+        Self { storage, recorder }
+    }
+}
+
+#[derive(Clone)]
+pub enum TextureNodeMessage {
+    TextureChanged(TextureId),
+}
+
+impl GraphNode for TextureNode {
+    type State = TextureId;
+
+    type Message = TextureNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Texture"
+    }
+
+    fn default_state(&self) -> Self::State {
+        TextureId::NULL
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xbd79f2)
+    }
+
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<TextureType>()]
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        pick_list(
+            self.storage.all().values().cloned().collect::<Vec<_>>(),
+            self.storage.get(state),
+            |t| TextureNodeMessage::TextureChanged(t.external_id),
+        )
+        .into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Texture"])).into()
+    }
+
+    fn update(&self, state: &mut Self::State, message: Self::Message, ctx: GraphNodeUpdateContext) {
+        match message {
+            TextureNodeMessage::TextureChanged(id) => {
+                *state = id;
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        // It's the external user's responsibility to generate the correct texture binding.
+        // The binding should be a texture binding_array. The index of each used texture in graph
+        // is corresponding to array index returned by TextureStorage::used_textures()
+        let index = self.recorder.use_texture(*state);
+        Ok(format!("let {} = {};\n", ctx.get_output(0)?, index))
     }
 }

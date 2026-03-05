@@ -23,7 +23,10 @@ use cyancia_shader_graph::{
         variable::GraphLiteral,
     },
     save::SerializableGraphFunction,
-    wgsl_std::std_storage,
+    wgsl_std::{
+        nodes::{TextureId, TextureNode, TextureObject, TextureStorage, TextureUsageRecorder},
+        std_storage,
+    },
 };
 use iced_core::{
     Element, Length,
@@ -62,6 +65,7 @@ pub struct BrushEditorView {
     function_graph_storage: Arc<GraphDynamicInstancesStorage>,
     function_storage: Arc<GraphFunctionsStorage>,
     function_id_to_asset: HashMap<GraphFunctionId, AssetHandle<SerializableGraphFunction>>,
+    texture_usage_recorder: Arc<TextureUsageRecorder>,
     selected: Option<Selected>,
 
     create_new_name: String,
@@ -99,6 +103,19 @@ impl FromRuntime for BrushEditorView {
             .map(|handle| (handle.get().unwrap().id, handle))
             .collect();
 
+        let recorder = Arc::new(TextureUsageRecorder::default());
+        // TODO: Update this storage when asset changes.
+        let textures = runtime
+            .service::<AssetRegistry>()
+            .all_handles_of::<Image>()
+            .unwrap()
+            .into_iter()
+            .map(|h| TextureObject {
+                external_id: TextureId::new(*h.id()),
+                name: h.get().unwrap().metadata.name.clone(),
+            })
+            .collect();
+        let texture_storage = Arc::new(TextureStorage::new(textures));
         let main_graph_storage = {
             let mut storage = GraphDynamicInstancesStorage::default();
             storage.merge(std_storage());
@@ -107,15 +124,14 @@ impl FromRuntime for BrushEditorView {
                 .nodes
                 .register_non_default(GraphFunctionNode::new(function_storage.clone()));
             storage
+                .nodes
+                .register_non_default(TextureNode::new(texture_storage, recorder.clone()));
+            storage
         };
 
         let actions = runtime
             .service::<ActionManifestCollection>()
             .subset_for_view("brush_editor");
-
-        let assets = runtime.service::<AssetRegistry>();
-        // TODO: Update if assets change
-        let images = assets.all_handles_of::<Image>().unwrap();
 
         Self {
             input_manager: InputManager::new(actions),
@@ -125,6 +141,7 @@ impl FromRuntime for BrushEditorView {
             function_graph_storage,
             function_storage,
             function_id_to_asset,
+            texture_usage_recorder: recorder,
 
             create_new_name: String::new(),
             create_new_type: None,
@@ -257,6 +274,7 @@ impl WindowView for BrushEditorView {
                             && modifiers.control()
                         {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
+                                self.texture_usage_recorder.reset();
                                 match brush.instance.compile() {
                                     Ok(shader) => println!("Generated shader:\n{}", shader),
                                     Err(e) => println!("Failed to generate shader: {:?}", e),
@@ -321,7 +339,6 @@ impl WindowView for BrushEditorView {
                 let (instance, errors) = BrushPresetInstance::from_asset(
                     &brush.get().unwrap(),
                     self.main_graph_storage.clone(),
-                    runtime.service::<AssetRegistry>().as_ref(),
                 );
 
                 if let Some(instance) = instance {

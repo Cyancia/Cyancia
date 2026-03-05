@@ -1,7 +1,12 @@
+use std::{collections::HashMap, sync::Arc};
+
+use cyancia_utils::wrapper;
 use cyancia_widgets::spin_slider::SpinSlider;
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
 use iced_widget::{column, space};
+use indexmap::IndexMap;
+use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -167,21 +172,17 @@ impl GraphValueType for ColorType {
 #[derive(Default, Clone)]
 pub struct TextureType;
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct TextureReference {
-    pub global_id: Uuid,
-    pub local_index: u32,
+wrapper! {
+    #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub TextureLocalIndex : u32
 }
 
-impl TextureReference {
-    pub const NULL: Self = Self {
-        global_id: Uuid::nil(),
-        local_index: u32::MAX,
-    };
+impl TextureLocalIndex {
+    pub const NULL: Self = Self(0);
 }
 
 impl GraphValueType for TextureType {
-    type AssociatedLiteralType = TextureReference;
+    type AssociatedLiteralType = TextureLocalIndex;
 
     type Message = ();
 
@@ -194,7 +195,7 @@ impl GraphValueType for TextureType {
     }
 
     fn default_literal(&self) -> Self::AssociatedLiteralType {
-        TextureReference::NULL
+        TextureLocalIndex::NULL
     }
 
     fn wgsl_type(&self) -> Option<&'static str> {
@@ -211,6 +212,6 @@ impl GraphValueType for TextureType {
     fn update_literal(&self, _data: &mut Self::AssociatedLiteralType, _message: Self::Message) {}
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
-        Some(data.local_index.to_string())
+        Some(data.to_string())
     }
 }

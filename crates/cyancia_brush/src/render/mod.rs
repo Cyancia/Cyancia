@@ -1,7 +1,9 @@
 use std::{num::NonZeroU32, sync::Arc};
 
+use cyancia_assets::{asset::AssetId, store::AssetRegistry};
 use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner, Tile};
 use cyancia_render::buffer::DynamicBuffer;
+use cyancia_shader_graph::wgsl_std::nodes::TextureUsageRecorder;
 use encase::ShaderType;
 use glam::{UVec2, Vec2};
 use wgpu::{
@@ -62,8 +64,18 @@ impl BrushRenderer {
         }
     }
 
-    pub fn brush_resize(&mut self, brush: &mut BrushPresetInstance) {
+    pub fn brush_resize(
+        &mut self,
+        brush: &mut BrushPresetInstance,
+        recorder: &TextureUsageRecorder,
+    ) {
         let estimated_size = brush.estimate_size();
+        if let Some(prepared) = self.prepared.as_ref() {
+            if prepared.estimated_size == estimated_size {
+                return;
+            }
+        }
+
         let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size());
 
         let main_layout = self
@@ -104,9 +116,7 @@ impl BrushRenderer {
                             view_dimension: TextureViewDimension::D2,
                             multisampled: false,
                         },
-                        count: Some(
-                            NonZeroU32::new(brush.referenced_textures().len() as u32).unwrap(),
-                        ),
+                        count: Some(NonZeroU32::new(recorder.get_usage().len() as u32).unwrap()),
                     },
                     // Tile Info
                     BindGroupLayoutEntry {
@@ -156,12 +166,15 @@ impl BrushRenderer {
         });
     }
 
-    pub fn upload_textures(&mut self, brush: &mut BrushPresetInstance) {
+    pub fn upload_textures(&mut self, assets: &AssetRegistry, recorder: &TextureUsageRecorder) {
         self.textures.clear();
-        for handle in brush.referenced_textures() {
-            let texture = handle.get().unwrap();
-            self.textures
-                .push(GpuImage::from_asset(&self.device, &self.queue, &texture));
+        for id in recorder.get_usage().keys() {
+            let handle = assets.handle(AssetId::new(**id)).unwrap();
+            self.textures.push(GpuImage::from_asset(
+                &self.device,
+                &self.queue,
+                &handle.get().unwrap(),
+            ));
         }
     }
 

@@ -25,7 +25,6 @@ pub fn std_storage() -> GraphDynamicInstancesStorage {
     storage.types.register::<F32Type>();
     storage.types.register::<Vec2FType>();
     storage.types.register::<ColorType>();
-    storage.types.register::<TextureType>();
 
     storage.casters.register::<F32ToVec2FCaster>();
     storage.casters.register::<Vec2FToF32Caster>();

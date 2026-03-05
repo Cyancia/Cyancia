@@ -22,7 +22,6 @@ use cyancia_shader_graph::{
         GraphDeserializeError, GraphSerializable, SerializableExternalLiteral, SerializableGraph,
         SerializableGraphLiteral,
     },
-    wgsl_std::types::{TextureReference, TextureType},
 };
 use glam::UVec2;
 use image::{DynamicImage, ImageFormat};
@@ -209,8 +208,6 @@ pub struct BrushPresetInstance {
     metadata: BrushPresetMetadata,
     main_graph: Graph,
     external_vars: Arc<ExternalVariableStorage>,
-    referenced_textures: IndexSet<AssetHandle<Image>>,
-    dirty_texture_variables: bool,
 }
 
 impl BrushPresetInstance {
@@ -222,15 +219,12 @@ impl BrushPresetInstance {
             metadata,
             main_graph: Graph::new(main_graph_storage),
             external_vars: Arc::new(ExternalVariableStorage::default()),
-            referenced_textures: IndexSet::new(),
-            dirty_texture_variables: false,
         }
     }
 
     pub fn from_asset(
         preset: &BrushPreset,
         mut main_graph_storage: GraphDynamicInstancesStorage,
-        asset_registry: &AssetRegistry,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let external_vars = preset
             .external_vars
@@ -243,16 +237,6 @@ impl BrushPresetInstance {
                 )
             })
             .collect::<HashMap<_, _>>();
-
-        let mut referenced_textures = IndexSet::new();
-        for var in external_vars.values() {
-            if let Some(texture_ref) = var.value.try_as_ref::<TextureReference>() {
-                let Ok(handle) = asset_registry.handle(AssetId::new(texture_ref.global_id)) else {
-                    continue;
-                };
-                referenced_textures.insert(handle);
-            }
-        }
 
         let external_vars = Arc::new(ExternalVariableStorage::from_hashmap(external_vars));
         main_graph_storage
@@ -274,21 +258,9 @@ impl BrushPresetInstance {
                 metadata: preset.metadata.clone(),
                 main_graph,
                 external_vars,
-                referenced_textures,
-                dirty_texture_variables: false,
             }),
             errors,
         )
-    }
-
-    pub fn add_texture_reference(&mut self, asset: AssetHandle<Image>) {
-        self.referenced_textures.insert(asset);
-        self.dirty_texture_variables = true;
-    }
-
-    pub fn remove_texture_reference(&mut self, asset_id: &AssetHandle<Image>) {
-        self.referenced_textures.swap_remove(asset_id);
-        self.dirty_texture_variables = true;
     }
 
     pub fn estimate_size(&self) -> UVec2 {
@@ -297,40 +269,7 @@ impl BrushPresetInstance {
     }
 
     pub fn compile(&mut self) -> Result<String, anyhow::Error> {
-        if self.dirty_texture_variables {
-            self.reset_external_texture_variables();
-        }
         generate_brush_shader(&mut self.main_graph)
-    }
-
-    fn reset_external_texture_variables(&mut self) {
-        let all = self.external_vars.all();
-        let texture_refs = all
-            .iter()
-            .filter_map(|(id, var)| var.value.try_as_ref::<TextureReference>().map(|_| id))
-            .collect::<Vec<_>>();
-
-        for id in texture_refs {
-            self.external_vars.remove(&id);
-        }
-
-        for (local_index, handle) in self.referenced_textures.iter().enumerate() {
-            let Ok(asset) = handle.get() else {
-                continue;
-            };
-
-            let reference = TextureReference {
-                global_id: *handle.id(),
-                local_index: local_index as u32,
-            };
-            self.external_vars.insert(
-                ExternalVariableId::new(Uuid::new_v4()),
-                ExternalVariable {
-                    name: asset.metadata.name.clone(),
-                    value: GraphLiteral::new::<TextureType>(reference),
-                },
-            );
-        }
     }
 
     pub fn main_graph(&self) -> &Graph {
@@ -339,10 +278,6 @@ impl BrushPresetInstance {
 
     pub fn main_graph_mut(&mut self) -> &mut Graph {
         &mut self.main_graph
-    }
-
-    pub fn referenced_textures(&self) -> &IndexSet<AssetHandle<Image>> {
-        &self.referenced_textures
     }
 
     pub fn external_vars(&self) -> &Arc<ExternalVariableStorage> {
