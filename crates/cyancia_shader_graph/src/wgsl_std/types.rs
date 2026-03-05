@@ -109,7 +109,7 @@ impl GraphValueType for Vec2FType {
 #[derive(Default, Clone)]
 pub struct ColorType;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ColorMessage {
     R(f32),
     G(f32),

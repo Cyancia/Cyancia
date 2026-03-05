@@ -45,6 +45,7 @@ use iced_core::{
 use iced_core::{Text, keyboard};
 
 use std::ops::RangeInclusive;
+use std::str::FromStr;
 
 /// An horizontal bar and a handle that selects a single value from a range of
 /// values.
@@ -124,18 +125,6 @@ where
     where
         F: 'a + Fn(T) -> Message,
     {
-        let value = if value >= *range.start() {
-            value
-        } else {
-            *range.start()
-        };
-
-        let value = if value <= *range.end() {
-            value
-        } else {
-            *range.end()
-        };
-
         SpinSlider {
             value,
             default: None,
@@ -230,7 +219,7 @@ where
 impl<T, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for SpinSlider<'_, T, Message, Theme, Renderer>
 where
-    T: Copy + Into<f64> + num_traits::FromPrimitive,
+    T: Copy + Into<f64> + num_traits::FromPrimitive + FromStr + PartialOrd,
     Message: Clone,
     Theme: Catalog,
     Renderer: iced_core::Renderer + iced_core::text::Renderer,
@@ -354,8 +343,7 @@ where
                             let _ = self.default.map(change);
                             state.is_dragging = false;
                         } else {
-                            let _ = locate(cursor_position).map(change);
-                            state.is_dragging = true;
+                            state.clicked_but_not_moved = true;
                         }
 
                         shell.capture_event();
@@ -369,14 +357,31 @@ where
                             shell.publish(on_release);
                         }
                         state.is_dragging = false;
+                    } else if let Some(cursor_position) = cursor.position_over(layout.bounds()) {
+                        if state.clicked_but_not_moved {
+                            state.mode = Mode::Type;
+                            state.is_dragging = false;
+                            state.clicked_but_not_moved = false;
+                            dbg!();
+                        } else if state.keyboard_modifiers.command() {
+                            let _ = self.default.map(change);
+                            state.is_dragging = false;
+                        } else {
+                            let _ = locate(cursor_position).map(change);
+                            state.is_dragging = true;
+                        }
+
+                        shell.capture_event();
                     }
                 }
                 Event::Mouse(mouse::Event::CursorMoved { .. })
                 | Event::Touch(touch::Event::FingerMoved { .. }) => {
-                    if state.is_dragging {
+                    if state.clicked_but_not_moved || state.is_dragging {
+                        state.is_dragging = true;
                         let _ = cursor.land().position().and_then(locate).map(change);
 
                         shell.capture_event();
+                        state.clicked_but_not_moved = false;
                     }
                 }
                 Event::Mouse(mouse::Event::WheelScrolled { delta })
@@ -397,21 +402,39 @@ where
                         shell.capture_event();
                     }
                 }
-                Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
-                    if cursor.is_over(layout.bounds()) {
-                        match key {
-                            Key::Named(key::Named::ArrowUp) => {
-                                let _ = increment(current_value).map(change);
-                                shell.capture_event();
+                Event::Keyboard(keyboard::Event::KeyPressed {
+                    key, physical_key, ..
+                }) => match state.mode {
+                    Mode::Drag => {
+                        if cursor.is_over(layout.bounds()) {
+                            match key {
+                                Key::Named(key::Named::ArrowUp) => {
+                                    let _ = increment(current_value).map(change);
+                                    shell.capture_event();
+                                }
+                                Key::Named(key::Named::ArrowDown) => {
+                                    let _ = decrement(current_value).map(change);
+                                    shell.capture_event();
+                                }
+                                _ => (),
                             }
-                            Key::Named(key::Named::ArrowDown) => {
-                                let _ = decrement(current_value).map(change);
-                                shell.capture_event();
-                            }
-                            _ => (),
                         }
                     }
-                }
+                    Mode::Type => {
+                        dbg!(&key);
+                        if let Some(c) = key.to_latin(*physical_key) {
+                            if ('0' <= c && c <= '9') || c == '.' {
+                                state.input_buffer.push(c);
+                            }
+                        } else if key == &Key::Named(key::Named::Backspace) {
+                            state.input_buffer.pop();
+                        } else if key == &Key::Named(key::Named::Enter) {
+                            state.input_buffer.parse::<T>().ok().map(change);
+                            state.input_buffer.clear();
+                            state.mode = Mode::Drag;
+                        }
+                    }
+                },
                 Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
                     state.keyboard_modifiers = *modifiers;
                 }
@@ -447,10 +470,24 @@ where
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+        let state = _tree.state.downcast_ref::<State>();
 
         let style = theme.style(&self.class, self.status.unwrap_or(Status::Active));
 
-        let value = self.value.into() as f32;
+        let value = {
+            let value = if self.value >= *self.range.start() {
+                self.value
+            } else {
+                *self.range.start()
+            };
+
+            let value = if value <= *self.range.end() {
+                value
+            } else {
+                *self.range.end()
+            };
+            value.into() as f32
+        };
         let (range_start, range_end) = {
             let (start, end) = self.range.clone().into_inner();
 
@@ -498,9 +535,16 @@ where
             style.value_bar,
         );
 
+        let text = match state.mode {
+            Mode::Drag => {
+                format!("{:.2}", self.value.into() as f32)
+            }
+            Mode::Type => state.input_buffer.clone(),
+        };
+
         renderer.fill_text(
             Text {
-                content: format!("{:.2}", value),
+                content: text,
                 bounds: bounds.size(),
                 size: Pixels(self.height * 0.8),
                 line_height: LineHeight::Relative(1.0),
@@ -552,7 +596,7 @@ where
 impl<'a, T, Message, Theme, Renderer> From<SpinSlider<'a, T, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
-    T: Copy + Into<f64> + num_traits::FromPrimitive + 'a,
+    T: Copy + Into<f64> + num_traits::FromPrimitive + 'a + FromStr + PartialOrd,
     Message: Clone + 'a,
     Theme: Catalog + 'a,
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
@@ -567,7 +611,17 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct State {
     is_dragging: bool,
+    clicked_but_not_moved: bool,
+    mode: Mode,
     keyboard_modifiers: keyboard::Modifiers,
+    input_buffer: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    #[default]
+    Drag,
+    Type,
 }
 
 /// The possible status of a [`Slider`].
