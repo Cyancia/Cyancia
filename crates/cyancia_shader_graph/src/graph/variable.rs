@@ -138,10 +138,7 @@ impl GraphLiteral {
         }
     }
 
-    pub fn new_boxed(
-        value: Box<dyn GraphLiteralValue>,
-        ty: Box<dyn ErasedGraphValueType>,
-    ) -> Self {
+    pub fn new_boxed(value: Box<dyn GraphLiteralValue>, ty: Box<dyn ErasedGraphValueType>) -> Self {
         Self { value, ty }
     }
 
@@ -211,7 +208,7 @@ impl GraphVariable {
         &self.identifier
     }
 
-    pub fn ty(&self) -> &dyn ErasedGraphValueType {
-        self.ty.as_ref()
+    pub fn ty(&self) -> &Box<dyn ErasedGraphValueType> {
+        &self.ty
     }
 }

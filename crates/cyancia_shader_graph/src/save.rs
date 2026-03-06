@@ -386,6 +386,13 @@ pub struct SerializableGraphLiteral {
 }
 
 impl SerializableGraphLiteral {
+    pub fn serialize(literal: &GraphLiteral) -> Result<SerializableGraphLiteral, toml::ser::Error> {
+        Ok(SerializableGraphLiteral {
+            ty: literal.ty().name().to_string(),
+            value: literal.ty().serialize_literal(literal.value())?,
+        })
+    }
+
     pub fn deserialize(
         &self,
         storage: &GraphDynamicInstancesStorage,

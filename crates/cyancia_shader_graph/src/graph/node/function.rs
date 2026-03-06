@@ -10,6 +10,7 @@ use cyancia_assets::asset::Asset;
 use cyancia_utils::wrapper;
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, pick_list, space, text_input};
+use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
@@ -26,10 +27,11 @@ use crate::{
         },
         slot::{
             ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphDefaultInputSlot,
-            GraphDefaultOutputSlot,
+            GraphDefaultOutputSlot, GraphInputSlotId,
         },
+        variable::GraphLiteral,
     },
-    save::{GraphDeserializeError, GraphSerializable, SerializableGraph},
+    save::{GraphDeserializeError, GraphSerializable, SerializableGraph, SerializableGraphLiteral},
 };
 
 pub fn functioning() -> GraphDynamicInstancesStorage {
@@ -127,9 +129,7 @@ impl GraphNode for GraphFunctionNode {
             .unwrap()
             .inputs
             .iter()
-            .map(|(slot, var)| {
-                GraphDefaultInputSlot::new_boxed_default(dyn_clone::clone_box(&*var.ty()))
-            })
+            .map(|(slot, var)| GraphDefaultInputSlot::new_boxed_default(var.ty().clone()))
             .collect()
     }
 
@@ -148,7 +148,7 @@ impl GraphNode for GraphFunctionNode {
             .unwrap()
             .outputs
             .iter()
-            .map(|(slot, var)| GraphDefaultOutputSlot::new_boxed(dyn_clone::clone_box(&*var.ty())))
+            .map(|(slot, var)| GraphDefaultOutputSlot::new_boxed(var.ty().clone()))
             .collect()
     }
 
@@ -224,9 +224,16 @@ impl GraphNode for GraphFunctionNode {
         Column::with_children(slots).into()
     }
 
-    fn update(&self, state: &mut Self::State, message: Self::Message, ctx: GraphNodeUpdateContext) {
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
         match message {
-            GraphFunctionNodeMessage::LiteralUpdate(_) => unreachable!(),
+            GraphFunctionNodeMessage::LiteralUpdate(m) => {
+                ctx.update_literal(m);
+            }
             GraphFunctionNodeMessage::FunctionChanged(id) => {
                 state.id = Some(id);
             }
@@ -236,7 +243,7 @@ impl GraphNode for GraphFunctionNode {
     fn generate_code(
         &self,
         state: &Self::State,
-        mut ctx: GraphNodeCodeGenContext,
+        ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         let Some(id) = state.id.as_ref() else {
             return Ok(Default::default());
