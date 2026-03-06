@@ -267,7 +267,7 @@ impl GraphNode for GraphFunctionNode {
                 input_idents,
                 GraphVarIdentGenerator::new(format!(
                     "{}_{}",
-                    id,
+                    id.to_string().replace('-', "_"),
                     UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed)
                 )),
             )

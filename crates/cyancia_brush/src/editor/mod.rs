@@ -358,7 +358,7 @@ impl WindowView for BrushEditorView {
                                                     )
                                                     .unwrap(),
                                                 ),
-                                                "saved.cbp",
+                                                format!("{}.cbp", brush.instance.metadata().name),
                                                 Arc::new(preset),
                                             )
                                             .unwrap();
