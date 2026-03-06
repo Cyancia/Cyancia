@@ -114,13 +114,12 @@ impl AssetBundle for AssetDirectory {
             .map_err(DataDirectoryError::SerializerError)?;
         let path_str = path.to_string_lossy().to_string();
         let asset_id = asset_id_from_relative_path(&path_str);
-        let append = toml::Value::try_from(&(asset_id, path_str))?.to_string();
 
         File::options()
             .append(true)
             .open(self.root.join("manifest.toml"))?
             // Only works because it's toml.
-            .write_all(append.as_bytes())?;
+            .write_all(format!("{} = {}", asset_id, path_str).as_bytes())?;
         Ok(asset_id)
     }
 }
