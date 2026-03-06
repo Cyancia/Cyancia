@@ -24,3 +24,5 @@ parking_lot.workspace = true
 cyancia_assets.workspace = true
 parse-display.workspace = true
 cyancia_runtime.workspace = true
+cyancia_render.workspace = true
+encase.workspace = true

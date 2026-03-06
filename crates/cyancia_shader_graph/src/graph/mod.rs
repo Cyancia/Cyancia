@@ -108,7 +108,10 @@ impl Graph {
 
         if let (Some(from), Some(to)) = (from_slot, to_slot) {
             from.data_ty.name() == to.data.ty().name()
-                || self.storage.casters.can_cast(&*from.data_ty, to.data.ty())
+                || self
+                    .storage
+                    .casters
+                    .can_cast(&*from.data_ty, to.data.ty().as_ref())
         } else {
             false
         }
@@ -231,7 +234,7 @@ impl Graph {
         }
 
         run_order.reverse();
-        self.cached_run_order = Some(run_order );
+        self.cached_run_order = Some(run_order);
     }
 
     pub fn find_loops(&self) -> Vec<Vec<GraphNodeId>> {

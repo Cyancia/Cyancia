@@ -616,7 +616,7 @@ impl GraphNodeUpdateSignatureContext<'_> {
 
         self.signature.outputs.insert(
             *slot_id,
-            GraphVariable::new_boxed(name, dyn_clone::clone_box(&*slot.data.ty())),
+            GraphVariable::new_boxed(name, slot.data.ty().clone()),
         );
     }
 }
@@ -663,7 +663,7 @@ impl GraphNodeCodeGenContext<'_> {
         if output_slot.data_ty.name() != slot.data.ty().name() {
             self.storage
                 .casters
-                .try_cast(&*output_slot.data_ty, slot.data.ty(), ident)
+                .try_cast(&*output_slot.data_ty, slot.data.ty().as_ref(), ident)
                 .ok_or(GraphNodeCodeGenError::FailedToCastVariable)
         } else {
             Ok(ident.clone())

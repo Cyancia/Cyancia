@@ -96,6 +96,10 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
         self.usage = usage;
         self
     }
+
+    pub fn into_inner(self) -> Vec<u8> {
+        self.wrapper.into_inner()
+    }
 }
 
 pub struct BufferVec<T: ShaderType + WriteInto> {

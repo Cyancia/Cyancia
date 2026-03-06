@@ -3,9 +3,11 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
+use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
+use encase::{DynamicStorageBuffer, ShaderType, internal::WriteInto};
 use iced_core::{Color, Element};
 use parse_display::Display;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
@@ -116,6 +118,10 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Self::AssociatedLiteralType;
     fn wgsl_type(&self) -> Option<&'static str>;
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+    ) -> Option<Vec<u8>>;
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
@@ -168,6 +174,8 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Box<dyn GraphLiteralValue>;
     fn wgsl_type(&self) -> Option<&'static str>;
+    fn try_write_into_shader_buffer(&self, literal: &Box<dyn GraphLiteralValue>)
+    -> Option<Vec<u8>>;
     fn view_literal(
         &self,
         slot_id: GraphInputSlotId,
@@ -207,6 +215,16 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
 
     fn wgsl_type(&self) -> Option<&'static str> {
         self.wgsl_type()
+    }
+
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Box<dyn GraphLiteralValue>,
+    ) -> Option<Vec<u8>> {
+        let literal = literal
+            .downcast_ref::<T::AssociatedLiteralType>()
+            .expect("Failed to downcast literal.");
+        self.try_write_into_shader_buffer(literal)
     }
 
     fn view_literal(

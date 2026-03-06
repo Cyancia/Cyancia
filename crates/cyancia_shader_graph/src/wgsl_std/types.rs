@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
 use cyancia_widgets::spin_slider::SpinSlider;
 use glam::{Vec2, Vec4};
@@ -34,6 +35,15 @@ impl GraphValueType for F32Type {
 
     fn wgsl_type(&self) -> Option<&'static str> {
         Some("f32")
+    }
+
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+    ) -> Option<Vec<u8>> {
+        let mut buf = DynamicBuffer::default();
+        buf.push(literal);
+        Some(buf.into_inner())
     }
 
     fn view_literal(
@@ -80,6 +90,15 @@ impl GraphValueType for Vec2FType {
 
     fn wgsl_type(&self) -> Option<&'static str> {
         Some("vec2f")
+    }
+
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+    ) -> Option<Vec<u8>> {
+        let mut buf = DynamicBuffer::default();
+        buf.push(literal);
+        Some(buf.into_inner())
     }
 
     fn view_literal(
@@ -136,6 +155,15 @@ impl GraphValueType for ColorType {
 
     fn wgsl_type(&self) -> Option<&'static str> {
         Some("vec4f")
+    }
+
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+    ) -> Option<Vec<u8>> {
+        let mut buf = DynamicBuffer::default();
+        buf.push(literal);
+        Some(buf.into_inner())
     }
 
     fn view_literal(
@@ -199,6 +227,13 @@ impl GraphValueType for TextureType {
     }
 
     fn wgsl_type(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+    ) -> Option<Vec<u8>> {
         None
     }
 

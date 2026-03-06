@@ -15,6 +15,7 @@ struct TileInfo {
 @group(0) @binding(1) var outputs: binding_array<texture_storage_2d<r32uint, read_write>, 1>;
 @group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
+//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
 fn convert_pixel_to_tile(pixel: vec2i, layer: ptr<function, u32>, coord: ptr<function, vec2u>) {
     for (var i = 0u; i < arrayLength(&tile_info); i = i + 1u) {

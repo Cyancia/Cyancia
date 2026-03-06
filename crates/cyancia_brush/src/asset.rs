@@ -43,7 +43,7 @@ use wgpu::{
 };
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
-use crate::render::graph::{GraphInputParams, brush_graph_storage, generate_brush_shader};
+use crate::render::graph::{GraphInputParams, brush_graph_storage};
 
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
@@ -357,9 +357,13 @@ impl BrushPresetInstance {
 
     pub fn compile(&mut self) -> Result<(String, Arc<TextureUsageRecorder>), anyhow::Error> {
         self.texture_usage_recorder.reset();
-        let shader = generate_brush_shader(&mut self.main_graph)?;
+        let template = include_str!("render/brush_template.wesl");
+        let (_, graph_code) = self.main_graph.compile(Vec::new(), Default::default())?;
+        let code = template.replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code);
+        println!("Generated shader code:\n{}", code);
+
         dbg!(self.texture_usage_recorder.get_usage());
-        Ok((shader, self.texture_usage_recorder.clone()))
+        Ok((code, self.texture_usage_recorder.clone()))
     }
 
     pub fn main_graph(&self) -> &Graph {

@@ -7,25 +7,50 @@ use cyancia_image::{
     tile::{GpuTileStorage, GpuTileStorageInner, Tile},
 };
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
-use cyancia_shader_graph::wgsl_std::nodes::{TextureId, TextureUsageRecorder};
+use cyancia_shader_graph::{
+    graph::node::external::generate_external_variable_binding,
+    wgsl_std::nodes::{TextureId, TextureUsageRecorder},
+};
 use encase::ShaderType;
 use glam::{IVec2, UVec2, Vec2};
 use uuid::Uuid;
+use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
     ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, PipelineLayoutDescriptor, Queue,
     ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
     TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDimension, naga::StorageAccess,
+    TextureView, TextureViewDimension,
+    naga::StorageAccess,
+    util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
     asset::{BrushPresetInstance, GpuImage},
-    render::graph::{GraphInputParams, generate_brush_shader},
+    render::graph::GraphInputParams,
 };
 
 pub mod graph;
+
+pub fn compile_brush_wesl(shader: String) -> anyhow::Result<String> {
+    let mut resolver = VirtualResolver::new();
+    resolver.add_module("template".parse().unwrap(), shader.into());
+    resolver.add_module(
+        "template/image::texture_unpack".parse().unwrap(),
+        include_str!("../../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
+    );
+    resolver.add_module(
+        "template/image::blend_modes".parse().unwrap(),
+        include_str!("../../../cyancia_image/src/shaders/blend_modes.wesl").into(),
+    );
+    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
+    compiler.set_mangler(Default::default());
+    compiler.set_options(Default::default());
+
+    let shader = compiler.compile(&"template".parse().unwrap())?;
+    Ok(shader.to_string())
+}
 
 pub const BRUSH_RENDER_TARGET: LayerId =
     LayerId::new(Uuid::from_u128(85004653408671049643065089641532));
@@ -91,6 +116,7 @@ struct InitializedData {
     pipeline: ComputePipeline,
     main_layout: BindGroupLayout,
     target_layer_texel: TexelType,
+    textures: Vec<TextureView>,
 }
 
 pub struct BrushPresetRenderer {
@@ -100,7 +126,7 @@ pub struct BrushPresetRenderer {
 
     initialized: Option<InitializedData>,
     main_bind_group: Option<BindGroup>,
-    textures: Vec<GpuImage>,
+    external_var_buffers: Vec<Buffer>,
     tile_info: BufferVec<TileInfo>,
 
     empty_texture: GpuImage,
@@ -131,7 +157,7 @@ impl BrushPresetRenderer {
 
             initialized: None,
             main_bind_group: None,
-            textures: Vec::new(),
+            external_var_buffers: Vec::new(),
             tile_info: BufferVec::default().with_usage(BufferUsages::STORAGE),
             empty_texture: GpuImage {
                 texture: empty_texture,
@@ -151,63 +177,107 @@ impl BrushPresetRenderer {
         let output_len = estimated_tile_count.element_product();
         // TODO: Handle shader compile error
         let (shader, texture_usage_recorder) = brush.compile().unwrap();
+
+        // Prepare referenced textures
+
+        let mut textures = Vec::new();
+        for id in texture_usage_recorder.get_usage().keys() {
+            if id == &TextureId::NULL {
+                textures.push(self.empty_texture.texture.create_view(&Default::default()));
+                continue;
+            }
+
+            let handle = assets.handle(AssetId::new(**id)).unwrap();
+            let gpu_image = GpuImage::from_asset(
+                &self.device,
+                &self.queue,
+                &handle.get().unwrap(),
+                TextureUsages::TEXTURE_BINDING,
+            );
+            textures.push(gpu_image.texture.create_view(&Default::default()));
+        }
+
+        // Prepare bind group layout
+
+        let mut bind_group_entries = vec![
+            // Graph Input Parameters
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(GraphInputUniform::min_size()),
+                },
+                count: None,
+            },
+            // Output
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::StorageTexture {
+                    access: StorageTextureAccess::ReadWrite,
+                    // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
+                    //       into target color space when merging down.
+                    format: target_layer_texel.wgpu_format(),
+                    view_dimension: TextureViewDimension::D2,
+                },
+                count: Some(NonZeroU32::new(output_len).unwrap()),
+            },
+            // Textures
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: Some(
+                    NonZeroU32::new(texture_usage_recorder.get_usage().len() as u32).unwrap(),
+                ),
+            },
+            // Tile Info
+            BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(TileInfo::min_size()),
+                },
+                count: None,
+            },
+        ];
+
+        let mut external_variable_bindings = String::new();
+        for var in brush.external_vars().all().values() {
+            let cur_binding = bind_group_entries.len() as u32;
+            external_variable_bindings
+                .extend(generate_external_variable_binding(0, cur_binding, var.as_ref()).chars());
+            bind_group_entries.push(BindGroupLayoutEntry {
+                binding: cur_binding,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+        }
+        let shader = shader.replace(
+            "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
+            &external_variable_bindings,
+        );
+        let shader = compile_brush_wesl(shader).unwrap();
         println!("Generated shader:\n{}", shader);
 
         let main_layout = self
             .device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("brush main layout"),
-                entries: &[
-                    // Graph Input Parameters
-                    BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: Some(GraphInputUniform::min_size()),
-                        },
-                        count: None,
-                    },
-                    // Output
-                    BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::StorageTexture {
-                            access: StorageTextureAccess::ReadWrite,
-                            // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
-                            //       into target color space when merging down.
-                            format: target_layer_texel.wgpu_format(),
-                            view_dimension: TextureViewDimension::D2,
-                        },
-                        count: Some(NonZeroU32::new(output_len).unwrap()),
-                    },
-                    // Textures
-                    BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Texture {
-                            sample_type: TextureSampleType::Float { filterable: true },
-                            view_dimension: TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: Some(
-                            NonZeroU32::new(texture_usage_recorder.get_usage().len() as u32)
-                                .unwrap(),
-                        ),
-                    },
-                    // Tile Info
-                    BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: Some(TileInfo::min_size()),
-                        },
-                        count: None,
-                    },
-                ],
+                entries: &bind_group_entries,
             });
 
         let pipeline_layout = self
@@ -240,23 +310,8 @@ impl BrushPresetRenderer {
             pipeline,
             main_layout,
             target_layer_texel,
+            textures,
         });
-
-        self.textures.clear();
-        for id in texture_usage_recorder.get_usage().keys() {
-            if id == &TextureId::NULL {
-                self.textures.push(self.empty_texture.clone());
-                continue;
-            }
-
-            let handle = assets.handle(AssetId::new(**id)).unwrap();
-            self.textures.push(GpuImage::from_asset(
-                &self.device,
-                &self.queue,
-                &handle.get().unwrap(),
-                TextureUsages::TEXTURE_BINDING,
-            ));
-        }
     }
 
     pub fn prepare(
@@ -289,6 +344,8 @@ impl BrushPresetRenderer {
         }
         self.tile_info.write_buffer(&self.device);
 
+        // Prepare output tiles
+
         let mut empty_placeholders = Vec::new();
         let mut outputs = outputs.iter().map(|t| t.view.as_ref()).collect::<Vec<_>>();
         if outputs.len() < initialized.output_len_in_layout as usize {
@@ -315,37 +372,53 @@ impl BrushPresetRenderer {
             outputs.extend(&empty_placeholders);
         }
 
-        let referenced_textures = self
+        let texture_views = initialized
             .textures
-            .iter()
-            .map(|t| t.texture.create_view(&Default::default()))
-            .collect::<Vec<_>>();
-        let referenced_texture_views = referenced_textures
             .iter()
             .map(std::convert::identity)
             .collect::<Vec<_>>();
 
+        let mut bind_group_entries = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: self.graph_input.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::TextureViewArray(&outputs),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::TextureViewArray(&texture_views),
+            },
+            BindGroupEntry {
+                binding: 3,
+                resource: self.tile_info.binding().unwrap(),
+            },
+        ];
+
+        // Prepare external variable buffers
+        self.external_var_buffers.clear();
+        for var in brush.external_vars().all().values() {
+            let buffer = var.value.try_write_into_shader_buffer().unwrap();
+            let gpu_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("external variable buffer"),
+                contents: &buffer,
+                usage: BufferUsages::STORAGE,
+            });
+            self.external_var_buffers.push(gpu_buffer);
+        }
+        for buffer in self.external_var_buffers.iter() {
+            bind_group_entries.push(BindGroupEntry {
+                binding: bind_group_entries.len() as u32,
+                resource: buffer.as_entire_binding(),
+            });
+        }
+
         let main_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group"),
             layout: &initialized.main_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: self.graph_input.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::TextureViewArray(&outputs),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureViewArray(&referenced_texture_views),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: self.tile_info.binding().unwrap(),
-                },
-            ],
+            entries: &bind_group_entries,
         });
         self.main_bind_group = Some(main_bind_group);
     }

@@ -13,7 +13,7 @@ use crate::{
         Graph, GraphDynamicInstancesStorage, GraphSignature,
         node::{
             GraphNodeData, GraphNodeId, StatefulGraphNode,
-            external::ExternalVariable,
+            external::{ExternalVariable, ExternalVariableId},
             function::{GraphFunction, GraphFunctionId},
         },
         slot::{
@@ -410,6 +410,7 @@ impl SerializableGraphLiteral {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableExternalVariable {
+    pub id: ExternalVariableId,
     pub name: String,
     pub value: SerializableGraphLiteral,
 }
@@ -420,6 +421,7 @@ impl SerializableExternalVariable {
         storage: &GraphDynamicInstancesStorage,
     ) -> Result<ExternalVariable, SerializableGraphLiteralError> {
         Ok(ExternalVariable {
+            id: self.id,
             name: self.name.clone(),
             value: self.value.deserialize(storage)?,
         })
@@ -429,6 +431,7 @@ impl SerializableExternalVariable {
         var: &ExternalVariable,
     ) -> Result<SerializableExternalVariable, toml::ser::Error> {
         Ok(SerializableExternalVariable {
+            id: var.id,
             name: var.name.clone(),
             value: SerializableGraphLiteral {
                 ty: var.value.ty().name().to_string(),

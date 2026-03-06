@@ -5,6 +5,7 @@ use cyancia_utils::wrapper;
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, pick_list};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,6 +21,28 @@ use crate::{
     },
     save::SerializableGraphLiteral,
 };
+
+pub fn generate_external_variable_name(var: &ExternalVariable) -> String {
+    format!(
+        "external_{}_{}",
+        var.name,
+        var.id.to_string().replace('-', "_")
+    )
+}
+
+pub fn generate_external_variable_binding(
+    group: u32,
+    binding: u32,
+    var: &ExternalVariable,
+) -> String {
+    format!(
+        "@group({}) @binding({}) var<storage> {}: {};",
+        group,
+        binding,
+        generate_external_variable_name(var),
+        var.value.ty().wgsl_type().unwrap()
+    )
+}
 
 #[derive(Default)]
 pub struct ExternalVariableStorage {
@@ -69,12 +92,14 @@ impl ExternalVariableStorage {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+    #[display("{0}")]
     pub ExternalVariableId : Uuid
 }
 
 #[derive(Clone)]
 pub struct ExternalVariable {
+    pub id: ExternalVariableId,
     pub name: String,
     pub value: GraphLiteral,
 }
@@ -133,9 +158,7 @@ impl GraphNode for ExternalNode {
 
     fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
         if let Some(v) = state.as_ref().and_then(|id| self.storage.get(&id)) {
-            vec![GraphDefaultOutputSlot::new_boxed(dyn_clone::clone_box(
-                v.value.ty(),
-            ))]
+            vec![GraphDefaultOutputSlot::new_boxed(v.value.ty().clone())]
         } else {
             vec![]
         }
@@ -149,18 +172,18 @@ impl GraphNode for ExternalNode {
         let id = state
             .as_ref()
             .ok_or(anyhow!("No external literal selected"))?;
-        let literal = self
+        let var = self
             .storage
             .get(id)
-            .ok_or(anyhow!("External literal not found"))?;
-        let code = literal
-            .value
-            .to_code()
-            .ok_or(anyhow!("Cannot convert literal to code"))?;
+            .ok_or(anyhow!("Selected external literal not found in storage"))?;
         let output = ctx.get_output(0)?;
         // TODO: Use uniform buffer to transfer external variables into shader.
         //       For current architecture, everytime user modifies them, the whole shader needs to be recompiled.
-        Ok(format!("let {} = {};\n", output, code))
+        Ok(format!(
+            "let {} = {};\n",
+            output,
+            generate_external_variable_name(var.as_ref())
+        ))
     }
 
     fn default_state(&self) -> Self::State {

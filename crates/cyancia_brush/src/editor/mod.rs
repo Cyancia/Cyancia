@@ -42,10 +42,7 @@ use wgpu::{Device, Queue};
 use crate::{
     asset::{BrushPreset, BrushPresetInstance, BrushPresetMetadata, GpuImage, Image},
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
-    render::{
-        BrushPresetOperator,
-        graph::{brush_graph_storage, generate_brush_shader},
-    },
+    render::{BrushPresetOperator, graph::brush_graph_storage},
     tool::CurrentBrushPresetOperator,
 };
 
@@ -626,6 +623,7 @@ impl BrushEditorView {
                 brush.instance.external_vars().insert(
                     ExternalVariableId::new(Uuid::new_v4()),
                     ExternalVariable {
+                        id: ExternalVariableId::new(Uuid::new_v4()),
                         name: self.create_new_name.clone(),
                         value: GraphLiteral::new_boxed(ty.default_literal(), ty.clone()),
                     },

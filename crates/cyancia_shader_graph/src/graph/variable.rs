@@ -162,8 +162,8 @@ impl GraphLiteral {
         self.value.downcast_mut::<T>()
     }
 
-    pub fn ty(&self) -> &dyn ErasedGraphValueType {
-        self.ty.as_ref()
+    pub fn ty(&self) -> &Box<dyn ErasedGraphValueType> {
+        &self.ty
     }
 
     pub fn value(&self) -> &Box<dyn GraphLiteralValue> {
@@ -184,6 +184,10 @@ impl GraphLiteral {
 
     pub fn update(&mut self, message: ErasedGraphLiteralUpdateMessage) {
         self.ty.update_literal(&mut self.value, message);
+    }
+
+    pub fn try_write_into_shader_buffer(&self) -> Option<Vec<u8>> {
+        self.ty.try_write_into_shader_buffer(&self.value)
     }
 }
 

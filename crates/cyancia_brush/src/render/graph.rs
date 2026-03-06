@@ -17,30 +17,6 @@ use iced_widget::{Column, pick_list, space};
 use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 
-pub fn generate_brush_shader(graph: &mut Graph) -> Result<String, anyhow::Error> {
-    let template = include_str!("brush_template.wesl");
-    let (_, graph_code) = graph.compile(Vec::new(), Default::default())?;
-    let code = template.replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code);
-    println!("Generated shader code:\n{}", code);
-
-    let mut resolver = VirtualResolver::new();
-    resolver.add_module("template".parse().unwrap(), code.into());
-    resolver.add_module(
-        "template/image::texture_unpack".parse().unwrap(),
-        include_str!("../../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
-    );
-    resolver.add_module(
-        "template/image::blend_modes".parse().unwrap(),
-        include_str!("../../../cyancia_image/src/shaders/blend_modes.wesl").into(),
-    );
-    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-    compiler.set_mangler(Default::default());
-    compiler.set_options(Default::default());
-
-    let shader = compiler.compile(&"template".parse().unwrap())?;
-    Ok(shader.to_string())
-}
-
 pub fn brush_graph_storage() -> GraphDynamicInstancesStorage {
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.nodes.register::<PenPosition>();
