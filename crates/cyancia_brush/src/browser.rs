@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cyancia_assets::asset::{AssetHandle, AssetId};
 use cyancia_shader_graph::graph::{
-    node::external::{ExternalVariableStorage, ExternalVariableId},
+    node::external::{ExternalVariableId, ExternalVariableStorage},
     slot::{ErasedGraphLiteralUpdateMessage, GraphInputSlotId, GraphLiteralUpdateMessage},
     variable::GraphValueTypeStorage,
 };
@@ -52,7 +52,6 @@ pub enum ExternalVarViewMessage {
 pub fn external_var_view<'a>(
     storage: &ExternalVariableStorage,
     types: &GraphValueTypeStorage,
-
     create_new_name: String,
     create_new_type: Option<&'static str>,
 ) -> Element<'a, ExternalVarViewMessage, Theme, Renderer> {
@@ -84,7 +83,11 @@ pub fn external_var_view<'a>(
         text_input("Name", &create_new_name).on_input(ExternalVarViewMessage::CreateNewNameChanged),
         row![
             pick_list(
-                types.all().keys().copied().collect::<Vec<_>>(),
+                types
+                    .all()
+                    .iter()
+                    .filter_map(|(id, ty)| ty.wgsl_type().map(|_| *id))
+                    .collect::<Vec<_>>(),
                 create_new_type,
                 ExternalVarViewMessage::CreateNewSelectedType,
             ),

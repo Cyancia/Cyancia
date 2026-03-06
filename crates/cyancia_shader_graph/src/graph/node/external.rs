@@ -40,7 +40,10 @@ pub fn generate_external_variable_binding(
         group,
         binding,
         generate_external_variable_name(var),
-        var.value.ty().wgsl_type().unwrap()
+        var.value
+            .ty()
+            .wgsl_type()
+            .expect("External variables must has a corresponding wgsl type.")
     )
 }
 
