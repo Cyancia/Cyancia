@@ -1150,7 +1150,7 @@ impl GraphNode for TextureNode {
         // is corresponding to array index returned by TextureStorage::used_textures()
         let index = self.recorder.use_texture(*state);
         dbg!(state, index);
-        Ok(format!("let {} = {};\n", ctx.get_output(0)?, index))
+        Ok(format!("let {} = {}u;\n", ctx.get_output(0)?, index))
     }
 }
 
@@ -1220,11 +1220,13 @@ impl StatelessCommonGraphNode for TextureSizeNode {
     }
 
     fn header_color(&self) -> Color {
-        color!(0x79caf2)
+        color!(0xf2ab79)
     }
 
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL)]
+        vec![GraphDefaultInputSlot::new::<TextureType>(
+            TextureLocalIndex::NULL,
+        )]
     }
 
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
@@ -1243,5 +1245,4 @@ impl StatelessCommonGraphNode for TextureSizeNode {
             output_size, input_texture
         ))
     }
-    
 }

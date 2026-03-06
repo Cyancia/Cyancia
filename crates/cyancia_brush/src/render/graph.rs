@@ -4,7 +4,7 @@ use cyancia_shader_graph::{
         node::{GraphNodeCodeGenContext, GraphNodeCodeGenError, StatelessCommonGraphNode},
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
-    wgsl_std::types::{ColorType, Vec2FType},
+    wgsl_std::types::{ColorType, F32Type, TextureLocalIndex, TextureType, Vec2FType},
 };
 use glam::{Vec2, Vec4};
 use iced_core::{Color, color};
@@ -30,6 +30,7 @@ pub fn brush_graph_storage() -> GraphDynamicInstancesStorage {
     storage.nodes.register::<PenPosition>();
     storage.nodes.register::<PixelPosition>();
     storage.nodes.register::<OutputPixelColor>();
+    storage.nodes.register::<PasteTextureNode>();
     storage
 }
 
@@ -152,6 +153,70 @@ impl StatelessCommonGraphNode for OutputPixelColor {
             textureStore(outputs[{layer}], {coord}, {});
             "#,
             ctx.get_input(0)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct PasteTextureNode;
+
+const PASTE_TEXTURE_TEMPLATE: &'static str = r#"
+let s = sin(rotate);
+let c = cos(rotate);
+let mat = mat3x3f(
+    c / scale.x, -s / scale.y, 0.0,
+    s / scale.x, c / scale.y, 0.0,
+    -(c * translate.x + s * translate.y) / scale.x, (s * translate.x + c * translate.y) / scale.y, 1.0,
+);
+let color = textureLoad(textures[layer], vec2i((mat * vec3f(cur_pos, 1.0)).xy), 0);
+"#;
+
+impl StatelessCommonGraphNode for PasteTextureNode {
+    fn name(&self) -> &'static str {
+        "Paste Texture"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        // TODO: sample modes
+        &["Texture", "Translation", "Rotation", "Scale", "Anchor"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Result"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79d3f2)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ONE),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::splat(0.5)),
+        ]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let tex = ctx.get_input(0)?;
+        let translation = ctx.get_input(1)?;
+        let rotation = ctx.get_input(2)?;
+        let scale = ctx.get_input(3)?;
+        let anchor = ctx.get_input(4)?;
+        let output = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = paste_texture({}, pixel_posf, {}, {}, {}, {});\n",
+            output, tex, scale, rotation, translation, anchor
         ))
     }
 }
