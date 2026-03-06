@@ -119,7 +119,7 @@ impl AssetBundle for AssetDirectory {
             .append(true)
             .open(self.root.join("manifest.toml"))?
             // Only works because it's toml.
-            .write_all(format!("{} = {}", asset_id, path_str).as_bytes())?;
+            .write_all(format!("{} = \"{}\"", asset_id, path_str).as_bytes())?;
         Ok(asset_id)
     }
 }
