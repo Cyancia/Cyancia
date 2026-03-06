@@ -412,7 +412,7 @@ impl WindowView for BrushEditorView {
                     .discard();
             }
             BrushEditorMessage::MouseEvent(event) => {
-                self.input_manager.on_mouse_event(event, &runtime);
+                // self.input_manager.on_mouse_event(event, &runtime);
             }
             BrushEditorMessage::GraphView(message) => {
                 let Some(selected) = &mut self.selected else {
