@@ -62,6 +62,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     }
     let pixel_pos = vec2i(id.xy) + graph_input.shader_origin;
     let pixel_posf = vec2f(pixel_pos);
+    var cur_layer = 0u;
+    var cur_coord = vec2u(0u);
+    convert_pixel_to_tile(pixel_pos, &cur_layer, &cur_coord);
 
     //CODEGENFLAG_COMPILED_GRAPH
 }
