@@ -5,7 +5,7 @@ use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
     render::{CanvasRenderer, CanvasRenderers},
 };
-use cyancia_image::{CImage, layer::Layer, tile::GpuTileStorage};
+use cyancia_image::{CImage, layer::Layer, texel::TexelType, tile::GpuTileStorage};
 use cyancia_input::{
     action::{Action, ActionId},
     key::KeySequence,
@@ -59,6 +59,10 @@ impl ActionFunction for OpenFileAction {
         services
             .service_mut::<CanvasRenderers>()
             .insert(canvas.id, CanvasRenderer::from_runtime(&services));
+        // TODO this should not be done here
+        services
+            .service::<GpuTileStorage>()
+            .declare_layer(canvas.image.root().id(), TexelType::RGBA8);
         services.service_mut::<CanvasManager>().add_canvas(canvas);
     }
 }

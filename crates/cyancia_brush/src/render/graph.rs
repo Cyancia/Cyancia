@@ -16,12 +16,16 @@ pub fn generate_brush_shader(graph: &mut Graph) -> Result<String, anyhow::Error>
     let code = template.replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code);
 
     let mut resolver = VirtualResolver::new();
-    resolver.add_module("template.wesl".parse().unwrap(), code.into());
+    resolver.add_module("template".parse().unwrap(), code.into());
+    resolver.add_module(
+        "template/image::texture_unpack".parse().unwrap(),
+        include_str!("../../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
+    );
     let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
     compiler.set_mangler(Default::default());
     compiler.set_options(Default::default());
 
-    let shader = compiler.compile(&"template.wesl".parse().unwrap())?;
+    let shader = compiler.compile(&"template".parse().unwrap())?;
     Ok(shader.to_string())
 }
 
@@ -150,7 +154,7 @@ impl StatelessCommonGraphNode for OutputPixelColor {
             var {layer} = 0u;
             var {coord} = vec2u(0u);
             convert_pixel_to_tile(pixel_pos, &{layer}, &{coord});
-            textureStore(outputs[{layer}], {coord}, {});
+            textureStore(outputs[{layer}], {coord}, image::texture_unpack::pack_rgba8_texel({}));
             "#,
             ctx.get_input(0)?
         ))

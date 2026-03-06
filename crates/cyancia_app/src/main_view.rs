@@ -8,6 +8,7 @@ use cyancia_canvas::{
 };
 use cyancia_image::{
     CImage,
+    texel::TexelType,
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_input::action::ActionManifestCollection;
@@ -52,6 +53,10 @@ impl MainView {
         services
             .service_mut::<CanvasRenderers>()
             .insert(canvas.id, CanvasRenderer::from_runtime(services));
+        // TODO this should not be done here
+        services
+            .service::<GpuTileStorage>()
+            .declare_layer(canvas.image.root().id(), TexelType::RGBA8);
         services.service_mut::<CanvasManager>().add_canvas(canvas);
 
         Self {

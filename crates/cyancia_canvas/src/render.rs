@@ -3,6 +3,7 @@ use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
 use bevy_math::IRect;
 use cyancia_image::{
     layer::{Layer, LayerId},
+    texel::TexelType,
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_math::{iced_rect::IntoRect, rect_transform::RectTransform};
@@ -58,6 +59,10 @@ impl CanvasRenderers {
     }
 }
 
+/// When rendering canvas, we need to first compose all tiles onto a temporary surface.
+/// This surface will be used as storage texture and float sampled texture.
+pub const INTERMEDIATE_BUFFER_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
+
 #[derive(Debug)]
 pub struct CanvasRenderer {
     device: Arc<Device>,
@@ -71,8 +76,7 @@ impl Service for CanvasRenderer {}
 impl FromRuntime for CanvasRenderer {
     fn from_runtime(runtime: &Services) -> Self {
         let render_context = runtime.service::<RenderContext>();
-        let render_pipeline =
-            CanvasRenderPipeline::new(runtime.service::<GlobalSamplers>().as_ref());
+        let render_pipeline = CanvasRenderPipeline::new();
         let present_pipeline = CanvasPresentPipeline::new(
             &render_context.device,
             // TODO: this format varies based on platforms and hdr settings.
@@ -101,7 +105,7 @@ impl CanvasRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: GpuTileStorageInner::TILE_FORMAT,
+            format: INTERMEDIATE_BUFFER_FORMAT,
             usage: TextureUsages::RENDER_ATTACHMENT
                 | TextureUsages::STORAGE_BINDING
                 | TextureUsages::TEXTURE_BINDING,
@@ -192,9 +196,13 @@ impl shader::Primitive for CanvasPrimitive {
         if renderer.render_pipeline.max_tile_count.x < tile_count.x
             || renderer.render_pipeline.max_tile_count.y < tile_count.y
         {
-            renderer
-                .render_pipeline
-                .resize_canvas(device, self.canvas.image.size());
+            renderer.render_pipeline.resize_canvas(
+                device,
+                self.canvas.image.size(),
+                self.tile_storage
+                    .layer_texel_type(self.canvas.image.root().id())
+                    .unwrap(),
+            );
         }
 
         let transform = self.canvas.transform.read();
@@ -232,7 +240,6 @@ pub struct CanvasRenderPipeline {
     main_layout: Option<BindGroupLayout>,
     uniform_buffer: DynamicBuffer<CanvasUniform>,
     uniform: Option<CanvasUniform>,
-    sampler: Sampler,
 }
 
 #[derive(Debug, Clone, Copy, ShaderType)]
@@ -245,7 +252,7 @@ pub struct CanvasUniform {
 }
 
 impl CanvasRenderPipeline {
-    fn new(samplers: &GlobalSamplers) -> Self {
+    fn new() -> Self {
         Self {
             max_tile_count: UVec2::ZERO,
             main_layout: None,
@@ -255,11 +262,10 @@ impl CanvasRenderPipeline {
                 BufferUsages::STORAGE,
             ),
             uniform: None,
-            sampler: samplers.linear_clamp().clone(),
         }
     }
 
-    pub fn resize_canvas(&mut self, device: &Device, size: UVec2) {
+    pub fn resize_canvas(&mut self, device: &Device, size: UVec2, layer_texel_type: TexelType) {
         self.max_tile_count = GpuTileStorageInner::calc_tile_count(size);
         let max_tiles = self.max_tile_count.element_product();
         let main_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -269,23 +275,16 @@ impl CanvasRenderPipeline {
                 BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: layer_texel_type.wgpu_format(),
                         view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
                     },
                     count: Some(NonZeroU32::new(max_tiles).unwrap()),
                 },
-                // tile sampler
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
                 // canvas uniform
                 BindGroupLayoutEntry {
-                    binding: 2,
+                    binding: 1,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         // We are actually using storage buffer, since uniform buffer and binding array
@@ -298,11 +297,11 @@ impl CanvasRenderPipeline {
                 },
                 // output
                 BindGroupLayoutEntry {
-                    binding: 3,
+                    binding: 2,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: GpuTileStorageInner::TILE_FORMAT,
+                        format: INTERMEDIATE_BUFFER_FORMAT,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: None,
@@ -381,14 +380,10 @@ impl CanvasRenderPipeline {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::Sampler(&self.sampler),
-                },
-                BindGroupEntry {
-                    binding: 2,
                     resource: uniform_buffer.clone(),
                 },
                 BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: BindingResource::TextureView(&target),
                 },
             ],

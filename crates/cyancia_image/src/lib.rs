@@ -1,12 +1,16 @@
+wesl::wesl_pkg!(pub image);
+
 use std::path::Path;
 
 use cyancia_runtime::{Application, Runtime, plugin::Plugin};
 use glam::UVec2;
-use image::DynamicImage;
+// TODO move CImage to another place to avoid this.
+extern crate image as imagers;
 
 use crate::{layer::Layer, tile::GpuTileStorage};
 
 pub mod layer;
+pub mod texel;
 pub mod tile;
 
 pub struct ImagePlugin;
@@ -35,11 +39,11 @@ impl CImage {
         Self { size, root }
     }
 
-    pub fn from_file(path: impl AsRef<Path>) -> image::ImageResult<Self> {
-        Ok(Self::from_dynamic(image::open(path)?))
+    pub fn from_file(path: impl AsRef<Path>) -> imagers::ImageResult<Self> {
+        Ok(Self::from_dynamic(imagers::open(path)?))
     }
 
-    pub fn from_dynamic(img: DynamicImage) -> Self {
+    pub fn from_dynamic(img: imagers::DynamicImage) -> Self {
         let size = UVec2::new(img.width(), img.height());
         Self {
             size,

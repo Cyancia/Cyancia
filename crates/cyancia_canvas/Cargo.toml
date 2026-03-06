@@ -28,3 +28,4 @@ cyancia_input.workspace = true
 [build-dependencies]
 wesl.workspace = true
 cyancia_render.workspace = true
+cyancia_image.workspace = true

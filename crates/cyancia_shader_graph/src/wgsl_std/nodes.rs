@@ -983,7 +983,9 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
         let output_color = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = textureLoad(textures[{}], vec2u({}), 0);\n",
+            // TODO: texture_unpack is a shader module provided in cyancia_image. Is it possible to don't reference
+            //       a crate that is not a direct dependency of this crate?  (╭ರ_•́)
+            "let {} = image::texture_unpack::unpack_rgba8_texel(textureLoad(textures[{}], image::texture_unpack::rgba8_coord(vec2u({})), 0));\n",
             output_color, input_texture, input_position
         ))
     }

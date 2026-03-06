@@ -5,7 +5,7 @@ use cyancia_runtime::{
     Services,
     service::{FromRuntime, RenderContext, Service},
 };
-use dashmap::DashMap;
+use dashmap::{DashMap, Entry};
 use glam::{IVec2, Mat3, UVec2};
 use iced_core::Rectangle;
 use image::{DynamicImage, GenericImageView, RgbaImage};
@@ -23,7 +23,10 @@ use wgpu::{
     wgt::TextureDataOrder,
 };
 
-use crate::layer::{Layer, LayerId};
+use crate::{
+    layer::{Layer, LayerId},
+    texel::{RGBA8_FORMAT, TexelDepth, TexelFormat, TexelType},
+};
 
 #[derive(Debug, Clone)]
 pub struct Tile {
@@ -70,6 +73,7 @@ pub struct GpuTileStorageInner {
 
     empty_tile: Tile,
     tiles: DashMap<TileIndex, Tile>,
+    layer_format: DashMap<LayerId, TexelType>,
 }
 
 // impl Service for GpuTileStorageInner {}
@@ -81,8 +85,8 @@ impl FromRuntime for GpuTileStorageInner {
     }
 }
 
-fn create_tile(index: TileIndex, device: &Device) -> Tile {
-    let t = device.create_texture(&GpuTileStorageInner::TILE_DESC);
+fn create_tile(index: TileIndex, ty: TexelType, device: &Device) -> Tile {
+    let t = device.create_texture(&GpuTileStorageInner::tile_texture_desc(ty.wgpu_format()));
     let v = t.create_view(&Default::default());
 
     Tile {
@@ -100,25 +104,25 @@ impl GpuTileStorageInner {
         layer: LayerId::new(Uuid::nil()),
         coord: IVec2::new(u32::MAX as i32, u32::MAX as i32),
     };
-    pub const TILE_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
-    pub const TILE_DESC: TextureDescriptor<'static> = TextureDescriptor {
-        label: Some("tile texture"),
-        size: Extent3d {
-            width: Self::TILE_SIZE,
-            height: Self::TILE_SIZE,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D2,
-        format: Self::TILE_FORMAT,
-        usage: TextureUsages::from_bits_truncate(
-            TextureUsages::TEXTURE_BINDING.bits()
-                | TextureUsages::COPY_DST.bits()
-                | TextureUsages::STORAGE_BINDING.bits(),
-        ),
-        view_formats: &[],
-    };
+
+    pub fn tile_texture_desc(format: TextureFormat) -> TextureDescriptor<'static> {
+        TextureDescriptor {
+            label: Some("tile texture"),
+            size: Extent3d {
+                width: Self::TILE_SIZE,
+                height: Self::TILE_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        }
+    }
 
     pub fn calc_tile_count(image_size: UVec2) -> UVec2 {
         UVec2::new(
@@ -128,7 +132,14 @@ impl GpuTileStorageInner {
     }
 
     pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
-        let empty = create_tile(Self::EMPTY_TILE_ID, &device);
+        let empty = create_tile(
+            Self::EMPTY_TILE_ID,
+            TexelType {
+                format: TexelFormat::Rgba,
+                depth: TexelDepth::Bit8,
+            },
+            &device,
+        );
         let tiles = DashMap::from_iter([(Self::EMPTY_TILE_ID, empty.clone())]);
 
         Self {
@@ -136,7 +147,28 @@ impl GpuTileStorageInner {
             queue,
             empty_tile: empty,
             tiles,
+            layer_format: DashMap::new(),
         }
+    }
+
+    pub fn declare_layer(&self, layer_id: LayerId, texel_type: TexelType) {
+        match self.layer_format.entry(layer_id) {
+            Entry::Occupied(e) => {
+                if e.get() != &texel_type {
+                    panic!(
+                        "Layer {:?} is already declared with a different format.",
+                        layer_id
+                    );
+                }
+            }
+            Entry::Vacant(e) => {
+                e.insert(texel_type);
+            }
+        }
+    }
+
+    pub fn layer_texel_type(&self, layer_id: LayerId) -> Option<TexelType> {
+        self.layer_format.get(&layer_id).as_deref().cloned()
     }
 
     pub fn get_tile(&self, index: TileIndex) -> Tile {
@@ -150,7 +182,16 @@ impl GpuTileStorageInner {
     pub fn get_tile_mut(&self, index: TileIndex) -> Tile {
         self.tiles
             .entry(index)
-            .or_insert_with(|| create_tile(index, &self.device))
+            .or_insert_with(|| {
+                create_tile(
+                    index,
+                    *self
+                        .layer_format
+                        .get(&index.layer)
+                        .expect("Use layer before declaration."),
+                    &self.device,
+                )
+            })
             .clone()
     }
 
@@ -158,7 +199,11 @@ impl GpuTileStorageInner {
         let width = img.width();
         let height = img.height();
 
-        let img = img.into_rgba32f();
+        let layer_texel_type = TexelType {
+            format: TexelFormat::Rgba,
+            depth: TexelDepth::Bit8,
+        };
+        self.declare_layer(layer_id, layer_texel_type);
 
         let mut ec = self
             .device
@@ -182,10 +227,8 @@ impl GpuTileStorageInner {
                     Self::TILE_SIZE.min(width - origin.x),
                     Self::TILE_SIZE.min(height - origin.y),
                 );
-                let data = sub_img
-                    .pixels()
-                    .flat_map(|(_, _, px)| px.0.map(|x| half::f16::from_f32(x).to_bits()))
-                    .collect::<Vec<_>>();
+                let data =
+                    layer_texel_type.convert_image_to_wgpu(DynamicImage::from(sub_img.to_image()));
 
                 let texture = self.device.create_texture_with_data(
                     &self.queue,
@@ -199,7 +242,7 @@ impl GpuTileStorageInner {
                         mip_level_count: 1,
                         sample_count: 1,
                         dimension: TextureDimension::D2,
-                        format: TextureFormat::Rgba16Float,
+                        format: layer_texel_type.wgpu_format(),
                         usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
                         view_formats: &[],
                     },

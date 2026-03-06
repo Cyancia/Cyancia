@@ -6,10 +6,11 @@ struct Canvas {
     tile_size: u32,
 }
 
-@group(0) @binding(0) var tiles: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var tile_sampler: sampler;
-@group(0) @binding(2) var<storage> canvas: Canvas;
-@group(0) @binding(3) var output: texture_storage_2d<rgba16float, write>;
+// TODO: This is weird. This is a bindless array, and theoretically it won't have a fixed size.
+//       It doesn't compile if remove the size, but works if it's set to a random value. Why? ｢( • ﾍ •)
+@group(0) @binding(0) var tiles: binding_array<texture_storage_2d<r32uint, read>, 1>;
+@group(0) @binding(1) var<storage> canvas: Canvas;
+@group(0) @binding(2) var output: texture_storage_2d<rgba16float, write>;
 
 @compute
 @workgroup_size(16, 16, 1)
@@ -28,8 +29,8 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
     }
 
     let flattened_index = tile_index.y * canvas.tile_count.x + tile_index.x;
-    let tile_sample_coord = (canvas_pos.xy % vec2f(canvas.tile_size)) / vec2f(canvas.tile_size);
-    let color = textureSampleLevel(tiles[flattened_index], tile_sampler, tile_sample_coord, 0);
+    let tile_sample_coord = vec2u(canvas_pos.xy) % vec2u(canvas.tile_size);
+    let color = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles[flattened_index], tile_sample_coord));
 
     textureStore(output, vec2u(pixel_pos), color);
     // textureStore(output, vec2u(pixel_pos), vec4f(tile_sample_coord, 0.0, 1.0));

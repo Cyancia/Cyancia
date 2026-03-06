@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin};
 use futures::executor::block_on;
-use wgpu::{Backends, Device, Features, Limits, Queue};
+use wgpu::{Backends, Device, Features, Limits, Queue, TextureFormat};
 
 use crate::resources::{FullscreenVertex, GlobalSamplers};
 

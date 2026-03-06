@@ -3,6 +3,7 @@ use std::{num::NonZeroU32, sync::Arc};
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
     layer::LayerId,
+    texel::TexelType,
     tile::{GpuTileStorage, GpuTileStorageInner, Tile},
 };
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
@@ -47,7 +48,21 @@ impl BrushPresetOperator {
         tiles: &GpuTileStorage,
         assets: &AssetRegistry,
     ) {
-        self.renderer.initialize(&mut self.instance, assets);
+        let target_layer_texel = tiles.layer_texel_type(output_layer).unwrap();
+        if self
+            .renderer
+            .initialized
+            .as_ref()
+            .is_none_or(|initialized| {
+                let estimated_size = self.instance.estimate_size();
+                initialized.estimated_size != estimated_size
+                    || initialized.target_layer_texel != target_layer_texel
+            })
+        {
+            self.renderer
+                .initialize(&mut self.instance, assets, target_layer_texel);
+        }
+
         self.renderer
             .prepare(&mut self.instance, params, output_layer, tiles);
     }
@@ -75,6 +90,7 @@ struct InitializedData {
     output_len_in_layout: u32,
     pipeline: ComputePipeline,
     main_layout: BindGroupLayout,
+    target_layer_texel: TexelType,
 }
 
 pub struct BrushPresetRenderer {
@@ -102,7 +118,8 @@ impl BrushPresetRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: GpuTileStorageInner::TILE_FORMAT,
+            // Random texture that can be binded as texture_2d<f32>
+            format: TextureFormat::Rgba8Unorm,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         });
@@ -122,13 +139,13 @@ impl BrushPresetRenderer {
         }
     }
 
-    pub fn initialize(&mut self, brush: &mut BrushPresetInstance, assets: &AssetRegistry) {
+    pub fn initialize(
+        &mut self,
+        brush: &mut BrushPresetInstance,
+        assets: &AssetRegistry,
+        target_layer_texel: TexelType,
+    ) {
         let estimated_size = brush.estimate_size();
-        if let Some(initialized) = self.initialized.as_ref() {
-            if initialized.estimated_size == estimated_size {
-                return;
-            }
-        }
 
         let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size()) + 2;
         let output_len = estimated_tile_count.element_product();
@@ -158,7 +175,9 @@ impl BrushPresetRenderer {
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::StorageTexture {
                             access: StorageTextureAccess::WriteOnly,
-                            format: TextureFormat::Rgba16Float,
+                            // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
+                            //       into target color space when merging down.
+                            format: target_layer_texel.wgpu_format(),
                             view_dimension: TextureViewDimension::D2,
                         },
                         count: Some(NonZeroU32::new(output_len).unwrap()),
@@ -220,6 +239,7 @@ impl BrushPresetRenderer {
             output_len_in_layout: output_len,
             pipeline,
             main_layout,
+            target_layer_texel,
         });
 
         self.textures.clear();
@@ -287,7 +307,7 @@ impl BrushPresetRenderer {
                         mip_level_count: 1,
                         sample_count: 1,
                         dimension: TextureDimension::D2,
-                        format: GpuTileStorageInner::TILE_FORMAT,
+                        format: initialized.target_layer_texel.wgpu_format(),
                         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
                         view_formats: &[],
                     })
