@@ -558,11 +558,11 @@ impl GraphDynamicInstancesStorage {
 }
 
 #[derive(Default)]
-pub struct GraphFunctionsStorage {
+pub struct GraphFunctionStorage {
     functions: RwLock<HashMap<GraphFunctionId, Arc<RwLock<GraphFunction>>>>,
 }
 
-impl GraphFunctionsStorage {
+impl GraphFunctionStorage {
     pub fn new(functions: HashMap<GraphFunctionId, GraphFunction>) -> Self {
         Self {
             functions: RwLock::new(

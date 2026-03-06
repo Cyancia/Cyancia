@@ -10,15 +10,10 @@ use glam::{Vec2, Vec4};
 use iced_core::{Color, color};
 use wesl::{VirtualResolver, Wesl};
 
-pub fn generate_brush_shader(
-    graph: &mut Graph,
-    output_count: u32,
-) -> Result<String, anyhow::Error> {
+pub fn generate_brush_shader(graph: &mut Graph) -> Result<String, anyhow::Error> {
     let template = include_str!("brush_template.wesl");
     let (_, graph_code) = graph.compile(Vec::new(), Default::default())?;
-    let code = template
-        .replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code)
-        .replace("//CODEGENFLAG_OUTPUT_COUNT", &output_count.to_string());
+    let code = template.replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code);
 
     let mut resolver = VirtualResolver::new();
     resolver.add_module("template.wesl".parse().unwrap(), code.into());
@@ -113,10 +108,7 @@ impl StatelessCommonGraphNode for PixelPosition {
         &self,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!(
-            "let {} = pixel_posf;",
-            ctx.get_output(0)?
-        ))
+        Ok(format!("let {} = pixel_posf;", ctx.get_output(0)?))
     }
 }
 

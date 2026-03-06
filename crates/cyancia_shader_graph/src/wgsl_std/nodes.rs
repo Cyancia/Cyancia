@@ -990,7 +990,7 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
 }
 
 wrapper! {
-    #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     pub TextureId : Uuid
 }
 
@@ -1149,6 +1149,7 @@ impl GraphNode for TextureNode {
         // The binding should be a texture binding_array. The index of each used texture in graph
         // is corresponding to array index returned by TextureStorage::used_textures()
         let index = self.recorder.use_texture(*state);
+        dbg!(state, index);
         Ok(format!("let {} = {};\n", ctx.get_output(0)?, index))
     }
 }

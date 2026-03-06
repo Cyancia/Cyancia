@@ -15,7 +15,7 @@ use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
     graph::{
-        Graph, GraphDynamicInstancesStorage, GraphFunctionsStorage,
+        Graph, GraphDynamicInstancesStorage, GraphFunctionStorage,
         node::{
             external::{ExternalNode, ExternalVariable, ExternalVariableId},
             function::{GraphFunction, GraphFunctionId, GraphFunctionNode, functioning},
@@ -69,7 +69,7 @@ pub struct BrushEditorView {
     function_graph_storage: Arc<GraphDynamicInstancesStorage>,
     texture_storage: Arc<TextureStorage>,
 
-    function_storage: Arc<GraphFunctionsStorage>,
+    function_storage: Arc<GraphFunctionStorage>,
     function_id_to_asset: HashMap<GraphFunctionId, AssetHandle<SerializableGraphFunction>>,
     selected: Option<Selected>,
 
@@ -103,7 +103,7 @@ impl FromRuntime for BrushEditorView {
                 )
             })
             .collect();
-        let function_storage = Arc::new(GraphFunctionsStorage::new(functions));
+        let function_storage = Arc::new(GraphFunctionStorage::new(functions));
         let function_id_to_asset = function_assets
             .into_iter()
             .map(|handle| (handle.get().unwrap().id, handle))
@@ -284,10 +284,19 @@ impl WindowView for BrushEditorView {
                             && modifiers.control()
                         {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
-                                match brush.instance.compile(0) {
+                                match brush.instance.compile() {
                                     Ok((shader, _)) => println!("Generated shader:\n{}", shader),
                                     Err(e) => println!("Failed to generate shader: {:?}", e),
                                 }
+                            } else {
+                                println!("No brush graph to generate shader from.");
+                            }
+                        }
+                        if physical_key == key::Physical::Code(key::Code::KeyO)
+                            && modifiers.control()
+                        {
+                            if let Some(Selected::Brush(brush)) = &mut self.selected {
+                                println!("{}", brush.instance.main_graph().to_toml().unwrap());
                             } else {
                                 println!("No brush graph to generate shader from.");
                             }
@@ -307,8 +316,8 @@ impl WindowView for BrushEditorView {
                                     BrushPresetOperator::new(
                                         BrushPresetInstance::from_asset(
                                             &handle.get().unwrap(),
-                                            self.main_graph_storage.clone(),
                                             self.texture_storage.clone(),
+                                            self.function_storage.clone(),
                                         )
                                         .0
                                         .unwrap(),
@@ -374,8 +383,8 @@ impl WindowView for BrushEditorView {
                 };
                 let (instance, errors) = BrushPresetInstance::from_asset(
                     &brush.get().unwrap(),
-                    self.main_graph_storage.clone(),
                     self.texture_storage.clone(),
+                    self.function_storage.clone(),
                 );
 
                 if let Some(instance) = instance {
@@ -390,8 +399,8 @@ impl WindowView for BrushEditorView {
                         BrushPresetOperator::new(
                             BrushPresetInstance::from_asset(
                                 &brush.get().unwrap(),
-                                self.main_graph_storage.clone(),
                                 self.texture_storage.clone(),
+                                self.function_storage.clone(),
                             )
                             .0
                             .unwrap(),
@@ -449,8 +458,8 @@ impl WindowView for BrushEditorView {
                         BrushPresetMetadata {
                             name: "[Unnamed Brush]".to_string(),
                         },
-                        self.main_graph_storage.clone(),
                         self.texture_storage.clone(),
+                        self.function_storage.clone(),
                     ),
                 }));
                 self.has_unsaved_changes = true;

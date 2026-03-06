@@ -19,7 +19,7 @@ use crate::{
     GraphRenderer, GraphTheme,
     editor::slot::{input_slot, output_slot},
     graph::{
-        Graph, GraphDynamicInstancesStorage, GraphFunctionsStorage, GraphVarIdentGenerator,
+        Graph, GraphDynamicInstancesStorage, GraphFunctionStorage, GraphVarIdentGenerator,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
             GraphNodeOutputsViewContext, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
@@ -50,11 +50,11 @@ pub struct GraphFunction {
 
 #[derive(Clone)]
 pub struct GraphFunctionNode {
-    pub storage: Arc<GraphFunctionsStorage>,
+    pub storage: Arc<GraphFunctionStorage>,
 }
 
 impl GraphFunctionNode {
-    pub fn new(storage: Arc<GraphFunctionsStorage>) -> Self {
+    pub fn new(storage: Arc<GraphFunctionStorage>) -> Self {
         Self { storage }
     }
 }

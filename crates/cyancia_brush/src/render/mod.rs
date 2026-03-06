@@ -133,7 +133,7 @@ impl BrushPresetRenderer {
         let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size()) + 2;
         let output_len = estimated_tile_count.element_product();
         // TODO: Handle shader compile error
-        let (shader, texture_usage_recorder) = brush.compile(output_len).unwrap();
+        let (shader, texture_usage_recorder) = brush.compile().unwrap();
         println!("Generated shader:\n{}", shader);
 
         let main_layout = self
@@ -223,6 +223,7 @@ impl BrushPresetRenderer {
         });
 
         self.textures.clear();
+        dbg!(&texture_usage_recorder.get_usage());
         for id in texture_usage_recorder.get_usage().keys() {
             if id == &TextureId::NULL {
                 self.textures.push(self.empty_texture.clone());
@@ -235,6 +236,7 @@ impl BrushPresetRenderer {
                 &self.queue,
                 &handle.get().unwrap(),
             ));
+            dbg!(id);
         }
     }
 
@@ -259,7 +261,7 @@ impl BrushPresetRenderer {
         });
         self.graph_input.write_buffer(&self.device);
 
-        let outputs = tiles.get_tiles_mut_ordered(output_layer, dbg!(estimated_area));
+        let outputs = tiles.get_tiles_mut_ordered(output_layer, estimated_area);
         self.tile_info.clear();
         for tile in &outputs {
             self.tile_info.push(&TileInfo {
@@ -337,7 +339,6 @@ impl BrushPresetRenderer {
         };
 
         let mut ec = self.device.create_command_encoder(&Default::default());
-        dbg!();
 
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
