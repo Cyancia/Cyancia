@@ -22,6 +22,7 @@ pub fn std_storage() -> GraphDynamicInstancesStorage {
     storage.nodes.register::<CombineColorComponentsNode>();
     storage.nodes.register::<GetPixelColorNode>();
     storage.nodes.register::<ColorMixNode>();
+    storage.nodes.register::<TextureSizeNode>();
 
     storage.types.register::<F32Type>();
     storage.types.register::<Vec2FType>();

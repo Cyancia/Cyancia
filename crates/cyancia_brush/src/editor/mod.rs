@@ -353,6 +353,7 @@ impl WindowView for BrushEditorView {
                                         let new_id = assets
                                             .add_asset(
                                                 BundleId::new(
+                                                    // TODO
                                                     Uuid::from_str(
                                                         "b92c20f6-8cdb-42b8-efae-a92705efd029",
                                                     )
@@ -394,6 +395,7 @@ impl WindowView for BrushEditorView {
                                     } else {
                                         let new_id = assets
                                             .add_asset(
+                                                // TODO
                                                 BundleId::new(
                                                     Uuid::from_str(
                                                         "b92c20f6-8cdb-42b8-efae-a92705efd029",
@@ -410,8 +412,6 @@ impl WindowView for BrushEditorView {
                                 }
                             }
                         }
-
-                        // TODO: Saving modified preset/function
                     }
                     _ => {}
                 }

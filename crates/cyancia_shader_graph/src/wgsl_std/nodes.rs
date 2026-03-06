@@ -1202,3 +1202,46 @@ impl StatelessCommonGraphNode for ColorMixNode {
         ))
     }
 }
+
+#[derive(Default, Clone)]
+pub struct TextureSizeNode;
+
+impl StatelessCommonGraphNode for TextureSizeNode {
+    fn name(&self) -> &'static str {
+        "Texture Size"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Texture"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Size"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79caf2)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL)]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<Vec2FType>()]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input_texture = ctx.get_input(0)?;
+        let output_size = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = vec2f(textureDimensions(textures[{}]));\n",
+            output_size, input_texture
+        ))
+    }
+    
+}
