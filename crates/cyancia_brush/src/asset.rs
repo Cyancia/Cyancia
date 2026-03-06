@@ -241,6 +241,23 @@ pub struct BrushPresetInstance {
     texture_usage_recorder: Arc<TextureUsageRecorder>,
 }
 
+impl Clone for BrushPresetInstance {
+    fn clone(&self) -> Self {
+        Self {
+            metadata: self.metadata.clone(),
+            main_graph: Graph::from_toml(
+                self.main_graph_storage.clone(),
+                &self.main_graph.to_toml().unwrap(),
+            )
+            .0
+            .unwrap(),
+            external_vars: self.external_vars.clone(),
+            main_graph_storage: self.main_graph_storage.clone(),
+            texture_usage_recorder: self.texture_usage_recorder.clone(),
+        }
+    }
+}
+
 impl BrushPresetInstance {
     pub fn new(
         metadata: BrushPresetMetadata,

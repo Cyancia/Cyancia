@@ -365,16 +365,9 @@ impl WindowView for BrushEditorView {
                                     self.has_unsaved_changes = false;
 
                                     let ctx = runtime.service::<RenderContext>();
-                                    // TODO This is sooooo ugly
                                     runtime.insert_service(CurrentBrushPresetOperator::new(
                                         BrushPresetOperator::new(
-                                            BrushPresetInstance::from_asset(
-                                                &brush.instance.as_asset().unwrap(),
-                                                self.texture_storage.clone(),
-                                                self.function_storage.clone(),
-                                            )
-                                            .0
-                                            .unwrap(),
+                                            brush.instance.clone(),
                                             ctx.device.clone(),
                                             ctx.queue.clone(),
                                         ),
@@ -470,23 +463,12 @@ impl WindowView for BrushEditorView {
                 if let Some(instance) = instance {
                     self.selected = Some(Selected::Brush(SelectedBrush {
                         asset_id: Some(brush_id),
-                        instance,
+                        instance: instance.clone(),
                     }));
 
                     let ctx = runtime.service::<RenderContext>();
-                    // TODO This is sooooo ugly
                     runtime.insert_service(CurrentBrushPresetOperator::new(
-                        BrushPresetOperator::new(
-                            BrushPresetInstance::from_asset(
-                                &brush.get().unwrap(),
-                                self.texture_storage.clone(),
-                                self.function_storage.clone(),
-                            )
-                            .0
-                            .unwrap(),
-                            ctx.device.clone(),
-                            ctx.queue.clone(),
-                        ),
+                        BrushPresetOperator::new(instance, ctx.device.clone(), ctx.queue.clone()),
                     ));
                 }
 
