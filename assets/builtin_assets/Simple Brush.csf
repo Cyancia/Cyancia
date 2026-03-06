@@ -1,0 +1,137 @@
+id = "f59fd4de-a5c9-4e9c-87e9-078de905a708"
+name = "Simple Brush"
+
+[[graph.nodes]]
+id = "e715f13a-cfe5-4c05-b2d2-6e540ea985d4"
+position = [606.0, 317.0]
+inputs = ["a9a9fc10-8b54-4045-924e-941473d9cf1c", "fb24418a-3c55-4b50-9973-cf8d2b915bf9", "e7c23bf5-40e7-4d5c-a71d-46b5bae8dcc7"]
+outputs = ["967aa256-33c0-443b-8c91-6ec16d7013d3"]
+
+[graph.nodes.data]
+name = "Smooth Step"
+
+[graph.nodes.state]
+
+[[graph.nodes]]
+id = "bc2b0989-e527-466f-b349-1ad71f1f3410"
+position = [362.0, 377.0]
+inputs = ["ba6d1474-d9b3-443c-9457-9f4049f91b7d", "17ca8695-134d-4b53-af2f-a508b9f78c9a", "15bcb84c-9495-4669-bad9-9b01b92d8d44"]
+outputs = ["442e0460-0771-4dc4-a2db-4ae55bb9912b"]
+state = "Distance"
+
+[graph.nodes.data]
+name = "Vector Math"
+
+[[graph.nodes]]
+id = "69bf5dc0-7cef-4fef-b09e-a4163f96543a"
+position = [116.0, 251.0]
+inputs = []
+outputs = ["8ea6938b-4a61-46eb-9c3a-8bb78ec48829"]
+
+[graph.nodes.data]
+name = "Graph Input"
+
+[graph.nodes.state]
+name = "Pixel Pos"
+ty_name = "Vector2"
+
+[[graph.nodes]]
+id = "90d5cc46-fcc8-4a0e-b292-1715c47df1c8"
+position = [1011.0, 324.0]
+inputs = ["beb5e838-7b6d-4dd8-afde-025f877721bd"]
+outputs = []
+
+[graph.nodes.data]
+name = "Graph Output"
+
+[graph.nodes.state]
+name = "Color"
+ty_name = "Color"
+
+[[graph.nodes]]
+id = "4c75398e-7294-4a1d-a2f1-ddc8be64cba6"
+position = [123.0, 393.0]
+inputs = []
+outputs = ["36b99e77-3fc9-460c-a8dd-b0c7180154bb"]
+
+[graph.nodes.data]
+name = "Graph Input"
+
+[graph.nodes.state]
+name = "Pen Pos"
+ty_name = "Vector2"
+
+[[graph.nodes]]
+id = "8337273a-3eb3-4d6e-9418-12d62cf7496a"
+position = [804.0, 297.0]
+inputs = ["cc57bc16-814a-47ec-b0dd-2e65aeb110b8", "e23bb2cc-16d3-4caf-ab9c-3bfb14e19b76", "fe174526-2c00-4d9f-806d-47d4ae19d406", "86a430f6-8fe2-4854-9d3c-ce7534e014a9"]
+outputs = ["d7c567b0-652f-4db0-bcda-4e430dce47b9"]
+
+[graph.nodes.data]
+name = "Combine Color Components"
+
+[graph.nodes.state]
+
+[[graph.nodes]]
+id = "67dde8d1-55f5-4ed3-928d-b3ee3a105d7c"
+position = [114.0, 114.0]
+inputs = []
+outputs = ["f05be293-9ff1-4a1a-9010-0b9514e0d99a"]
+
+[graph.nodes.data]
+name = "Graph Input"
+
+[graph.nodes.state]
+name = "Brush Size"
+ty_name = "Float"
+
+[graph.inputs.17ca8695-134d-4b53-af2f-a508b9f78c9a]
+connected = "36b99e77-3fc9-460c-a8dd-b0c7180154bb"
+data = [0.0, 0.0]
+
+[graph.inputs.86a430f6-8fe2-4854-9d3c-ce7534e014a9]
+data = 1.0
+
+[graph.inputs.ba6d1474-d9b3-443c-9457-9f4049f91b7d]
+connected = "8ea6938b-4a61-46eb-9c3a-8bb78ec48829"
+data = [0.0, 0.0]
+
+[graph.inputs.15bcb84c-9495-4669-bad9-9b01b92d8d44]
+data = [0.0, 0.0]
+
+[graph.inputs.cc57bc16-814a-47ec-b0dd-2e65aeb110b8]
+connected = "967aa256-33c0-443b-8c91-6ec16d7013d3"
+data = 0.0
+
+[graph.inputs.beb5e838-7b6d-4dd8-afde-025f877721bd]
+connected = "d7c567b0-652f-4db0-bcda-4e430dce47b9"
+data = [0.0, 0.0, 0.0, 0.0]
+
+[graph.inputs.a9a9fc10-8b54-4045-924e-941473d9cf1c]
+data = 0.0
+
+[graph.inputs.e7c23bf5-40e7-4d5c-a71d-46b5bae8dcc7]
+connected = "442e0460-0771-4dc4-a2db-4ae55bb9912b"
+data = 0.0
+
+[graph.inputs.e23bb2cc-16d3-4caf-ab9c-3bfb14e19b76]
+data = 0.0
+
+[graph.inputs.fb24418a-3c55-4b50-9973-cf8d2b915bf9]
+connected = "f05be293-9ff1-4a1a-9010-0b9514e0d99a"
+data = 1.0
+
+[graph.inputs.fe174526-2c00-4d9f-806d-47d4ae19d406]
+data = 0.0
+
+[graph.outputs.f05be293-9ff1-4a1a-9010-0b9514e0d99a]
+
+[graph.outputs.442e0460-0771-4dc4-a2db-4ae55bb9912b]
+
+[graph.outputs.967aa256-33c0-443b-8c91-6ec16d7013d3]
+
+[graph.outputs.8ea6938b-4a61-46eb-9c3a-8bb78ec48829]
+
+[graph.outputs.36b99e77-3fc9-460c-a8dd-b0c7180154bb]
+
+[graph.outputs.d7c567b0-652f-4db0-bcda-4e430dce47b9]

@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use cyancia_assets::asset::Asset;
+use cyancia_assets::{asset::Asset, loader::AssetSerializer};
 use serde::{Deserialize, Serialize};
 use toml::ser::Buffer;
 
@@ -431,6 +431,7 @@ impl SerializableExternalVariable {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SerializableGraphFunction {
     pub id: GraphFunctionId,
     pub name: String,
@@ -438,13 +439,22 @@ pub struct SerializableGraphFunction {
 }
 
 impl SerializableGraphFunction {
-    pub fn deserialize(
+    pub fn serialize_func(func: &GraphFunction) -> Result<Self, anyhow::Error> {
+        Ok(SerializableGraphFunction {
+            id: func.id,
+            name: func.name.clone(),
+            graph: func.graph.as_serialized()?,
+        })
+    }
+
+    pub fn deserialize_func(
         &self,
         storage: Arc<GraphDynamicInstancesStorage>,
     ) -> (Option<GraphFunction>, Vec<GraphDeserializeError>) {
         let (maybe_graph, err) = Graph::from_serialized(storage, &self.graph);
 
         let func = maybe_graph.map(|graph| GraphFunction {
+            id: self.id,
             name: self.name.clone(),
             graph,
         });
@@ -455,4 +465,43 @@ impl SerializableGraphFunction {
 
 impl Asset for SerializableGraphFunction {
     const TYPE_NAME: &'static str = "shader_graph_function";
+}
+
+#[derive(Default)]
+pub struct SerializableGraphFunctionSerializer;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SerializableGraphFunctionSerializerError {
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Serialization error: {0}")]
+    TomlSer(#[from] toml::ser::Error),
+    #[error("Deserialization error: {0}")]
+    TomlDe(#[from] toml::de::Error),
+}
+
+impl AssetSerializer for SerializableGraphFunctionSerializer {
+    type Asset = SerializableGraphFunction;
+
+    type Error = SerializableGraphFunctionSerializerError;
+
+    fn file_extension() -> &'static str {
+        "csf"
+    }
+
+    fn read(&self, reader: &mut dyn std::io::Read) -> Result<Self::Asset, Self::Error> {
+        let mut buf = String::new();
+        reader.read_to_string(&mut buf)?;
+        Ok(toml::from_str(&buf)?)
+    }
+
+    fn write(
+        &self,
+        asset: &Self::Asset,
+        writer: &mut dyn std::io::Write,
+    ) -> Result<(), Self::Error> {
+        let serialized = toml::to_string(asset)?;
+        writer.write_all(serialized.as_bytes())?;
+        Ok(())
+    }
 }

@@ -1220,6 +1220,7 @@ dependencies = [
  "cyancia_input",
  "cyancia_render",
  "cyancia_runtime",
+ "cyancia_shader_graph",
  "cyancia_tools",
  "futures",
  "glam 0.30.10",
@@ -1430,6 +1431,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cyancia_assets",
+ "cyancia_runtime",
  "cyancia_utils",
  "cyancia_widgets",
  "downcast-rs 2.0.2",

@@ -983,7 +983,7 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
         let output_color = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = textureLoad(textures[{}], {}, 0);\n",
+            "let {} = textureLoad(textures[{}], vec2u({}), 0);\n",
             output_color, input_texture, input_position
         ))
     }

@@ -20,6 +20,7 @@ use cyancia_runtime::{
     service::{FromRuntime, RenderContext},
     windows::{WindowCommandBuffer, WindowManager, WindowView},
 };
+use cyancia_shader_graph::ShaderGraphPlugin;
 use cyancia_tools::ToolsPlugin;
 
 fn main() {
@@ -58,6 +59,7 @@ fn main() {
             asset_root: "assets".into(),
             bundles: asset_bundles,
         })
+        .add_plugin(ShaderGraphPlugin)
         .add_plugin(ToolsPlugin)
         .add_plugin(ImagePlugin)
         .add_plugin(CanvasPlugin)

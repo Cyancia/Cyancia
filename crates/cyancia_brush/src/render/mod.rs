@@ -235,6 +235,7 @@ impl BrushPresetRenderer {
                 &self.device,
                 &self.queue,
                 &handle.get().unwrap(),
+                TextureUsages::TEXTURE_BINDING,
             ));
             dbg!(id);
         }

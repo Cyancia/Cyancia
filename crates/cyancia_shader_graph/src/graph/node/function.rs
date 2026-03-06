@@ -44,6 +44,7 @@ pub fn functioning() -> GraphDynamicInstancesStorage {
 static UNIQUE_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 pub struct GraphFunction {
+    pub id: GraphFunctionId,
     pub name: String,
     pub graph: Graph,
 }

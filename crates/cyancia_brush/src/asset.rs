@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    io::{Cursor, Read},
+    io::{Cursor, Read, Write},
     path::Path,
     sync::Arc,
 };
@@ -41,7 +41,7 @@ use wgpu::{
     util::DeviceExt,
     wgt::{TextureDataOrder, TextureDescriptor},
 };
-use zip::ZipArchive;
+use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{GraphInputParams, brush_graph_storage, generate_brush_shader};
 
@@ -70,7 +70,9 @@ pub enum BrushPresetSerializerError {
     #[error(transparent)]
     Zip(#[from] zip::result::ZipError),
     #[error(transparent)]
-    Toml(#[from] toml::de::Error),
+    TomlDe(#[from] toml::de::Error),
+    #[error(transparent)]
+    TomlSer(#[from] toml::ser::Error),
     #[error(transparent)]
     Image(#[from] ImageSerializerError),
 }
@@ -122,7 +124,25 @@ impl AssetSerializer for BrushPresetSerializer {
         asset: &Self::Asset,
         writer: &mut dyn std::io::Write,
     ) -> Result<(), Self::Error> {
-        todo!()
+        let mut buf = Vec::new();
+        let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+
+        zip.start_file("main.csg", FileOptions::<()>::default())?;
+        let main_graph_buffer = toml::to_string(&asset.main_graph)?;
+        zip.write_all(main_graph_buffer.as_bytes())?;
+
+        zip.start_file("metadata.toml", FileOptions::<()>::default())?;
+        let metadata_buffer = toml::to_string(&asset.metadata)?;
+        zip.write_all(metadata_buffer.as_bytes())?;
+
+        zip.start_file("external_vars.toml", FileOptions::<()>::default())?;
+        let external_vars_buffer = toml::to_string(&asset.external_vars)?;
+        zip.write_all(external_vars_buffer.as_bytes())?;
+
+        zip.finish()?;
+        writer.write_all(&buf)?;
+
+        Ok(())
     }
 }
 
@@ -357,6 +377,10 @@ impl BrushPresetInstance {
     pub fn metadata(&self) -> &BrushPresetMetadata {
         &self.metadata
     }
+
+    pub fn metadata_mut(&mut self) -> &mut BrushPresetMetadata {
+        &mut self.metadata
+    }
 }
 
 fn create_main_graph_storage(
@@ -386,7 +410,7 @@ pub struct GpuImage {
 }
 
 impl GpuImage {
-    pub fn from_asset(device: &Device, queue: &Queue, asset: &Image) -> Self {
+    pub fn from_asset(device: &Device, queue: &Queue, asset: &Image, usage: TextureUsages) -> Self {
         use bytemuck::cast_slice;
         let width;
         let height;
@@ -541,10 +565,7 @@ impl GpuImage {
                 sample_count: 1,
                 dimension: TextureDimension::D2,
                 format,
-                usage: TextureUsages::COPY_DST
-                    | TextureUsages::TEXTURE_BINDING
-                    | TextureUsages::COPY_SRC
-                    | TextureUsages::STORAGE_BINDING,
+                usage: TextureUsages::COPY_DST | usage,
                 view_formats: &[],
             },
             TextureDataOrder::default(),

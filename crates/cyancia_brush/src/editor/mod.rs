@@ -1,8 +1,9 @@
-use std::{collections::HashMap, fs::read_to_string, sync::Arc};
+use std::{collections::HashMap, fs::read_to_string, str::FromStr, sync::Arc};
 
 use cyancia_actions::input_manager::InputManager;
 use cyancia_assets::{
     asset::{AssetHandle, AssetId},
+    bundle::BundleId,
     store::AssetRegistry,
 };
 use cyancia_input::action::ActionManifestCollection;
@@ -29,12 +30,12 @@ use cyancia_shader_graph::{
     },
 };
 use iced_core::{
-    Element, Length,
+    Color, Element, Length,
     keyboard::{self, key},
     mouse, window,
 };
 use iced_runtime::{Task, futures::Subscription};
-use iced_widget::{Column, button, column, container, row, space, text};
+use iced_widget::{Column, button, column, container, row, space, text, text_input};
 use uuid::Uuid;
 use wgpu::{Device, Queue};
 
@@ -49,11 +50,12 @@ use crate::{
 };
 
 pub struct SelectedBrush {
-    pub id: AssetId<BrushPreset>,
+    pub asset_id: Option<AssetId<BrushPreset>>,
     pub instance: BrushPresetInstance,
 }
 
 pub struct SelectedFunction {
+    pub asset_id: Option<AssetId<SerializableGraphFunction>>,
     pub id: GraphFunctionId,
     pub instance: GraphFunction,
 }
@@ -76,6 +78,8 @@ pub struct BrushEditorView {
     create_new_name: String,
     create_new_type: Option<&'static str>,
     has_unsaved_changes: bool,
+    editing_name: bool,
+    name_buffer: String,
 }
 
 impl FromRuntime for BrushEditorView {
@@ -99,7 +103,9 @@ impl FromRuntime for BrushEditorView {
                 // TODO err handling
                 (
                     func.id,
-                    func.deserialize(function_graph_storage.clone()).0.unwrap(),
+                    func.deserialize_func(function_graph_storage.clone())
+                        .0
+                        .unwrap(),
                 )
             })
             .collect();
@@ -148,6 +154,8 @@ impl FromRuntime for BrushEditorView {
             create_new_name: String::new(),
             create_new_type: None,
             has_unsaved_changes: false,
+            editing_name: false,
+            name_buffer: String::new(),
         }
     }
 }
@@ -161,6 +169,10 @@ pub enum BrushEditorMessage {
     ExternalVarView(ExternalVarViewMessage),
     CreateNewBrushPreset,
     CreateNewFunction,
+    StartEditName,
+    CancelEditName,
+    FinishEditName,
+    EditNameInput(String),
 }
 
 impl WindowView for BrushEditorView {
@@ -218,6 +230,50 @@ impl WindowView for BrushEditorView {
         ];
 
         if let Some(selected) = &self.selected {
+            let title_widget = if self.editing_name {
+                #[derive(Clone)]
+                enum InputMessage {
+                    Input(String),
+                    Finish,
+                    Cancel,
+                }
+
+                Element::new(
+                    container(
+                        text_input("", &self.name_buffer)
+                            .on_input(InputMessage::Input)
+                            .on_submit(InputMessage::Finish),
+                    )
+                    .height(24),
+                )
+                .map(|m| match m {
+                    InputMessage::Input(s) => BrushEditorMessage::EditNameInput(s),
+                    InputMessage::Finish => BrushEditorMessage::FinishEditName,
+                    InputMessage::Cancel => BrushEditorMessage::CancelEditName,
+                })
+            } else {
+                let title = match selected {
+                    Selected::Brush(brush) => &brush.instance.metadata().name,
+                    Selected::Function(func) => &func.instance.name,
+                };
+                let title = if self.has_unsaved_changes {
+                    format!("{} *", title)
+                } else {
+                    title.clone()
+                };
+                Element::new(
+                    button(text(title).center().size(20).color(Color::WHITE))
+                        .width(Length::Fill)
+                        .height(24)
+                        .style(|t: &iced_core::Theme, s: button::Status| button::Style {
+                            background: Some(t.palette().background.into()),
+                            ..Default::default()
+                        })
+                        .on_press(|| ()),
+                )
+                .map(|_| BrushEditorMessage::StartEditName)
+            };
+
             match selected {
                 Selected::Brush(brush) => {
                     let graph = Element::new(GraphView::new(&brush.instance.main_graph()))
@@ -232,33 +288,13 @@ impl WindowView for BrushEditorView {
                     )
                     .map(BrushEditorMessage::ExternalVarView);
 
-                    let title = if self.has_unsaved_changes {
-                        format!("{} *", brush.instance.metadata().name)
-                    } else {
-                        brush.instance.metadata().name.clone()
-                    };
-
-                    editor = editor
-                        .push(column![
-                            text(title).width(Length::Fill).center().size(30),
-                            graph,
-                        ])
-                        .push(ext_vars);
+                    editor = editor.push(column![title_widget, graph,]).push(ext_vars);
                 }
                 Selected::Function(func) => {
                     let graph = Element::new(GraphView::new(&func.instance.graph))
                         .map(BrushEditorMessage::GraphView);
 
-                    let title = if self.has_unsaved_changes {
-                        format!("{} *", func.instance.name)
-                    } else {
-                        func.instance.name.clone()
-                    };
-
-                    editor = editor.push(column![
-                        text(title).width(Length::Fill).center().size(30),
-                        graph,
-                    ]);
+                    editor = editor.push(column![title_widget, graph,]);
                 }
             }
         }
@@ -303,28 +339,75 @@ impl WindowView for BrushEditorView {
                         }
                         if physical_key == key::Physical::Code(key::Code::KeyS)
                             && modifiers.control()
+                            && let Some(selected) = &mut self.selected
                         {
-                            if let Some(Selected::Brush(brush)) = &mut self.selected {
-                                let assets = runtime.service_mut::<AssetRegistry>();
-                                let handle = assets.handle(brush.id).unwrap();
-                                handle.update(brush.instance.as_asset().unwrap()).unwrap();
-                                self.has_unsaved_changes = false;
+                            match selected {
+                                Selected::Brush(brush) => {
+                                    let assets = runtime.service_mut::<AssetRegistry>();
+                                    let preset = brush.instance.as_asset().unwrap();
+                                    if let Some(asset_id) = brush.asset_id {
+                                        let handle = assets.handle(asset_id).unwrap();
+                                        handle.update(preset).unwrap();
+                                        handle.write().unwrap();
+                                    } else {
+                                        let new_id = assets
+                                            .add_asset(
+                                                BundleId::new(
+                                                    Uuid::from_str(
+                                                        "b92c20f6-8cdb-42b8-efae-a92705efd029",
+                                                    )
+                                                    .unwrap(),
+                                                ),
+                                                "saved.cbp",
+                                                Arc::new(preset),
+                                            )
+                                            .unwrap();
+                                        brush.asset_id = Some(new_id);
+                                    }
+                                    self.has_unsaved_changes = false;
 
-                                let ctx = runtime.service::<RenderContext>();
-                                // TODO This is sooooo ugly
-                                runtime.insert_service(CurrentBrushPresetOperator::new(
-                                    BrushPresetOperator::new(
-                                        BrushPresetInstance::from_asset(
-                                            &handle.get().unwrap(),
-                                            self.texture_storage.clone(),
-                                            self.function_storage.clone(),
-                                        )
-                                        .0
-                                        .unwrap(),
-                                        ctx.device.clone(),
-                                        ctx.queue.clone(),
-                                    ),
-                                ));
+                                    let ctx = runtime.service::<RenderContext>();
+                                    // TODO This is sooooo ugly
+                                    runtime.insert_service(CurrentBrushPresetOperator::new(
+                                        BrushPresetOperator::new(
+                                            BrushPresetInstance::from_asset(
+                                                &brush.instance.as_asset().unwrap(),
+                                                self.texture_storage.clone(),
+                                                self.function_storage.clone(),
+                                            )
+                                            .0
+                                            .unwrap(),
+                                            ctx.device.clone(),
+                                            ctx.queue.clone(),
+                                        ),
+                                    ));
+                                }
+                                Selected::Function(func) => {
+                                    let assets = runtime.service_mut::<AssetRegistry>();
+                                    let ser_func =
+                                        SerializableGraphFunction::serialize_func(&func.instance)
+                                            .unwrap();
+                                    if let Some(asset_id) = func.asset_id {
+                                        let handle = assets.handle(asset_id).unwrap();
+                                        handle.update(ser_func).unwrap();
+                                        handle.write().unwrap();
+                                    } else {
+                                        let new_id = assets
+                                            .add_asset(
+                                                BundleId::new(
+                                                    Uuid::from_str(
+                                                        "b92c20f6-8cdb-42b8-efae-a92705efd029",
+                                                    )
+                                                    .unwrap(),
+                                                ),
+                                                format!("{}.csf", func.instance.name),
+                                                Arc::new(ser_func),
+                                            )
+                                            .unwrap();
+                                        func.asset_id = Some(new_id);
+                                    }
+                                    self.has_unsaved_changes = false;
+                                }
                             }
                         }
 
@@ -389,7 +472,7 @@ impl WindowView for BrushEditorView {
 
                 if let Some(instance) = instance {
                     self.selected = Some(Selected::Brush(SelectedBrush {
-                        id: brush_id,
+                        asset_id: Some(brush_id),
                         instance,
                     }));
 
@@ -418,14 +501,12 @@ impl WindowView for BrushEditorView {
                 }
             }
             BrushEditorMessage::FunctionSelected(func_id) => {
-                let Some(ser_func) = self
-                    .function_id_to_asset
-                    .get(&func_id)
-                    .and_then(|handle| handle.get().ok())
-                else {
+                let Some(asset_handle) = self.function_id_to_asset.get(&func_id) else {
                     return Task::none();
                 };
-                let (maybe_func, errs) = ser_func.deserialize(self.function_graph_storage.clone());
+                let ser_func = asset_handle.get().unwrap();
+                let (maybe_func, errs) =
+                    ser_func.deserialize_func(self.function_graph_storage.clone());
                 let Some(func) = maybe_func else {
                     for err in errs {
                         log::error!("Error deserializing function {:?}: {:?}", func_id, err);
@@ -434,6 +515,7 @@ impl WindowView for BrushEditorView {
                 };
 
                 self.selected = Some(Selected::Function(SelectedFunction {
+                    asset_id: Some(asset_handle.id()),
                     id: func_id,
                     instance: func,
                 }));
@@ -443,8 +525,10 @@ impl WindowView for BrushEditorView {
             }
             BrushEditorMessage::CreateNewFunction => {
                 self.selected = Some(Selected::Function(SelectedFunction {
+                    asset_id: None,
                     id: GraphFunctionId::new(Uuid::new_v4()),
                     instance: GraphFunction {
+                        id: GraphFunctionId::new(Uuid::new_v4()),
                         name: "[Unnamed Function]".to_string(),
                         graph: Graph::new(self.function_graph_storage.clone()),
                     },
@@ -453,7 +537,7 @@ impl WindowView for BrushEditorView {
             }
             BrushEditorMessage::CreateNewBrushPreset => {
                 self.selected = Some(Selected::Brush(SelectedBrush {
-                    id: AssetId::new(Uuid::new_v4()),
+                    asset_id: None,
                     instance: BrushPresetInstance::new(
                         BrushPresetMetadata {
                             name: "[Unnamed Brush]".to_string(),
@@ -463,6 +547,32 @@ impl WindowView for BrushEditorView {
                     ),
                 }));
                 self.has_unsaved_changes = true;
+            }
+            BrushEditorMessage::StartEditName => {
+                self.editing_name = true;
+                self.name_buffer = match &self.selected {
+                    Some(Selected::Brush(brush)) => brush.instance.metadata().name.clone(),
+                    Some(Selected::Function(func)) => func.instance.name.clone(),
+                    None => String::new(),
+                };
+            }
+            BrushEditorMessage::CancelEditName => {
+                self.editing_name = false;
+            }
+            BrushEditorMessage::FinishEditName => {
+                self.editing_name = false;
+                if let Some(selected) = &mut self.selected {
+                    match selected {
+                        Selected::Brush(brush) => {
+                            brush.instance.metadata_mut().name = self.name_buffer.clone()
+                        }
+                        Selected::Function(func) => func.instance.name = self.name_buffer.clone(),
+                    }
+                    self.has_unsaved_changes = true;
+                }
+            }
+            BrushEditorMessage::EditNameInput(name) => {
+                self.name_buffer = name;
             }
         }
 
