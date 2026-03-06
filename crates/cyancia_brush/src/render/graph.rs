@@ -119,89 +119,42 @@ pub enum OutputPixelColorMessage {
     SetBlendMode(BlendMode),
 }
 
-impl GraphNode for OutputPixelColor {
-    type State = OutputPixelColorState;
-
-    type Message = OutputPixelColorMessage;
-
+impl StatelessCommonGraphNode for OutputPixelColor {
     fn name(&self) -> &'static str {
         "Output Pixel Color"
     }
 
-    fn default_state(&self) -> Self::State {
-        OutputPixelColorState {
-            blend_mode: BlendMode::Normal,
-        }
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Color"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &[]
     }
 
     fn header_color(&self) -> Color {
         color!(0x79f2bb)
     }
 
-    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO)]
     }
 
-    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
 
-    fn view_inputs(
-        &self,
-        state: &Self::State,
-        ctx: GraphNodeInputsViewContext,
-    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        let mut column = Column::with_children(
-            ctx.view_all_inputs(&["Color"], OutputPixelColorMessage::LiteralUpdate),
-        );
-
-        column = column.push(pick_list(
-            BlendMode::ALL,
-            Some(state.blend_mode),
-            OutputPixelColorMessage::SetBlendMode,
-        ));
-
-        column.into()
-    }
-
-    fn view_outputs(
-        &self,
-        state: &Self::State,
-        ctx: GraphNodeOutputsViewContext,
-    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        space().into()
-    }
-
-    fn update(
-        &self,
-        state: &mut Self::State,
-        message: Self::Message,
-        mut ctx: GraphNodeUpdateContext,
-    ) {
-        match message {
-            OutputPixelColorMessage::LiteralUpdate(m) => ctx.update_literal(m),
-            OutputPixelColorMessage::SetBlendMode(blend_mode) => state.blend_mode = blend_mode,
-        }
-    }
-
-    fn generate_code(
-        &self,
-        state: &Self::State,
-        ctx: GraphNodeCodeGenContext,
-    ) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         let layer = ctx.ident_generator.next_output();
         let coord = ctx.ident_generator.next_output();
-        let old_color = ctx.ident_generator.next_output();
 
         Ok(format!(
             r#"
             var {layer} = 0u;
             var {coord} = vec2u(0u);
             convert_pixel_to_tile(pixel_pos, &{layer}, &{coord});
-            let {old_color} = image::texture_unpack::unpack_rgba8_texel(textureLoad(outputs[{layer}], {coord}));
-            textureStore(outputs[{layer}], {coord}, image::texture_unpack::pack_rgba8_texel(image::blend_modes::{}({}, {old_color})));
+            textureStore(outputs[{layer}], {coord}, image::texture_unpack::pack_rgba8_texel({}));
             "#,
-            state.blend_mode.shader_func(),
             ctx.get_input(0)?
         ))
     }
