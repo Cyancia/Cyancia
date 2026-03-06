@@ -1,25 +1,37 @@
+use cyancia_image::blend_modes::BlendMode;
 use cyancia_shader_graph::{
+    GraphRenderer, GraphTheme,
     graph::{
         Graph, GraphCompileError, GraphDynamicInstancesStorage,
-        node::{GraphNodeCodeGenContext, GraphNodeCodeGenError, StatelessCommonGraphNode},
-        slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
+        node::{
+            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
+            GraphNodeOutputsViewContext, GraphNodeUpdateContext, StatelessCommonGraphNode,
+        },
+        slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
     wgsl_std::types::{ColorType, F32Type, TextureLocalIndex, TextureType, Vec2FType},
 };
 use glam::{Vec2, Vec4};
-use iced_core::{Color, color};
+use iced_core::{Color, Element, color};
+use iced_widget::{Column, pick_list, space};
+use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 
 pub fn generate_brush_shader(graph: &mut Graph) -> Result<String, anyhow::Error> {
     let template = include_str!("brush_template.wesl");
     let (_, graph_code) = graph.compile(Vec::new(), Default::default())?;
     let code = template.replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_code);
+    println!("Generated shader code:\n{}", code);
 
     let mut resolver = VirtualResolver::new();
     resolver.add_module("template".parse().unwrap(), code.into());
     resolver.add_module(
         "template/image::texture_unpack".parse().unwrap(),
         include_str!("../../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
+    );
+    resolver.add_module(
+        "template/image::blend_modes".parse().unwrap(),
+        include_str!("../../../cyancia_image/src/shaders/blend_modes.wesl").into(),
     );
     let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
     compiler.set_mangler(Default::default());
@@ -120,42 +132,100 @@ impl StatelessCommonGraphNode for PixelPosition {
 #[derive(Default, Clone)]
 pub struct OutputPixelColor;
 
-impl StatelessCommonGraphNode for OutputPixelColor {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputPixelColorState {
+    pub blend_mode: BlendMode,
+}
+
+#[derive(Clone)]
+pub enum OutputPixelColorMessage {
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+    SetBlendMode(BlendMode),
+}
+
+impl GraphNode for OutputPixelColor {
+    type State = OutputPixelColorState;
+
+    type Message = OutputPixelColorMessage;
+
     fn name(&self) -> &'static str {
         "Output Pixel Color"
     }
 
-    fn input_slot_names(&self) -> &[&'static str] {
-        &["Color"]
-    }
-
-    fn output_slot_names(&self) -> &[&'static str] {
-        &[]
+    fn default_state(&self) -> Self::State {
+        OutputPixelColorState {
+            blend_mode: BlendMode::Normal,
+        }
     }
 
     fn header_color(&self) -> Color {
         color!(0x79f2bb)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO)]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = Column::with_children(
+            ctx.view_all_inputs(&["Color"], OutputPixelColorMessage::LiteralUpdate),
+        );
+
+        column = column.push(pick_list(
+            BlendMode::ALL,
+            Some(state.blend_mode),
+            OutputPixelColorMessage::SetBlendMode,
+        ));
+
+        column.into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        space().into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            OutputPixelColorMessage::LiteralUpdate(m) => ctx.update_literal(m),
+            OutputPixelColorMessage::SetBlendMode(blend_mode) => state.blend_mode = blend_mode,
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         let layer = ctx.ident_generator.next_output();
         let coord = ctx.ident_generator.next_output();
+        let old_color = ctx.ident_generator.next_output();
 
         Ok(format!(
             r#"
             var {layer} = 0u;
             var {coord} = vec2u(0u);
             convert_pixel_to_tile(pixel_pos, &{layer}, &{coord});
-            textureStore(outputs[{layer}], {coord}, image::texture_unpack::pack_rgba8_texel({}));
+            let {old_color} = image::texture_unpack::unpack_rgba8_texel(textureLoad(outputs[{layer}], {coord}));
+            textureStore(outputs[{layer}], {coord}, image::texture_unpack::pack_rgba8_texel(image::blend_modes::{}({}, {old_color})));
             "#,
+            state.blend_mode.shader_func(),
             ctx.get_input(0)?
         ))
     }
@@ -163,17 +233,6 @@ impl StatelessCommonGraphNode for OutputPixelColor {
 
 #[derive(Default, Clone)]
 pub struct PasteTextureNode;
-
-const PASTE_TEXTURE_TEMPLATE: &'static str = r#"
-let s = sin(rotate);
-let c = cos(rotate);
-let mat = mat3x3f(
-    c / scale.x, -s / scale.y, 0.0,
-    s / scale.x, c / scale.y, 0.0,
-    -(c * translate.x + s * translate.y) / scale.x, (s * translate.x + c * translate.y) / scale.y, 1.0,
-);
-let color = textureLoad(textures[layer], vec2i((mat * vec3f(cur_pos, 1.0)).xy), 0);
-"#;
 
 impl StatelessCommonGraphNode for PasteTextureNode {
     fn name(&self) -> &'static str {

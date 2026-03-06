@@ -1357,7 +1357,9 @@ dependencies = [
  "log",
  "palette",
  "parking_lot",
+ "parse-display",
  "rayon",
+ "serde",
  "uuid",
  "wesl",
  "wgpu",
@@ -1402,6 +1404,8 @@ dependencies = [
  "iced_renderer",
  "iced_wgpu",
  "iced_widget",
+ "parse-display",
+ "serde",
  "wesl",
  "wgpu",
 ]

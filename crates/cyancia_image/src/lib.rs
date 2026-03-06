@@ -9,6 +9,7 @@ extern crate image as imagers;
 
 use crate::{layer::Layer, tile::GpuTileStorage};
 
+pub mod blend_modes;
 pub mod layer;
 pub mod texel;
 pub mod tile;

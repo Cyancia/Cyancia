@@ -174,7 +174,7 @@ impl BrushPresetRenderer {
                         binding: 1,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::StorageTexture {
-                            access: StorageTextureAccess::WriteOnly,
+                            access: StorageTextureAccess::ReadWrite,
                             // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
                             //       into target color space when merging down.
                             format: target_layer_texel.wgpu_format(),
@@ -243,7 +243,6 @@ impl BrushPresetRenderer {
         });
 
         self.textures.clear();
-        dbg!(&texture_usage_recorder.get_usage());
         for id in texture_usage_recorder.get_usage().keys() {
             if id == &TextureId::NULL {
                 self.textures.push(self.empty_texture.clone());
@@ -257,7 +256,6 @@ impl BrushPresetRenderer {
                 &handle.get().unwrap(),
                 TextureUsages::TEXTURE_BINDING,
             ));
-            dbg!(id);
         }
     }
 

@@ -20,6 +20,8 @@ half.workspace = true
 cyancia_runtime.workspace = true
 bevy_math.workspace = true
 wesl.workspace = true
+parse-display.workspace = true
+serde.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

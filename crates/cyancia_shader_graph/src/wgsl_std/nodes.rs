@@ -1151,7 +1151,6 @@ impl GraphNode for TextureNode {
         // The binding should be a texture binding_array. The index of each used texture in graph
         // is corresponding to array index returned by TextureStorage::used_textures()
         let index = self.recorder.use_texture(*state);
-        dbg!(state, index);
         Ok(format!("let {} = {}u;\n", ctx.get_output(0)?, index))
     }
 }

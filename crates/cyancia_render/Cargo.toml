@@ -13,6 +13,8 @@ iced_widget.workspace = true
 cyancia_runtime.workspace = true
 futures.workspace = true
 iced_renderer.workspace = true
+serde.workspace = true
+parse-display.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

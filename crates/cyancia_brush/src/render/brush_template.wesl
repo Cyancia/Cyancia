@@ -12,7 +12,7 @@ struct TileInfo {
 @group(0) @binding(0) var<storage> graph_input: GraphInput;
 // TODO: This is weird. This is a bindless array, and theoretically it won't have a fixed size.
 //       It doesn't compile if remove the size, but works if it's set to a random value. Why? ｢( • ﾍ •)
-@group(0) @binding(1) var outputs: binding_array<texture_storage_2d<r32uint, write>, 1>;
+@group(0) @binding(1) var outputs: binding_array<texture_storage_2d<r32uint, read_write>, 1>;
 @group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
 
