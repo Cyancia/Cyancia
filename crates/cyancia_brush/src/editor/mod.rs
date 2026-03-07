@@ -43,7 +43,7 @@ use wgpu::{Device, Queue};
 use crate::{
     asset::{BrushPreset, BrushPresetInstance, BrushPresetMetadata, GpuImage, Image},
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
-    render::{BrushPresetOperator, graph::brush_graph_storage},
+    render::BrushPresetOperator,
     tool::CurrentBrushPresetOperator,
 };
 
@@ -66,7 +66,6 @@ pub enum Selected {
 
 pub struct BrushEditorView {
     input_manager: InputManager,
-    main_graph_storage: GraphDynamicInstancesStorage,
     function_graph_storage: Arc<GraphDynamicInstancesStorage>,
     texture_storage: Arc<TextureStorage>,
 
@@ -126,15 +125,6 @@ impl FromRuntime for BrushEditorView {
             })
             .collect();
         let texture_storage = Arc::new(TextureStorage::new(textures));
-        let main_graph_storage = {
-            let mut storage = GraphDynamicInstancesStorage::default();
-            storage.merge(std_storage());
-            storage.merge(brush_graph_storage());
-            storage
-                .nodes
-                .register_non_default(GraphFunctionNode::new(function_storage.clone()));
-            storage
-        };
 
         let actions = runtime
             .service::<ActionManifestCollection>()
@@ -144,11 +134,10 @@ impl FromRuntime for BrushEditorView {
             input_manager: InputManager::new(actions),
 
             selected: None,
-            main_graph_storage,
             texture_storage,
-            function_graph_storage,
             function_storage,
             function_id_to_asset,
+            function_graph_storage,
 
             create_new_name: String::new(),
             create_new_type: None,
@@ -286,7 +275,7 @@ impl WindowView for BrushEditorView {
                     //       For example the brush size and opacity.
                     let ext_vars = external_var_view(
                         brush.instance.external_vars(),
-                        &self.main_graph_storage.types,
+                        &brush.instance.main_graph_read().storage().types,
                         self.create_new_name.clone(),
                         self.create_new_type,
                     )
@@ -686,9 +675,10 @@ impl BrushEditorView {
                     return;
                 }
 
+                let main_graph = brush.instance.main_graph_read();
                 let Some(ty) = self
                     .create_new_type
-                    .and_then(|t| self.main_graph_storage.types.get(t))
+                    .and_then(|t| main_graph.storage().types.get(t))
                 else {
                     return;
                 };

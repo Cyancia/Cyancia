@@ -31,7 +31,7 @@ impl ToolFunction for BrushTool {
 
         let tiles = services.service::<GpuTileStorage>();
         let assets = services.service::<AssetRegistry>();
-        brush.begin_stroke(&tiles, &assets);
+        brush.begin_stroke(&tiles, &assets, canvas.image.root().id);
     }
 
     fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
@@ -52,7 +52,7 @@ impl ToolFunction for BrushTool {
                 .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
         };
         let tiles = services.service::<GpuTileStorage>();
-        brush.update_stroke(params, canvas.image.root().id, &tiles);
+        brush.update_stroke(params, &tiles);
         brush.draw();
     }
 
@@ -66,7 +66,7 @@ impl ToolFunction for BrushTool {
         };
 
         let tiles = services.service::<GpuTileStorage>();
-        brush.end_stroke(&tiles, canvas.image.root().id);
+        brush.end_stroke(&tiles);
     }
 }
 

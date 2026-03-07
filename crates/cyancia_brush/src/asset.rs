@@ -47,7 +47,10 @@ use wgpu::{
 };
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
-use crate::render::graph::{GraphInputParams, brush_graph_storage};
+use crate::render::graph::{
+    BlendColorNode, CurrentPixelColorNode, GraphInputParams, LayerPixelColorNode, OutputPixelColor,
+    PasteTextureNode, PenPosition, PixelPosition,
+};
 
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
@@ -552,7 +555,6 @@ fn compile(
             external_variable_bindings,
         );
 
-    println!("Generated shader before compilation:\n{}", shader);
     let mut resolver = VirtualResolver::new();
     resolver.add_module("template".parse().unwrap(), shader.into());
     resolver.add_module(
@@ -580,7 +582,14 @@ fn create_main_graph_storage(
 ) -> GraphDynamicInstancesStorage {
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.merge(std_storage());
-    storage.merge(brush_graph_storage());
+
+    storage.nodes.register::<PenPosition>();
+    storage.nodes.register::<PixelPosition>();
+    storage.nodes.register::<OutputPixelColor>();
+    storage.nodes.register::<PasteTextureNode>();
+    storage.nodes.register::<BlendColorNode>();
+    storage.nodes.register::<LayerPixelColorNode>();
+
     storage
         .nodes
         .register_non_default(GraphFunctionNode::new(function_storage.clone()));
@@ -601,7 +610,15 @@ fn create_postprocess_graph_storage(
 ) -> GraphDynamicInstancesStorage {
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.merge(std_storage());
-    storage.merge(brush_graph_storage());
+
+    storage.nodes.register::<PenPosition>();
+    storage.nodes.register::<PixelPosition>();
+    storage.nodes.register::<OutputPixelColor>();
+    storage.nodes.register::<PasteTextureNode>();
+    storage.nodes.register::<BlendColorNode>();
+    storage.nodes.register::<LayerPixelColorNode>();
+    storage.nodes.register::<CurrentPixelColorNode>();
+
     storage
         .nodes
         .register_non_default(GraphFunctionNode::new(function_storage.clone()));

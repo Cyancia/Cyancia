@@ -17,17 +17,6 @@ use iced_widget::{Column, column, pick_list, space};
 use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 
-pub fn brush_graph_storage() -> GraphDynamicInstancesStorage {
-    let mut storage = GraphDynamicInstancesStorage::default();
-    storage.nodes.register::<PenPosition>();
-    storage.nodes.register::<PixelPosition>();
-    storage.nodes.register::<OutputPixelColor>();
-    storage.nodes.register::<PasteTextureNode>();
-    storage.nodes.register::<BlendColorNode>();
-    storage.nodes.register::<CurrentPixelColorNode>();
-    storage
-}
-
 pub struct GraphInputParams {
     pub pen_position: Vec2,
 }
@@ -243,6 +232,42 @@ impl StatelessCommonGraphNode for CurrentPixelColorNode {
             "let {} = current_input_color(pixel_pos);\n",
             ctx.get_output(0)?
         ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct LayerPixelColorNode;
+
+impl StatelessCommonGraphNode for LayerPixelColorNode {
+    fn name(&self) -> &'static str {
+        "Layer Pixel Color"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Layer"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Color"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79f2d4)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!("let {} = target_layer_color(pixel_pos);\n", ctx.get_output(0)?))
     }
 }
 

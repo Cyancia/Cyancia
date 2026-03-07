@@ -73,6 +73,7 @@ pub struct GpuTileStorageInner {
 
     empty_tile: Tile,
     tiles: DashMap<TileIndex, Tile>,
+    layer_tiles: DashMap<LayerId, Vec<TileIndex>>,
     layer_format: DashMap<LayerId, TexelType>,
 }
 
@@ -118,6 +119,7 @@ impl GpuTileStorageInner {
             dimension: TextureDimension::D2,
             format,
             usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC
                 | TextureUsages::COPY_DST
                 | TextureUsages::STORAGE_BINDING,
             view_formats: &[],
@@ -148,7 +150,12 @@ impl GpuTileStorageInner {
             empty_tile: empty,
             tiles,
             layer_format: DashMap::new(),
+            layer_tiles: DashMap::new(),
         }
+    }
+
+    pub fn empty_tile(&self) -> Tile {
+        self.empty_tile.clone()
     }
 
     pub fn declare_layer(&self, layer_id: LayerId, texel_type: TexelType) {
@@ -169,6 +176,9 @@ impl GpuTileStorageInner {
 
     pub fn clear_layer(&self, layer_id: LayerId) {
         self.tiles.retain(|index, _| index.layer != layer_id);
+        self.layer_tiles
+            .get_mut(&layer_id)
+            .map(|mut tiles| tiles.clear());
     }
 
     pub fn layer_texel_type(&self, layer_id: LayerId) -> Option<TexelType> {
@@ -187,6 +197,10 @@ impl GpuTileStorageInner {
         self.tiles
             .entry(index)
             .or_insert_with(|| {
+                self.layer_tiles
+                    .entry(index.layer)
+                    .or_insert_with(Vec::new)
+                    .push(index);
                 create_tile(
                     index,
                     *self
@@ -197,6 +211,18 @@ impl GpuTileStorageInner {
                 )
             })
             .clone()
+    }
+
+    pub fn get_layer_tiles(&self, layer_id: LayerId) -> Vec<Tile> {
+        self.layer_tiles
+            .get(&layer_id)
+            .map(|tiles| {
+                tiles
+                    .iter()
+                    .map(|index| self.get_tile(*index))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
     }
 
     pub fn upload_image(&self, layer_id: LayerId, img: DynamicImage) {
