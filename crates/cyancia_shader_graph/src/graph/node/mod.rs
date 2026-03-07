@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use cyancia_utils::wrapper;
+use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use iced_core::{Color, Element, Point};
 use iced_widget::Column;
@@ -38,7 +38,7 @@ wrapper! {
 
 pub trait GraphNode: Send + Sync + 'static + DynClone {
     type State: Send + Sync + 'static + GraphSerializable;
-    type Message: Send + Sync + 'static;
+    type Message: Send + Sync + 'static + Clone;
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Self::State;
     fn header_color(&self) -> Color;
@@ -73,8 +73,9 @@ pub trait GraphNode: Send + Sync + 'static + DynClone {
     }
 }
 
+#[derive(Clone)]
 pub struct ErasedGraphNodeMessage {
-    pub inner: Box<dyn Any + Send + Sync>,
+    pub inner: Box<dyn ClonableAnySync>,
     pub id: GraphNodeId,
 }
 
@@ -190,7 +191,7 @@ impl<T: GraphNode> ErasedGraphNode for T {
             .expect("Failed to downcast node state.");
         self.view_outputs(state, ctx)
             .map(move |msg| ErasedGraphNodeMessage {
-                inner: Box::new(msg),
+                inner: Box::new(msg) as Box<dyn ClonableAnySync>,
                 id: node_id,
             })
     }
@@ -204,10 +205,10 @@ impl<T: GraphNode> ErasedGraphNode for T {
         let state = state
             .downcast_mut::<T::State>()
             .expect("Failed to downcast node state.");
-        let msg = message
-            .inner
-            .downcast::<T::Message>()
-            .expect("Failed to downcast node message.");
+        let msg = match message.inner.downcast::<T::Message>() {
+            Ok(ok) => ok,
+            Err(_) => panic!("Failed to downcast node message."),
+        };
         self.update(state, *msg, ctx);
     }
 

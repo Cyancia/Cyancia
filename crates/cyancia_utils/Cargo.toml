@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 cyancia_utils_derive.workspace = true
+dyn-clone.workspace = true
+downcast-rs.workspace = true

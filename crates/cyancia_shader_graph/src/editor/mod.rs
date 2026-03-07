@@ -49,6 +49,7 @@ pub mod slot;
 const NODE_WIDTH: f32 = 170.0;
 const NODE_BORDER_RADIUS: f32 = 5.0;
 
+#[derive(Clone)]
 pub enum GraphViewMessage {
     NodeCreateRequest(Point, Box<dyn ErasedGraphNode>),
     NodeMoveRequest(Point, GraphNodeId),

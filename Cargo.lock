@@ -1478,6 +1478,8 @@ name = "cyancia_utils"
 version = "0.1.0"
 dependencies = [
  "cyancia_utils_derive",
+ "downcast-rs 2.0.2",
+ "dyn-clone",
 ]
 
 [[package]]

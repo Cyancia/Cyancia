@@ -157,6 +157,7 @@ impl FromRuntime for BrushEditorView {
     }
 }
 
+#[derive(Clone)]
 pub enum BrushEditorMessage {
     KeyboardEvent(keyboard::Event),
     MouseEvent(mouse::Event),
@@ -213,12 +214,12 @@ impl WindowView for BrushEditorView {
         let mut editor = row![
             column![
                 row![
-                    // TODO: This is an ugly workaround
-                    // TODO: Warn user if there are unsaved changes when creating new preset/function
-                    Element::new(button("New Brush").on_press(()))
-                        .map(|_| BrushEditorMessage::CreateNewBrushPreset),
-                    Element::new(button("New Function").on_press(()))
-                        .map(|_| BrushEditorMessage::CreateNewFunction),
+                    Element::new(
+                        button("New Brush").on_press(BrushEditorMessage::CreateNewBrushPreset)
+                    ),
+                    Element::new(
+                        button("New Function").on_press(BrushEditorMessage::CreateNewFunction)
+                    ),
                 ],
                 brushes,
                 functions,
@@ -228,26 +229,14 @@ impl WindowView for BrushEditorView {
 
         if let Some(selected) = &self.selected {
             let title_widget = if self.editing_name {
-                #[derive(Clone)]
-                enum InputMessage {
-                    Input(String),
-                    Finish,
-                    Cancel,
-                }
-
                 Element::new(
                     container(
                         text_input("", &self.name_buffer)
-                            .on_input(InputMessage::Input)
-                            .on_submit(InputMessage::Finish),
+                            .on_input(BrushEditorMessage::EditNameInput)
+                            .on_submit(BrushEditorMessage::FinishEditName),
                     )
                     .height(24),
                 )
-                .map(|m| match m {
-                    InputMessage::Input(s) => BrushEditorMessage::EditNameInput(s),
-                    InputMessage::Finish => BrushEditorMessage::FinishEditName,
-                    InputMessage::Cancel => BrushEditorMessage::CancelEditName,
-                })
             } else {
                 let title = match selected {
                     Selected::Brush(brush) => &brush.instance.metadata().name,
