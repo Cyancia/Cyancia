@@ -84,7 +84,7 @@ fn target_layer_color(pixel_pos: vec2i) -> vec4f {
     var cur_layer = 0u;
     var cur_coord = vec2u(0u);
     convert_pixel_to_layer_tile(pixel_pos, &cur_layer, &cur_coord);
-    return image::texture_unpack::unpack_rgba8_texel(textureLoad(target_layer[0], vec2i(cur_coord)));
+    return image::texture_unpack::unpack_rgba8_texel(textureLoad(target_layer[cur_layer], vec2i(cur_coord)));
 }
 
 fn set_output_color(pixel_pos: vec2i, color: vec4f) {
