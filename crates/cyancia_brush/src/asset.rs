@@ -119,7 +119,7 @@ impl AssetSerializer for BrushPresetSerializer {
             .map(ToString::to_string)
             .collect::<Vec<_>>();
         for file in files {
-            if file.starts_with("stroke_postprocess") {
+            if file.starts_with("stroke_postprocess/") {
                 let mut buf = String::new();
                 archive.by_name(&file)?.read_to_string(&mut buf)?;
                 let graph = toml::from_str::<SerializableGraph>(&buf)?;
@@ -158,6 +158,15 @@ impl AssetSerializer for BrushPresetSerializer {
         zip.start_file("external_vars.toml", FileOptions::<()>::default())?;
         let external_vars_buffer = toml::to_string(&asset.external_vars)?;
         zip.write_all(external_vars_buffer.as_bytes())?;
+
+        for (i, graph) in asset.stroke_postprocess_graphs.iter().enumerate() {
+            zip.start_file(
+                format!("stroke_postprocess/{}.csg", i),
+                FileOptions::<()>::default(),
+            )?;
+            let graph_buffer = toml::to_string(graph)?;
+            zip.write_all(graph_buffer.as_bytes())?;
+        }
 
         zip.finish()?;
         writer.write_all(&buf)?;
@@ -442,24 +451,34 @@ impl BrushPresetInstance {
         )
     }
 
-    pub fn compile(&self) -> Result<CompiledBrushPreset, anyhow::Error> {
+    pub fn compile(
+        &self,
+        mut existing_binding_count: u32,
+    ) -> Result<CompiledBrushPreset, anyhow::Error> {
         self.texture_usage_recorder.reset();
 
         let mut external_variable_bindings = String::new();
-        let mut cur_binding = 4;
         for var in self.external_vars.all().values() {
-            external_variable_bindings
-                .extend(generate_external_variable_binding(0, cur_binding, var.as_ref()).chars());
-            cur_binding += 1;
+            external_variable_bindings.extend(
+                generate_external_variable_binding(0, existing_binding_count, var.as_ref()).chars(),
+            );
+            existing_binding_count += 1;
         }
 
-        let main_graph = compile(&mut self.main_graph.write(), &external_variable_bindings)?;
+        let main_graph = compile(
+            &mut self.main_graph.write(),
+            &external_variable_bindings,
+            false,
+        )?;
         let stroke_postprocess_graphs = self.stroke_postprocess_graphs.write();
         let mut compiled_stroke_postprocess_graphs =
             Vec::with_capacity(stroke_postprocess_graphs.len());
         for graph in stroke_postprocess_graphs.iter() {
-            compiled_stroke_postprocess_graphs
-                .push(compile(&mut graph.write(), &external_variable_bindings)?);
+            compiled_stroke_postprocess_graphs.push(compile(
+                &mut graph.write(),
+                &external_variable_bindings,
+                true,
+            )?);
         }
 
         Ok(CompiledBrushPreset {
@@ -519,7 +538,11 @@ impl BrushPresetInstance {
     }
 }
 
-fn compile(graph: &mut Graph, external_variable_bindings: &str) -> anyhow::Result<String> {
+fn compile(
+    graph: &mut Graph,
+    external_variable_bindings: &str,
+    is_postprocessing: bool,
+) -> anyhow::Result<String> {
     let template = include_str!("render/brush_template.wesl");
     let (_, shader) = graph.compile(Vec::new(), Default::default())?;
     let shader = template
@@ -528,8 +551,8 @@ fn compile(graph: &mut Graph, external_variable_bindings: &str) -> anyhow::Resul
             "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
             external_variable_bindings,
         );
-    println!("Generated shader code:\n{}", shader);
 
+    println!("Generated shader before compilation:\n{}", shader);
     let mut resolver = VirtualResolver::new();
     resolver.add_module("template".parse().unwrap(), shader.into());
     resolver.add_module(
@@ -543,6 +566,7 @@ fn compile(graph: &mut Graph, external_variable_bindings: &str) -> anyhow::Resul
     let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
     compiler.set_mangler(Default::default());
     compiler.set_options(Default::default());
+    compiler.set_feature("POSTPROCESSING", is_postprocessing);
 
     let shader = compiler.compile(&"template".parse().unwrap())?;
     Ok(shader.to_string())
@@ -577,6 +601,7 @@ fn create_postprocess_graph_storage(
 ) -> GraphDynamicInstancesStorage {
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.merge(std_storage());
+    storage.merge(brush_graph_storage());
     storage
         .nodes
         .register_non_default(GraphFunctionNode::new(function_storage.clone()));

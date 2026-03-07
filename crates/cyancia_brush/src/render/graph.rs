@@ -241,9 +241,13 @@ impl StatelessCommonGraphNode for CurrentPixelColorNode {
         &self,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let output = ctx.get_output(0)?;
         Ok(format!(
-            "let {} = image::texture_unpack::unpack_rgba8_texel(textureLoad(outputs[cur_layer], vec2u(cur_coord)));",
-            ctx.get_output(0)?
+            r#"
+@if(POSTPROCESSING) let {} = image::texture_unpack::unpack_rgba8_texel(textureLoad(inputs[cur_layer], vec2u(cur_coord)));
+@else let {} = image::texture_unpack::unpack_rgba8_texel(textureLoad(outputs[cur_layer], vec2u(cur_coord)));
+            "#,
+            output, output
         ))
     }
 }

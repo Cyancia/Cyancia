@@ -167,6 +167,10 @@ impl GpuTileStorageInner {
         }
     }
 
+    pub fn clear_layer(&self, layer_id: LayerId) {
+        self.tiles.retain(|index, _| index.layer != layer_id);
+    }
+
     pub fn layer_texel_type(&self, layer_id: LayerId) -> Option<TexelType> {
         self.layer_format.get(&layer_id).as_deref().cloned()
     }
@@ -372,19 +376,8 @@ impl GpuTileStorageInner {
     }
 
     pub fn get_tiles_ordered(&self, layer_id: LayerId, pixel_rect: IRect) -> Vec<Tile> {
-        let tile_min = pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32);
-        let tile_max = pixel_rect.max / IVec2::splat(Self::TILE_SIZE as i32);
-
-        (tile_min.y..=tile_max.y)
-            .flat_map(|y| {
-                (tile_min.x..=tile_max.x).map(move |x| {
-                    self.get_tile(TileIndex {
-                        layer: layer_id,
-                        coord: IVec2::new(x, y),
-                    })
-                })
-            })
-            .collect()
+        let tile_rect = Self::pixel_rect_to_tile(pixel_rect);
+        self.get_tiles_ordered_by_tile_rect(layer_id, tile_rect)
     }
 
     pub fn get_tiles_mut_ordered_by_tile_rect(
@@ -405,18 +398,14 @@ impl GpuTileStorageInner {
     }
 
     pub fn get_tiles_mut_ordered(&self, layer_id: LayerId, pixel_rect: IRect) -> Vec<Tile> {
-        let tile_min = pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32);
-        let tile_max = pixel_rect.max / IVec2::splat(Self::TILE_SIZE as i32);
+        let tile_rect = Self::pixel_rect_to_tile(pixel_rect);
+        self.get_tiles_mut_ordered_by_tile_rect(layer_id, tile_rect)
+    }
 
-        (tile_min.y..=tile_max.y)
-            .flat_map(|y| {
-                (tile_min.x..=tile_max.x).map(move |x| {
-                    self.get_tile_mut(TileIndex {
-                        layer: layer_id,
-                        coord: IVec2::new(x, y),
-                    })
-                })
-            })
-            .collect()
+    pub fn pixel_rect_to_tile(pixel_rect: IRect) -> IRect {
+        IRect {
+            min: pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32),
+            max: pixel_rect.max / IVec2::splat(Self::TILE_SIZE as i32) + 1,
+        }
     }
 }

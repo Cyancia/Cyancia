@@ -28,6 +28,10 @@ impl ToolFunction for BrushTool {
             log::error!("No current brush preset operator found.");
             return;
         };
+
+        let tiles = services.service::<GpuTileStorage>();
+        let assets = services.service::<AssetRegistry>();
+        brush.begin_stroke(&tiles, &assets);
     }
 
     fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
@@ -47,12 +51,8 @@ impl ToolFunction for BrushTool {
                 .inverse()
                 .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
         };
-        brush.prepare(
-            params,
-            canvas.image.root().id(),
-            services.service::<GpuTileStorage>().as_ref(),
-            services.service::<AssetRegistry>().as_ref(),
-        );
+        let tiles = services.service::<GpuTileStorage>();
+        brush.update_stroke(params, canvas.image.root().id, &tiles);
         brush.draw();
     }
 
@@ -64,6 +64,9 @@ impl ToolFunction for BrushTool {
             log::error!("No current brush preset operator found.");
             return;
         };
+
+        let tiles = services.service::<GpuTileStorage>();
+        brush.end_stroke(&tiles, canvas.image.root().id);
     }
 }
 
