@@ -153,7 +153,6 @@ struct InitializedData {
 struct MainPreparedData {
     main_bind_group: BindGroup,
     external_var_buffers: Vec<Buffer>,
-    estimated_area: IRect,
 }
 
 struct StrokePostprocessPreparedData {
@@ -288,7 +287,20 @@ impl BrushPresetRenderer {
                 binding: 4,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
-                    access: StorageTextureAccess::ReadWrite,
+                    access: StorageTextureAccess::WriteOnly,
+                    // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
+                    //       into target color space when merging down.
+                    format: target_layer_texel.wgpu_format(),
+                    view_dimension: TextureViewDimension::D2,
+                },
+                count: Some(NonZeroU32::new(output_len).unwrap()),
+            },
+            // Input
+            BindGroupLayoutEntry {
+                binding: 5,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::StorageTexture {
+                    access: StorageTextureAccess::ReadOnly,
                     // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
                     //       into target color space when merging down.
                     format: target_layer_texel.wgpu_format(),
@@ -454,7 +466,9 @@ impl BrushPresetRenderer {
         // Prepare main bind group
 
         if brush.stroke_postprocess_graphs().is_empty() {
-            // If no stroke postprocess, output the stroke directly to target layer.
+            // No stroke postprocess: output directly to target layer.
+            // Use STROKE_INTERMEDIATE_SURFACE_A (cleared at begin_stroke) as a
+            // read-only input surface so the shader has a valid binding 5.
             let output_surface = Self::generate_output_surface(
                 tiles,
                 output_layer,
@@ -462,11 +476,23 @@ impl BrushPresetRenderer {
                 Some(initialized.output_len_in_layout),
                 &self.device,
             );
+            let input_surface = Self::generate_output_surface(
+                tiles,
+                STROKE_INTERMEDIATE_SURFACE_A,
+                estimated_area,
+                Some(initialized.output_len_in_layout),
+                &self.device,
+            );
             let output_layer_binding_array = Self::generate_texture_binding_array(&output_surface);
+            let input_layer_binding_array = Self::generate_texture_binding_array(&input_surface);
 
             main_bind_group_entries.push(BindGroupEntry {
                 binding: 4,
                 resource: BindingResource::TextureViewArray(&output_layer_binding_array),
+            });
+            main_bind_group_entries.push(BindGroupEntry {
+                binding: 5,
+                resource: BindingResource::TextureViewArray(&input_layer_binding_array),
             });
             main_bind_group_entries.extend(external_var_bindings);
 
@@ -478,10 +504,10 @@ impl BrushPresetRenderer {
             self.main_prepared = Some(MainPreparedData {
                 main_bind_group,
                 external_var_buffers,
-                estimated_area,
             });
         } else {
-            // Other wise, output to the ping pong buffer A.
+            // With postprocess: output to ping-pong buffer A, read from existing
+            // target layer so the main shader can blend with the current canvas.
             let pp_surface = Self::generate_output_surface(
                 tiles,
                 STROKE_INTERMEDIATE_SURFACE_A,
@@ -489,13 +515,25 @@ impl BrushPresetRenderer {
                 Some(initialized.output_len_in_layout),
                 &self.device,
             );
+            let input_surface = Self::generate_output_surface(
+                tiles,
+                output_layer,
+                estimated_area,
+                Some(initialized.output_len_in_layout),
+                &self.device,
+            );
 
             let main_output_pp_surface = Self::generate_texture_binding_array(&pp_surface);
+            let input_layer_binding_array = Self::generate_texture_binding_array(&input_surface);
 
             let mut main_bind_group_entries = main_bind_group_entries.clone();
             main_bind_group_entries.push(BindGroupEntry {
                 binding: 4,
                 resource: BindingResource::TextureViewArray(&main_output_pp_surface),
+            });
+            main_bind_group_entries.push(BindGroupEntry {
+                binding: 5,
+                resource: BindingResource::TextureViewArray(&input_layer_binding_array),
             });
             main_bind_group_entries.extend(external_var_bindings);
 
@@ -508,7 +546,6 @@ impl BrushPresetRenderer {
             self.main_prepared = Some(MainPreparedData {
                 main_bind_group,
                 external_var_buffers,
-                estimated_area,
             });
         }
     }
@@ -585,7 +622,7 @@ impl BrushPresetRenderer {
                 binding: 4,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
-                    access: StorageTextureAccess::ReadWrite,
+                    access: StorageTextureAccess::WriteOnly,
                     // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
                     //       into target color space when merging down.
                     format: initialized.target_layer_texel.wgpu_format(),
