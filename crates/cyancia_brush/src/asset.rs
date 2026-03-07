@@ -284,8 +284,8 @@ impl Display for CompiledBrushPreset {
 pub struct BrushPresetInstance {
     metadata: RwLock<BrushPresetMetadata>,
 
-    main_graph: RwLock<Graph>,
-    stroke_postprocess_graphs: Vec<RwLock<Graph>>,
+    main_graph: Arc<RwLock<Graph>>,
+    stroke_postprocess_graphs: RwLock<Vec<Arc<RwLock<Graph>>>>,
 
     external_vars: Arc<ExternalVariableStorage>,
 
@@ -318,8 +318,8 @@ impl BrushPresetInstance {
 
         Self {
             metadata: RwLock::new(metadata),
-            main_graph: RwLock::new(Graph::new(main_graph_storage.clone())),
-            stroke_postprocess_graphs: Vec::new(),
+            main_graph: Arc::new(RwLock::new(Graph::new(main_graph_storage.clone()))),
+            stroke_postprocess_graphs: RwLock::new(Vec::new()),
             main_graph_storage,
             postprocess_graph_storage,
             external_vars: Arc::new(ExternalVariableStorage::default()),
@@ -382,7 +382,7 @@ impl BrushPresetInstance {
             let (g, e) = Graph::from_serialized(postprocess_graph_storage.clone(), serialized);
             errors.extend(e);
             match g {
-                Some(g) => stroke_postprocess_graphs.push(RwLock::new(g)),
+                Some(g) => stroke_postprocess_graphs.push(Arc::new(RwLock::new(g))),
                 None => return (None, errors),
             }
         }
@@ -390,8 +390,8 @@ impl BrushPresetInstance {
         (
             Some(Self {
                 metadata: RwLock::new(preset.metadata.clone()),
-                main_graph: RwLock::new(main_graph),
-                stroke_postprocess_graphs,
+                main_graph: Arc::new(RwLock::new(main_graph)),
+                stroke_postprocess_graphs: RwLock::new(stroke_postprocess_graphs),
                 external_vars,
                 main_graph_storage,
                 postprocess_graph_storage,
@@ -405,6 +405,7 @@ impl BrushPresetInstance {
         let main_graph = self.main_graph.read().as_serialized()?;
         let stroke_postprocess_graphs = self
             .stroke_postprocess_graphs
+            .read()
             .iter()
             .map(|g| g.read().as_serialized())
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -453,16 +454,17 @@ impl BrushPresetInstance {
         }
 
         let main_graph = compile(&mut self.main_graph.write(), &external_variable_bindings)?;
-        let mut stroke_postprocess_graphs =
-            Vec::with_capacity(self.stroke_postprocess_graphs.len());
-        for graph in &self.stroke_postprocess_graphs {
-            stroke_postprocess_graphs
+        let stroke_postprocess_graphs = self.stroke_postprocess_graphs.write();
+        let mut compiled_stroke_postprocess_graphs =
+            Vec::with_capacity(stroke_postprocess_graphs.len());
+        for graph in stroke_postprocess_graphs.iter() {
+            compiled_stroke_postprocess_graphs
                 .push(compile(&mut graph.write(), &external_variable_bindings)?);
         }
 
         Ok(CompiledBrushPreset {
             main_graph,
-            stroke_postprocess_graphs,
+            stroke_postprocess_graphs: compiled_stroke_postprocess_graphs,
             texture_usages: self
                 .texture_usage_recorder
                 .get_usage()
@@ -472,12 +474,36 @@ impl BrushPresetInstance {
         })
     }
 
-    pub fn main_graph(&self) -> RwLockReadGuard<'_, Graph> {
+    pub fn main_graph(&self) -> Arc<RwLock<Graph>> {
+        self.main_graph.clone()
+    }
+
+    pub fn main_graph_read(&self) -> RwLockReadGuard<'_, Graph> {
         self.main_graph.read()
     }
 
     pub fn main_graph_mut(&self) -> RwLockWriteGuard<'_, Graph> {
         self.main_graph.write()
+    }
+
+    pub fn stroke_postprocess_graphs(&self) -> RwLockReadGuard<'_, Vec<Arc<RwLock<Graph>>>> {
+        self.stroke_postprocess_graphs.read()
+    }
+
+    pub fn stroke_postprocess_graphs_mut(&self) -> RwLockWriteGuard<'_, Vec<Arc<RwLock<Graph>>>> {
+        self.stroke_postprocess_graphs.write()
+    }
+
+    pub fn stroke_postprocess_graph(&self, index: usize) -> Option<Arc<RwLock<Graph>>> {
+        self.stroke_postprocess_graphs.read().get(index).cloned()
+    }
+
+    pub fn new_stroke_postprocess_graph(&self) {
+        self.stroke_postprocess_graphs
+            .write()
+            .push(Arc::new(RwLock::new(Graph::new(
+                self.postprocess_graph_storage.clone(),
+            ))));
     }
 
     pub fn external_vars(&self) -> &Arc<ExternalVariableStorage> {
@@ -496,13 +522,13 @@ impl BrushPresetInstance {
 fn compile(graph: &mut Graph, external_variable_bindings: &str) -> anyhow::Result<String> {
     let template = include_str!("render/brush_template.wesl");
     let (_, shader) = graph.compile(Vec::new(), Default::default())?;
-    let code = template
+    let shader = template
         .replace("//CODEGENFLAG_COMPILED_GRAPH", &shader)
         .replace(
             "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
             external_variable_bindings,
         );
-    println!("Generated shader code:\n{}", code);
+    println!("Generated shader code:\n{}", shader);
 
     let mut resolver = VirtualResolver::new();
     resolver.add_module("template".parse().unwrap(), shader.into());

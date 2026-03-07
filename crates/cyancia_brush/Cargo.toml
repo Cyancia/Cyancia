@@ -36,3 +36,4 @@ cyancia_tools.workspace = true
 cyancia_canvas.workspace = true
 bevy_math.workspace = true
 cyancia_utils.workspace = true
+cyancia_widgets.workspace = true

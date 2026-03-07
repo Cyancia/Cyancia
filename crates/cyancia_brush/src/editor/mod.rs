@@ -29,6 +29,7 @@ use cyancia_shader_graph::{
         std_storage,
     },
 };
+use cyancia_widgets::drag_drop_column::DragDropColumn;
 use iced_core::{
     Color, Element, Length,
     keyboard::{self, key},
@@ -49,6 +50,7 @@ use crate::{
 pub struct SelectedBrush {
     pub asset_id: Option<AssetId<BrushPreset>>,
     pub instance: Arc<BrushPresetInstance>,
+    pub viewing_graph: BrushPresetGraph,
 }
 
 pub struct SelectedFunction {
@@ -158,6 +160,12 @@ impl FromRuntime for BrushEditorView {
 }
 
 #[derive(Clone)]
+pub enum BrushPresetGraph {
+    Main,
+    StrokePostprocess(usize),
+}
+
+#[derive(Clone)]
 pub enum BrushEditorMessage {
     KeyboardEvent(keyboard::Event),
     MouseEvent(mouse::Event),
@@ -171,6 +179,9 @@ pub enum BrushEditorMessage {
     CancelEditName,
     FinishEditName,
     EditNameInput(String),
+    CreateNewStrokePostprocessGraph,
+    SwitchToGraph(BrushPresetGraph),
+    ReorderStrokePostprocessGraph { old_index: usize, new_index: usize },
 }
 
 impl WindowView for BrushEditorView {
@@ -262,8 +273,15 @@ impl WindowView for BrushEditorView {
 
             match selected {
                 Selected::Brush(brush) => {
-                    let graph = Element::new(GraphView::new(&brush.instance.main_graph()))
-                        .map(BrushEditorMessage::GraphView);
+                    let stroke_graphs = brush.instance.stroke_postprocess_graphs();
+                    let graph = match brush.viewing_graph {
+                        BrushPresetGraph::Main => brush.instance.main_graph_read(),
+                        BrushPresetGraph::StrokePostprocess(index) => {
+                            stroke_graphs.get(index).unwrap().read()
+                        }
+                    };
+                    let graph_view =
+                        Element::new(GraphView::new(&graph)).map(BrushEditorMessage::GraphView);
                     // TODO: External var browser may not only be placed in editor. They're modifiable values for the user.
                     //       For example the brush size and opacity.
                     let ext_vars = external_var_view(
@@ -274,13 +292,44 @@ impl WindowView for BrushEditorView {
                     )
                     .map(BrushEditorMessage::ExternalVarView);
 
-                    editor = editor.push(column![title_widget, graph,]).push(ext_vars);
+                    let graph_switcher = column![
+                        button("New Stroke Postprocess Graph")
+                            .on_press_with(|| BrushEditorMessage::CreateNewStrokePostprocessGraph),
+                        button("Main").on_press_with(|| BrushEditorMessage::SwitchToGraph(
+                            BrushPresetGraph::Main
+                        )),
+                    ]
+                    .push(
+                        DragDropColumn::with_children(
+                            (0..brush.instance.stroke_postprocess_graphs().len()).map(|index| {
+                                Element::new(
+                                    button(text(format!("Stroke Postprocess {}", index)))
+                                        .on_press_with(move || {
+                                            BrushEditorMessage::SwitchToGraph(
+                                                BrushPresetGraph::StrokePostprocess(index),
+                                            )
+                                        }),
+                                )
+                            }),
+                        )
+                        .on_drop(|ctx| {
+                            Some(BrushEditorMessage::ReorderStrokePostprocessGraph {
+                                old_index: ctx.item_index,
+                                new_index: ctx.gap_index,
+                            })
+                        }),
+                    );
+
+                    editor = editor
+                        .push(column![title_widget, graph_view])
+                        .push(graph_switcher)
+                        .push(ext_vars);
                 }
                 Selected::Function(func) => {
                     let graph = Element::new(GraphView::new(&func.instance.graph))
                         .map(BrushEditorMessage::GraphView);
 
-                    editor = editor.push(column![title_widget, graph,]);
+                    editor = editor.push(column![title_widget, graph]);
                 }
             }
         }
@@ -308,7 +357,7 @@ impl WindowView for BrushEditorView {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
                                 match brush.instance.compile() {
                                     Ok(compiled) => println!("Generated shader:\n{}", compiled),
-                                    Err(e) => println!("Failed to generate shader: {:?}", e),
+                                    Err(e) => println!("Failed to generate shader: \n{:?}", e),
                                 }
                             } else {
                                 println!("No brush graph to generate shader from.");
@@ -318,7 +367,7 @@ impl WindowView for BrushEditorView {
                             && modifiers.control()
                         {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
-                                println!("{}", brush.instance.main_graph().to_toml().unwrap());
+                                println!("{}", brush.instance.main_graph_read().to_toml().unwrap());
                             } else {
                                 println!("No brush graph to generate shader from.");
                             }
@@ -407,33 +456,23 @@ impl WindowView for BrushEditorView {
                 let Some(selected) = &mut self.selected else {
                     return Task::none();
                 };
-                let graph = match selected {
-                    Selected::Brush(brush) => &mut brush.instance.main_graph_mut(),
-                    Selected::Function(func) => &mut func.instance.graph,
-                };
 
-                match message {
-                    GraphViewMessage::NodeMoveRequest(point, id) => {
-                        if let Some(node) = graph.get_node_mut(&id) {
-                            node.position = point;
-                        }
+                match selected {
+                    Selected::Brush(brush) => {
+                        let g = match brush.viewing_graph {
+                            BrushPresetGraph::Main => brush.instance.main_graph(),
+                            BrushPresetGraph::StrokePostprocess(index) => {
+                                brush.instance.stroke_postprocess_graph(index).unwrap()
+                            }
+                        };
+                        let mut graph = g.write();
+                        Self::apply_graph_view_message(&mut graph, message);
                     }
-                    GraphViewMessage::EdgeCreateRequest(from, to) => {
-                        graph.connect_slots(from, to);
-                    }
-                    GraphViewMessage::EdgeRemoveRequest(id) => {
-                        graph.disconnect_slot(id);
-                    }
-                    GraphViewMessage::NodeDeleteRequest(id) => {
-                        graph.delete_node(&id);
-                    }
-                    GraphViewMessage::NodeCreateRequest(point, node) => {
-                        graph.add_boxed_node(point, node);
-                    }
-                    GraphViewMessage::NodeUpdate(message) => {
-                        graph.update_node(message);
+                    Selected::Function(func) => {
+                        Self::apply_graph_view_message(&mut func.instance.graph, message);
                     }
                 }
+
                 self.has_unsaved_changes = true;
 
                 // dbg!(self.texture_storage.used_textures());
@@ -454,6 +493,7 @@ impl WindowView for BrushEditorView {
                     self.selected = Some(Selected::Brush(SelectedBrush {
                         asset_id: Some(brush_id),
                         instance: instance.clone(),
+                        viewing_graph: BrushPresetGraph::Main,
                     }));
 
                     let ctx = runtime.service::<RenderContext>();
@@ -514,6 +554,7 @@ impl WindowView for BrushEditorView {
                         self.texture_storage.clone(),
                         self.function_storage.clone(),
                     )),
+                    viewing_graph: BrushPresetGraph::Main,
                 }));
                 self.has_unsaved_changes = true;
             }
@@ -543,6 +584,41 @@ impl WindowView for BrushEditorView {
             BrushEditorMessage::EditNameInput(name) => {
                 self.name_buffer = name;
             }
+            BrushEditorMessage::CreateNewStrokePostprocessGraph => {
+                dbg!();
+                let Some(Selected::Brush(brush)) = &mut self.selected else {
+                    return Task::none();
+                };
+
+                brush.instance.new_stroke_postprocess_graph();
+                dbg!();
+            }
+            BrushEditorMessage::SwitchToGraph(g) => {
+                let Some(Selected::Brush(brush)) = &mut self.selected else {
+                    return Task::none();
+                };
+
+                brush.viewing_graph = g;
+                dbg!();
+            }
+            BrushEditorMessage::ReorderStrokePostprocessGraph {
+                old_index,
+                mut new_index,
+            } => {
+                if old_index == new_index {
+                    return Task::none();
+                }
+                let Some(Selected::Brush(brush)) = &mut self.selected else {
+                    return Task::none();
+                };
+
+                if new_index > old_index {
+                    new_index -= 1;
+                }
+                let mut graphs = brush.instance.stroke_postprocess_graphs_mut();
+                let graph = graphs.remove(old_index);
+                graphs.insert(new_index, graph);
+            }
         }
 
         Task::none()
@@ -560,6 +636,31 @@ impl WindowView for BrushEditorView {
 }
 
 impl BrushEditorView {
+    fn apply_graph_view_message(graph: &mut Graph, message: GraphViewMessage) {
+        match message {
+            GraphViewMessage::NodeMoveRequest(point, id) => {
+                if let Some(node) = graph.get_node_mut(&id) {
+                    node.position = point;
+                }
+            }
+            GraphViewMessage::EdgeCreateRequest(from, to) => {
+                graph.connect_slots(from, to);
+            }
+            GraphViewMessage::EdgeRemoveRequest(id) => {
+                graph.disconnect_slot(id);
+            }
+            GraphViewMessage::NodeDeleteRequest(id) => {
+                graph.delete_node(&id);
+            }
+            GraphViewMessage::NodeCreateRequest(point, node) => {
+                graph.add_boxed_node(point, node);
+            }
+            GraphViewMessage::NodeUpdate(message) => {
+                graph.update_node(message);
+            }
+        }
+    }
+
     pub fn handle_external_var_update(&mut self, message: ExternalVarViewMessage) {
         match message {
             ExternalVarViewMessage::LiteralChanged(id, message) => {

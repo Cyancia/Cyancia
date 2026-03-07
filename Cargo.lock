@@ -1280,6 +1280,7 @@ dependencies = [
  "cyancia_shader_graph",
  "cyancia_tools",
  "cyancia_utils",
+ "cyancia_widgets",
  "encase",
  "glam 0.30.10",
  "iced_core",

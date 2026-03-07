@@ -500,7 +500,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         const SLOT_PIN_SNAP: f32 = 3.0 * 3.0;
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle)) => {
-                let Some(cursor) = cursor.position() else {
+                let Some(cursor) = cursor.position_over(layout.bounds()) else {
                     return;
                 };
 
@@ -519,7 +519,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                 }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                let Some(cursor) = cursor.position() else {
+                let Some(cursor) = cursor.position_over(layout.bounds()) else {
                     return;
                 };
 
