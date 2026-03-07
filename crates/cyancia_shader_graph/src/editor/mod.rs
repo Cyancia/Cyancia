@@ -133,14 +133,14 @@ impl std::fmt::Debug for GraphViewMessage {
 // }
 
 pub struct GraphView<'a> {
-    graph: DrawableGraph<'a>,
+    graph: DrawableGraph,
     storage: Arc<GraphDynamicInstancesStorage>,
     node_creation_menu_items: Vec<NodeCreationMenuItem>,
     node_creation_menu_class: <GraphTheme as menu::Catalog>::Class<'a>,
 }
 
 impl<'a> GraphView<'a> {
-    pub fn new(graph: &'a Graph) -> Self {
+    pub fn new(graph: &Graph) -> Self {
         Self {
             graph: DrawableGraph::new(graph),
             storage: graph.storage().clone(),
@@ -176,15 +176,15 @@ pub struct GraphNodeStyle {
     pub line_spacing: f32,
 }
 
-pub struct DrawableGraph<'a> {
-    pub nodes: IndexMap<GraphNodeId, DrawableNode<'a>>,
+pub struct DrawableGraph {
+    pub nodes: IndexMap<GraphNodeId, DrawableNode>,
     pub slots: HashMap<GraphSlotId, SlotData>,
     pub edges: HashMap<GraphInputSlotId, DrawableEdge>,
     pub vert_in_loop: HashSet<GraphNodeId>,
 }
 
-impl<'a> DrawableGraph<'a> {
-    pub fn new(graph: &'a Graph) -> Self {
+impl DrawableGraph {
+    pub fn new(graph: &Graph) -> Self {
         let mut nodes = IndexMap::with_capacity(graph.nodes.len());
         let mut node_indices = HashMap::with_capacity(graph.nodes.len());
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
@@ -266,18 +266,18 @@ pub struct DrawableEdge {
     style: geometry::Style,
 }
 
-pub struct DrawableNode<'a> {
+pub struct DrawableNode {
     pub node_id: GraphNodeId,
     pub position: Point,
-    pub widget: Element<'a, GraphViewMessage, GraphTheme, GraphRenderer>,
+    pub widget: Element<'static, GraphViewMessage, GraphTheme, GraphRenderer>,
     pub input_slots: Arc<[GraphInputSlotId]>,
     pub output_slots: Arc<[GraphOutputSlotId]>,
 }
 
-impl<'a> DrawableNode<'a> {
+impl DrawableNode {
     pub fn new(
         node_id: GraphNodeId,
-        node: &'a GraphNodeData,
+        node: &GraphNodeData,
         slots: &GraphSlots,
         storage: &GraphDynamicInstancesStorage,
     ) -> Self {

@@ -20,6 +20,16 @@ impl ToolFunction for BrushTool {
         ToolId::new("brush_tool".into())
     }
 
+    fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
+        let Some(canvas) = services.service::<CanvasManager>().current() else {
+            return;
+        };
+        let Some(mut brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
+            log::error!("No current brush preset operator found.");
+            return;
+        };
+    }
+
     fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
             return;
@@ -44,6 +54,16 @@ impl ToolFunction for BrushTool {
             services.service::<AssetRegistry>().as_ref(),
         );
         brush.draw();
+    }
+
+    fn end(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
+        let Some(canvas) = services.service::<CanvasManager>().current() else {
+            return;
+        };
+        let Some(mut brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
+            log::error!("No current brush preset operator found.");
+            return;
+        };
     }
 }
 

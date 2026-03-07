@@ -3,7 +3,7 @@ use std::{num::NonZeroU32, sync::Arc};
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
     layer::LayerId,
-    texel::TexelType,
+    texel::{TexelDepth, TexelFormat, TexelType},
     tile::{GpuTileStorage, GpuTileStorageInner, Tile},
 };
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
@@ -33,47 +33,33 @@ use crate::{
 
 pub mod graph;
 
-pub fn compile_brush_wesl(shader: String) -> anyhow::Result<String> {
-    let mut resolver = VirtualResolver::new();
-    resolver.add_module("template".parse().unwrap(), shader.into());
-    resolver.add_module(
-        "template/image::texture_unpack".parse().unwrap(),
-        include_str!("../../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
-    );
-    resolver.add_module(
-        "template/image::blend_modes".parse().unwrap(),
-        include_str!("../../../cyancia_image/src/shaders/blend_modes.wesl").into(),
-    );
-    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-    compiler.set_mangler(Default::default());
-    compiler.set_options(Default::default());
-
-    let shader = compiler.compile(&"template".parse().unwrap())?;
-    Ok(shader.to_string())
-}
-
 pub const BRUSH_RENDER_TARGET: LayerId =
     LayerId::new(Uuid::from_u128(85004653408671049643065089641532));
 
+pub const STROKE_INTERMEDIATE_SURFACE: LayerId =
+    LayerId::new(Uuid::from_u128(74806453124856123074153214863542));
+
 pub struct BrushPresetOperator {
-    instance: BrushPresetInstance,
+    instance: Arc<BrushPresetInstance>,
     renderer: BrushPresetRenderer,
 }
 
 impl BrushPresetOperator {
-    pub fn new(instance: BrushPresetInstance, device: Arc<Device>, queue: Arc<Queue>) -> Self {
+    pub fn new(instance: Arc<BrushPresetInstance>, device: Arc<Device>, queue: Arc<Queue>) -> Self {
         let renderer = BrushPresetRenderer::new(device, queue);
         Self { instance, renderer }
     }
 
-    pub fn prepare(
-        &mut self,
-        params: GraphInputParams,
-        output_layer: LayerId,
-        tiles: &GpuTileStorage,
-        assets: &AssetRegistry,
-    ) {
-        let target_layer_texel = tiles.layer_texel_type(output_layer).unwrap();
+    pub fn begin_stroke(&mut self, tiles: &GpuTileStorage, assets: &AssetRegistry) {
+        tiles.declare_layer(
+            STROKE_INTERMEDIATE_SURFACE,
+            TexelType {
+                format: TexelFormat::Rgba,
+                depth: TexelDepth::Bit8,
+            },
+        );
+
+        let target_layer_texel = tiles.layer_texel_type(STROKE_INTERMEDIATE_SURFACE).unwrap();
         if self
             .renderer
             .initialized
@@ -87,14 +73,30 @@ impl BrushPresetOperator {
             self.renderer
                 .initialize(&mut self.instance, assets, target_layer_texel);
         }
-
-        self.renderer
-            .prepare(&mut self.instance, params, output_layer, tiles);
     }
 
-    pub fn draw(&self) {
+    pub fn update_stroke(&mut self, params: GraphInputParams, tiles: &GpuTileStorage) {
+        self.renderer.prepare(
+            &mut self.instance,
+            params,
+            STROKE_INTERMEDIATE_SURFACE,
+            tiles,
+        );
         self.renderer.draw();
     }
+
+    pub fn end_stroke(&mut self) {}
+
+    pub fn prepare(
+        &mut self,
+        params: GraphInputParams,
+        output_layer: LayerId,
+        tiles: &GpuTileStorage,
+        assets: &AssetRegistry,
+    ) {
+    }
+
+    pub fn draw(&self) {}
 }
 
 #[derive(ShaderType, Debug)]
@@ -113,7 +115,8 @@ pub struct TileInfo {
 struct InitializedData {
     estimated_size: UVec2,
     output_len_in_layout: u32,
-    pipeline: ComputePipeline,
+    main_pipeline: ComputePipeline,
+    stroke_postprocess_pipelines: Vec<ComputePipeline>,
     main_layout: BindGroupLayout,
     target_layer_texel: TexelType,
     textures: Vec<TextureView>,
@@ -167,7 +170,7 @@ impl BrushPresetRenderer {
 
     pub fn initialize(
         &mut self,
-        brush: &mut BrushPresetInstance,
+        brush: &BrushPresetInstance,
         assets: &AssetRegistry,
         target_layer_texel: TexelType,
     ) {
@@ -176,18 +179,18 @@ impl BrushPresetRenderer {
         let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size()) + 2;
         let output_len = estimated_tile_count.element_product();
         // TODO: Handle shader compile error
-        let (shader, texture_usage_recorder) = brush.compile().unwrap();
+        let compiled_preset = brush.compile().unwrap();
 
         // Prepare referenced textures
 
         let mut textures = Vec::new();
-        for id in texture_usage_recorder.get_usage().keys() {
-            if id == &TextureId::NULL {
+        for id in compiled_preset.texture_usages {
+            if id == TextureId::NULL {
                 textures.push(self.empty_texture.texture.create_view(&Default::default()));
                 continue;
             }
 
-            let handle = assets.handle(AssetId::new(**id)).unwrap();
+            let handle = assets.handle(AssetId::new(*id)).unwrap();
             let gpu_image = GpuImage::from_asset(
                 &self.device,
                 &self.queue,
@@ -233,9 +236,7 @@ impl BrushPresetRenderer {
                     view_dimension: TextureViewDimension::D2,
                     multisampled: false,
                 },
-                count: Some(
-                    NonZeroU32::new(texture_usage_recorder.get_usage().len() as u32).unwrap(),
-                ),
+                count: Some(NonZeroU32::new(textures.len() as u32).unwrap()),
             },
             // Tile Info
             BindGroupLayoutEntry {
@@ -253,8 +254,6 @@ impl BrushPresetRenderer {
         let mut external_variable_bindings = String::new();
         for var in brush.external_vars().all().values() {
             let cur_binding = bind_group_entries.len() as u32;
-            external_variable_bindings
-                .extend(generate_external_variable_binding(0, cur_binding, var.as_ref()).chars());
             bind_group_entries.push(BindGroupLayoutEntry {
                 binding: cur_binding,
                 visibility: ShaderStages::COMPUTE,
@@ -266,17 +265,11 @@ impl BrushPresetRenderer {
                 count: None,
             });
         }
-        let shader = shader.replace(
-            "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
-            &external_variable_bindings,
-        );
-        let shader = compile_brush_wesl(shader).unwrap();
-        println!("Generated shader:\n{}", shader);
 
         let main_layout = self
             .device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("brush main layout"),
+                label: Some("brush layout"),
                 entries: &bind_group_entries,
             });
 
@@ -290,10 +283,10 @@ impl BrushPresetRenderer {
 
         let shader = self.device.create_shader_module(ShaderModuleDescriptor {
             label: Some("brush shader"),
-            source: ShaderSource::Wgsl(shader.into()),
+            source: ShaderSource::Wgsl(compiled_preset.main_graph.into()),
         });
 
-        let pipeline = self
+        let main_pipeline = self
             .device
             .create_compute_pipeline(&ComputePipelineDescriptor {
                 label: Some("brush pipeline"),
@@ -304,10 +297,30 @@ impl BrushPresetRenderer {
                 cache: None,
             });
 
+        let mut stroke_postprocess_pipelines = Vec::new();
+        for shader in compiled_preset.stroke_postprocess_graphs {
+            let shader = self.device.create_shader_module(ShaderModuleDescriptor {
+                label: Some("brush postprocess shader"),
+                source: ShaderSource::Wgsl(shader.into()),
+            });
+            stroke_postprocess_pipelines.push(self.device.create_compute_pipeline(
+                &ComputePipelineDescriptor {
+                    label: Some("brush postprocess pipeline"),
+                    layout: Some(&pipeline_layout),
+                    module: &shader,
+                    entry_point: Some("main"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                },
+            ));
+        }
+
         self.initialized = Some(InitializedData {
             estimated_size,
             output_len_in_layout: output_len,
-            pipeline,
+            main_pipeline,
+            stroke_postprocess_pipelines,
+
             main_layout,
             target_layer_texel,
             textures,
@@ -316,7 +329,7 @@ impl BrushPresetRenderer {
 
     pub fn prepare(
         &mut self,
-        brush: &mut BrushPresetInstance,
+        brush: &BrushPresetInstance,
         params: GraphInputParams,
         output_layer: LayerId,
         tiles: &GpuTileStorage,
@@ -434,7 +447,7 @@ impl BrushPresetRenderer {
 
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
-            pass.set_pipeline(&initialized.pipeline);
+            pass.set_pipeline(&initialized.main_pipeline);
             pass.set_bind_group(0, main_bind_group, &[]);
             pass.dispatch_workgroups(
                 initialized.estimated_size.x.div_ceil(16),

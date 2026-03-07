@@ -6,6 +6,7 @@ use iced_core::{Color, Element, color};
 use iced_widget::{Column, pick_list, space};
 use indexmap::{IndexMap, map::Entry};
 use parking_lot::{RwLock, RwLockReadGuard};
+use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -992,7 +993,8 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+    #[display("{0}")]
     pub TextureId : Uuid
 }
 

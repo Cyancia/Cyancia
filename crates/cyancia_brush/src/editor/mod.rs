@@ -48,7 +48,7 @@ use crate::{
 
 pub struct SelectedBrush {
     pub asset_id: Option<AssetId<BrushPreset>>,
-    pub instance: BrushPresetInstance,
+    pub instance: Arc<BrushPresetInstance>,
 }
 
 pub struct SelectedFunction {
@@ -275,7 +275,7 @@ impl WindowView for BrushEditorView {
                 Selected::Brush(brush) => {
                     let graph = Element::new(GraphView::new(&brush.instance.main_graph()))
                         .map(BrushEditorMessage::GraphView);
-                    // TODO: External var browser may not be placed in editor. They're modifiable values for the user.
+                    // TODO: External var browser may not only be placed in editor. They're modifiable values for the user.
                     //       For example the brush size and opacity.
                     let ext_vars = external_var_view(
                         brush.instance.external_vars(),
@@ -318,7 +318,7 @@ impl WindowView for BrushEditorView {
                         {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
                                 match brush.instance.compile() {
-                                    Ok((shader, _)) => println!("Generated shader:\n{}", shader),
+                                    Ok(compiled) => println!("Generated shader:\n{}", compiled),
                                     Err(e) => println!("Failed to generate shader: {:?}", e),
                                 }
                             } else {
@@ -419,7 +419,7 @@ impl WindowView for BrushEditorView {
                     return Task::none();
                 };
                 let graph = match selected {
-                    Selected::Brush(brush) => brush.instance.main_graph_mut(),
+                    Selected::Brush(brush) => &mut brush.instance.main_graph_mut(),
                     Selected::Function(func) => &mut func.instance.graph,
                 };
 
@@ -461,6 +461,7 @@ impl WindowView for BrushEditorView {
                 );
 
                 if let Some(instance) = instance {
+                    let instance = Arc::new(instance);
                     self.selected = Some(Selected::Brush(SelectedBrush {
                         asset_id: Some(brush_id),
                         instance: instance.clone(),
@@ -517,13 +518,13 @@ impl WindowView for BrushEditorView {
             BrushEditorMessage::CreateNewBrushPreset => {
                 self.selected = Some(Selected::Brush(SelectedBrush {
                     asset_id: None,
-                    instance: BrushPresetInstance::new(
+                    instance: Arc::new(BrushPresetInstance::new(
                         BrushPresetMetadata {
                             name: "[Unnamed Brush]".to_string(),
                         },
                         self.texture_storage.clone(),
                         self.function_storage.clone(),
-                    ),
+                    )),
                 }));
                 self.has_unsaved_changes = true;
             }
