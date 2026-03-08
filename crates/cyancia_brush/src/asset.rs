@@ -589,6 +589,7 @@ fn create_main_graph_storage(
     storage.nodes.register::<PasteTextureNode>();
     storage.nodes.register::<BlendColorNode>();
     storage.nodes.register::<LayerPixelColorNode>();
+    storage.nodes.register::<CurrentPixelColorNode>();
 
     storage
         .nodes

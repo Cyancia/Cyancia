@@ -431,7 +431,15 @@ impl GpuTileStorageInner {
     pub fn pixel_rect_to_tile(pixel_rect: IRect) -> IRect {
         IRect {
             min: pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32),
-            max: pixel_rect.max / IVec2::splat(Self::TILE_SIZE as i32) + 1,
+            max: (pixel_rect.max - 1) / IVec2::splat(Self::TILE_SIZE as i32) + 1,
+        }
+    }
+
+    pub fn snap_to_tile_grid(pixel_rect: IRect) -> IRect {
+        let tile_rect = Self::pixel_rect_to_tile(pixel_rect);
+        IRect {
+            min: tile_rect.min * IVec2::splat(Self::TILE_SIZE as i32),
+            max: tile_rect.max * IVec2::splat(Self::TILE_SIZE as i32),
         }
     }
 }

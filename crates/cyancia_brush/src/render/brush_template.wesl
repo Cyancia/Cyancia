@@ -21,7 +21,7 @@ struct TileInfo {
 // TODO: This is weird. This is a bindless array, and theoretically it won't have a fixed size.
 //       It doesn't compile if remove the size, but works if it's set to a random value. Why? ｢( • ﾍ •)
 @group(0) @binding(6) var outputs: binding_array<texture_storage_2d<r32uint, write>, 1>;
-@if(POSTPROCESSING) @group(0) @binding(7) var inputs: binding_array<texture_storage_2d<r32uint, read>, 1>;
+@group(0) @binding(7) var inputs: binding_array<texture_storage_2d<r32uint, read>, 1>;
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
 fn convert_pixel_to_layer_tile(pixel: vec2i, layer: ptr<function, u32>, coord: ptr<function, vec2u>) {
@@ -74,23 +74,32 @@ fn paste_texture(layer: u32, cur_pos: vec2f, scale: vec2f, rotate: f32, translat
 }
 
 fn current_input_color(pixel_pos: vec2i) -> vec4f {
-    var cur_layer = 0u;
+    var cur_layer = 0xFFFFFFFFu;
     var cur_coord = vec2u(0u);
     convert_pixel_to_tile(pixel_pos, &cur_layer, &cur_coord);
+    if cur_layer == 0xFFFFFFFFu {
+        return vec4f(0.0);
+    }
     return image::texture_unpack::unpack_rgba8_texel(textureLoad(inputs[cur_layer], vec2i(cur_coord)));
 }
 
 fn target_layer_color(pixel_pos: vec2i) -> vec4f {
-    var cur_layer = 0u;
+    var cur_layer = 0xFFFFFFFFu;
     var cur_coord = vec2u(0u);
     convert_pixel_to_layer_tile(pixel_pos, &cur_layer, &cur_coord);
+    if cur_layer == 0xFFFFFFFFu {
+        return vec4f(0.0);
+    }
     return image::texture_unpack::unpack_rgba8_texel(textureLoad(target_layer[cur_layer], vec2i(cur_coord)));
 }
 
 fn set_output_color(pixel_pos: vec2i, color: vec4f) {
-    var cur_layer = 0u;
+    var cur_layer = 0xFFFFFFFFu;
     var cur_coord = vec2u(0u);
     convert_pixel_to_tile(pixel_pos, &cur_layer, &cur_coord);
+    if cur_layer == 0xFFFFFFFFu {
+        return;
+    }
     textureStore(outputs[cur_layer], vec2i(cur_coord), image::texture_unpack::pack_rgba8_texel(color));
 }
 
