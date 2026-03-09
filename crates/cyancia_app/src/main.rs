@@ -10,7 +10,7 @@ use cyancia_assets::{
     bundle::{ErasedAssetBundle, directory::AssetDirectory, standard::StandardAssetBundle},
     store::AssetRegistry,
 };
-use cyancia_brush::{BrushPlugin, editor::BrushEditorView};
+// use cyancia_brush::{BrushPlugin, editor::BrushEditorView};
 use cyancia_canvas::CanvasPlugin;
 use cyancia_image::ImagePlugin;
 use cyancia_input::InputPlugin;
@@ -64,7 +64,7 @@ fn main() {
         .add_plugin(ImagePlugin)
         .add_plugin(CanvasPlugin)
         .add_plugin(InputPlugin)
-        .add_plugin(BrushPlugin)
+        // .add_plugin(BrushPlugin)
         .add_plugin(ActionPlugin);
     app.build_plugins();
 
@@ -72,10 +72,10 @@ fn main() {
         let mut rt = app.runtime_mut();
 
         let main_view = MainView::new(rt.services());
-        let brush_editor_view = BrushEditorView::from_runtime(rt.services());
+        // let brush_editor_view = BrushEditorView::from_runtime(rt.services());
         rt.window_manager_mut().set_root_view(main_view.id());
         rt.window_manager_mut().register_view(main_view);
-        rt.window_manager_mut().register_view(brush_editor_view);
+        // rt.window_manager_mut().register_view(brush_editor_view);
     }
 
     app.run().unwrap();

@@ -110,6 +110,18 @@ pub struct BufferVec<T: ShaderType + WriteInto> {
     _marker: PhantomData<T>,
 }
 
+impl<T: ShaderType + WriteInto> Clone for BufferVec<T> {
+    fn clone(&self) -> Self {
+        Self {
+            label: self.label.clone(),
+            data: self.data.clone(),
+            buffer: self.buffer.clone(),
+            usage: self.usage.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<T: ShaderType + WriteInto> Default for BufferVec<T> {
     fn default() -> Self {
         Self {
@@ -153,12 +165,16 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
     }
 
     pub fn write_buffer(&mut self, device: &Device) {
-        let buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: self.label.as_deref(),
-            contents: &self.data,
-            usage: self.usage,
-        });
-        self.buffer = Some(buffer);
+        if self.data.is_empty() {
+            self.buffer = None;
+        } else {
+            let buffer = device.create_buffer_init(&BufferInitDescriptor {
+                label: self.label.as_deref(),
+                contents: &self.data,
+                usage: self.usage,
+            });
+            self.buffer = Some(buffer);
+        }
     }
 
     pub fn binding(&self) -> Option<BindingResource<'_>> {

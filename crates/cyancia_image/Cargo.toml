@@ -22,6 +22,9 @@ bevy_math.workspace = true
 wesl.workspace = true
 parse-display.workspace = true
 serde.workspace = true
+cyancia_render.workspace = true
+encase.workspace = true
+indexmap.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

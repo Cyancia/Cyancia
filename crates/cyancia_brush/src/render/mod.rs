@@ -850,7 +850,7 @@ impl BrushPresetRenderer {
         let result_layer = stroke_pp_prepared.last_surface;
         let mut ec = self.device.create_command_encoder(&Default::default());
         for index in &initialized.affected_tiles {
-            let result = tiles.get_tile(TileIndex {
+            let result = tiles.get_tile_or_empty(TileIndex {
                 layer: result_layer,
                 coord: *index,
             });
@@ -908,7 +908,7 @@ impl BrushPresetRenderer {
         device: &Device,
     ) -> Vec<Arc<TextureView>> {
         let format = tiles_storage.layer_texel_type(layer).unwrap().wgpu_format();
-        let tiles = tiles_storage.get_tiles_mut_ordered(layer, estimated_area);
+        let tiles = tiles_storage.get_tiles_or_allocate_by_pixel_rect(layer, estimated_area);
         let mut empty_placeholders = Vec::new();
         let mut output_layer = tiles.into_iter().map(|t| t.view).collect::<Vec<_>>();
         // Avoid partial binding.

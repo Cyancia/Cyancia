@@ -4,7 +4,7 @@ use bevy_math::IRect;
 use cyancia_image::{
     layer::{Layer, LayerId},
     texel::TexelType,
-    tile::{GpuTileStorage, GpuTileStorageInner},
+    tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_math::{iced_rect::IntoRect, rect_transform::RectTransform};
 use cyancia_render::{
@@ -200,8 +200,9 @@ impl shader::Primitive for CanvasPrimitive {
                 device,
                 self.canvas.image.size(),
                 self.tile_storage
-                    .layer_texel_type(self.canvas.image.root().id())
-                    .unwrap(),
+                    .layer_info(self.canvas.image.root().id())
+                    .unwrap()
+                    .texel_type,
             );
         }
 
@@ -259,7 +260,7 @@ impl CanvasRenderPipeline {
             pipeline: None,
             uniform_buffer: DynamicBuffer::new(
                 Some("canvas uniform buffer"),
-                BufferUsages::STORAGE,
+                BufferUsages::UNIFORM,
             ),
             uniform: None,
         }
@@ -278,18 +279,27 @@ impl CanvasRenderPipeline {
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
                         format: layer_texel_type.wgpu_format(),
-                        view_dimension: TextureViewDimension::D2,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
-                    count: Some(NonZeroU32::new(max_tiles).unwrap()),
+                    count: None,
                 },
-                // canvas uniform
+                // tile info
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        // We are actually using storage buffer, since uniform buffer and binding array
-                        // cannot exist at the same bind group.
                         ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(GpuTileInfo::min_size()),
+                    },
+                    count: None,
+                },
+                // canvas uniform
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: Some(<CanvasUniform as ShaderType>::min_size()),
                     },
@@ -297,7 +307,7 @@ impl CanvasRenderPipeline {
                 },
                 // output
                 BindGroupLayoutEntry {
-                    binding: 2,
+                    binding: 3,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
@@ -348,27 +358,18 @@ impl CanvasRenderPipeline {
         target: &TextureView,
         root_layer_id: LayerId,
     ) {
-        let (Some(uniform), Some(pipeline), Some(main_layout)) =
-            (&self.uniform, &self.pipeline, &self.main_layout)
-        else {
+        let (Some(pipeline), Some(main_layout), Some(uniform_buffer)) = (
+            &self.pipeline,
+            &self.main_layout,
+            self.uniform_buffer.binding(),
+        ) else {
             return;
         };
-        let Some(uniform_buffer) = self.uniform_buffer.binding() else {
-            return;
-        };
-        let target_size = target.texture().size();
 
-        let visible_tiles = tile_storage.get_tiles_ordered_by_tile_rect(
-            root_layer_id,
-            IRect {
-                min: IVec2::ZERO,
-                max: uniform.total_tile_count.as_ivec2(),
-            },
-        );
-        let visible_tiles = visible_tiles
-            .iter()
-            .map(|t| t.view.as_ref())
-            .collect::<Vec<_>>();
+        let target_size = target.texture().size();
+        let root_layer = tile_storage
+            .get_layer_binding_or_empty(root_layer_id)
+            .unwrap();
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("canvas render bind group"),
@@ -376,14 +377,18 @@ impl CanvasRenderPipeline {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureViewArray(&visible_tiles),
+                    resource: BindingResource::TextureView(&root_layer.texture),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: uniform_buffer.clone(),
+                    resource: root_layer.tile_info_buffer.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 2,
+                    resource: uniform_buffer,
+                },
+                BindGroupEntry {
+                    binding: 3,
                     resource: BindingResource::TextureView(&target),
                 },
             ],

@@ -30,6 +30,8 @@ impl TexelType {
         depth: TexelDepth::Bit8,
     };
 
+    pub const ALL_POSSIBLE_FORMATS: [Self; 1] = [Self::RGBA8];
+
     pub fn wgpu_format(&self) -> TextureFormat {
         match (self.format, self.depth) {
             (TexelFormat::Rgba, TexelDepth::Bit8) => RGBA8_FORMAT,
