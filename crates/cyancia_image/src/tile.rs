@@ -273,6 +273,20 @@ impl GpuTileStorageInner {
         }
     }
 
+    pub fn tile_rect_to_pixel(tile_rect: IRect) -> IRect {
+        IRect {
+            min: tile_rect.min * IVec2::splat(Self::TILE_SIZE as i32),
+            max: tile_rect.max * IVec2::splat(Self::TILE_SIZE as i32),
+        }
+    }
+
+    pub fn tile_to_pixel_rect(tile: IVec2) -> IRect {
+        IRect {
+            min: tile * IVec2::splat(Self::TILE_SIZE as i32),
+            max: (tile + IVec2::ONE) * IVec2::splat(Self::TILE_SIZE as i32),
+        }
+    }
+
     pub fn snap_to_tile_grid(pixel_rect: IRect) -> IRect {
         let tile_rect = Self::pixel_rect_to_tile(pixel_rect);
         IRect {
@@ -347,10 +361,10 @@ impl DynamicLayerStorage {
 
     pub fn ensure_pixel_area(&mut self, pixel_rect: IRect) {
         let tile_area = GpuTileStorageInner::pixel_rect_to_tile(pixel_rect);
-        self.ensure_tile_rect(tile_area);
+        self.ensure_tile_area(tile_area);
     }
 
-    pub fn ensure_tile_rect(&mut self, tile_rect: IRect) {
+    pub fn ensure_tile_area(&mut self, tile_rect: IRect) {
         for y in tile_rect.min.y..tile_rect.max.y {
             for x in tile_rect.min.x..tile_rect.max.x {
                 // TODO: This may cause multiple reallocations of the main texture. Avoid this.
@@ -507,5 +521,7 @@ impl DynamicLayerStorage {
         self.tiles.clear();
         self.tile_info_buffer.clear();
         self.tile_info_buffer.write_buffer(&self.device);
+        // TODO: optimize this
+        self.texture = None;
     }
 }

@@ -264,9 +264,24 @@ impl AssetSerializer for ImageSerializer {
     }
 }
 
+pub struct CompiledBrushGraph {
+    pub shader: String,
+    pub size_estimation: String,
+}
+
+impl Display for CompiledBrushGraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "-------------- Shader --------------")?;
+        writeln!(f, "{}", self.shader)?;
+        writeln!(f, "-------------- Size estimation --------------")?;
+        writeln!(f, "{}", self.size_estimation)?;
+        Ok(())
+    }
+}
+
 pub struct CompiledBrushPreset {
-    pub main_graph: String,
-    pub stroke_postprocess_graphs: Vec<String>,
+    pub main_graph: CompiledBrushGraph,
+    pub stroke_postprocess_graphs: Vec<CompiledBrushGraph>,
     pub texture_usages: Vec<TextureId>,
 }
 
@@ -545,7 +560,7 @@ fn compile(
     graph: &mut Graph,
     external_variable_bindings: &str,
     is_postprocessing: bool,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<CompiledBrushGraph> {
     let template = include_str!("render/brush_template.wesl");
     let (_, shader) = graph.compile(Vec::new(), Default::default())?;
     let shader = template
@@ -562,6 +577,10 @@ fn compile(
         include_str!("../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
     );
     resolver.add_module(
+        "template/render::math".parse().unwrap(),
+        include_str!("../../cyancia_render/src/shaders/math.wesl").into(),
+    );
+    resolver.add_module(
         "template/image::blend_modes".parse().unwrap(),
         include_str!("../../cyancia_image/src/shaders/blend_modes.wesl").into(),
     );
@@ -569,13 +588,20 @@ fn compile(
         "template/image::image_tiling".parse().unwrap(),
         include_str!("../../cyancia_image/src/shaders/image_tiling.wesl").into(),
     );
+
     let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
     compiler.set_mangler(Default::default());
     compiler.set_options(Default::default());
     compiler.set_feature("POSTPROCESSING", is_postprocessing);
+    compiler.set_feature("SIZE_ESTIMATION", false);
+    let shader = compiler.compile(&"template".parse().unwrap())?.to_string();
+    compiler.set_feature("SIZE_ESTIMATION", true);
+    let size_estimation = compiler.compile(&"template".parse().unwrap())?.to_string();
 
-    let shader = compiler.compile(&"template".parse().unwrap())?;
-    Ok(shader.to_string())
+    Ok(CompiledBrushGraph {
+        shader,
+        size_estimation,
+    })
 }
 
 fn create_main_graph_storage(
