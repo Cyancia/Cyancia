@@ -200,7 +200,7 @@ impl shader::Primitive for CanvasPrimitive {
                 device,
                 self.canvas.image.size(),
                 self.tile_storage
-                    .layer_info(self.canvas.image.root().id())
+                    .get_layer_info(self.canvas.image.root().id())
                     .unwrap()
                     .texel_type,
             );
@@ -381,7 +381,7 @@ impl CanvasRenderPipeline {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: root_layer.tile_info_buffer.binding().unwrap(),
+                    resource: root_layer.tile_info_buffer.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 2,

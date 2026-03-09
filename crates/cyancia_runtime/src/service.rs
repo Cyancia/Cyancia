@@ -142,6 +142,7 @@ impl Default for RenderContext {
                     required_features: Features::TEXTURE_BINDING_ARRAY
                         | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
                     required_limits: Limits {
+                        max_texture_array_layers: 2048,
                         max_binding_array_elements_per_shader_stage: 500_000,
                         ..Default::default()
                     },

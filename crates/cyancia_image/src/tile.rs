@@ -24,7 +24,7 @@ use rayon::iter::{
 };
 use uuid::Uuid;
 use wgpu::{
-    BindingResource, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyBufferInfo,
+    BindingResource, Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyBufferInfo,
     TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
     TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
     TextureViewDimension,
@@ -86,7 +86,7 @@ pub struct GpuLayerInfo {
 
 pub struct LayerBindingData {
     pub texture: Arc<TextureView>,
-    pub tile_info_buffer: BufferVec<GpuTileInfo>,
+    pub tile_info_buffer: Buffer,
 }
 
 pub struct GpuTileStorageInner {
@@ -154,31 +154,34 @@ impl GpuTileStorageInner {
         }
     }
 
-    pub fn layer_info(&self, layer_id: LayerId) -> Option<GpuLayerInfo> {
+    pub fn get_layer_info(&self, layer_id: LayerId) -> Option<GpuLayerInfo> {
         self.layers.get(&layer_id).map(|l| l.layer_info().clone())
     }
 
-    pub fn try_allocate_tile(&self, tile_index: TileIndex) -> Option<Arc<TextureView>> {
-        self.layers
-            .get_mut(&tile_index.layer)
-            .map(|mut layer| layer.get_tile_or_allocate(tile_index.coord))
+    pub fn get_layer(
+        &self,
+        layer_id: LayerId,
+    ) -> Option<dashmap::mapref::one::Ref<'_, LayerId, DynamicLayerStorage>> {
+        self.layers.get(&layer_id)
+    }
+
+    pub fn get_layer_mut(
+        &self,
+        layer_id: LayerId,
+    ) -> Option<dashmap::mapref::one::RefMut<'_, LayerId, DynamicLayerStorage>> {
+        self.layers.get_mut(&layer_id)
     }
 
     pub fn get_layer_binding_or_empty(&self, layer_id: LayerId) -> Option<LayerBindingData> {
         let layer = self.layers.get(&layer_id)?;
 
-        Some(if let Some(texture) = layer.texture() {
-            LayerBindingData {
-                texture,
-                tile_info_buffer: layer.tile_info_buffer_binding(),
-            }
-        } else {
-            let dummy = self.dummy_layers.get(&layer.layer_info.texel_type).unwrap();
-            LayerBindingData {
-                texture: dummy.texture().unwrap(),
-                tile_info_buffer: dummy.tile_info_buffer_binding(),
-            }
-        })
+        Some(layer.binding_data().unwrap_or_else(|| {
+            self.dummy_layers
+                .get(&layer.layer_info.texel_type)
+                .unwrap()
+                .binding_data()
+                .unwrap()
+        }))
     }
 
     pub fn upload_image(&self, layer_id: LayerId, img: DynamicImage) {
@@ -317,6 +320,15 @@ impl DynamicLayerStorage {
         &self.layer_info
     }
 
+    pub fn binding_data(&self) -> Option<LayerBindingData> {
+        let texture = self.texture()?;
+        let tile_info_buffer = self.tile_info_buffer().unwrap().clone();
+        Some(LayerBindingData {
+            texture,
+            tile_info_buffer,
+        })
+    }
+
     pub fn get_tile(&self, coord: IVec2) -> Option<Arc<TextureView>> {
         self.tiles.get(&coord).cloned()
     }
@@ -325,12 +337,26 @@ impl DynamicLayerStorage {
         self.tiles.get_index_of(&coord).map(|i| i as u32)
     }
 
-    pub fn tile_info_buffer_binding(&self) -> BufferVec<GpuTileInfo> {
-        self.tile_info_buffer.clone()
+    pub fn tile_info_buffer(&self) -> Option<&Buffer> {
+        self.tile_info_buffer.inner_buffer()
     }
 
     pub fn texture(&self) -> Option<Arc<TextureView>> {
         self.texture.clone()
+    }
+
+    pub fn ensure_pixel_area(&mut self, pixel_rect: IRect) {
+        let tile_area = GpuTileStorageInner::pixel_rect_to_tile(pixel_rect);
+        self.ensure_tile_rect(tile_area);
+    }
+
+    pub fn ensure_tile_rect(&mut self, tile_rect: IRect) {
+        for y in tile_rect.min.y..tile_rect.max.y {
+            for x in tile_rect.min.x..tile_rect.max.x {
+                // TODO: This may cause multiple reallocations of the main texture. Avoid this.
+                self.get_tile_or_allocate(IVec2::new(x, y));
+            }
+        }
     }
 
     pub fn get_tile_or_allocate(&mut self, coord: IVec2) -> Arc<TextureView> {

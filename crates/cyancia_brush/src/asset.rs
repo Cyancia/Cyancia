@@ -565,6 +565,10 @@ fn compile(
         "template/image::blend_modes".parse().unwrap(),
         include_str!("../../cyancia_image/src/shaders/blend_modes.wesl").into(),
     );
+    resolver.add_module(
+        "template/image::image_tiling".parse().unwrap(),
+        include_str!("../../cyancia_image/src/shaders/image_tiling.wesl").into(),
+    );
     let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
     compiler.set_mangler(Default::default());
     compiler.set_options(Default::default());

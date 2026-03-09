@@ -5,7 +5,7 @@ use cyancia_assets::{asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
     layer::LayerId,
     texel::{TexelDepth, TexelFormat, TexelType},
-    tile::{GpuTileStorage, GpuTileStorageInner, Tile, TileIndex},
+    tile::{GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, Tile, TileIndex},
 };
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use cyancia_shader_graph::{
@@ -19,10 +19,11 @@ use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
-    ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, PipelineLayoutDescriptor, Queue,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, Texture,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDimension,
+    ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
+    TextureViewDimension,
     naga::StorageAccess,
     util::{BufferInitDescriptor, DeviceExt},
 };
@@ -42,7 +43,7 @@ pub const STROKE_INTERMEDIATE_SURFACE_B: LayerId =
 pub const STROKE_INTERMEDIATE_SURFACES: [LayerId; 2] =
     [STROKE_INTERMEDIATE_SURFACE_A, STROKE_INTERMEDIATE_SURFACE_B];
 
-const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 8;
+const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 9;
 
 pub struct BrushPresetOperator {
     instance: Arc<BrushPresetInstance>,
@@ -63,16 +64,20 @@ impl BrushPresetOperator {
     ) {
         tiles.declare_layer(
             STROKE_INTERMEDIATE_SURFACE_A,
-            TexelType {
-                format: TexelFormat::Rgba,
-                depth: TexelDepth::Bit8,
+            GpuLayerInfo {
+                texel_type: TexelType {
+                    format: TexelFormat::Rgba,
+                    depth: TexelDepth::Bit8,
+                },
             },
         );
         tiles.declare_layer(
             STROKE_INTERMEDIATE_SURFACE_B,
-            TexelType {
-                format: TexelFormat::Rgba,
-                depth: TexelDepth::Bit8,
+            GpuLayerInfo {
+                texel_type: TexelType {
+                    format: TexelFormat::Rgba,
+                    depth: TexelDepth::Bit8,
+                },
             },
         );
         tiles.clear_layer(STROKE_INTERMEDIATE_SURFACE_A);
@@ -90,12 +95,15 @@ impl BrushPresetOperator {
         self.renderer
             .prepare_main(&mut self.instance, params, tiles);
         self.renderer.draw_main_dab(tiles);
-    }
-
-    pub fn end_stroke(&mut self, tiles: &GpuTileStorage) {
         self.renderer.prepare_stroke_postprocess(tiles);
         self.renderer.postprocess_stroke();
         self.renderer.copy_last_surface_to_target(tiles);
+    }
+
+    pub fn end_stroke(&mut self, tiles: &GpuTileStorage) {
+        // self.renderer.prepare_stroke_postprocess(tiles);
+        // self.renderer.postprocess_stroke();
+        // self.renderer.copy_last_surface_to_target(tiles);
     }
 
     pub fn draw(&self) {}
@@ -110,18 +118,10 @@ pub struct GraphInputUniform {
 pub struct StrokeInfoUniform {
     pub shader_origin: IVec2,
     pub estimated_brush_size: UVec2,
-    pub tile_size: u32,
-}
-
-#[derive(ShaderType)]
-pub struct TileInfo {
-    pub tile_origin: IVec2,
 }
 
 struct InitializedData {
     target_layer: LayerId,
-    target_layer_texel: TexelType,
-    target_layer_tiles: Vec<Tile>,
     referenced_textures: Vec<TextureView>,
     accumulated_area: IRect,
     compiled_main_graph: String,
@@ -138,7 +138,6 @@ struct MainPreparedData {
     main_pipeline: ComputePipeline,
     main_bind_group: BindGroup,
     external_var_buffers: Vec<Buffer>,
-    target_layer_tile_info: BufferVec<TileInfo>,
 }
 
 struct StrokePostprocessPreparedData {
@@ -196,12 +195,6 @@ impl BrushPresetRenderer {
         target_layer: LayerId,
         tiles_storage: &GpuTileStorage,
     ) {
-        let target_layer_texel = tiles_storage.layer_texel_type(target_layer).unwrap();
-        let mut target_layer_tiles = tiles_storage.get_layer_tiles(target_layer);
-        if target_layer_tiles.is_empty() {
-            target_layer_tiles.push(tiles_storage.empty_tile());
-        }
-
         let estimated_tile_count = GpuTileStorageInner::calc_tile_count(brush.estimate_size()) + 2;
         let buffer_len = estimated_tile_count.element_product();
         // TODO: Handle shader compile error
@@ -247,13 +240,11 @@ impl BrushPresetRenderer {
         self.initialized = Some(InitializedData {
             graph_input: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
             stroke_info: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
-            target_layer_texel,
             referenced_textures,
             accumulated_area: IRect::EMPTY,
             compiled_main_graph: compiled_preset.main_graph,
             compiled_stroke_postprocess_graphs: compiled_preset.stroke_postprocess_graphs,
             external_var_bind_layout_entries,
-            target_layer_tiles,
             target_layer,
             next_main_output_surface: 0,
             affected_tiles: HashSet::new(),
@@ -268,8 +259,6 @@ impl BrushPresetRenderer {
     ) {
         let Some(InitializedData {
             target_layer,
-            target_layer_texel,
-            target_layer_tiles,
             referenced_textures,
             accumulated_area,
             compiled_main_graph,
@@ -294,28 +283,7 @@ impl BrushPresetRenderer {
             }
         }
 
-        // Intermediate surface
-        let pp_surfaces = [
-            Self::generate_output_surface(
-                tiles,
-                STROKE_INTERMEDIATE_SURFACE_A,
-                estimated_area,
-                None,
-                &self.device,
-            ),
-            Self::generate_output_surface(
-                tiles,
-                STROKE_INTERMEDIATE_SURFACE_B,
-                estimated_area,
-                None,
-                &self.device,
-            ),
-        ];
-
-        let pp_surface_views = [
-            Self::generate_texture_binding_array(&pp_surfaces[0]),
-            Self::generate_texture_binding_array(&pp_surfaces[1]),
-        ];
+        let target_layer_texel = tiles.get_layer_info(*target_layer).unwrap().texel_type;
 
         // Prepare bind group layout
 
@@ -353,14 +321,14 @@ impl BrushPresetRenderer {
                 },
                 count: Some(NonZeroU32::new(referenced_textures.len() as u32).unwrap()),
             },
-            // Layer Tile Info
+            // Target Layer Tile Info
             BindGroupLayoutEntry {
                 binding: 3,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(TileInfo::min_size()),
+                    min_binding_size: Some(GpuTileInfo::min_size()),
                 },
                 count: None,
             },
@@ -371,18 +339,18 @@ impl BrushPresetRenderer {
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
                     format: target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2,
+                    view_dimension: TextureViewDimension::D2Array,
                 },
-                count: Some(NonZeroU32::new(target_layer_tiles.len() as u32).unwrap()),
+                count: None,
             },
-            // Tile Info
+            // Output Tile Info
             BindGroupLayoutEntry {
                 binding: 5,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(TileInfo::min_size()),
+                    min_binding_size: Some(GpuTileInfo::min_size()),
                 },
                 count: None,
             },
@@ -395,22 +363,33 @@ impl BrushPresetRenderer {
                     // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
                     //       into target color space when merging down.
                     format: target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2,
+                    view_dimension: TextureViewDimension::D2Array,
                 },
-                count: Some(NonZeroU32::new(pp_surfaces[0].len() as u32).unwrap()),
+                count: None,
+            },
+            // Input Tile Info
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(GpuTileInfo::min_size()),
+                },
+                count: None,
             },
             // Input
             BindGroupLayoutEntry {
-                binding: 7,
+                binding: 8,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
                     // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
                     //       into target color space when merging down.
                     format: target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2,
+                    view_dimension: TextureViewDimension::D2Array,
                 },
-                count: Some(NonZeroU32::new(pp_surfaces[0].len() as u32).unwrap()),
+                count: None,
             },
         ];
         main_layout_entries.extend(external_var_bind_layout_entries.clone());
@@ -458,30 +437,8 @@ impl BrushPresetRenderer {
         stroke_info.push(&StrokeInfoUniform {
             shader_origin: estimated_area.min,
             estimated_brush_size: estimated_area.size().as_uvec2(),
-            tile_size: GpuTileStorageInner::TILE_SIZE,
         });
         stroke_info.write_buffer(&self.device);
-
-        // Prepare tile info
-
-        let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(estimated_area);
-        let mut buffer_tile_info = BufferVec::default().with_usage(BufferUsages::STORAGE);
-        for y in tile_rect.min.y..tile_rect.max.y {
-            for x in tile_rect.min.x..tile_rect.max.x {
-                buffer_tile_info.push(&TileInfo {
-                    tile_origin: IVec2::new(x, y) * GpuTileStorageInner::TILE_SIZE as i32,
-                });
-            }
-        }
-        buffer_tile_info.write_buffer(&self.device);
-
-        let mut target_layer_tile_info = BufferVec::default().with_usage(BufferUsages::STORAGE);
-        for tile in &*target_layer_tiles {
-            target_layer_tile_info.push(&TileInfo {
-                tile_origin: tile.index.coord * GpuTileStorageInner::TILE_SIZE as i32,
-            });
-        }
-        target_layer_tile_info.write_buffer(&self.device);
 
         // Referenced textures
         let referenced_texture_views = referenced_textures
@@ -489,11 +446,22 @@ impl BrushPresetRenderer {
             .map(std::convert::identity)
             .collect::<Vec<_>>();
 
-        // Target layer tiles
-        let target_layer_tile_views = target_layer_tiles
-            .iter()
-            .map(|t| t.view.as_ref())
-            .collect::<Vec<_>>();
+        // Layer bindings
+        let target_layer = tiles.get_layer_binding_or_empty(*target_layer).unwrap();
+        let mut pp_layers = [
+            tiles.get_layer_mut(STROKE_INTERMEDIATE_SURFACE_A).unwrap(),
+            tiles.get_layer_mut(STROKE_INTERMEDIATE_SURFACE_B).unwrap(),
+        ];
+        pp_layers[0].ensure_pixel_area(*accumulated_area);
+        pp_layers[1].ensure_pixel_area(*accumulated_area);
+        let pp_textures = [
+            pp_layers[0].texture().unwrap(),
+            pp_layers[1].texture().unwrap(),
+        ];
+        let pp_info_buffers = [
+            pp_layers[0].tile_info_buffer().unwrap(),
+            pp_layers[1].tile_info_buffer().unwrap(),
+        ];
 
         // Prepare main bind group
         let mut main_bind_group_entries = vec![
@@ -511,28 +479,30 @@ impl BrushPresetRenderer {
             },
             BindGroupEntry {
                 binding: 3,
-                resource: target_layer_tile_info.binding().unwrap(),
+                resource: target_layer.tile_info_buffer.as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 4,
-                resource: BindingResource::TextureViewArray(&target_layer_tile_views),
+                resource: BindingResource::TextureView(target_layer.texture.as_ref()),
             },
             BindGroupEntry {
                 binding: 5,
-                // We can actually share the info buffer between main graph and postprocess graphs, because
-                // get_tiles_mut_ordered returns tiles in the same order.
-                resource: buffer_tile_info.binding().unwrap(),
+                resource: pp_info_buffers[*next_main_output_surface].as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 6,
-                resource: BindingResource::TextureViewArray(
-                    &pp_surface_views[*next_main_output_surface],
+                resource: BindingResource::TextureView(
+                    pp_textures[*next_main_output_surface].as_ref(),
                 ),
             },
             BindGroupEntry {
                 binding: 7,
-                resource: BindingResource::TextureViewArray(
-                    &pp_surface_views[1 - *next_main_output_surface],
+                resource: pp_info_buffers[1 - *next_main_output_surface].as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 8,
+                resource: BindingResource::TextureView(
+                    pp_textures[1 - *next_main_output_surface].as_ref(),
                 ),
             },
         ];
@@ -571,7 +541,6 @@ impl BrushPresetRenderer {
             main_pipeline,
             main_bind_group,
             external_var_buffers,
-            target_layer_tile_info,
         });
     }
 
@@ -582,38 +551,26 @@ impl BrushPresetRenderer {
             return;
         };
 
-        let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(initialized.accumulated_area);
-        let pp_surfaces = [
-            Self::generate_output_surface(
-                tiles,
-                STROKE_INTERMEDIATE_SURFACE_A,
-                initialized.accumulated_area,
-                None,
-                &self.device,
-            ),
-            Self::generate_output_surface(
-                tiles,
-                STROKE_INTERMEDIATE_SURFACE_B,
-                initialized.accumulated_area,
-                None,
-                &self.device,
-            ),
+        let target_layer_tiles = tiles
+            .get_layer_binding_or_empty(initialized.target_layer)
+            .unwrap();
+        let target_layer_texel = tiles
+            .get_layer_info(initialized.target_layer)
+            .unwrap()
+            .texel_type;
+        let pp_layers = [
+            tiles
+                .get_layer_binding_or_empty(STROKE_INTERMEDIATE_SURFACE_A)
+                .unwrap(),
+            tiles
+                .get_layer_binding_or_empty(STROKE_INTERMEDIATE_SURFACE_B)
+                .unwrap(),
         ];
-        let mut tile_info = BufferVec::default().with_usage(BufferUsages::STORAGE);
-        for y in tile_rect.min.y..tile_rect.max.y {
-            for x in tile_rect.min.x..tile_rect.max.x {
-                tile_info.push(&TileInfo {
-                    tile_origin: IVec2::new(x, y) * GpuTileStorageInner::TILE_SIZE as i32,
-                });
-            }
-        }
-        tile_info.write_buffer(&self.device);
 
         initialized.stroke_info.clear();
         initialized.stroke_info.push(&StrokeInfoUniform {
             shader_origin: initialized.accumulated_area.min,
             estimated_brush_size: initialized.accumulated_area.size().as_uvec2(),
-            tile_size: GpuTileStorageInner::TILE_SIZE,
         });
         initialized.stroke_info.write_buffer(&self.device);
 
@@ -647,7 +604,7 @@ impl BrushPresetRenderer {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(TileInfo::min_size()),
+                    min_binding_size: Some(GpuTileInfo::min_size()),
                 },
                 count: None,
             },
@@ -657,19 +614,19 @@ impl BrushPresetRenderer {
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
-                    format: initialized.target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2,
+                    format: target_layer_texel.wgpu_format(),
+                    view_dimension: TextureViewDimension::D2Array,
                 },
-                count: Some(NonZeroU32::new(initialized.target_layer_tiles.len() as u32).unwrap()),
+                count: None,
             },
-            // Buffer tile info
+            // Output tile info
             BindGroupLayoutEntry {
                 binding: 5,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(TileInfo::min_size()),
+                    min_binding_size: Some(GpuTileInfo::min_size()),
                 },
                 count: None,
             },
@@ -681,21 +638,32 @@ impl BrushPresetRenderer {
                     access: StorageTextureAccess::WriteOnly,
                     // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
                     //       into target color space when merging down.
-                    format: initialized.target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2,
+                    format: target_layer_texel.wgpu_format(),
+                    view_dimension: TextureViewDimension::D2Array,
                 },
-                count: Some(NonZeroU32::new(pp_surfaces[0].len() as u32).unwrap()),
+                count: None,
             },
-            // Input
+            // Input tile info
             BindGroupLayoutEntry {
                 binding: 7,
                 visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(GpuTileInfo::min_size()),
+                },
+                count: None,
+            },
+            // Input
+            BindGroupLayoutEntry {
+                binding: 8,
+                visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
-                    format: initialized.target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2,
+                    format: target_layer_texel.wgpu_format(),
+                    view_dimension: TextureViewDimension::D2Array,
                 },
-                count: Some(NonZeroU32::new(pp_surfaces[0].len() as u32).unwrap()),
+                count: None,
             },
         ];
         stroke_postprocess_layout_entries
@@ -739,11 +707,6 @@ impl BrushPresetRenderer {
             .iter()
             .map(std::convert::identity)
             .collect::<Vec<_>>();
-        let target_layer_tile_views = initialized
-            .target_layer_tiles
-            .iter()
-            .map(|t| t.view.as_ref())
-            .collect::<Vec<_>>();
 
         let bind_group_entries = vec![
             BindGroupEntry {
@@ -756,25 +719,18 @@ impl BrushPresetRenderer {
             },
             BindGroupEntry {
                 binding: 3,
-                resource: prepared.target_layer_tile_info.binding().unwrap(),
+                resource: target_layer_tiles.tile_info_buffer.as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 4,
-                resource: BindingResource::TextureViewArray(&target_layer_tile_views),
-            },
-            BindGroupEntry {
-                binding: 5,
-                resource: tile_info.binding().unwrap(),
+                resource: BindingResource::TextureView(target_layer_tiles.texture.as_ref()),
             },
         ];
 
         let total_stroke_pp = stroke_postprocess_pipelines.len();
         let mut stroke_postprocess_bind_groups = Vec::with_capacity(total_stroke_pp);
         let mut next_pp_output_surface = initialized.next_main_output_surface;
-        let pp_views = [
-            Self::generate_texture_binding_array(&pp_surfaces[0]),
-            Self::generate_texture_binding_array(&pp_surfaces[1]),
-        ];
+
         let external_var_bindings = prepared
             .external_var_buffers
             .iter()
@@ -787,14 +743,26 @@ impl BrushPresetRenderer {
 
         for pp_index in 0..total_stroke_pp {
             let mut entries = bind_group_entries.clone();
-            entries.push(BindGroupEntry {
-                binding: 6,
-                resource: BindingResource::TextureViewArray(&pp_views[next_pp_output_surface]),
-            });
-            entries.push(BindGroupEntry {
-                binding: 7,
-                resource: BindingResource::TextureViewArray(&pp_views[1 - next_pp_output_surface]),
-            });
+            let output = &pp_layers[next_pp_output_surface];
+            let input = &pp_layers[1 - next_pp_output_surface];
+            entries.extend([
+                BindGroupEntry {
+                    binding: 5,
+                    resource: output.tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&output.texture),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: input.tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(&input.texture),
+                },
+            ]);
 
             entries.extend(external_var_bindings.clone());
 
@@ -847,20 +815,36 @@ impl BrushPresetRenderer {
             return;
         };
 
-        let result_layer = stroke_pp_prepared.last_surface;
+        let result_layer = tiles.get_layer(stroke_pp_prepared.last_surface).unwrap();
+        let mut target_layer = tiles.get_layer_mut(initialized.target_layer).unwrap();
+
         let mut ec = self.device.create_command_encoder(&Default::default());
         for index in &initialized.affected_tiles {
-            let result = tiles.get_tile_or_empty(TileIndex {
-                layer: result_layer,
-                coord: *index,
-            });
-            let target = tiles.get_tile_mut(TileIndex {
-                layer: initialized.target_layer,
-                coord: *index,
-            });
+            let src_layer = result_layer.get_tile_layer(*index).unwrap();
+            target_layer.get_tile_or_allocate(*index);
+            let dst_layer = target_layer.get_tile_layer(*index).unwrap();
+
             ec.copy_texture_to_texture(
-                result.view.texture().as_image_copy(),
-                target.view.texture().as_image_copy(),
+                TexelCopyTextureInfo {
+                    texture: result_layer.texture().unwrap().texture(),
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: src_layer,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfo {
+                    texture: target_layer.texture().unwrap().texture(),
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: dst_layer,
+                    },
+                    aspect: TextureAspect::All,
+                },
                 Extent3d {
                     width: GpuTileStorageInner::TILE_SIZE,
                     height: GpuTileStorageInner::TILE_SIZE,
@@ -898,49 +882,5 @@ impl BrushPresetRenderer {
         }
 
         self.queue.submit([ec.finish()]);
-    }
-
-    fn generate_output_surface(
-        tiles_storage: &GpuTileStorage,
-        layer: LayerId,
-        estimated_area: IRect,
-        output_len_in_layout: Option<u32>,
-        device: &Device,
-    ) -> Vec<Arc<TextureView>> {
-        let format = tiles_storage.layer_texel_type(layer).unwrap().wgpu_format();
-        let tiles = tiles_storage.get_tiles_or_allocate_by_pixel_rect(layer, estimated_area);
-        let mut empty_placeholders = Vec::new();
-        let mut output_layer = tiles.into_iter().map(|t| t.view).collect::<Vec<_>>();
-        // Avoid partial binding.
-        if let Some(expected) = output_len_in_layout {
-            if output_layer.len() < expected as usize {
-                for _ in output_layer.len()..expected as usize {
-                    let view = device
-                        .create_texture(&TextureDescriptor {
-                            label: Some("empty placeholder texture"),
-                            size: Extent3d {
-                                width: 1,
-                                height: 1,
-                                depth_or_array_layers: 1,
-                            },
-                            mip_level_count: 1,
-                            sample_count: 1,
-                            dimension: TextureDimension::D2,
-                            format,
-                            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
-                            view_formats: &[],
-                        })
-                        .create_view(&Default::default());
-                    empty_placeholders.push(Arc::new(view));
-                }
-                output_layer.extend(empty_placeholders);
-            }
-        }
-
-        output_layer
-    }
-
-    fn generate_texture_binding_array(textures: &[Arc<TextureView>]) -> Vec<&TextureView> {
-        textures.iter().map(Arc::as_ref).collect()
     }
 }

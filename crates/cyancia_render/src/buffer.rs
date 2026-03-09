@@ -200,4 +200,8 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
         self.usage = usage;
         self
     }
+
+    pub fn inner_buffer(&self) -> Option<&Buffer> {
+        self.buffer.as_ref()
+    }
 }

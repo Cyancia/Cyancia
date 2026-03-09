@@ -35,7 +35,7 @@ fn convert_pixel_to_tile_index(pixel: vec2i) -> vec3u {
         let info = tile_info[i];
         if (pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
             pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE)) {
-            return vec3u(i, vec2u(pixel - info.origin));
+            return vec3u(vec2u(pixel - info.origin), i);
         }
     }
     return vec3u(0xffffffffu, 0, 0);
@@ -54,8 +54,8 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
     let tile_index = convert_pixel_to_tile_index(vec2i(canvas_pos.xy));
 
     var color = vec4f(0.0);
-    if tile_index.x != 0xffffffffu {
-        color = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles, tile_index.yz, tile_index.x));
+    if tile_index.z != 0xffffffffu {
+        color = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles, tile_index.xy, tile_index.z));
     }
 
     textureStore(output, vec2u(pixel_pos), mix(checkerboard_pattern(vec2u(canvas_pos.xy)), color, color.a) * tile_checkerboard_pattern(vec2u(canvas_pos.xy)));
