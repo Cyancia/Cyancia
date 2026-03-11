@@ -7,3 +7,5 @@ edition = "2024"
 num-traits.workspace = true
 iced_core.workspace = true
 iced_widget.workspace = true
+bevy_math.workspace = true
+iced_graphics.workspace = true
