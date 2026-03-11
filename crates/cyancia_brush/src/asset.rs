@@ -13,7 +13,7 @@ use cyancia_assets::{
     store::AssetRegistry,
 };
 use cyancia_shader_graph::{
-    graph::{
+    extended::extended_storage, graph::{
         Graph, GraphCompileError, GraphDynamicInstancesStorage, GraphFunctionStorage,
         node::{
             external::{
@@ -23,15 +23,13 @@ use cyancia_shader_graph::{
             function::GraphFunctionNode,
         },
         variable::GraphLiteral,
-    },
-    save::{
+    }, save::{
         GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
         SerializableGraphLiteral,
-    },
-    wgsl_std::{
+    }, wgsl_std::{
         nodes::{TextureId, TextureNode, TextureStorage, TextureUsageRecorder},
         std_storage,
-    },
+    }
 };
 use glam::{IVec2, UVec2};
 use image::{DynamicImage, ImageFormat};
@@ -600,6 +598,7 @@ fn create_main_graph_storage(
 ) -> GraphDynamicInstancesStorage {
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.merge(std_storage());
+    storage.merge(extended_storage());
 
     storage.nodes.register::<PenPositionNode>();
     storage.nodes.register::<PixelPositionNode>();
@@ -630,6 +629,7 @@ fn create_postprocess_graph_storage(
 ) -> GraphDynamicInstancesStorage {
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.merge(std_storage());
+    storage.merge(extended_storage());
 
     storage.nodes.register::<PenPositionNode>();
     storage.nodes.register::<PixelPositionNode>();

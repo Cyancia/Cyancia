@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     GraphRenderer, GraphTheme,
+    editor::NODE_WIDTH,
     graph::{
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
@@ -17,12 +18,22 @@ use crate::{
     wgsl_std::types::F32Type,
 };
 
+pub const CUBIC_CURVE_MAX_CONTROL_POINTS: usize = 16;
+
 #[derive(Default, Clone)]
 pub struct CurveNode;
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CurveNodeState {
     pub control_points: Vec<Vec2>,
+}
+
+impl Default for CurveNodeState {
+    fn default() -> Self {
+        Self {
+            control_points: vec![Vec2::ZERO, Vec2::ONE],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,8 +83,8 @@ impl GraphNode for CurveNode {
         Column::with_children(ctx.view_all_inputs(&["X"], CurveNodeMessage::LiteralUpdate))
             .push(
                 CurveEdit::new(CubicCurve::new(state.control_points.clone()))
-                    .width(400)
-                    .height(300)
+                    .width(NODE_WIDTH)
+                    .height(NODE_WIDTH * 0.75)
                     .on_point_created(CurveNodeMessage::CurvePointCreated)
                     .on_point_moved(CurveNodeMessage::CurvePointMoved)
                     .on_point_deleted(CurveNodeMessage::CurvePointDeleted),
@@ -108,7 +119,9 @@ impl GraphNode for CurveNode {
                 }
             }
             CurveNodeMessage::CurvePointDeleted(index) => {
-                state.control_points.remove(index);
+                if state.control_points.len() > 2 {
+                    state.control_points.remove(index);
+                }
             }
         }
     }
@@ -116,8 +129,40 @@ impl GraphNode for CurveNode {
     fn generate_code(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        todo!()
+        let num_control_points = state.control_points.len();
+        let mut control_points = state.control_points.clone();
+        control_points.resize(CUBIC_CURVE_MAX_CONTROL_POINTS, Vec2::ZERO);
+        let mut derivatives = CubicCurve::calculate_derivatives(&state.control_points);
+        derivatives.resize(CUBIC_CURVE_MAX_CONTROL_POINTS + 1, 0.0);
+
+        Ok(format!(
+            "
+let {} = render::math::sample_cubic_curve(
+    render::math::CubicCurve(
+        array<vec2f, {}>({}),
+        array<f32, {}>({}),
+        {}
+    ),
+    {}
+);
+            ",
+            ctx.get_output(0)?,
+            CUBIC_CURVE_MAX_CONTROL_POINTS,
+            control_points
+                .iter()
+                .map(|p| format!("vec2({:.5}, {:.5})", p.x, p.y))
+                .collect::<Vec<_>>()
+                .join(", "),
+            CUBIC_CURVE_MAX_CONTROL_POINTS + 1,
+            derivatives
+                .iter()
+                .map(|d| format!("{:.5}", d))
+                .collect::<Vec<_>>()
+                .join(", "),
+            num_control_points,
+            ctx.get_input(0)?
+        ))
     }
 }

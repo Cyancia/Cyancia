@@ -357,6 +357,7 @@ where
                             shell.publish(on_release);
                         }
                         state.is_dragging = false;
+                        shell.capture_event();
                     } else if let Some(cursor_position) = cursor.position_over(layout.bounds()) {
                         if state.clicked_but_not_moved {
                             state.mode = Mode::Type;
@@ -425,13 +426,16 @@ where
                         if let Some(c) = key.to_latin(*physical_key) {
                             if ('0' <= c && c <= '9') || c == '.' {
                                 state.input_buffer.push(c);
+                                shell.capture_event();
                             }
                         } else if key == &Key::Named(key::Named::Backspace) {
                             state.input_buffer.pop();
+                            shell.capture_event();
                         } else if key == &Key::Named(key::Named::Enter) {
                             state.input_buffer.parse::<T>().ok().map(change);
                             state.input_buffer.clear();
                             state.mode = Mode::Drag;
+                            shell.capture_event();
                         }
                     }
                 },

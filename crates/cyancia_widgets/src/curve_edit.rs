@@ -82,6 +82,10 @@ where
         Size::new(self.width, self.height)
     }
 
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<State>()
+    }
+
     fn layout(
         &mut self,
         tree: &mut widget::Tree,
@@ -150,9 +154,10 @@ where
                     state.dragging = true;
                 }
 
+                dbg!();
                 shell.capture_event();
             }
-            iced_core::Event::Mouse(mouse::Event::CursorMoved { position }) => {
+            iced_core::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if !state.dragging {
                     return;
                 }
@@ -160,7 +165,10 @@ where
                 let Some(cursor_pos) = cursor.position() else {
                     return;
                 };
-                let cursor_px = Vec2::new(cursor_pos.x, height - cursor_pos.y);
+                let cursor_px = Vec2::new(
+                    cursor_pos.x - layout.bounds().x,
+                    height - (cursor_pos.y - layout.bounds().y),
+                );
                 let cursor_01 = cursor_px / size;
 
                 if let Some(selected) = state.selected_point {
@@ -187,19 +195,25 @@ where
                 shell.capture_event();
             }
             iced_core::Event::Mouse(mouse::Event::ButtonReleased(_)) => {
-                state.dragging = false;
-                shell.capture_event();
+                if state.dragging {
+                    state.dragging = false;
+                    shell.capture_event();
+                }
             }
             iced_core::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => match key {
                 keyboard::Key::Named(key::Named::Delete) => {
-                    if let Some(selected) = state.selected_point {
-                        if let Some(on_point_deleted) = self.on_point_deleted.as_ref() {
-                            shell.publish(on_point_deleted(selected));
-                            state.selected_point = None;
-                        }
+                    if !cursor.is_over(layout.bounds()) {
+                        return;
                     }
 
-                    shell.capture_event();
+                    if let Some(selected) = state.selected_point {
+                        state.selected_point = None;
+                        shell.capture_event();
+
+                        if let Some(on_point_deleted) = self.on_point_deleted.as_ref() {
+                            shell.publish(on_point_deleted(selected));
+                        }
+                    }
                 }
                 _ => {}
             },
@@ -222,6 +236,7 @@ where
         let width = bounds.width;
         let height = bounds.height;
         let size = Vec2::new(width, height);
+        let state = tree.state.downcast_ref::<State>();
 
         let points = self
             .curve
@@ -264,16 +279,26 @@ where
             },
         );
 
-        for p in self.curve.control_points() {
+        for (i, p) in self.curve.control_points().iter().enumerate() {
             const SIZE: f32 = 10.0;
             let px = Vec2::new(p.x, 1.0 - p.y) * size;
             let p0 = px - SIZE * 0.5;
 
-            frame.fill_rectangle(
-                Point::new(p0.x, p0.y),
-                Size::new(SIZE, SIZE),
-                style.line_color,
-            );
+            let p = Point::new(p0.x, p0.y);
+            let size = Size::new(SIZE, SIZE);
+            if Some(i) == state.selected_point {
+                frame.fill_rectangle(p, size, style.line_color);
+            } else {
+                frame.stroke_rectangle(
+                    p,
+                    size,
+                    Stroke {
+                        style: style.line_color.into(),
+                        width: 2.0,
+                        ..Default::default()
+                    },
+                );
+            }
         }
 
         renderer.with_translation(Vector::new(bounds.x, bounds.y), |r| {

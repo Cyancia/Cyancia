@@ -46,7 +46,7 @@ use crate::{
 
 pub mod slot;
 
-const NODE_WIDTH: f32 = 170.0;
+pub const NODE_WIDTH: f32 = 170.0;
 const NODE_BORDER_RADIUS: f32 = 5.0;
 
 #[derive(Clone)]
@@ -450,20 +450,20 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         viewport: &Rectangle,
     ) {
         let state = tree.state.downcast_mut::<State>();
-        match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                // We need to handle it before children, otherwise, if the drag is started on a interactable child,
-                // the event will get captured and unable to be identified below, and will stuck.
-                if let DragNodeState::Dragging { .. } = state.node_drag {
-                    state.node_drag = DragNodeState::Idle;
-                    shell.capture_event();
-                    return;
-                }
+        // match event {
+        //     Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+        //         // We need to handle it before children, otherwise, if the drag is started on a interactable child,
+        //         // the event will get captured and unable to be identified below, and will stuck.
+        //         if let DragNodeState::Dragging { .. } = state.node_drag {
+        //             state.node_drag = DragNodeState::Idle;
+        //             shell.capture_event();
+        //             return;
+        //         }
 
-                state.node_creation_menu.position = None;
-            }
-            _ => {}
-        }
+        //         state.node_creation_menu.position = None;
+        //     }
+        //     _ => {}
+        // }
 
         state.slot_pins.clear();
         let mut messages = Vec::new();
@@ -494,6 +494,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
         shell.merge(children_shell, |m| m);
 
         if shell.is_event_captured() {
+            dbg!();
             return;
         }
 
