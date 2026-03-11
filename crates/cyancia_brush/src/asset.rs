@@ -50,7 +50,7 @@ use zip::{ZipArchive, ZipWriter, write::FileOptions};
 use crate::render::graph::{
     BlendColorNode, CurrentPixelColorNode, GraphInputParams, LayerPixelColorNode,
     OutputWithinBoundsNode, OutputWithinMaskNode, PasteTextureNode, PenPositionNode,
-    PixelPositionNode,
+    PixelPositionNode, StrokeBoundsNode,
 };
 
 pub struct BrushPreset {
@@ -457,19 +457,6 @@ impl BrushPresetInstance {
         })
     }
 
-    pub fn estimate_size(&self) -> UVec2 {
-        // TODO
-        UVec2::splat(16)
-    }
-
-    pub fn estimate_area(&self, params: &GraphInputParams) -> IRect {
-        // TODO
-        IRect::from_center_size(
-            params.pen_position.as_ivec2(),
-            self.estimate_size().as_ivec2(),
-        )
-    }
-
     pub fn compile(
         &self,
         mut existing_binding_count: u32,
@@ -652,6 +639,7 @@ fn create_postprocess_graph_storage(
     storage.nodes.register::<BlendColorNode>();
     storage.nodes.register::<LayerPixelColorNode>();
     storage.nodes.register::<CurrentPixelColorNode>();
+    storage.nodes.register::<StrokeBoundsNode>();
 
     storage
         .nodes
