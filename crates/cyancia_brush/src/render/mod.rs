@@ -95,7 +95,7 @@ impl BrushPresetOperator {
     pub fn update_stroke(&mut self, params: GraphInputParams, tiles: &GpuTileStorage) {
         self.renderer
             .prepare_main(&mut self.instance, params, tiles);
-        self.renderer.draw_main_dab(tiles);
+        self.renderer.draw_main_dab();
         self.renderer.copy_last_surface_to_target(tiles);
         // self.renderer.prepare_stroke_postprocess(tiles);
         // self.renderer.postprocess_stroke();
@@ -116,20 +116,27 @@ pub struct GraphInputUniform {
 }
 
 #[derive(ShaderType, Debug)]
-pub struct StrokeInfoUniform {
+pub struct DabInfoUniform {
     pub shader_origin: IVec2,
     pub estimated_brush_size: UVec2,
+}
+
+#[derive(ShaderType, Debug)]
+pub struct StrokeInfoUniform {
+    pub bound_min: IVec2,
+    pub bound_max: IVec2,
 }
 
 struct InitializedData {
     target_layer: LayerId,
     referenced_textures: Vec<TextureView>,
     accumulated_affected_tiles: IRect,
+    next_output_surface: usize,
 
     graph_input: DynamicBuffer<GraphInputUniform>,
-    stroke_info: DynamicBuffer<StrokeInfoUniform>,
+    dab_info: DynamicBuffer<DabInfoUniform>,
 
-    main_affected_tiles: BufferVec<IVec4>,
+    main_affected_pixels: BufferVec<IVec4>,
     // stroke_pp_affected_tile_count: Vec<DynamicBuffer<u32>>,
     // stroke_pp_affected_tiles: Vec<BufferVec<IVec2>>,
     main_pipeline: ComputePipeline,
@@ -146,9 +153,11 @@ struct MainPreparedData {
     affected_tiles: IRect,
     main_bind_group: BindGroup,
     external_var_buffers: Vec<Buffer>,
+    output_surface: usize,
 }
 
 struct StrokePostprocessPreparedData {
+    stroke_info_buffer: DynamicBuffer<StrokeInfoUniform>,
     pipelines: Vec<ComputePipeline>,
     bind_groups: Vec<BindGroup>,
     last_surface: LayerId,
@@ -273,14 +282,14 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Stroke Info
+            // Dab Info
             BindGroupLayoutEntry {
                 binding: 1,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(StrokeInfoUniform::min_size()),
+                    min_binding_size: Some(DabInfoUniform::min_size()),
                 },
                 count: None,
             },
@@ -732,16 +741,17 @@ impl BrushPresetRenderer {
 
         self.initialized = Some(InitializedData {
             graph_input: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
-            stroke_info: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
+            dab_info: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
             referenced_textures,
             accumulated_affected_tiles: IRect::EMPTY,
             target_layer,
+            next_output_surface: 0,
 
             main_layout,
             main_pipeline,
             main_esti_layout,
             main_esti_pipeline,
-            main_affected_tiles: main_affected_pixels,
+            main_affected_pixels,
             // stroke_pp_esti_layout,
             // stroke_pp_esti_pipelines,
             // stroke_pp_layout,
@@ -760,13 +770,14 @@ impl BrushPresetRenderer {
         let Some(InitializedData {
             target_layer,
             graph_input,
-            stroke_info,
+            dab_info,
             referenced_textures,
             accumulated_affected_tiles,
             main_layout,
             main_esti_layout,
             main_esti_pipeline,
-            main_affected_tiles: main_affected_pixels,
+            main_affected_pixels,
+            next_output_surface,
             ..
         }) = self.initialized.as_mut()
         else {
@@ -941,12 +952,12 @@ impl BrushPresetRenderer {
             pp_layers[1].tile_info_buffer().unwrap(),
         ];
 
-        stroke_info.clear();
-        stroke_info.push(&StrokeInfoUniform {
+        dab_info.clear();
+        dab_info.push(&DabInfoUniform {
             shader_origin: affected_tiles.min * GpuTileStorageInner::TILE_SIZE as i32,
             estimated_brush_size: affected_tiles.size().as_uvec2() * GpuTileStorageInner::TILE_SIZE,
         });
-        stroke_info.write_buffer(&self.device);
+        dab_info.write_buffer(&self.device);
 
         // Prepare main bind group
         let mut main_bind_group_entries = vec![
@@ -956,7 +967,7 @@ impl BrushPresetRenderer {
             },
             BindGroupEntry {
                 binding: 1,
-                resource: stroke_info.binding().unwrap(),
+                resource: dab_info.binding().unwrap(),
             },
             BindGroupEntry {
                 binding: 2,
@@ -972,19 +983,21 @@ impl BrushPresetRenderer {
             },
             BindGroupEntry {
                 binding: 5,
-                resource: pp_info_buffers[0].as_entire_binding(),
+                resource: pp_info_buffers[*next_output_surface].as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 6,
-                resource: BindingResource::TextureView(pp_textures[0].as_ref()),
+                resource: BindingResource::TextureView(pp_textures[*next_output_surface].as_ref()),
             },
             BindGroupEntry {
                 binding: 7,
-                resource: pp_info_buffers[1].as_entire_binding(),
+                resource: pp_info_buffers[1 - *next_output_surface].as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 8,
-                resource: BindingResource::TextureView(pp_textures[1].as_ref()),
+                resource: BindingResource::TextureView(
+                    pp_textures[1 - *next_output_surface].as_ref(),
+                ),
             },
         ];
 
@@ -999,7 +1012,9 @@ impl BrushPresetRenderer {
             affected_tiles,
             main_bind_group,
             external_var_buffers,
+            output_surface: *next_output_surface,
         });
+        *next_output_surface = 1 - *next_output_surface;
     }
 
     // pub fn prepare_stroke_postprocess(&mut self, tiles: &GpuTileStorage) {
@@ -1117,7 +1132,7 @@ impl BrushPresetRenderer {
     //     });
     // }
 
-    pub fn draw_main_dab(&self, tiles: &GpuTileStorage) {
+    pub fn draw_main_dab(&self) {
         let (Some(initialized), Some(prepared)) =
             (self.initialized.as_ref(), self.main_prepared.as_ref())
         else {
@@ -1125,36 +1140,6 @@ impl BrushPresetRenderer {
         };
 
         let mut ec = self.device.create_command_encoder(&Default::default());
-
-        let src_layer = tiles.get_layer(initialized.target_layer).unwrap();
-        if let Some(src_tex) = src_layer.texture() {
-            let dst_layer = tiles.get_layer(STROKE_INTERMEDIATE_SURFACE_A).unwrap();
-            for y in prepared.affected_tiles.min.y..prepared.affected_tiles.max.y {
-                for x in prepared.affected_tiles.min.x..prepared.affected_tiles.max.x {
-                    let coord = IVec2::new(x, y);
-                    let Some(src) = src_layer.get_tile_layer(coord) else {
-                        continue;
-                    };
-
-                    let dst = dst_layer.get_tile_layer(coord).unwrap();
-                    ec.copy_texture_to_texture(
-                        TexelCopyTextureInfo {
-                            texture: src_tex.texture(),
-                            mip_level: 0,
-                            origin: Origin3d { x: 0, y: 0, z: src },
-                            aspect: TextureAspect::All,
-                        },
-                        TexelCopyTextureInfo {
-                            texture: dst_layer.texture().unwrap().texture(),
-                            mip_level: 0,
-                            origin: Origin3d { x: 0, y: 0, z: dst },
-                            aspect: TextureAspect::All,
-                        },
-                        GpuTileStorageInner::TILE_COPY_SIZE,
-                    );
-                }
-            }
-        }
 
         {
             let mut pass = ec.begin_compute_pass(&Default::default());

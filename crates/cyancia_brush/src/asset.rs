@@ -48,8 +48,9 @@ use wgpu::{
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{
-    BlendColorNode, CurrentPixelColorNode, GraphInputParams, LayerPixelColorNode, OutputWithinMaskNode,
-    PasteTextureNode, PenPositionNode, PixelPositionNode,
+    BlendColorNode, CurrentPixelColorNode, GraphInputParams, LayerPixelColorNode,
+    OutputWithinBoundsNode, OutputWithinMaskNode, PasteTextureNode, PenPositionNode,
+    PixelPositionNode,
 };
 
 pub struct BrushPreset {
@@ -616,6 +617,7 @@ fn create_main_graph_storage(
     storage.nodes.register::<PenPositionNode>();
     storage.nodes.register::<PixelPositionNode>();
     storage.nodes.register::<OutputWithinMaskNode>();
+    storage.nodes.register::<OutputWithinBoundsNode>();
     storage.nodes.register::<PasteTextureNode>();
     storage.nodes.register::<BlendColorNode>();
     storage.nodes.register::<LayerPixelColorNode>();
@@ -645,6 +647,7 @@ fn create_postprocess_graph_storage(
     storage.nodes.register::<PenPositionNode>();
     storage.nodes.register::<PixelPositionNode>();
     storage.nodes.register::<OutputWithinMaskNode>();
+    storage.nodes.register::<OutputWithinBoundsNode>();
     storage.nodes.register::<PasteTextureNode>();
     storage.nodes.register::<BlendColorNode>();
     storage.nodes.register::<LayerPixelColorNode>();

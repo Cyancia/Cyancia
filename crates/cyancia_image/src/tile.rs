@@ -341,7 +341,7 @@ impl DynamicLayerStorage {
 
     pub fn binding_data(&self) -> Option<LayerBindingData> {
         let texture = self.texture()?;
-        let tile_info_buffer = self.tile_info_buffer().unwrap().clone();
+        let tile_info_buffer = self.tile_info_buffer()?.clone();
         Some(LayerBindingData {
             texture,
             tile_info_buffer,
@@ -526,7 +526,11 @@ impl DynamicLayerStorage {
         self.tiles.clear();
         self.tile_info_buffer.clear();
         self.tile_info_buffer.write_buffer(&self.device);
-        // TODO: optimize this
-        self.texture = None;
+
+        if let Some(tex) = self.texture.as_ref() {
+            let mut ec = self.device.create_command_encoder(&Default::default());
+            ec.clear_texture(tex.texture(), &Default::default());
+            self.queue.submit([ec.finish()]);
+        };
     }
 }

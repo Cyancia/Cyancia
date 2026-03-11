@@ -434,3 +434,46 @@ impl GraphNode for BlendColorNode {
         ))
     }
 }
+
+#[derive(Default, Clone)]
+pub struct StrokeBoundsNode;
+
+impl StatelessCommonGraphNode for StrokeBoundsNode {
+    fn name(&self) -> &'static str {
+        "Stroke Bounds"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Min Bounds", "Max Bounds"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xa2f279)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = vec2f(stroke_info.bound_min);\nlet {} = vec2f(stroke_info.bound_max);\n",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?
+        ))
+    }
+}

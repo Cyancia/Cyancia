@@ -5,13 +5,18 @@ struct GraphInput {
     pen_position: vec2f,
 }
 
-struct StrokeInfo {
+struct DabInfo {
     shader_origin: vec2i,
     estimated_brush_size: vec2u,
 }
 
+struct StrokeInfo {
+    bound_min: vec2i,
+    bound_max: vec2i,
+}
+
 @if(!POSTPROCESSING) @group(0) @binding(0) var<storage> graph_input: GraphInput;
-@if(!SIZE_ESTIMATION) @group(0) @binding(1) var<storage> stroke_info: StrokeInfo;
+@if(!SIZE_ESTIMATION) @group(0) @binding(1) var<storage> dab_info: DabInfo;
 @group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
 @group(0) @binding(4) var target_layer: texture_storage_2d_array<r32uint, read>;
@@ -19,6 +24,7 @@ struct StrokeInfo {
 @if(!SIZE_ESTIMATION) @group(0) @binding(6) var outputs: texture_storage_2d_array<r32uint, write>;
 @group(0) @binding(7) var<storage> inputs_tile_info: array<TileInfo>;
 @group(0) @binding(8) var inputs: texture_storage_2d_array<r32uint, read>;
+@if(POST_PROCESSING) @group(0) @binding(9) var<storage> stroke_info: StrokeInfo;
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
 fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {
@@ -139,10 +145,10 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= stroke_info.estimated_brush_size.x || id.y >= stroke_info.estimated_brush_size.y) {
+    if (id.x >= dab_info.estimated_brush_size.x || id.y >= dab_info.estimated_brush_size.y) {
         return;
     }
-    let pixel_pos = vec2i(id.xy) + stroke_info.shader_origin;
+    let pixel_pos = vec2i(id.xy) + dab_info.shader_origin;
     let pixel_posf = vec2f(pixel_pos);
 
     //CODEGENFLAG_COMPILED_GRAPH
