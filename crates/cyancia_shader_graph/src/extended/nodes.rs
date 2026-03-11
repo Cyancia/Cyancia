@@ -203,7 +203,7 @@ impl StatelessCommonGraphNode for RandomNode {
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = render::hash::hash11({})\nlet {} = render::hash::hash22({});\n",
+            "let {} = render::hash::hash11({});\nlet {} = render::hash::hash21({});\n",
             ctx.get_output(0)?,
             ctx.get_input(0)?,
             ctx.get_output(1)?,
