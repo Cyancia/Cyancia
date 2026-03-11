@@ -180,7 +180,7 @@ impl StatelessCommonGraphNode for RandomNode {
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
-        &["Scalar Value", "Vec2 Value"]
+        &["Scalar", "Vec2"]
     }
 
     fn header_color(&self) -> iced_core::Color {
