@@ -567,6 +567,10 @@ fn compile(
         include_str!("../../cyancia_render/src/shaders/math.wesl").into(),
     );
     resolver.add_module(
+        "template/render::hash".parse().unwrap(),
+        include_str!("../../cyancia_render/src/shaders/hash.wesl").into(),
+    );
+    resolver.add_module(
         "template/image::blend_modes".parse().unwrap(),
         include_str!("../../cyancia_image/src/shaders/blend_modes.wesl").into(),
     );

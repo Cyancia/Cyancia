@@ -11,11 +11,11 @@ use crate::{
     graph::{
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
-            GraphNodeOutputsViewContext, GraphNodeUpdateContext,
+            GraphNodeOutputsViewContext, GraphNodeUpdateContext, StatelessCommonGraphNode,
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
-    wgsl_std::types::F32Type,
+    wgsl_std::types::{F32Type, Vec2FType},
 };
 
 pub const CUBIC_CURVE_MAX_CONTROL_POINTS: usize = 16;
@@ -162,6 +162,51 @@ let {} = render::math::sample_cubic_curve(
                 .collect::<Vec<_>>()
                 .join(", "),
             num_control_points,
+            ctx.get_input(0)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct RandomNode;
+
+impl StatelessCommonGraphNode for RandomNode {
+    fn name(&self) -> &'static str {
+        "Random Number"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Seed"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Scalar Value", "Vec2 Value"]
+    }
+
+    fn header_color(&self) -> iced_core::Color {
+        color!(0x79edf2)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = render::hash::hash11({})\nlet {} = render::hash::hash22({});\n",
+            ctx.get_output(0)?,
+            ctx.get_input(0)?,
+            ctx.get_output(1)?,
             ctx.get_input(0)?
         ))
     }
