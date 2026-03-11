@@ -99,10 +99,10 @@ impl BrushPresetOperator {
         self.renderer.draw_main_dab(tiles);
         // self.renderer.prepare_stroke_postprocess(tiles);
         // self.renderer.postprocess_stroke();
-        self.renderer.copy_last_surface_to_target(tiles);
     }
 
     pub fn end_stroke(&mut self, tiles: &GpuTileStorage) {
+        self.renderer.copy_last_surface_to_target(tiles);
         // self.renderer.prepare_stroke_postprocess(tiles);
         // self.renderer.postprocess_stroke();
         // self.renderer.copy_last_surface_to_target(tiles);
@@ -133,18 +133,18 @@ struct InitializedData {
 
     main_affected_tile_count: DynamicBuffer<u32>,
     main_affected_tiles: BufferVec<IVec2>,
-    stroke_pp_affected_tile_count: Vec<DynamicBuffer<u32>>,
-    stroke_pp_affected_tiles: Vec<BufferVec<IVec2>>,
+    // stroke_pp_affected_tile_count: Vec<DynamicBuffer<u32>>,
+    // stroke_pp_affected_tiles: Vec<BufferVec<IVec2>>,
 
     main_pipeline: ComputePipeline,
     main_layout: BindGroupLayout,
     main_esti_pipeline: ComputePipeline,
     main_esti_layout: BindGroupLayout,
 
-    stroke_pp_pipelines: Vec<ComputePipeline>,
-    stroke_pp_layout: BindGroupLayout,
-    stroke_pp_esti_pipelines: Vec<ComputePipeline>,
-    stroke_pp_esti_layout: BindGroupLayout,
+    // stroke_pp_pipelines: Vec<ComputePipeline>,
+    // stroke_pp_layout: BindGroupLayout,
+    // stroke_pp_esti_pipelines: Vec<ComputePipeline>,
+    // stroke_pp_esti_layout: BindGroupLayout,
 
     affected_tiles: HashSet<IVec2>,
 }
@@ -490,225 +490,225 @@ impl BrushPresetRenderer {
 
         // Prepare stroke postprocess bind group layout and pipelines
 
-        let mut stroke_pp_layout_entries = vec![
-            // Stroke Input Parameters
-            BindGroupLayoutEntry {
-                binding: 1,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(StrokeInfoUniform::min_size()),
-                },
-                count: None,
-            },
-            // Textures
-            BindGroupLayoutEntry {
-                binding: 2,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: true },
-                    view_dimension: TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: Some(NonZeroU32::new(referenced_textures.len() as u32).unwrap()),
-            },
-            // Target layer tile info
-            BindGroupLayoutEntry {
-                binding: 3,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
-                },
-                count: None,
-            },
-            // Target layer
-            BindGroupLayoutEntry {
-                binding: 4,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::StorageTexture {
-                    access: StorageTextureAccess::ReadOnly,
-                    format: target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2Array,
-                },
-                count: None,
-            },
-            // Output tile info
-            BindGroupLayoutEntry {
-                binding: 5,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
-                },
-                count: None,
-            },
-            // Output
-            BindGroupLayoutEntry {
-                binding: 6,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::StorageTexture {
-                    access: StorageTextureAccess::WriteOnly,
-                    // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
-                    //       into target color space when merging down.
-                    format: target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2Array,
-                },
-                count: None,
-            },
-            // Input tile info
-            BindGroupLayoutEntry {
-                binding: 7,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
-                },
-                count: None,
-            },
-            // Input
-            BindGroupLayoutEntry {
-                binding: 8,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::StorageTexture {
-                    access: StorageTextureAccess::ReadOnly,
-                    format: target_layer_texel.wgpu_format(),
-                    view_dimension: TextureViewDimension::D2Array,
-                },
-                count: None,
-            },
-        ];
-        stroke_pp_layout_entries.extend(external_var_bind_layout_entries.clone());
-        let mut stroke_pp_esti_layout_entries = vec![
-            // Graph Input Parameters
-            BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(GraphInputUniform::min_size()),
-                },
-                count: None,
-            },
-            // Textures
-            BindGroupLayoutEntry {
-                binding: 2,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Texture {
-                    sample_type: TextureSampleType::Float { filterable: true },
-                    view_dimension: TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: Some(NonZeroU32::new(referenced_textures.len() as u32).unwrap()),
-            },
-            // Estimated Affected Tile Count
-            BindGroupLayoutEntry {
-                binding: 16,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(u32::min_size()),
-                },
-                count: None,
-            },
-            // Estimated Affected Tiles
-            BindGroupLayoutEntry {
-                binding: 17,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(
-                        <[IVec2; MAX_AFFECTED_TILES as usize] as ShaderType>::min_size(),
-                    ),
-                },
-                count: None,
-            },
-        ];
-        stroke_pp_esti_layout_entries.extend(external_var_bind_layout_entries.clone());
+        // let mut stroke_pp_layout_entries = vec![
+        //     // Stroke Input Parameters
+        //     BindGroupLayoutEntry {
+        //         binding: 1,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Buffer {
+        //             ty: BufferBindingType::Storage { read_only: true },
+        //             has_dynamic_offset: false,
+        //             min_binding_size: Some(StrokeInfoUniform::min_size()),
+        //         },
+        //         count: None,
+        //     },
+        //     // Textures
+        //     BindGroupLayoutEntry {
+        //         binding: 2,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Texture {
+        //             sample_type: TextureSampleType::Float { filterable: true },
+        //             view_dimension: TextureViewDimension::D2,
+        //             multisampled: false,
+        //         },
+        //         count: Some(NonZeroU32::new(referenced_textures.len() as u32).unwrap()),
+        //     },
+        //     // Target layer tile info
+        //     BindGroupLayoutEntry {
+        //         binding: 3,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Buffer {
+        //             ty: BufferBindingType::Storage { read_only: true },
+        //             has_dynamic_offset: false,
+        //             min_binding_size: Some(GpuTileInfo::min_size()),
+        //         },
+        //         count: None,
+        //     },
+        //     // Target layer
+        //     BindGroupLayoutEntry {
+        //         binding: 4,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::StorageTexture {
+        //             access: StorageTextureAccess::ReadOnly,
+        //             format: target_layer_texel.wgpu_format(),
+        //             view_dimension: TextureViewDimension::D2Array,
+        //         },
+        //         count: None,
+        //     },
+        //     // Output tile info
+        //     BindGroupLayoutEntry {
+        //         binding: 5,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Buffer {
+        //             ty: BufferBindingType::Storage { read_only: true },
+        //             has_dynamic_offset: false,
+        //             min_binding_size: Some(GpuTileInfo::min_size()),
+        //         },
+        //         count: None,
+        //     },
+        //     // Output
+        //     BindGroupLayoutEntry {
+        //         binding: 6,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::StorageTexture {
+        //             access: StorageTextureAccess::WriteOnly,
+        //             // TODO: This should be selected by user. If they want to use 16bit textures, this should be rgba16, and convert
+        //             //       into target color space when merging down.
+        //             format: target_layer_texel.wgpu_format(),
+        //             view_dimension: TextureViewDimension::D2Array,
+        //         },
+        //         count: None,
+        //     },
+        //     // Input tile info
+        //     BindGroupLayoutEntry {
+        //         binding: 7,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Buffer {
+        //             ty: BufferBindingType::Storage { read_only: true },
+        //             has_dynamic_offset: false,
+        //             min_binding_size: Some(GpuTileInfo::min_size()),
+        //         },
+        //         count: None,
+        //     },
+        //     // Input
+        //     BindGroupLayoutEntry {
+        //         binding: 8,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::StorageTexture {
+        //             access: StorageTextureAccess::ReadOnly,
+        //             format: target_layer_texel.wgpu_format(),
+        //             view_dimension: TextureViewDimension::D2Array,
+        //         },
+        //         count: None,
+        //     },
+        // ];
+        // stroke_pp_layout_entries.extend(external_var_bind_layout_entries.clone());
+        // let mut stroke_pp_esti_layout_entries = vec![
+        //     // Graph Input Parameters
+        //     BindGroupLayoutEntry {
+        //         binding: 0,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Buffer {
+        //             ty: BufferBindingType::Storage { read_only: true },
+        //             has_dynamic_offset: false,
+        //             min_binding_size: Some(GraphInputUniform::min_size()),
+        //         },
+        //         count: None,
+        //     },
+        //     // Textures
+        //     BindGroupLayoutEntry {
+        //         binding: 2,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Texture {
+        //             sample_type: TextureSampleType::Float { filterable: true },
+        //             view_dimension: TextureViewDimension::D2,
+        //             multisampled: false,
+        //         },
+        //         count: Some(NonZeroU32::new(referenced_textures.len() as u32).unwrap()),
+        //     },
+        //     // Estimated Affected Tile Count
+        //     BindGroupLayoutEntry {
+        //         binding: 16,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Buffer {
+        //             ty: BufferBindingType::Storage { read_only: false },
+        //             has_dynamic_offset: false,
+        //             min_binding_size: Some(u32::min_size()),
+        //         },
+        //         count: None,
+        //     },
+        //     // Estimated Affected Tiles
+        //     BindGroupLayoutEntry {
+        //         binding: 17,
+        //         visibility: ShaderStages::COMPUTE,
+        //         ty: BindingType::Buffer {
+        //             ty: BufferBindingType::Storage { read_only: false },
+        //             has_dynamic_offset: false,
+        //             min_binding_size: Some(
+        //                 <[IVec2; MAX_AFFECTED_TILES as usize] as ShaderType>::min_size(),
+        //             ),
+        //         },
+        //         count: None,
+        //     },
+        // ];
+        // stroke_pp_esti_layout_entries.extend(external_var_bind_layout_entries.clone());
 
-        let stroke_pp_layout = self
-            .device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("brush stroke postprocess layout"),
-                entries: &stroke_pp_layout_entries,
-            });
-        let stroke_pp_esti_layout =
-            self.device
-                .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                    label: Some("brush stroke postprocess estimation layout"),
-                    entries: &stroke_pp_esti_layout_entries,
-                });
+        // let stroke_pp_layout = self
+        //     .device
+        //     .create_bind_group_layout(&BindGroupLayoutDescriptor {
+        //         label: Some("brush stroke postprocess layout"),
+        //         entries: &stroke_pp_layout_entries,
+        //     });
+        // let stroke_pp_esti_layout =
+        //     self.device
+        //         .create_bind_group_layout(&BindGroupLayoutDescriptor {
+        //             label: Some("brush stroke postprocess estimation layout"),
+        //             entries: &stroke_pp_esti_layout_entries,
+        //         });
 
-        let stroke_pp_pipeline_layout =
-            self.device
-                .create_pipeline_layout(&PipelineLayoutDescriptor {
-                    label: Some("brush stroke postprocess pipeline layout"),
-                    bind_group_layouts: &[&stroke_pp_layout],
-                    push_constant_ranges: &[],
-                });
-        let stroke_pp_esti_pipeline_layout =
-            self.device
-                .create_pipeline_layout(&PipelineLayoutDescriptor {
-                    label: Some("brush stroke postprocess estimation pipeline layout"),
-                    bind_group_layouts: &[&stroke_pp_esti_layout],
-                    push_constant_ranges: &[],
-                });
+        // let stroke_pp_pipeline_layout =
+        //     self.device
+        //         .create_pipeline_layout(&PipelineLayoutDescriptor {
+        //             label: Some("brush stroke postprocess pipeline layout"),
+        //             bind_group_layouts: &[&stroke_pp_layout],
+        //             push_constant_ranges: &[],
+        //         });
+        // let stroke_pp_esti_pipeline_layout =
+        //     self.device
+        //         .create_pipeline_layout(&PipelineLayoutDescriptor {
+        //             label: Some("brush stroke postprocess estimation pipeline layout"),
+        //             bind_group_layouts: &[&stroke_pp_esti_layout],
+        //             push_constant_ranges: &[],
+        //         });
 
-        let mut stroke_pp_pipelines = Vec::new();
-        let mut stroke_pp_esti_pipelines = Vec::new();
-        let mut stroke_pp_affected_tile_count = Vec::new();
-        let mut stroke_pp_affected_tiles = Vec::new();
-        for compiled in compiled_preset.stroke_postprocess_graphs {
-            let shader = self.device.create_shader_module(ShaderModuleDescriptor {
-                label: Some("brush stroke postprocess shader"),
-                source: ShaderSource::Wgsl(compiled.shader.into()),
-            });
-            stroke_pp_pipelines.push(self.device.create_compute_pipeline(
-                &ComputePipelineDescriptor {
-                    label: Some("brush stroke postprocess pipeline"),
-                    layout: Some(&stroke_pp_pipeline_layout),
-                    module: &shader,
-                    entry_point: Some("main"),
-                    compilation_options: Default::default(),
-                    cache: None,
-                },
-            ));
+        // let mut stroke_pp_pipelines = Vec::new();
+        // let mut stroke_pp_esti_pipelines = Vec::new();
+        // let mut stroke_pp_affected_tile_count = Vec::new();
+        // let mut stroke_pp_affected_tiles = Vec::new();
+        // for compiled in compiled_preset.stroke_postprocess_graphs {
+        //     let shader = self.device.create_shader_module(ShaderModuleDescriptor {
+        //         label: Some("brush stroke postprocess shader"),
+        //         source: ShaderSource::Wgsl(compiled.shader.into()),
+        //     });
+        //     stroke_pp_pipelines.push(self.device.create_compute_pipeline(
+        //         &ComputePipelineDescriptor {
+        //             label: Some("brush stroke postprocess pipeline"),
+        //             layout: Some(&stroke_pp_pipeline_layout),
+        //             module: &shader,
+        //             entry_point: Some("main"),
+        //             compilation_options: Default::default(),
+        //             cache: None,
+        //         },
+        //     ));
 
-            let esti_shader = self.device.create_shader_module(ShaderModuleDescriptor {
-                label: Some("brush stroke postprocess estimation shader"),
-                source: ShaderSource::Wgsl(compiled.size_estimation.into()),
-            });
-            stroke_pp_esti_pipelines.push(self.device.create_compute_pipeline(
-                &ComputePipelineDescriptor {
-                    label: Some("brush stroke postprocess estimation pipeline"),
-                    layout: Some(&stroke_pp_esti_pipeline_layout),
-                    module: &esti_shader,
-                    entry_point: Some("estimate"),
-                    compilation_options: Default::default(),
-                    cache: None,
-                },
-            ));
+        //     let esti_shader = self.device.create_shader_module(ShaderModuleDescriptor {
+        //         label: Some("brush stroke postprocess estimation shader"),
+        //         source: ShaderSource::Wgsl(compiled.size_estimation.into()),
+        //     });
+        //     stroke_pp_esti_pipelines.push(self.device.create_compute_pipeline(
+        //         &ComputePipelineDescriptor {
+        //             label: Some("brush stroke postprocess estimation pipeline"),
+        //             layout: Some(&stroke_pp_esti_pipeline_layout),
+        //             module: &esti_shader,
+        //             entry_point: Some("estimate"),
+        //             compilation_options: Default::default(),
+        //             cache: None,
+        //         },
+        //     ));
 
-            let mut affected_tile_count =
-                DynamicBuffer::default().with_usage(BufferUsages::STORAGE | BufferUsages::COPY_SRC);
-            affected_tile_count.push(&0u32);
-            affected_tile_count.write_buffer(&self.device);
-            stroke_pp_affected_tile_count.push(affected_tile_count);
-            let mut affected_tiles =
-                BufferVec::default().with_usage(BufferUsages::STORAGE | BufferUsages::COPY_SRC);
-            for _ in 0..MAX_AFFECTED_TILES {
-                affected_tiles.push(&IVec2::ZERO);
-            }
-            affected_tiles.write_buffer(&self.device);
-            stroke_pp_affected_tiles.push(affected_tiles);
-        }
+        //     let mut affected_tile_count =
+        //         DynamicBuffer::default().with_usage(BufferUsages::STORAGE | BufferUsages::COPY_SRC);
+        //     affected_tile_count.push(&0u32);
+        //     affected_tile_count.write_buffer(&self.device);
+        //     stroke_pp_affected_tile_count.push(affected_tile_count);
+        //     let mut affected_tiles =
+        //         BufferVec::default().with_usage(BufferUsages::STORAGE | BufferUsages::COPY_SRC);
+        //     for _ in 0..MAX_AFFECTED_TILES {
+        //         affected_tiles.push(&IVec2::ZERO);
+        //     }
+        //     affected_tiles.write_buffer(&self.device);
+        //     stroke_pp_affected_tiles.push(affected_tiles);
+        // }
 
         self.initialized = Some(InitializedData {
             graph_input: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
@@ -725,12 +725,12 @@ impl BrushPresetRenderer {
             main_affected_tile_count,
             main_affected_tiles,
 
-            stroke_pp_esti_layout,
-            stroke_pp_esti_pipelines,
-            stroke_pp_layout,
-            stroke_pp_pipelines,
-            stroke_pp_affected_tile_count,
-            stroke_pp_affected_tiles,
+            // stroke_pp_esti_layout,
+            // stroke_pp_esti_pipelines,
+            // stroke_pp_layout,
+            // stroke_pp_pipelines,
+            // stroke_pp_affected_tile_count,
+            // stroke_pp_affected_tiles,
 
             affected_tiles: HashSet::new(),
         });
@@ -1238,31 +1238,31 @@ impl BrushPresetRenderer {
         self.queue.submit([ec.finish()]);
     }
 
-    pub fn postprocess_stroke(&self) {
-        let (Some(initialized), Some(stroke_pp_prepared)) = (
-            self.initialized.as_ref(),
-            self.stroke_postprocess_prepared.as_ref(),
-        ) else {
-            return;
-        };
+    // pub fn postprocess_stroke(&self) {
+    //     let (Some(initialized), Some(stroke_pp_prepared)) = (
+    //         self.initialized.as_ref(),
+    //         self.stroke_postprocess_prepared.as_ref(),
+    //     ) else {
+    //         return;
+    //     };
 
-        let mut ec = self.device.create_command_encoder(&Default::default());
+    //     let mut ec = self.device.create_command_encoder(&Default::default());
 
-        for (pp_pipeline, pp_bind_group) in stroke_pp_prepared
-            .pipelines
-            .iter()
-            .zip(stroke_pp_prepared.bind_groups.iter())
-        {
-            let mut pass = ec.begin_compute_pass(&Default::default());
-            pass.set_pipeline(pp_pipeline);
-            pass.set_bind_group(0, pp_bind_group, &[]);
-            pass.dispatch_workgroups(
-                (initialized.accumulated_area.width() as u32).div_ceil(16),
-                (initialized.accumulated_area.height() as u32).div_ceil(16),
-                1,
-            );
-        }
+    //     for (pp_pipeline, pp_bind_group) in stroke_pp_prepared
+    //         .pipelines
+    //         .iter()
+    //         .zip(stroke_pp_prepared.bind_groups.iter())
+    //     {
+    //         let mut pass = ec.begin_compute_pass(&Default::default());
+    //         pass.set_pipeline(pp_pipeline);
+    //         pass.set_bind_group(0, pp_bind_group, &[]);
+    //         pass.dispatch_workgroups(
+    //             (initialized.accumulated_area.width() as u32).div_ceil(16),
+    //             (initialized.accumulated_area.height() as u32).div_ceil(16),
+    //             1,
+    //         );
+    //     }
 
-        self.queue.submit([ec.finish()]);
-    }
+    //     self.queue.submit([ec.finish()]);
+    // }
 }

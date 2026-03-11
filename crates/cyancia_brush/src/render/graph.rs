@@ -206,7 +206,7 @@ impl StatelessCommonGraphNode for CurrentPixelColorNode {
     }
 
     fn input_slot_names(&self) -> &[&'static str] {
-        &[]
+        &["Position"]
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
@@ -218,7 +218,7 @@ impl StatelessCommonGraphNode for CurrentPixelColorNode {
     }
 
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
-        vec![]
+        vec![GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO)]
     }
 
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
@@ -230,8 +230,9 @@ impl StatelessCommonGraphNode for CurrentPixelColorNode {
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = current_input_color(pixel_pos);\n",
-            ctx.get_output(0)?
+            "let {} = current_input_color(vec2i({}));\n",
+            ctx.get_output(0)?,
+            ctx.get_input(0)?
         ))
     }
 }
@@ -245,7 +246,7 @@ impl StatelessCommonGraphNode for LayerPixelColorNode {
     }
 
     fn input_slot_names(&self) -> &[&'static str] {
-        &["Layer"]
+        &["Position"]
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
@@ -257,7 +258,7 @@ impl StatelessCommonGraphNode for LayerPixelColorNode {
     }
 
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
-        vec![]
+        vec![GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO)]
     }
 
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
@@ -268,7 +269,11 @@ impl StatelessCommonGraphNode for LayerPixelColorNode {
         &self,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!("let {} = target_layer_color(pixel_pos);\n", ctx.get_output(0)?))
+        Ok(format!(
+            "let {} = target_layer_color(vec2i({}));\n",
+            ctx.get_output(0)?,
+            ctx.get_input(0)?
+        ))
     }
 }
 
