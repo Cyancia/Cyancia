@@ -48,8 +48,8 @@ use wgpu::{
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{
-    BlendColorNode, CurrentPixelColorNode, GraphInputParams, LayerPixelColorNode, OutputPixelColor,
-    PasteTextureNode, PenPosition, PixelPosition,
+    BlendColorNode, CurrentPixelColorNode, GraphInputParams, LayerPixelColorNode, OutputWithinMaskNode,
+    PasteTextureNode, PenPositionNode, PixelPositionNode,
 };
 
 pub struct BrushPreset {
@@ -613,9 +613,9 @@ fn create_main_graph_storage(
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.merge(std_storage());
 
-    storage.nodes.register::<PenPosition>();
-    storage.nodes.register::<PixelPosition>();
-    storage.nodes.register::<OutputPixelColor>();
+    storage.nodes.register::<PenPositionNode>();
+    storage.nodes.register::<PixelPositionNode>();
+    storage.nodes.register::<OutputWithinMaskNode>();
     storage.nodes.register::<PasteTextureNode>();
     storage.nodes.register::<BlendColorNode>();
     storage.nodes.register::<LayerPixelColorNode>();
@@ -642,9 +642,9 @@ fn create_postprocess_graph_storage(
     let mut storage = GraphDynamicInstancesStorage::default();
     storage.merge(std_storage());
 
-    storage.nodes.register::<PenPosition>();
-    storage.nodes.register::<PixelPosition>();
-    storage.nodes.register::<OutputPixelColor>();
+    storage.nodes.register::<PenPositionNode>();
+    storage.nodes.register::<PixelPositionNode>();
+    storage.nodes.register::<OutputWithinMaskNode>();
     storage.nodes.register::<PasteTextureNode>();
     storage.nodes.register::<BlendColorNode>();
     storage.nodes.register::<LayerPixelColorNode>();

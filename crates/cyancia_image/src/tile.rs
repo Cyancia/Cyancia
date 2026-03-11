@@ -112,6 +112,11 @@ impl GpuTileStorageInner {
         i32::MAX / Self::TILE_SIZE as i32,
         i32::MAX / Self::TILE_SIZE as i32,
     );
+    pub const TILE_COPY_SIZE: Extent3d = Extent3d {
+        width: Self::TILE_SIZE,
+        height: Self::TILE_SIZE,
+        depth_or_array_layers: 1,
+    };
 
     pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
         let mut dummy_layers = HashMap::new();

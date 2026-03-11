@@ -23,9 +23,9 @@ pub struct GraphInputParams {
 }
 
 #[derive(Default, Clone)]
-pub struct PenPosition;
+pub struct PenPositionNode;
 
-impl StatelessCommonGraphNode for PenPosition {
+impl StatelessCommonGraphNode for PenPositionNode {
     fn name(&self) -> &'static str {
         "Pen Position"
     }
@@ -62,9 +62,9 @@ impl StatelessCommonGraphNode for PenPosition {
 }
 
 #[derive(Default, Clone)]
-pub struct PixelPosition;
+pub struct PixelPositionNode;
 
-impl StatelessCommonGraphNode for PixelPosition {
+impl StatelessCommonGraphNode for PixelPositionNode {
     fn name(&self) -> &'static str {
         "Pixel Position"
     }
@@ -98,26 +98,28 @@ impl StatelessCommonGraphNode for PixelPosition {
 }
 
 #[derive(Default, Clone)]
-pub struct OutputPixelColor;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutputPixelColorState {
-    pub blend_mode: BlendMode,
-}
+pub struct OutputWithinMaskNode;
 
 #[derive(Clone)]
-pub enum OutputPixelColorMessage {
+pub enum OutputWithinMaskMessage {
     LiteralUpdate(ErasedGraphLiteralUpdateMessage),
     SetBlendMode(BlendMode),
 }
 
-impl StatelessCommonGraphNode for OutputPixelColor {
+impl StatelessCommonGraphNode for OutputWithinMaskNode {
     fn name(&self) -> &'static str {
-        "Output Pixel Color"
+        "Output Within Mask"
     }
 
     fn input_slot_names(&self) -> &[&'static str] {
-        &["Color"]
+        &[
+            "Color",
+            "Mask",
+            "Translation",
+            "Rotation",
+            "Scale",
+            "Anchor",
+        ]
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
@@ -129,7 +131,14 @@ impl StatelessCommonGraphNode for OutputPixelColor {
     }
 
     fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO)]
+        vec![
+            GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
+            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ONE),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::splat(0.5)),
+        ]
     }
 
     fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
@@ -138,8 +147,55 @@ impl StatelessCommonGraphNode for OutputPixelColor {
 
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "set_output_color(pixel_pos, {});\n",
-            ctx.get_input(0)?
+            "set_output_color_within_mask(pixel_pos, {}, {}, {}, {}, {}, {});\n",
+            ctx.get_input(0)?,
+            ctx.get_input(1)?,
+            ctx.get_input(4)?,
+            ctx.get_input(3)?,
+            ctx.get_input(2)?,
+            ctx.get_input(5)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct OutputWithinBoundsNode;
+
+impl StatelessCommonGraphNode for OutputWithinBoundsNode {
+    fn name(&self) -> &'static str {
+        "Output Within Bounds"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Color", "Min Bounds", "Max Bounds"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79b8f2)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+        ]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![]
+    }
+
+    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "set_output_color_within_bounds(pixel_pos, {}, {}, {});\n",
+            ctx.get_input(0)?,
+            ctx.get_input(1)?,
+            ctx.get_input(2)?
         ))
     }
 }
@@ -191,7 +247,7 @@ impl StatelessCommonGraphNode for PasteTextureNode {
         let output = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = paste_texture({}, pixel_posf, {}, {}, {}, {});\n",
+            "let {} = sample_transformed_local_texture({}, pixel_posf, {}, {}, {}, {});\n",
             output, tex, scale, rotation, translation, anchor
         ))
     }
