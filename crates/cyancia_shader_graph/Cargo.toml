@@ -26,3 +26,4 @@ parse-display.workspace = true
 cyancia_runtime.workspace = true
 cyancia_render.workspace = true
 encase.workspace = true
+cyancia_math.workspace = true

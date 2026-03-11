@@ -1440,6 +1440,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cyancia_assets",
+ "cyancia_math",
  "cyancia_render",
  "cyancia_runtime",
  "cyancia_utils",
@@ -1500,6 +1501,7 @@ name = "cyancia_widgets"
 version = "0.1.0"
 dependencies = [
  "bevy_math",
+ "cyancia_math",
  "iced_core",
  "iced_graphics",
  "iced_widget",

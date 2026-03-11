@@ -9,3 +9,4 @@ iced_core.workspace = true
 iced_widget.workspace = true
 bevy_math.workspace = true
 iced_graphics.workspace = true
+cyancia_math.workspace = true

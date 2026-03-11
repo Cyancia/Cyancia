@@ -1,9 +1,7 @@
-use bevy_math::{
-    Vec2,
-    cubic_splines::{CubicCardinalSpline, CubicGenerator},
-};
+use bevy_math::Vec2;
+use cyancia_math::curve::CubicCurve;
 use iced_core::{
-    Background, Color, Length, Point, Rectangle, Size, Theme, Vector, Widget,
+    Background, Color, Element, Length, Point, Rectangle, Size, Theme, Vector, Widget,
     keyboard::{self, key},
     layout,
     mouse::{self, Cursor},
@@ -16,7 +14,7 @@ pub struct CurveEdit<'a, Message, Theme>
 where
     Theme: Catalog,
 {
-    pub curve: CubicCardinalSpline<Vec2>,
+    pub curve: CubicCurve,
     pub width: Length,
     pub height: Length,
     pub resolution: usize,
@@ -30,7 +28,7 @@ impl<'a, Message, Theme> CurveEdit<'a, Message, Theme>
 where
     Theme: Catalog,
 {
-    pub fn new(curve: CubicCardinalSpline<Vec2>) -> Self {
+    pub fn new(curve: CubicCurve) -> Self {
         Self {
             curve,
             width: Length::Fill,
@@ -112,6 +110,7 @@ where
         let width = layout.bounds().width;
         let height = layout.bounds().height;
         let size = Vec2::new(width, height);
+        let control_points = self.curve.control_points();
 
         match event {
             iced_core::Event::Mouse(mouse::Event::ButtonPressed(_)) => {
@@ -122,7 +121,7 @@ where
                 let cursor_01 = cursor_px / size;
 
                 let mut found_point = false;
-                for (i, p) in self.curve.control_points.iter().enumerate() {
+                for (i, p) in control_points.iter().enumerate() {
                     let pixel = p * size;
                     if pixel.distance_squared(cursor_px) < 64.0 {
                         state.selected_point = Some(i);
@@ -145,7 +144,7 @@ where
                 }
 
                 if !found_point && let Some(on_point_created) = self.on_point_created.as_ref() {
-                    let i = self.curve.control_points.len();
+                    let i = control_points.len();
                     shell.publish(on_point_created(i, cursor_01));
                     state.selected_point = Some(i);
                     state.dragging = true;
@@ -168,12 +167,12 @@ where
                     let prev_x = if selected == 0 {
                         0.0
                     } else {
-                        self.curve.control_points[selected - 1].x
+                        control_points[selected - 1].x
                     };
-                    let next_x = if selected == self.curve.control_points.len() - 1 {
+                    let next_x = if selected == control_points.len() - 1 {
                         1.0
                     } else {
-                        self.curve.control_points[selected + 1].x
+                        control_points[selected + 1].x
                     };
 
                     let clamped =
@@ -219,14 +218,15 @@ where
         viewport: &Rectangle,
     ) {
         let style = theme.style(&self.class);
-        let curve = self.curve.to_curve().unwrap();
         let bounds = layout.bounds();
         let width = bounds.width;
         let height = bounds.height;
         let size = Vec2::new(width, height);
 
-        let points = curve
-            .iter_positions(self.resolution)
+        let points = self
+            .curve
+            .subdivide(self.resolution)
+            .into_iter()
             .map(|p| Vec2::new(p.x, 1.0 - p.y) * size)
             .collect::<Vec<_>>();
         let mut frame = Frame::new(renderer, bounds.size());
@@ -264,7 +264,7 @@ where
             },
         );
 
-        for p in &self.curve.control_points {
+        for p in self.curve.control_points() {
             const SIZE: f32 = 10.0;
             let px = Vec2::new(p.x, 1.0 - p.y) * size;
             let p0 = px - SIZE * 0.5;
@@ -320,5 +320,17 @@ fn default(theme: &Theme) -> Style {
     Style {
         background: theme.extended_palette().background.base.color.into(),
         line_color: theme.extended_palette().primary.base.color.into(),
+    }
+}
+
+impl<'a, Message, Theme, Renderer> Into<Element<'a, Message, Theme, Renderer>>
+    for CurveEdit<'a, Message, Theme>
+where
+    Message: 'a,
+    Theme: Catalog + 'a,
+    Renderer: iced_core::Renderer + iced_graphics::geometry::Renderer + 'a,
+{
+    fn into(self) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(self)
     }
 }
