@@ -203,25 +203,51 @@ impl StatelessCommonGraphNode for OutputWithinBoundsNode {
 #[derive(Default, Clone)]
 pub struct PasteTextureNode;
 
-impl StatelessCommonGraphNode for PasteTextureNode {
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PasteTextureMode {
+    Clamp,
+    #[default]
+    Wrap,
+}
+
+impl ToString for PasteTextureMode {
+    fn to_string(&self) -> String {
+        match self {
+            PasteTextureMode::Clamp => "Clamp".to_string(),
+            PasteTextureMode::Wrap => "Wrap".to_string(),
+        }
+    }
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct PasteTextureNodeState {
+    pub mode: PasteTextureMode,
+}
+
+#[derive(Clone)]
+pub enum PasteTextureNodeMessage {
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+    SetMode(PasteTextureMode),
+}
+
+impl GraphNode for PasteTextureNode {
+    type State = PasteTextureNodeState;
+
+    type Message = PasteTextureNodeMessage;
+
     fn name(&self) -> &'static str {
         "Paste Texture"
     }
 
-    fn input_slot_names(&self) -> &[&'static str] {
-        // TODO: sample modes
-        &["Texture", "Translation", "Rotation", "Scale", "Anchor"]
-    }
-
-    fn output_slot_names(&self) -> &[&'static str] {
-        &["Result"]
+    fn default_state(&self) -> Self::State {
+        Default::default()
     }
 
     fn header_color(&self) -> Color {
         color!(0x79d3f2)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
@@ -231,12 +257,50 @@ impl StatelessCommonGraphNode for PasteTextureNode {
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_inputs(
+            &["Texture", "Translation", "Rotation", "Scale", "Anchor"],
+            PasteTextureNodeMessage::LiteralUpdate,
+        ))
+        .push(pick_list(
+            [PasteTextureMode::Clamp, PasteTextureMode::Wrap],
+            Some(state.mode),
+            PasteTextureNodeMessage::SetMode,
+        ))
+        .into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Color"])).into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            PasteTextureNodeMessage::LiteralUpdate(message) => ctx.update_literal(message),
+            PasteTextureNodeMessage::SetMode(mode) => state.mode = mode,
+        }
     }
 
     fn generate_code(
         &self,
+        state: &Self::State,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         let tex = ctx.get_input(0)?;
@@ -244,11 +308,16 @@ impl StatelessCommonGraphNode for PasteTextureNode {
         let rotation = ctx.get_input(2)?;
         let scale = ctx.get_input(3)?;
         let anchor = ctx.get_input(4)?;
+
         let output = ctx.get_output(0)?;
+        let fn_name = match state.mode {
+            PasteTextureMode::Clamp => "sample_transformed_local_texture_clamp",
+            PasteTextureMode::Wrap => "sample_transformed_local_texture_wrap",
+        };
 
         Ok(format!(
-            "let {} = sample_transformed_local_texture({}, pixel_posf, {}, {}, {}, {});\n",
-            output, tex, scale, rotation, translation, anchor
+            "let {} = {}({}, pixel_posf, {}, {}, {}, {});\n",
+            output, fn_name, tex, scale, rotation, translation, anchor
         ))
     }
 }

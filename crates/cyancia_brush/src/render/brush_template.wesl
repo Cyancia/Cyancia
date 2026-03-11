@@ -73,10 +73,18 @@ fn texture_transform_mat(local_index: u32, scale: vec2f, rotate: f32, translate:
     return mat;
 }
 
-fn sample_transformed_local_texture(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
+fn sample_transformed_local_texture_clamp(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
     let mat = texture_transform_mat(local_index, scale, rotate, translate, anchor);
     let tex_px = (render::math::inverse_mat3x3(mat) * vec3f(pixel, 1.0)).xy;
     return textureLoad(textures[local_index], vec2i(tex_px), 0);
+}
+
+fn sample_transformed_local_texture_wrap(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
+    let mat = texture_transform_mat(local_index, scale, rotate, translate, anchor);
+    let tex_px = (render::math::inverse_mat3x3(mat) * vec3f(pixel, 1.0)).xy;
+    let tex_size = textureDimensions(textures[local_index]);
+    let wrapped_tex_px = abs(vec2i(tex_px) % vec2i(tex_size));
+    return textureLoad(textures[local_index], wrapped_tex_px, 0);
 }
 
 fn sample_local_texture(local_index: u32, pixel: vec2u) -> vec4f {
@@ -102,7 +110,7 @@ fn target_layer_color(pixel_pos: vec2i) -> vec4f {
 fn set_output_color_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_scale: vec2f, mask_rotation: f32, mask_translation: vec2f, mask_anchor: vec2f) {
     let tex_size = vec2f(textureDimensions(textures[mask_local_index]));
     let mat = texture_transform_mat(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor);
-        
+
     @if(SIZE_ESTIMATION) {
         let rect = transform_rect(Rect(vec2f(0.0), tex_size), mat);
         require_bounds(vec2i(rect.min), vec2i(rect.max));
