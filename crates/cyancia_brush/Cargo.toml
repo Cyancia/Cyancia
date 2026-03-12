@@ -37,3 +37,5 @@ cyancia_canvas.workspace = true
 bevy_math.workspace = true
 cyancia_utils.workspace = true
 cyancia_widgets.workspace = true
+ringbuffer.workspace = true
+cyancia_math.workspace = true

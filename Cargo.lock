@@ -1275,6 +1275,7 @@ dependencies = [
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_input",
+ "cyancia_math",
  "cyancia_render",
  "cyancia_runtime",
  "cyancia_shader_graph",
@@ -1293,6 +1294,7 @@ dependencies = [
  "log",
  "parking_lot",
  "rfd",
+ "ringbuffer",
  "serde",
  "thiserror 2.0.18",
  "toml",
@@ -4610,6 +4612,12 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
+
+[[package]]
+name = "ringbuffer"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57b0b88a509053cbfd535726dcaaceee631313cef981266119527a1d110f6d2b"
 
 [[package]]
 name = "roxmltree"

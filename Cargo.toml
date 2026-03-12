@@ -108,6 +108,7 @@ bevy_math = { version = "0.18", default-features = false, features = [
     "std",
     "curve",
 ] }
+ringbuffer = "0.16"
 
 # [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }

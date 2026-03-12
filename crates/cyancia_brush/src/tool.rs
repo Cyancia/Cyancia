@@ -1,15 +1,21 @@
+use std::collections::VecDeque;
+
 use cyancia_assets::store::AssetRegistry;
 use cyancia_canvas::{CCanvas, CanvasManager};
 use cyancia_image::tile::GpuTileStorage;
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
+use cyancia_math::number::LerpAngle;
 use cyancia_runtime::{Services, service::Service};
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
-use glam::Vec2;
+use glam::{FloatExt, Vec2};
+use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
     asset::BrushPresetInstance,
-    render::{BrushPresetOperator, graph::GraphInputParams},
+    render::{
+        BrushPresetOperator, ComputedPenInputSample, PenInputSample, graph::GraphInputParams,
+    },
 };
 
 #[derive(Default)]
@@ -29,9 +35,18 @@ impl ToolFunction for BrushTool {
             return;
         };
 
+        let params = PenInputSample {
+            position: canvas
+                .transform
+                .read()
+                .pixel_to_widget
+                .inverse()
+                .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
+        };
+
         let tiles = services.service::<GpuTileStorage>();
         let assets = services.service::<AssetRegistry>();
-        brush.begin_stroke(&tiles, &assets, canvas.image.root().id);
+        brush.begin_stroke(params, &tiles, &assets, canvas.image.root().id);
     }
 
     fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
@@ -43,17 +58,17 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let params = GraphInputParams {
-            pen_position: canvas
+        let params = PenInputSample {
+            position: canvas
                 .transform
                 .read()
                 .pixel_to_widget
                 .inverse()
                 .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
         };
+
         let tiles = services.service::<GpuTileStorage>();
         brush.update_stroke(params, &tiles);
-        brush.draw();
     }
 
     fn end(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {

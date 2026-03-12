@@ -20,6 +20,8 @@ use wesl::{VirtualResolver, Wesl};
 #[derive(Debug, Clone, Copy)]
 pub struct GraphInputParams {
     pub pen_position: Vec2,
+    pub draw_direction_vec: Vec2,
+    pub draw_direction_angle: f32,
 }
 
 #[derive(Default, Clone)]
@@ -57,6 +59,49 @@ impl StatelessCommonGraphNode for PenPositionNode {
         Ok(format!(
             "let {} = graph_input.pen_position;",
             ctx.get_output(0)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct DrawDirectionNode;
+
+impl StatelessCommonGraphNode for DrawDirectionNode {
+    fn name(&self) -> &'static str {
+        "Draw Direction"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Angle", "Direction"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xc1c073)
+    }
+
+    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = graph_input.draw_direction_angle;\nlet {} = graph_input.draw_direction_vec;\n",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?
         ))
     }
 }

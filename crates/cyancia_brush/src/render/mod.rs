@@ -1,4 +1,8 @@
-use std::{collections::HashSet, num::NonZeroU32, sync::Arc};
+use std::{
+    collections::{HashSet, VecDeque},
+    num::NonZeroU32,
+    sync::Arc,
+};
 
 use bevy_math::IRect;
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
@@ -7,6 +11,8 @@ use cyancia_image::{
     texel::{TexelDepth, TexelFormat, TexelType},
     tile::{GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, Tile, TileIndex},
 };
+use cyancia_input::mouse::PressedMouseState;
+use cyancia_math::number::LerpAngle;
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use cyancia_shader_graph::{
     graph::node::external::generate_external_variable_binding,
@@ -14,6 +20,7 @@ use cyancia_shader_graph::{
 };
 use encase::ShaderType;
 use glam::{IVec2, IVec4, UVec2, Vec2, Vec4Swizzles};
+use ringbuffer::{AllocRingBuffer, RingBuffer};
 use uuid::Uuid;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
@@ -49,20 +56,29 @@ const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 pub struct BrushPresetOperator {
     instance: Arc<BrushPresetInstance>,
     renderer: BrushPresetRenderer,
+    sampler: StrokePenInputSampler,
 }
 
 impl BrushPresetOperator {
     pub fn new(instance: Arc<BrushPresetInstance>, device: Arc<Device>, queue: Arc<Queue>) -> Self {
         let renderer = BrushPresetRenderer::new(device, queue);
-        Self { instance, renderer }
+        Self {
+            instance,
+            renderer,
+            sampler: StrokePenInputSampler::new(), // TODO dynamic spacing
+        }
     }
 
     pub fn begin_stroke(
         &mut self,
+        input: PenInputSample,
         tiles: &GpuTileStorage,
         assets: &AssetRegistry,
         target_layer: LayerId,
     ) {
+        self.sampler = StrokePenInputSampler::new();
+        self.sampler.input(input);
+
         tiles.declare_layer(
             STROKE_INTERMEDIATE_SURFACE_A,
             GpuLayerInfo {
@@ -90,20 +106,104 @@ impl BrushPresetOperator {
         self.renderer.prepare(&mut self.instance);
     }
 
-    pub fn update_stroke(&mut self, params: GraphInputParams, tiles: &GpuTileStorage) {
-        self.renderer.draw_main(params, tiles);
-        // self.renderer.prepare_stroke_postprocess(tiles);
-        // self.renderer.postprocess_stroke();
+    pub fn update_stroke(&mut self, input: PenInputSample, tiles: &GpuTileStorage) {
+        self.sampler.input(input);
+
+        for sample in self.sampler.drain_samples() {
+            let params = GraphInputParams {
+                pen_position: sample.position,
+                draw_direction_vec: sample.draw_direction_vec,
+                draw_direction_angle: sample.draw_direction_angle,
+            };
+            self.renderer.draw_main(params, tiles);
+        }
     }
 
     pub fn end_stroke(&mut self, tiles: &GpuTileStorage) {
         self.renderer.draw_stroke_postprocess(tiles);
         self.renderer.copy_last_surface_to_target(tiles);
-        // self.renderer.postprocess_stroke();
-        // self.renderer.copy_last_surface_to_target(tiles);
+    }
+}
+
+pub struct PenInputSample {
+    pub position: Vec2,
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ComputedPenInputSample {
+    pub position: Vec2,
+    pub draw_direction_vec: Vec2,
+    pub draw_direction_angle: f32,
+}
+
+impl ComputedPenInputSample {
+    pub fn lerp(&self, other: &Self, t: f32) -> Self {
+        let draw_direction_angle = self
+            .draw_direction_angle
+            .lerp_angle(other.draw_direction_angle, t);
+        let (draw_direction_angle_sin, draw_direction_angle_cos) = draw_direction_angle.sin_cos();
+        Self {
+            position: self.position.lerp(other.position, t),
+            draw_direction_vec: Vec2::new(draw_direction_angle_cos, draw_direction_angle_sin),
+            draw_direction_angle,
+        }
+    }
+}
+
+pub struct StrokePenInputSampler {
+    spacing: f32,
+    samples: AllocRingBuffer<ComputedPenInputSample>,
+    queued: VecDeque<ComputedPenInputSample>,
+}
+
+impl StrokePenInputSampler {
+    pub fn new() -> Self {
+        Self {
+            spacing: 1.0,
+            samples: AllocRingBuffer::new(2),
+            queued: VecDeque::new(),
+        }
     }
 
-    pub fn draw(&self) {}
+    pub fn set_spacing(&mut self, spacing: f32) {
+        self.spacing = spacing.max(0.0001);
+    }
+
+    pub fn input(&mut self, mouse: PenInputSample) {
+        if let Some(last) = self.samples.front().cloned() {
+            let draw_direction_angle = (mouse.position - last.position).angle_to(Vec2::X);
+            let (draw_direction_angle_sin, draw_direction_angle_cos) =
+                draw_direction_angle.sin_cos();
+            let this = ComputedPenInputSample {
+                position: mouse.position,
+                draw_direction_vec: Vec2::new(draw_direction_angle_cos, draw_direction_angle_sin),
+                draw_direction_angle,
+            };
+            self.samples.enqueue(this);
+
+            let total_dist = this.position.distance(last.position);
+            let mut cur_dist = total_dist;
+            while cur_dist >= self.spacing {
+                let t = 1.0 - (cur_dist / total_dist);
+                self.queued.push_back(last.lerp(&this, t));
+                cur_dist -= self.spacing;
+            }
+        } else {
+            self.samples.enqueue(ComputedPenInputSample {
+                position: mouse.position,
+                draw_direction_vec: Vec2::X,
+                draw_direction_angle: 0.0,
+            });
+        }
+    }
+
+    pub fn drain_samples(&mut self) -> Vec<ComputedPenInputSample> {
+        let mut result = Vec::new();
+        while let Some(sample) = self.queued.pop_front() {
+            result.push(sample);
+        }
+        result
+    }
 }
 
 #[derive(ShaderType, Debug)]
