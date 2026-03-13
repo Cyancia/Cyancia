@@ -62,7 +62,7 @@ impl InputManager {
                             .and_then(|id| runtime.service::<ActionFunctionRegistry>().get(id))
                         {
                             log::info!("Triggering action: {}", action.id());
-                            return Task::future(async move { action.trigger(runtime).await });
+                            return action.trigger(runtime);
                         }
                     }
                     key::Physical::Unidentified(native_code) => {
@@ -105,7 +105,6 @@ impl InputManager {
                     &PressedMouseState {
                         position: self.cursor_position,
                     },
-                    services,
                 );
             }
             mouse::Event::ButtonReleased(button) => {
@@ -119,7 +118,6 @@ impl InputManager {
                     &PressedMouseState {
                         position: self.cursor_position,
                     },
-                    services,
                 );
             }
             mouse::Event::CursorMoved { position } => {
@@ -131,7 +129,6 @@ impl InputManager {
                         &PressedMouseState {
                             position: self.cursor_position,
                         },
-                        services,
                     );
                 } else {
                     tool_proxy.mouse_moved_hovering(
@@ -139,7 +136,6 @@ impl InputManager {
                         &HoverMouseState {
                             position: self.cursor_position,
                         },
-                        services,
                     );
                 }
             }

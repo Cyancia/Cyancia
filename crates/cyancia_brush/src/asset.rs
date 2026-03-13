@@ -13,7 +13,8 @@ use cyancia_assets::{
     store::AssetRegistry,
 };
 use cyancia_shader_graph::{
-    extended::extended_storage, graph::{
+    extended::extended_storage,
+    graph::{
         Graph, GraphCompileError, GraphDynamicInstancesStorage, GraphFunctionStorage,
         node::{
             external::{
@@ -23,13 +24,15 @@ use cyancia_shader_graph::{
             function::GraphFunctionNode,
         },
         variable::GraphLiteral,
-    }, save::{
+    },
+    save::{
         GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
         SerializableGraphLiteral,
-    }, wgsl_std::{
+    },
+    wgsl_std::{
         nodes::{TextureId, TextureNode, TextureStorage, TextureUsageRecorder},
         std_storage,
-    }
+    },
 };
 use glam::{IVec2, UVec2};
 use image::{DynamicImage, ImageFormat};
@@ -46,7 +49,9 @@ use wgpu::{
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{
-    BlendColorNode, CurrentPixelColorNode, DrawDirectionNode, GraphInputParams, LayerPixelColorNode, OutputWithinBoundsNode, OutputWithinMaskNode, PasteTextureNode, PenPositionNode, PixelPositionNode, StrokeBoundsNode
+    BlendColorNode, CurrentPixelColorNode, DrawDirectionNode, GraphInputParams,
+    LayerPixelColorNode, OutputWithinBoundsNode, OutputWithinMaskNode, PasteTextureNode,
+    PenPositionNode, PixelPositionNode, StrokeBoundsNode,
 };
 
 pub struct BrushPreset {
@@ -519,16 +524,21 @@ impl BrushPresetInstance {
         self.stroke_postprocess_graphs.read().get(index).cloned()
     }
 
-    pub fn new_stroke_postprocess_graph(&self) {
-        self.stroke_postprocess_graphs
-            .write()
-            .push(Arc::new(RwLock::new(Graph::new(
-                self.postprocess_graph_storage.clone(),
-            ))));
+    pub fn new_stroke_postprocess_graph(&self) -> (usize, Arc<RwLock<Graph>>) {
+        let mut graphs = self.stroke_postprocess_graphs.write();
+        let graph = Arc::new(RwLock::new(Graph::new(
+            self.postprocess_graph_storage.clone(),
+        )));
+        graphs.push(graph.clone());
+        (graphs.len() - 1, graph)
     }
 
     pub fn external_vars(&self) -> &Arc<ExternalVariableStorage> {
         &self.external_vars
+    }
+
+    pub fn main_graph_storage(&self) -> &Arc<GraphDynamicInstancesStorage> {
+        &self.main_graph_storage
     }
 
     pub fn metadata(&self) -> RwLockReadGuard<'_, BrushPresetMetadata> {

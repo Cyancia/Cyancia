@@ -127,8 +127,24 @@ impl Program for Application {
             panic!("Root view needs to be set.")
         };
 
-        let task = rt.wm.open_window(root_view);
-        (rt, task.discard())
+        let window_task = rt.wm.open_window(root_view);
+        let deadlock_detect_task = Task::future(async {
+            loop {
+                let deadlocks = parking_lot::deadlock::check_deadlock();
+                for (i_dl, threads) in deadlocks.into_iter().enumerate() {
+                    log::error!("#{} Deadlock detected", i_dl);
+
+                    for (it, t) in threads.into_iter().enumerate() {
+                        log::error!("Thread {}:", it);
+                        log::error!("{:#?}", t.backtrace());
+                    }
+                }
+            }
+        });
+        (
+            rt,
+            Task::batch([window_task.discard(), deadlock_detect_task.discard()]),
+        )
     }
 
     fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
@@ -208,7 +224,7 @@ impl Runtime {
         self
     }
 
-    pub fn services(&self) -> &Services {
+    pub fn services(&self) -> &Arc<Services> {
         &self.services
     }
 

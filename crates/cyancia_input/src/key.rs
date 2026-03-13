@@ -455,7 +455,7 @@ pub mod serde_impl {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct KeyboardState {
     pressed: SmallVec<[key::Code; 8]>,
 }

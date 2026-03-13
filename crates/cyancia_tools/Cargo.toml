@@ -13,3 +13,5 @@ cyancia_utils.workspace = true
 cyancia_runtime.workspace = true
 uuid.workspace = true
 log.workspace = true
+iced_runtime.workspace = true
+futures.workspace = true

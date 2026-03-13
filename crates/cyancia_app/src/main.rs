@@ -71,7 +71,7 @@ fn main() {
     {
         let mut rt = app.runtime_mut();
 
-        let main_view = MainView::new(rt.services());
+        let main_view = MainView::new(rt.services().clone());
         let brush_editor_view = BrushEditorView::from_runtime(rt.services());
         rt.window_manager_mut().set_root_view(main_view.id());
         rt.window_manager_mut().register_view(main_view);

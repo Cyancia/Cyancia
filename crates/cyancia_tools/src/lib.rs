@@ -7,7 +7,12 @@ use cyancia_input::{
 };
 use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::Service};
 use cyancia_utils::wrapper;
+use futures::{
+    SinkExt,
+    channel::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender},
+};
 use iced_core::{Point, keyboard::key, mouse};
+use iced_runtime::Task;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
@@ -56,108 +61,109 @@ pub trait ToolFunction: Send + Sync + 'static {
 
 #[derive(Default)]
 pub struct ToolFunctionRegistry {
-    spawners: Vec<Box<dyn Fn() -> Box<dyn ToolFunction> + Send + Sync>>,
+    spawners: HashMap<ToolId, Box<dyn Fn() -> Box<dyn ToolFunction> + Send + Sync>>,
 }
 
 impl ToolFunctionRegistry {
     pub fn register<T: ToolFunction + Default>(&mut self) {
-        self.spawners.push(Box::new(|| Box::new(T::default())));
-    }
-
-    pub fn create(&self) -> Vec<Box<dyn ToolFunction>> {
-        self.spawners.iter().map(|spawner| spawner()).collect()
+        self.spawners
+            .insert(T::default().id(), Box::new(|| Box::new(T::default())));
     }
 }
 
 impl Service for ToolFunctionRegistry {}
 
-struct ToolProxyState {
+struct State {
     last: ToolId,
     current: ToolId,
     last_switch: Instant,
+    tx: UnboundedSender<ToolEvent>,
 }
 
 pub struct ToolProxy {
-    state: ToolProxyState,
-    tools: HashMap<ToolId, Box<dyn ToolFunction>>,
+    state: Option<State>,
 }
 
 impl ToolProxy {
-    pub fn new(initial: ToolId, collection: &ToolFunctionRegistry) -> Self {
-        Self {
-            state: ToolProxyState {
-                last: initial.clone(),
-                current: initial,
-                last_switch: Instant::now(),
-            },
-            tools: collection
-                .create()
-                .into_iter()
-                .map(|tool| (tool.id(), tool))
-                .collect(),
-        }
+    pub fn new() -> Self {
+        Self { state: None }
     }
 
-    pub fn switch_tool(&mut self, tool: ToolId, services: &Services) {
-        if let Some(current_tool) = self.tools.get_mut(&self.state.current) {
-            current_tool.deactivate(services);
-        }
+    pub fn switch_tool(&mut self, tool: ToolId, services: Arc<Services>) -> Task<()> {
+        let last = match self.state.take() {
+            Some(st) => {
+                st.tx.unbounded_send(ToolEvent::Deactivate).unwrap();
+                st.tx.close_channel();
+                st.current
+            }
+            None => tool.clone(),
+        };
 
-        self.state.last = self.state.current.clone();
-        self.state.current = tool;
-        self.state.last_switch = Instant::now();
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        self.state = Some(State {
+            last,
+            current: tool.clone(),
+            last_switch: Instant::now(),
+            tx,
+        });
 
-        if let Some(new_tool) = self.tools.get_mut(&self.state.current) {
-            new_tool.activate(services);
+        let registry = services.service::<ToolFunctionRegistry>();
+        if let Some(new_tool) = registry.spawners.get(&tool) {
+            Task::future(run_tool_function(services, rx, new_tool()))
         } else {
             log::error!(
                 "Unable to switch to tool {:?}: not found in registry.",
-                self.state.current
+                tool
             );
+            Task::none()
         }
     }
 
-    pub fn mouse_pressed(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &Services,
-    ) {
-        if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.begin(keyboard, mouse, services);
+    pub fn mouse_pressed(&self, keyboard: &KeyboardState, mouse: &PressedMouseState) {
+        if let Some(state) = self.state.as_ref() {
+            state
+                .tx
+                .unbounded_send(ToolEvent::Begin {
+                    keyboard: keyboard.clone(),
+                    mouse: mouse.clone(),
+                })
+                .unwrap();
         }
     }
 
-    pub fn mouse_moved_pressing(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &Services,
-    ) {
-        if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.update(keyboard, mouse, services);
+    pub fn mouse_moved_pressing(&self, keyboard: &KeyboardState, mouse: &PressedMouseState) {
+        if let Some(state) = self.state.as_ref() {
+            state
+                .tx
+                .unbounded_send(ToolEvent::Update {
+                    keyboard: keyboard.clone(),
+                    mouse: mouse.clone(),
+                })
+                .unwrap();
         }
     }
 
-    pub fn mouse_moved_hovering(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &HoverMouseState,
-        services: &Services,
-    ) {
-        if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.hover(keyboard, mouse, services);
+    pub fn mouse_moved_hovering(&self, keyboard: &KeyboardState, mouse: &HoverMouseState) {
+        if let Some(state) = self.state.as_ref() {
+            state
+                .tx
+                .unbounded_send(ToolEvent::Hover {
+                    keyboard: keyboard.clone(),
+                    mouse: mouse.clone(),
+                })
+                .unwrap();
         }
     }
 
-    pub fn mouse_released(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &Services,
-    ) {
-        if let Some(tool) = self.tools.get_mut(&self.state.current) {
-            tool.end(keyboard, mouse, services);
+    pub fn mouse_released(&self, keyboard: &KeyboardState, mouse: &PressedMouseState) {
+        if let Some(state) = self.state.as_ref() {
+            state
+                .tx
+                .unbounded_send(ToolEvent::End {
+                    keyboard: keyboard.clone(),
+                    mouse: mouse.clone(),
+                })
+                .unwrap();
         }
     }
 }
@@ -183,14 +189,48 @@ impl ToolProxies {
         self.proxies.get_mut(id).unwrap()
     }
 
-    pub fn add(&mut self, collection: &ToolFunctionRegistry) -> ToolProxyId {
+    pub fn add(&mut self, tool_proxy: ToolProxy) -> ToolProxyId {
         let id = ToolProxyId::new(Uuid::new_v4());
-        self.proxies.insert(
-            id,
-            // TODO don't hard code this
-            ToolProxy::new(ToolId::new("pan_tool".into()), collection),
-        );
+        self.proxies.insert(id, tool_proxy);
 
         id
+    }
+}
+
+pub enum ToolEvent {
+    Activate,
+    Hover {
+        keyboard: KeyboardState,
+        mouse: HoverMouseState,
+    },
+    Begin {
+        keyboard: KeyboardState,
+        mouse: PressedMouseState,
+    },
+    Update {
+        keyboard: KeyboardState,
+        mouse: PressedMouseState,
+    },
+    End {
+        keyboard: KeyboardState,
+        mouse: PressedMouseState,
+    },
+    Deactivate,
+}
+
+async fn run_tool_function(
+    services: Arc<Services>,
+    mut rx: UnboundedReceiver<ToolEvent>,
+    mut tool: Box<dyn ToolFunction>,
+) {
+    while let Ok(ev) = rx.recv().await {
+        match ev {
+            ToolEvent::Activate => tool.activate(&services),
+            ToolEvent::Hover { keyboard, mouse } => tool.hover(&keyboard, &mouse, &services),
+            ToolEvent::Begin { keyboard, mouse } => tool.begin(&keyboard, &mouse, &services),
+            ToolEvent::Update { keyboard, mouse } => tool.update(&keyboard, &mouse, &services),
+            ToolEvent::End { keyboard, mouse } => tool.end(&keyboard, &mouse, &services),
+            ToolEvent::Deactivate => tool.deactivate(&services),
+        }
     }
 }

@@ -15,9 +15,9 @@ use cyancia_input::action::ActionManifestCollection;
 use cyancia_runtime::{
     Services,
     service::FromRuntime,
-    windows::{WindowView, WindowViewId},
+    windows::{WindowCommandBuffer, WindowView, WindowViewId},
 };
-use cyancia_tools::{ToolFunctionRegistry, ToolProxies};
+use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
 
 use glam::UVec2;
 use iced::{
@@ -38,21 +38,20 @@ pub enum MainViewMessage {
 }
 
 impl MainView {
-    pub fn new(services: &Services) -> Self {
+    pub fn new(services: Arc<Services>) -> Self {
         let actions = services
             .service::<ActionManifestCollection>()
             .subset_for_view("main_view");
+
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
-            tool_proxy_id: services
-                .service_mut::<ToolProxies>()
-                .add(&services.service::<ToolFunctionRegistry>()),
+            tool_proxy_id: services.service_mut::<ToolProxies>().add(ToolProxy::new()),
             image: Arc::new(CImage::new(UVec2 { x: 1024, y: 768 })),
             transform: Default::default(),
         };
         services
             .service_mut::<CanvasRenderers>()
-            .insert(canvas.id, CanvasRenderer::from_runtime(services));
+            .insert(canvas.id, CanvasRenderer::from_runtime(&services));
         // TODO this should not be done here
         services.service::<GpuTileStorage>().declare_layer(
             canvas.image.root().id(),

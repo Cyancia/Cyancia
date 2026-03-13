@@ -1,14 +1,12 @@
-use std::{any::Any, cell::UnsafeCell, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use async_trait::async_trait;
 use cyancia_input::{
     action::{Action, ActionId, ActionManifestCollection},
     key::{KeySequence, KeyboardState},
     mouse::PressedMouseState,
 };
-use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::Service};
-use iced_core::Point;
-use parking_lot::RwLock;
+use cyancia_runtime::{Application, Services, plugin::Plugin, service::Service};
+use iced_runtime::Task;
 
 use crate::{
     brush::OpenBrushEditorAction,
@@ -51,10 +49,9 @@ impl ActionAppExt for Application {
     }
 }
 
-#[async_trait]
 pub trait ActionFunction: Send + Sync + 'static {
     fn id(&self) -> ActionId;
-    async fn trigger(&self, services: Arc<Services>);
+    fn trigger(&self, services: Arc<Services>) -> Task<()>;
 }
 
 #[derive(Default)]

@@ -37,6 +37,7 @@ use iced_core::{
 };
 use iced_runtime::{Task, futures::Subscription};
 use iced_widget::{Column, button, column, container, row, space, text, text_input};
+use parking_lot::RwLock;
 use uuid::Uuid;
 use wgpu::{Device, Queue};
 
@@ -150,8 +151,22 @@ impl FromRuntime for BrushEditorView {
 
 #[derive(Clone)]
 pub enum BrushPresetGraph {
-    Main,
-    StrokePostprocess(usize),
+    Main {
+        graph: Arc<RwLock<Graph>>,
+    },
+    StrokePostprocess {
+        index: usize,
+        graph: Arc<RwLock<Graph>>,
+    },
+}
+
+impl BrushPresetGraph {
+    pub fn graph(&self) -> Arc<RwLock<Graph>> {
+        match self {
+            BrushPresetGraph::Main { graph } => graph.clone(),
+            BrushPresetGraph::StrokePostprocess { graph, .. } => graph.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -262,44 +277,49 @@ impl WindowView for BrushEditorView {
 
             match selected {
                 Selected::Brush(brush) => {
-                    let stroke_graphs = brush.instance.stroke_postprocess_graphs();
-                    let graph = match brush.viewing_graph {
-                        BrushPresetGraph::Main => brush.instance.main_graph_read(),
-                        BrushPresetGraph::StrokePostprocess(index) => {
-                            stroke_graphs.get(index).unwrap().read()
-                        }
-                    };
-                    let graph_view =
-                        Element::new(GraphView::new(&graph)).map(BrushEditorMessage::GraphView);
+                    let graph = brush.viewing_graph.graph();
+
+                    let graph_view = Element::new(GraphView::new(&graph.read()))
+                        .map(BrushEditorMessage::GraphView);
                     // TODO: External var browser may not only be placed in editor. They're modifiable values for the user.
                     //       For example the brush size and opacity.
                     let ext_vars = external_var_view(
                         brush.instance.external_vars(),
-                        &brush.instance.main_graph_read().storage().types,
+                        &brush.instance.main_graph_storage().types,
                         self.create_new_name.clone(),
                         self.create_new_type,
                     )
                     .map(BrushEditorMessage::ExternalVarView);
 
+                    let main_graph = brush.instance.main_graph();
+                    let postprocess_graphs = brush.instance.stroke_postprocess_graphs().clone();
                     let graph_switcher = column![
                         button("New Stroke Postprocess Graph")
                             .on_press_with(|| BrushEditorMessage::CreateNewStrokePostprocessGraph),
-                        button("Main").on_press_with(|| BrushEditorMessage::SwitchToGraph(
-                            BrushPresetGraph::Main
+                        button("Main").on_press_with(move || BrushEditorMessage::SwitchToGraph(
+                            BrushPresetGraph::Main {
+                                graph: main_graph.clone()
+                            }
                         )),
                     ]
                     .push(
                         DragDropColumn::with_children(
-                            (0..brush.instance.stroke_postprocess_graphs().len()).map(|index| {
-                                Element::new(
-                                    button(text(format!("Stroke Postprocess {}", index)))
-                                        .on_press_with(move || {
-                                            BrushEditorMessage::SwitchToGraph(
-                                                BrushPresetGraph::StrokePostprocess(index),
-                                            )
-                                        }),
-                                )
-                            }),
+                            postprocess_graphs
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, graph)| {
+                                    Element::new(
+                                        button(text(format!("Stroke Postprocess {}", index)))
+                                            .on_press_with(move || {
+                                                BrushEditorMessage::SwitchToGraph(
+                                                    BrushPresetGraph::StrokePostprocess {
+                                                        index,
+                                                        graph: graph.clone(),
+                                                    },
+                                                )
+                                            }),
+                                    )
+                                }),
                         )
                         .on_drop(|ctx| {
                             Some(BrushEditorMessage::ReorderStrokePostprocessGraph {
@@ -448,12 +468,7 @@ impl WindowView for BrushEditorView {
 
                 match selected {
                     Selected::Brush(brush) => {
-                        let g = match brush.viewing_graph {
-                            BrushPresetGraph::Main => brush.instance.main_graph(),
-                            BrushPresetGraph::StrokePostprocess(index) => {
-                                brush.instance.stroke_postprocess_graph(index).unwrap()
-                            }
-                        };
+                        let g = brush.viewing_graph.graph();
                         let mut graph = g.write();
                         Self::apply_graph_view_message(&mut graph, message);
                     }
@@ -479,10 +494,11 @@ impl WindowView for BrushEditorView {
 
                 if let Some(instance) = instance {
                     let instance = Arc::new(instance);
+                    let graph = instance.main_graph();
                     self.selected = Some(Selected::Brush(SelectedBrush {
                         asset_id: Some(brush_id),
                         instance: instance.clone(),
-                        viewing_graph: BrushPresetGraph::Main,
+                        viewing_graph: BrushPresetGraph::Main { graph },
                     }));
 
                     let ctx = runtime.service::<RenderContext>();
@@ -534,16 +550,18 @@ impl WindowView for BrushEditorView {
                 self.has_unsaved_changes = true;
             }
             BrushEditorMessage::CreateNewBrushPreset => {
+                let instance = Arc::new(BrushPresetInstance::new(
+                    BrushPresetMetadata {
+                        name: "[Unnamed Brush]".to_string(),
+                    },
+                    self.texture_storage.clone(),
+                    self.function_storage.clone(),
+                ));
+                let graph = instance.main_graph();
                 self.selected = Some(Selected::Brush(SelectedBrush {
                     asset_id: None,
-                    instance: Arc::new(BrushPresetInstance::new(
-                        BrushPresetMetadata {
-                            name: "[Unnamed Brush]".to_string(),
-                        },
-                        self.texture_storage.clone(),
-                        self.function_storage.clone(),
-                    )),
-                    viewing_graph: BrushPresetGraph::Main,
+                    instance,
+                    viewing_graph: BrushPresetGraph::Main { graph },
                 }));
                 self.has_unsaved_changes = true;
             }
@@ -579,7 +597,11 @@ impl WindowView for BrushEditorView {
                     return Task::none();
                 };
 
-                brush.instance.new_stroke_postprocess_graph();
+                let (new_index, graph) = brush.instance.new_stroke_postprocess_graph();
+                brush.viewing_graph = BrushPresetGraph::StrokePostprocess {
+                    index: new_index,
+                    graph,
+                };
                 dbg!();
             }
             BrushEditorMessage::SwitchToGraph(g) => {
@@ -604,9 +626,13 @@ impl WindowView for BrushEditorView {
                 if new_index > old_index {
                     new_index -= 1;
                 }
-                let mut graphs = brush.instance.stroke_postprocess_graphs_mut();
-                let graph = graphs.remove(old_index);
-                graphs.insert(new_index, graph);
+                {
+                    let mut graphs = brush.instance.stroke_postprocess_graphs_mut();
+                    let graph = graphs.remove(old_index);
+                    graphs.insert(new_index, graph);
+                }
+                // The graph Arc itself hasn't changed, only its position in the
+                // list, so current_graph is still valid — no update needed.
             }
         }
 
