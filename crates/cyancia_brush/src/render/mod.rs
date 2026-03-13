@@ -110,18 +110,28 @@ impl BrushPresetOperator {
         self.sampler.input(input);
 
         for sample in self.sampler.drain_samples() {
+            let now = std::time::Instant::now();
             let params = GraphInputParams {
                 pen_position: sample.position,
                 draw_direction_vec: sample.draw_direction_vec,
                 draw_direction_angle: sample.draw_direction_angle,
             };
             self.renderer.draw_main(params, tiles);
+            log::info!(
+                "Draw main graph: {} ms",
+                now.elapsed().as_secs_f32() * 1000.0
+            );
         }
     }
 
     pub fn end_stroke(&mut self, tiles: &GpuTileStorage) {
+        let now = std::time::Instant::now();
         self.renderer.draw_stroke_postprocess(tiles);
         self.renderer.copy_last_surface_to_target(tiles);
+        log::info!(
+            "Draw stroke postprocess and copy: {} ms",
+            now.elapsed().as_secs_f32() * 1000.0
+        );
     }
 }
 
