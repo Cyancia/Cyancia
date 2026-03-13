@@ -18,3 +18,4 @@ iced_graphics.workspace = true
 rustc-hash.workspace = true
 parking_lot.workspace = true
 futures.workspace = true
+tokio.workspace = true

@@ -130,6 +130,7 @@ impl Program for Application {
         let window_task = rt.wm.open_window(root_view);
         let deadlock_detect_task = Task::future(async {
             loop {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 let deadlocks = parking_lot::deadlock::check_deadlock();
                 for (i_dl, threads) in deadlocks.into_iter().enumerate() {
                     log::error!("#{} Deadlock detected", i_dl);

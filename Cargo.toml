@@ -40,12 +40,15 @@ iced = { version = "0.14", features = [
     "debug",
     "canvas",
     "selector",
+    "tokio",
 ], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_beacon = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_core = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_debug = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_devtools = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_futures = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_futures = { version = "0.14", features = [
+    "tokio",
+], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_graphics = { version = "0.14", features = [
     "geometry",
 ], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
@@ -75,7 +78,7 @@ log = "0.4"
 downcast-rs = "2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 indexmap = { version = "2", features = ["serde"] }
-parking_lot = {version = "0.12", features = ["deadlock_detection"] }
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 futures = "0.3"
 bitflags = "2"
 wgpu = "27"
