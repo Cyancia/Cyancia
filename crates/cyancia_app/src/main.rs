@@ -25,8 +25,10 @@ use cyancia_tools::ToolsPlugin;
 
 fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter("info,wgpu_hal=warn")
+        .with_env_filter("info,wgpu_hal=warn,iced_winit=warn,iced_wgpu=warn")
         .init();
+
+    log::info!("Running at {}", std::env::current_dir().unwrap().display());
 
     let mut app = Application::default();
     let mut asset_bundles = Vec::<Arc<dyn ErasedAssetBundle>>::new();
@@ -35,7 +37,7 @@ fn main() {
     {
         let (standard_bundles, errs) = StandardAssetBundle::scan_bundles("assets");
         log::info!(
-            "Loaded {} asset bundles with {} errors",
+            "Loaded {} csb bundles with {} errors",
             standard_bundles.len(),
             errs.len()
         );

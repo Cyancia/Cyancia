@@ -10,17 +10,18 @@ use toml::ser::Buffer;
 use crate::{
     GraphSerializer,
     graph::{
-        Graph, GraphDynamicInstancesStorage, GraphSignature,
+        Graph, GraphResources, GraphSignature,
+        external::{ExternalVariable, ExternalVariableId, GraphExternalVariableStorage},
+        function::{GraphFunction, GraphFunctionId},
         node::{
-            GraphNodeData, GraphNodeId, StatefulGraphNode,
-            external::{ExternalVariable, ExternalVariableId},
-            function::{GraphFunction, GraphFunctionId},
+            GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
+            StatefulGraphNode,
         },
         slot::{
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
             GraphSlots,
         },
-        variable::{GraphLiteral, GraphVariable},
+        variable::{GraphLiteral, GraphTypeRegistry, GraphVariable},
     },
 };
 
@@ -28,7 +29,7 @@ pub trait GraphSerializable: Sized {
     fn to_toml(&self) -> Result<toml::Value, toml::ser::Error>;
     fn from_toml(
         value: toml::Value,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<Self, toml::de::Error>;
 }
 
@@ -39,7 +40,7 @@ impl<'de, T: Serialize + Deserialize<'de>> GraphSerializable for T {
 
     fn from_toml(
         value: toml::Value,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<Self, toml::de::Error> {
         Self::deserialize(value)
     }
@@ -57,9 +58,12 @@ pub enum GraphDeserializeError {
         expected: usize,
         found: usize,
     },
-    #[error("Unmatched output slot count on node {node:?}: expected {expected}, found {found}")]
+    #[error(
+        "Unmatched output slot count on node {node_name}({node:?}): expected {expected}, found {found}"
+    )]
     UnmatchedOutputSlotCount {
         node: GraphNodeId,
+        node_name: &'static str,
         expected: usize,
         found: usize,
     },
@@ -79,47 +83,36 @@ pub enum GraphDeserializeError {
 
 impl Graph {
     pub fn to_toml(&self) -> Result<String, anyhow::Error> {
-        let mut buf = Buffer::new();
-        self.serialize(&mut buf)?;
-        Ok(buf.to_string())
+        let graph = self.as_serialized()?;
+        Ok(toml::to_string(&graph)?)
     }
 
     pub fn from_toml(
-        storage: Arc<GraphDynamicInstancesStorage>,
         s: &str,
+        resources: GraphResources,
+        type_registry: Arc<GraphTypeRegistry>,
+        node_registry: &GraphNodeRegistry,
+        external_vars: Arc<GraphExternalVariableStorage>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
-        let deserializer = match toml::Deserializer::parse(s) {
-            Ok(x) => x,
+        let graph = match toml::from_str::<SerializableGraph>(s) {
+            Ok(g) => g,
             Err(e) => {
                 return (None, vec![GraphDeserializeError::DeserializerError(e)]);
             }
         };
-        Self::deserialize(storage, deserializer)
-    }
-
-    pub fn serialize<'a>(&self, buf: &mut Buffer) -> Result<(), anyhow::Error> {
-        let serializer = GraphSerializer::new(buf);
-        self.as_serialized()?.serialize(serializer)?;
-        Ok(())
-    }
-
-    pub fn deserialize<'de>(
-        storage: Arc<GraphDynamicInstancesStorage>,
-        deserializer: toml::Deserializer<'de>,
-    ) -> (Option<Self>, Vec<GraphDeserializeError>) {
-        let sg = match SerializableGraph::deserialize(deserializer) {
-            Ok(x) => x,
-            Err(e) => {
-                return (None, vec![GraphDeserializeError::DeserializerError(e)]);
-            }
-        };
-
-        Self::from_serialized(storage, &sg)
+        Self::from_serialized(
+            &graph,
+            resources,
+            type_registry,
+            node_registry,
+        )
     }
 
     pub fn from_serialized(
-        storage: Arc<GraphDynamicInstancesStorage>,
         serialized: &SerializableGraph,
+        resources: GraphResources,
+        type_registry: Arc<GraphTypeRegistry>,
+        node_registry: &GraphNodeRegistry,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let SerializableGraph {
             nodes,
@@ -135,7 +128,7 @@ impl Graph {
         let mut graph_outputs = HashMap::with_capacity(outputs.len());
 
         'node_loop: for ser_node in nodes {
-            let Some(node_inst) = storage.nodes.get_cloned(&ser_node.data.name) else {
+            let Some(node_inst) = node_registry.get(&ser_node.data.name) else {
                 errs.push(GraphDeserializeError::NodeNotFound(
                     ser_node.data.name.clone(),
                 ));
@@ -143,7 +136,7 @@ impl Graph {
             };
 
             let mut node = StatefulGraphNode::new(node_inst);
-            match node.deserialize_state(ser_node.state.clone(), &storage) {
+            match node.deserialize_state(ser_node.state.clone(), &type_registry) {
                 Ok(_) => {}
                 Err(e) => {
                     errs.push(GraphDeserializeError::NodeStateDeserializeError(e));
@@ -151,7 +144,10 @@ impl Graph {
                 }
             }
 
-            let raw_inputs = node.create_inputs();
+            let raw_inputs = node.create_inputs(GraphNodeCreateSlotsContext {
+                resources: &resources,
+                type_registry: &type_registry,
+            });
             if raw_inputs.len() != ser_node.inputs.len() {
                 errs.push(GraphDeserializeError::UnmatchedInputSlotCount {
                     node: ser_node.id,
@@ -170,7 +166,7 @@ impl Graph {
                 };
 
                 let type_name = default.value.ty().name();
-                let value_type_obj = match storage.types.get(type_name) {
+                let value_type_obj = match type_registry.get_type(type_name) {
                     Some(t) => t,
                     None => {
                         errs.push(GraphDeserializeError::TypeNotFound(type_name.to_string()));
@@ -199,10 +195,14 @@ impl Graph {
                 );
             }
 
-            let raw_outputs = node.create_outputs();
+            let raw_outputs = node.create_outputs(GraphNodeCreateSlotsContext {
+                resources: &resources,
+                type_registry: &type_registry,
+            });
             if raw_outputs.len() != ser_node.outputs.len() {
                 errs.push(GraphDeserializeError::UnmatchedOutputSlotCount {
                     node: ser_node.id,
+                    node_name: node.name(),
                     expected: raw_outputs.len(),
                     found: ser_node.outputs.len(),
                 });
@@ -264,9 +264,10 @@ impl Graph {
                 inputs: graph_inputs,
                 outputs: graph_outputs,
             },
-            storage,
-            cached_run_order: None,
-            cached_signature: None,
+            resources: resources.into(),
+            type_registry,
+            cached_run_order: Default::default(),
+            cached_signature: Default::default(),
         });
 
         return rs;
@@ -395,11 +396,10 @@ impl SerializableGraphLiteral {
 
     pub fn deserialize(
         &self,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<GraphLiteral, SerializableGraphLiteralError> {
-        let ty = storage
-            .types
-            .get(&self.ty)
+        let ty = type_registry
+            .get_type(&self.ty)
             .ok_or_else(|| SerializableGraphLiteralError::TypeNotFound(self.ty.clone()))?;
 
         let literal_value = ty.deserialize_literal(self.value.clone())?;
@@ -418,12 +418,12 @@ pub struct SerializableExternalVariable {
 impl SerializableExternalVariable {
     pub fn deserialize(
         &self,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<ExternalVariable, SerializableGraphLiteralError> {
         Ok(ExternalVariable {
             id: self.id,
             name: self.name.clone(),
-            value: self.value.deserialize(storage)?,
+            value: self.value.deserialize(type_registry)?,
         })
     }
 
@@ -459,9 +459,16 @@ impl SerializableGraphFunction {
 
     pub fn deserialize_func(
         &self,
-        storage: Arc<GraphDynamicInstancesStorage>,
+        type_registry: Arc<GraphTypeRegistry>,
+        node_registry: &GraphNodeRegistry,
     ) -> (Option<GraphFunction>, Vec<GraphDeserializeError>) {
-        let (maybe_graph, err) = Graph::from_serialized(storage, &self.graph);
+        let (maybe_graph, err) = Graph::from_serialized(
+            &self.graph,
+            // Graph functions are not going to reference any resources,
+            Default::default(),
+            type_registry,
+            node_registry,
+        );
 
         let func = maybe_graph.map(|graph| GraphFunction {
             id: self.id,

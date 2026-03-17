@@ -4,7 +4,6 @@ use cyancia_runtime::{Application, plugin::Plugin};
 use crate::save::SerializableGraphFunctionSerializer;
 
 pub mod editor;
-pub mod extended;
 pub mod graph;
 pub mod save;
 pub mod wgsl_std;

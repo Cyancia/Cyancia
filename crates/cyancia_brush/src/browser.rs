@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use cyancia_assets::asset::{AssetHandle, AssetId};
 use cyancia_shader_graph::graph::{
-    node::external::{ExternalVariableId, ExternalVariableStorage},
+    external::{ExternalVariableId, GraphExternalVariableStorage},
     slot::{ErasedGraphLiteralUpdateMessage, GraphInputSlotId, GraphLiteralUpdateMessage},
-    variable::GraphValueTypeStorage,
+    variable::GraphTypeRegistry,
 };
 use iced_core::{Element, Length, Theme};
 use iced_wgpu::Renderer;
@@ -50,8 +50,8 @@ pub enum ExternalVarViewMessage {
 }
 
 pub fn external_var_view<'a>(
-    storage: &ExternalVariableStorage,
-    types: &GraphValueTypeStorage,
+    storage: &GraphExternalVariableStorage,
+    types: &GraphTypeRegistry,
     create_new_name: String,
     create_new_type: Option<&'static str>,
 ) -> Element<'a, ExternalVarViewMessage, Theme, Renderer> {
@@ -84,7 +84,7 @@ pub fn external_var_view<'a>(
         row![
             pick_list(
                 types
-                    .all()
+                    .all_types()
                     .iter()
                     .filter_map(|(id, ty)| ty.wgsl_type().map(|_| *id))
                     .collect::<Vec<_>>(),

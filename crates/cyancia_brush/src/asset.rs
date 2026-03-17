@@ -3,7 +3,7 @@ use std::{
     fmt::Display,
     io::{Cursor, Read, Write},
     path::Path,
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use bevy_math::IRect;
@@ -13,26 +13,21 @@ use cyancia_assets::{
     store::AssetRegistry,
 };
 use cyancia_shader_graph::{
-    extended::extended_storage,
     graph::{
-        Graph, GraphCompileError, GraphDynamicInstancesStorage, GraphFunctionStorage,
-        node::{
-            external::{
-                ExternalNode, ExternalVariable, ExternalVariableId, ExternalVariableStorage,
-                generate_external_variable_binding,
-            },
-            function::GraphFunctionNode,
+        Graph, GraphCompileError, GraphResources,
+        external::{
+            ExternalVariableId, GraphExternalVariableStorage, generate_external_variable_binding,
         },
-        variable::GraphLiteral,
+        function::GraphFunctionStorage,
+        node::GraphNodeRegistry,
+        texture::{GraphTextureStorage, GraphTextureUsageRecorder, TextureId},
+        variable::{GraphLiteral, GraphTypeRegistry},
     },
     save::{
         GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
         SerializableGraphLiteral,
     },
-    wgsl_std::{
-        nodes::{TextureId, TextureNode, TextureStorage, TextureUsageRecorder},
-        std_storage,
-    },
+    wgsl_std::{builtin_nodes, builtin_types},
 };
 use glam::{IVec2, UVec2};
 use image::{DynamicImage, ImageFormat};
@@ -58,7 +53,7 @@ pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
     pub main_graph: SerializableGraph,
     pub stroke_postprocess_graphs: Vec<SerializableGraph>,
-    pub external_vars: HashMap<ExternalVariableId, SerializableExternalVariable>,
+    pub external_vars: Vec<SerializableExternalVariable>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -113,10 +108,17 @@ impl AssetSerializer for BrushPresetSerializer {
             .by_name("metadata.toml")?
             .read_to_string(&mut metadata_buffer)?;
         let metadata = toml::from_str::<BrushPresetMetadata>(&metadata_buffer)?;
-        let mut external_vars_buffer = String::new();
-        if let Ok(mut f) = archive.by_name("external_vars.toml") {
-            f.read_to_string(&mut external_vars_buffer)?;
-        }
+
+        let external_vars = match archive.by_name("external_vars.toml") {
+            Ok(mut f) => {
+                let mut external_vars_buffer = String::new();
+                f.read_to_string(&mut external_vars_buffer)?;
+                external_vars_buffer
+                    .parse::<toml::Value>()?
+                    .try_into::<Vec<SerializableExternalVariable>>()?
+            }
+            Err(_) => Default::default(),
+        };
 
         let mut stroke_postprocess_graphs = Vec::new();
         let files = archive
@@ -124,17 +126,13 @@ impl AssetSerializer for BrushPresetSerializer {
             .map(ToString::to_string)
             .collect::<Vec<_>>();
         for file in files {
-            if file.starts_with("stroke_postprocess/") {
+            if file.starts_with("stroke_postprocess/") && file != "stroke_postprocess/" {
                 let mut buf = String::new();
                 archive.by_name(&file)?.read_to_string(&mut buf)?;
                 let graph = toml::from_str::<SerializableGraph>(&buf)?;
                 stroke_postprocess_graphs.push(graph);
             }
         }
-
-        let external_vars = toml::from_str::<
-            HashMap<ExternalVariableId, SerializableExternalVariable>,
-        >(&external_vars_buffer)?;
 
         Ok(BrushPreset {
             metadata,
@@ -160,9 +158,11 @@ impl AssetSerializer for BrushPresetSerializer {
         let metadata_buffer = toml::to_string(&asset.metadata)?;
         zip.write_all(metadata_buffer.as_bytes())?;
 
-        zip.start_file("external_vars.toml", FileOptions::<()>::default())?;
-        let external_vars_buffer = toml::to_string(&asset.external_vars)?;
-        zip.write_all(external_vars_buffer.as_bytes())?;
+        if !asset.external_vars.is_empty() {
+            zip.start_file("external_vars.toml", FileOptions::<()>::default())?;
+            let external_vars_buffer = toml::Value::try_from(&asset.external_vars)?.to_string();
+            zip.write_all(external_vars_buffer.as_bytes())?;
+        }
 
         for (i, graph) in asset.stroke_postprocess_graphs.iter().enumerate() {
             zip.start_file(
@@ -284,7 +284,7 @@ impl Display for CompiledBrushGraph {
 pub struct CompiledBrushPreset {
     pub main_graph: CompiledBrushGraph,
     pub stroke_postprocess_graphs: Vec<CompiledBrushGraph>,
-    pub texture_usages: Vec<TextureId>,
+    pub texture_usage: Vec<TextureId>,
 }
 
 impl Display for CompiledBrushPreset {
@@ -303,7 +303,7 @@ impl Display for CompiledBrushPreset {
             )?;
         }
         writeln!(f, "-------------- Texture usages --------------")?;
-        for usage in &self.texture_usages {
+        for usage in &self.texture_usage {
             writeln!(f, "  - {}", usage)?;
         }
         Ok(())
@@ -311,93 +311,58 @@ impl Display for CompiledBrushPreset {
 }
 
 pub struct BrushPresetInstance {
-    metadata: RwLock<BrushPresetMetadata>,
+    pub metadata: BrushPresetMetadata,
 
-    main_graph: Arc<RwLock<Graph>>,
-    stroke_postprocess_graphs: RwLock<Vec<Arc<RwLock<Graph>>>>,
-
-    external_vars: Arc<ExternalVariableStorage>,
-
-    main_graph_storage: Arc<GraphDynamicInstancesStorage>,
-    postprocess_graph_storage: Arc<GraphDynamicInstancesStorage>,
-    texture_usage_recorder: Arc<TextureUsageRecorder>,
+    pub main_graph: Graph,
+    pub stroke_postprocess_graphs: Vec<Graph>,
+    pub graph_resources: GraphResources,
 }
 
 impl BrushPresetInstance {
-    pub fn new(
-        metadata: BrushPresetMetadata,
-        texture_storage: Arc<TextureStorage>,
-        function_storage: Arc<GraphFunctionStorage>,
-    ) -> Self {
-        let external_vars = Arc::new(ExternalVariableStorage::default());
-        let texture_usage_recorder = Arc::new(TextureUsageRecorder::default());
-
-        let main_graph_storage = Arc::new(create_main_graph_storage(
-            external_vars.clone(),
-            texture_storage.clone(),
-            texture_usage_recorder.clone(),
-            function_storage.clone(),
-        ));
-        let postprocess_graph_storage = Arc::new(create_postprocess_graph_storage(
-            external_vars.clone(),
-            texture_storage.clone(),
-            texture_usage_recorder.clone(),
-            function_storage.clone(),
-        ));
-
+    pub fn new(metadata: BrushPresetMetadata, resources: GraphResources) -> Self {
         Self {
-            metadata: RwLock::new(metadata),
-            main_graph: Arc::new(RwLock::new(Graph::new(main_graph_storage.clone()))),
-            stroke_postprocess_graphs: RwLock::new(Vec::new()),
-            main_graph_storage,
-            postprocess_graph_storage,
-            external_vars: Arc::new(ExternalVariableStorage::default()),
-            texture_usage_recorder,
+            metadata,
+            main_graph: Graph::new(resources.clone(), MAIN_GRAPH_TYPES.clone()),
+            stroke_postprocess_graphs: Vec::new(),
+            graph_resources: resources,
         }
     }
 
     pub fn from_asset(
         preset: &BrushPreset,
-        texture_storage: Arc<TextureStorage>,
-        function_storage: Arc<GraphFunctionStorage>,
+        textures: Arc<GraphTextureStorage>,
+        functions: Arc<GraphFunctionStorage>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
-        let texture_usage_recorder = Arc::new(TextureUsageRecorder::default());
-
-        let main_graph_storage = Arc::new(create_main_graph_storage(
-            Default::default(),
-            texture_storage.clone(),
-            texture_usage_recorder.clone(),
-            function_storage.clone(),
-        ));
-
         let external_vars = preset
             .external_vars
             .iter()
-            .map(|(id, var)| {
-                // TODO Err handling
-                (
-                    id.clone(),
-                    Arc::new(var.deserialize(&main_graph_storage).unwrap()),
-                )
+            .filter_map(|var| {
+                var.deserialize(MAIN_GRAPH_TYPES.as_ref())
+                    .inspect_err(|err| {
+                        log::error!(
+                            "Error deserializing external variable '{}': {}",
+                            var.name,
+                            err
+                        );
+                    })
+                    .ok()
             })
-            .collect::<HashMap<_, _>>();
-        let external_vars = Arc::new(ExternalVariableStorage::from_hashmap(external_vars));
-        let main_graph_storage = Arc::new(create_main_graph_storage(
-            external_vars.clone(),
-            texture_storage.clone(),
-            texture_usage_recorder.clone(),
-            function_storage.clone(),
-        ));
-        let postprocess_graph_storage = Arc::new(create_postprocess_graph_storage(
-            external_vars.clone(),
-            texture_storage.clone(),
-            texture_usage_recorder.clone(),
-            function_storage.clone(),
-        ));
+            .collect::<Vec<_>>();
+        let external_vars = Arc::new(GraphExternalVariableStorage::new(external_vars));
+        let resources = GraphResources {
+            textures,
+            functions,
+            external_vars: external_vars.clone(),
+        };
 
         let mut errors = Vec::new();
         let main_graph = {
-            let (g, e) = Graph::from_serialized(main_graph_storage.clone(), &preset.main_graph);
+            let (g, e) = Graph::from_serialized(
+                &preset.main_graph,
+                resources.clone(),
+                MAIN_GRAPH_TYPES.clone(),
+                MAIN_GRAPH_NODES.as_ref(),
+            );
             errors.extend(e);
             match g {
                 Some(g) => g,
@@ -408,50 +373,46 @@ impl BrushPresetInstance {
         let mut stroke_postprocess_graphs =
             Vec::with_capacity(preset.stroke_postprocess_graphs.len());
         for serialized in &preset.stroke_postprocess_graphs {
-            let (g, e) = Graph::from_serialized(postprocess_graph_storage.clone(), serialized);
+            let (g, e) = Graph::from_serialized(
+                serialized,
+                resources.clone(),
+                STROKE_POSTPROCESS_GRAPH_TYPES.clone(),
+                STROKE_POSTPROCESS_GRAPH_NODES.as_ref(),
+            );
             errors.extend(e);
             match g {
-                Some(g) => stroke_postprocess_graphs.push(Arc::new(RwLock::new(g))),
+                Some(g) => stroke_postprocess_graphs.push(g),
                 None => return (None, errors),
             }
         }
 
         (
             Some(Self {
-                metadata: RwLock::new(preset.metadata.clone()),
-                main_graph: Arc::new(RwLock::new(main_graph)),
-                stroke_postprocess_graphs: RwLock::new(stroke_postprocess_graphs),
-                external_vars,
-                main_graph_storage,
-                postprocess_graph_storage,
-                texture_usage_recorder,
+                metadata: preset.metadata.clone(),
+                main_graph,
+                stroke_postprocess_graphs,
+                graph_resources: resources,
             }),
             errors,
         )
     }
 
     pub fn as_asset(&self) -> anyhow::Result<BrushPreset> {
-        let main_graph = self.main_graph.read().as_serialized()?;
+        let main_graph = self.main_graph.as_serialized()?;
         let stroke_postprocess_graphs = self
             .stroke_postprocess_graphs
-            .read()
             .iter()
-            .map(|g| g.read().as_serialized())
+            .map(|g| g.as_serialized())
             .collect::<anyhow::Result<Vec<_>>>()?;
         let external_vars = self
-            .external_vars
+            .external_vars()
             .all()
             .iter()
-            .map(|(id, value)| {
-                Result::<_, toml::ser::Error>::Ok((
-                    *id,
-                    SerializableExternalVariable::serialize(value.as_ref())?,
-                ))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
+            .map(|entry| SerializableExternalVariable::serialize(entry.value()))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(BrushPreset {
-            metadata: self.metadata.read().clone(),
+            metadata: self.metadata.clone(),
             main_graph,
             stroke_postprocess_graphs,
             external_vars,
@@ -462,27 +423,29 @@ impl BrushPresetInstance {
         &self,
         mut existing_binding_count: u32,
     ) -> Result<CompiledBrushPreset, anyhow::Error> {
-        self.texture_usage_recorder.reset();
-
         let mut external_variable_bindings = String::new();
-        for var in self.external_vars.all().values() {
+        for entry in self.external_vars().all().iter() {
             external_variable_bindings.extend(
-                generate_external_variable_binding(0, existing_binding_count, var.as_ref()).chars(),
+                generate_external_variable_binding(0, existing_binding_count, entry.value())
+                    .chars(),
             );
             existing_binding_count += 1;
         }
 
+        let mut texture_usage = GraphTextureUsageRecorder::default();
         let main_graph = compile(
-            &mut self.main_graph.write(),
+            &self.main_graph,
+            &mut texture_usage,
             &external_variable_bindings,
             false,
         )?;
-        let stroke_postprocess_graphs = self.stroke_postprocess_graphs.write();
+
         let mut compiled_stroke_postprocess_graphs =
-            Vec::with_capacity(stroke_postprocess_graphs.len());
-        for graph in stroke_postprocess_graphs.iter() {
+            Vec::with_capacity(self.stroke_postprocess_graphs.len());
+        for graph in self.stroke_postprocess_graphs.iter() {
             compiled_stroke_postprocess_graphs.push(compile(
-                &mut graph.write(),
+                graph,
+                &mut texture_usage,
                 &external_variable_bindings,
                 true,
             )?);
@@ -491,72 +454,40 @@ impl BrushPresetInstance {
         Ok(CompiledBrushPreset {
             main_graph,
             stroke_postprocess_graphs: compiled_stroke_postprocess_graphs,
-            texture_usages: self
-                .texture_usage_recorder
-                .get_usage()
-                .keys()
-                .cloned()
-                .collect(),
+            texture_usage: texture_usage.used_textures_ordered(),
         })
     }
 
-    pub fn main_graph(&self) -> Arc<RwLock<Graph>> {
-        self.main_graph.clone()
+    pub fn new_stroke_postprocess_graph(&mut self) -> usize {
+        let graph = Graph::new(
+            self.graph_resources.clone(),
+            STROKE_POSTPROCESS_GRAPH_TYPES.clone(),
+        );
+        self.stroke_postprocess_graphs.push(graph);
+        self.stroke_postprocess_graphs.len() - 1
     }
 
-    pub fn main_graph_read(&self) -> RwLockReadGuard<'_, Graph> {
-        self.main_graph.read()
+    pub fn external_vars(&self) -> &Arc<GraphExternalVariableStorage> {
+        &self.graph_resources.external_vars
     }
 
-    pub fn main_graph_mut(&self) -> RwLockWriteGuard<'_, Graph> {
-        self.main_graph.write()
+    pub fn textures(&self) -> &Arc<GraphTextureStorage> {
+        &self.graph_resources.textures
     }
 
-    pub fn stroke_postprocess_graphs(&self) -> RwLockReadGuard<'_, Vec<Arc<RwLock<Graph>>>> {
-        self.stroke_postprocess_graphs.read()
-    }
-
-    pub fn stroke_postprocess_graphs_mut(&self) -> RwLockWriteGuard<'_, Vec<Arc<RwLock<Graph>>>> {
-        self.stroke_postprocess_graphs.write()
-    }
-
-    pub fn stroke_postprocess_graph(&self, index: usize) -> Option<Arc<RwLock<Graph>>> {
-        self.stroke_postprocess_graphs.read().get(index).cloned()
-    }
-
-    pub fn new_stroke_postprocess_graph(&self) -> (usize, Arc<RwLock<Graph>>) {
-        let mut graphs = self.stroke_postprocess_graphs.write();
-        let graph = Arc::new(RwLock::new(Graph::new(
-            self.postprocess_graph_storage.clone(),
-        )));
-        graphs.push(graph.clone());
-        (graphs.len() - 1, graph)
-    }
-
-    pub fn external_vars(&self) -> &Arc<ExternalVariableStorage> {
-        &self.external_vars
-    }
-
-    pub fn main_graph_storage(&self) -> &Arc<GraphDynamicInstancesStorage> {
-        &self.main_graph_storage
-    }
-
-    pub fn metadata(&self) -> RwLockReadGuard<'_, BrushPresetMetadata> {
-        self.metadata.read()
-    }
-
-    pub fn metadata_mut(&self) -> RwLockWriteGuard<'_, BrushPresetMetadata> {
-        self.metadata.write()
+    pub fn functions(&self) -> &Arc<GraphFunctionStorage> {
+        &self.graph_resources.functions
     }
 }
 
 fn compile(
-    graph: &mut Graph,
+    graph: &Graph,
+    texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
     is_postprocessing: bool,
 ) -> anyhow::Result<CompiledBrushGraph> {
     let template = include_str!("render/brush_template.wesl");
-    let (_, shader) = graph.compile(Vec::new(), Default::default())?;
+    let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
     let shader = template
         .replace("//CODEGENFLAG_COMPILED_GRAPH", &shader)
         .replace(
@@ -602,69 +533,60 @@ fn compile(
     })
 }
 
-fn create_main_graph_storage(
-    external_vars: Arc<ExternalVariableStorage>,
-    texture_storage: Arc<TextureStorage>,
-    texture_usage_recorder: Arc<TextureUsageRecorder>,
-    function_storage: Arc<GraphFunctionStorage>,
-) -> GraphDynamicInstancesStorage {
-    let mut storage = GraphDynamicInstancesStorage::default();
-    storage.merge(std_storage());
-    storage.merge(extended_storage());
+pub const MAIN_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(main_graph_types);
+pub const MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> = LazyLock::new(main_graph_nodes);
+pub const STROKE_POSTPROCESS_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> =
+    LazyLock::new(stroke_postprocess_graph_types);
+pub const STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+    LazyLock::new(stroke_postprocess_graph_nodes);
 
-    storage.nodes.register::<PenPositionNode>();
-    storage.nodes.register::<DrawDirectionNode>();
-    storage.nodes.register::<PixelPositionNode>();
-    storage.nodes.register::<OutputWithinMaskNode>();
-    storage.nodes.register::<OutputWithinBoundsNode>();
-    storage.nodes.register::<PasteTextureNode>();
-    storage.nodes.register::<BlendColorNode>();
-    storage.nodes.register::<LayerPixelColorNode>();
-    storage.nodes.register::<CurrentPixelColorNode>();
+fn main_graph_types() -> Arc<GraphTypeRegistry> {
+    let mut types = GraphTypeRegistry::default();
+    types.merge(builtin_types());
 
-    storage
-        .nodes
-        .register_non_default(GraphFunctionNode::new(function_storage.clone()));
-    storage
-        .nodes
-        .register_non_default(ExternalNode::new(external_vars));
-    storage
-        .nodes
-        .register_non_default(TextureNode::new(texture_storage, texture_usage_recorder));
-    storage
+    types.into()
 }
 
-fn create_postprocess_graph_storage(
-    external_vars: Arc<ExternalVariableStorage>,
-    texture_storage: Arc<TextureStorage>,
-    texture_usage_recorder: Arc<TextureUsageRecorder>,
-    function_storage: Arc<GraphFunctionStorage>,
-) -> GraphDynamicInstancesStorage {
-    let mut storage = GraphDynamicInstancesStorage::default();
-    storage.merge(std_storage());
-    storage.merge(extended_storage());
+fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
+    let mut nodes = GraphNodeRegistry::default();
+    nodes.merge(builtin_nodes());
 
-    storage.nodes.register::<PenPositionNode>();
-    storage.nodes.register::<DrawDirectionNode>();
-    storage.nodes.register::<PixelPositionNode>();
-    storage.nodes.register::<OutputWithinMaskNode>();
-    storage.nodes.register::<OutputWithinBoundsNode>();
-    storage.nodes.register::<PasteTextureNode>();
-    storage.nodes.register::<BlendColorNode>();
-    storage.nodes.register::<LayerPixelColorNode>();
-    storage.nodes.register::<CurrentPixelColorNode>();
-    storage.nodes.register::<StrokeBoundsNode>();
+    nodes.register::<PenPositionNode>();
+    nodes.register::<DrawDirectionNode>();
+    nodes.register::<PixelPositionNode>();
+    nodes.register::<OutputWithinMaskNode>();
+    nodes.register::<OutputWithinBoundsNode>();
+    nodes.register::<PasteTextureNode>();
+    nodes.register::<BlendColorNode>();
+    nodes.register::<LayerPixelColorNode>();
+    nodes.register::<CurrentPixelColorNode>();
 
-    storage
-        .nodes
-        .register_non_default(GraphFunctionNode::new(function_storage.clone()));
-    storage
-        .nodes
-        .register_non_default(ExternalNode::new(external_vars));
-    storage
-        .nodes
-        .register_non_default(TextureNode::new(texture_storage, texture_usage_recorder));
-    storage
+    nodes.into()
+}
+
+fn stroke_postprocess_graph_types() -> Arc<GraphTypeRegistry> {
+    let mut types = GraphTypeRegistry::default();
+    types.merge(builtin_types());
+
+    types.into()
+}
+
+fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
+    let mut nodes = GraphNodeRegistry::default();
+    nodes.merge(builtin_nodes());
+
+    nodes.register::<PenPositionNode>();
+    nodes.register::<DrawDirectionNode>();
+    nodes.register::<PixelPositionNode>();
+    nodes.register::<OutputWithinMaskNode>();
+    nodes.register::<OutputWithinBoundsNode>();
+    nodes.register::<PasteTextureNode>();
+    nodes.register::<BlendColorNode>();
+    nodes.register::<LayerPixelColorNode>();
+    nodes.register::<CurrentPixelColorNode>();
+    nodes.register::<StrokeBoundsNode>();
+
+    nodes.into()
 }
 
 #[derive(Debug, Clone)]

@@ -14,12 +14,10 @@ use cyancia_image::{
 use cyancia_input::mouse::PressedMouseState;
 use cyancia_math::number::LerpAngle;
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
-use cyancia_shader_graph::{
-    graph::node::external::generate_external_variable_binding,
-    wgsl_std::nodes::{TextureId, TextureUsageRecorder},
-};
+use cyancia_shader_graph::graph::texture::TextureId;
 use encase::ShaderType;
 use glam::{IVec2, IVec4, UVec2, Vec2, Vec4Swizzles};
+use parking_lot::RwLock;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use uuid::Uuid;
 use wesl::{VirtualResolver, Wesl};
@@ -54,13 +52,17 @@ pub const STROKE_INTERMEDIATE_SURFACES: [LayerId; 2] =
 const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 
 pub struct BrushPresetOperator {
-    instance: Arc<BrushPresetInstance>,
+    instance: Arc<RwLock<BrushPresetInstance>>,
     renderer: BrushPresetRenderer,
     sampler: StrokePenInputSampler,
 }
 
 impl BrushPresetOperator {
-    pub fn new(instance: Arc<BrushPresetInstance>, device: Arc<Device>, queue: Arc<Queue>) -> Self {
+    pub fn new(
+        instance: Arc<RwLock<BrushPresetInstance>>,
+        device: Arc<Device>,
+        queue: Arc<Queue>,
+    ) -> Self {
         let renderer = BrushPresetRenderer::new(device, queue);
         Self {
             instance,
@@ -101,9 +103,10 @@ impl BrushPresetOperator {
         tiles.clear_layer(STROKE_INTERMEDIATE_SURFACE_B);
 
         // TODO: Conditional reinitialize, this is kinda expensive.
+        let instance = self.instance.read();
         self.renderer
-            .initialize(&mut self.instance, assets, target_layer, tiles);
-        self.renderer.prepare(&mut self.instance);
+            .initialize(&instance, assets, target_layer, tiles);
+        self.renderer.prepare(&instance);
     }
 
     pub fn update_stroke(&mut self, input: PenInputSample, tiles: &GpuTileStorage) {
@@ -304,7 +307,7 @@ impl BrushPresetRenderer {
         // Prepare referenced textures
 
         let mut referenced_textures = Vec::new();
-        for id in compiled_preset.texture_usages {
+        for id in compiled_preset.texture_usage {
             if id == TextureId::NULL {
                 referenced_textures
                     .push(self.empty_texture.texture.create_view(&Default::default()));
@@ -863,7 +866,7 @@ impl BrushPresetRenderer {
 
     pub fn prepare(&mut self, brush: &BrushPresetInstance) {
         let mut external_var_buffers = Vec::new();
-        for var in brush.external_vars().all().values() {
+        for var in brush.external_vars().all().iter() {
             let buffer = var.value.try_write_into_shader_buffer().unwrap();
             let gpu_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
                 label: Some("external variable buffer"),

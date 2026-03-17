@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::{HashMap, hash_map::Entry},
+    collections::{BTreeMap, HashMap, hash_map::Entry},
     convert::identity,
     sync::Arc,
 };
@@ -17,19 +17,17 @@ use crate::{
     GraphRenderer, GraphTheme,
     editor::slot::{input_slot, output_slot},
     graph::{
-        GraphDynamicInstancesStorage, GraphSignature, GraphVarIdentGenerator,
+        GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
             GraphSlots,
         },
-        variable::{GraphLiteralValue, GraphVariable},
+        texture::{GraphTextureStorage, GraphTextureUsageRecorder},
+        variable::{GraphLiteralValue, GraphTypeRegistry, GraphVariable},
     },
     save::GraphSerializable,
 };
-
-pub mod external;
-pub mod function;
 
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -42,8 +40,16 @@ pub trait GraphNode: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Self::State;
     fn header_color(&self) -> Color;
-    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot>;
-    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot>;
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot>;
     fn update_signature(&self, state: &Self::State, ctx: GraphNodeUpdateSignatureContext) {}
     fn view_inputs(
         &self,
@@ -67,9 +73,9 @@ pub trait GraphNode: Send + Sync + 'static + DynClone {
     fn deserialize_state(
         &self,
         value: toml::Value,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<Self::State, toml::de::Error> {
-        Self::State::from_toml(value, storage)
+        Self::State::from_toml(value, type_registry)
     }
 }
 
@@ -83,8 +89,16 @@ pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Box<dyn Any + Send + Sync>;
     fn header_color(&self) -> Color;
-    fn create_inputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultInputSlot>;
-    fn create_outputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultOutputSlot>;
+    fn create_inputs(
+        &self,
+        state: &Box<dyn Any + Send + Sync>,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(
+        &self,
+        state: &Box<dyn Any + Send + Sync>,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot>;
     fn update_signature(
         &self,
         state: &Box<dyn Any + Send + Sync>,
@@ -120,7 +134,7 @@ pub trait ErasedGraphNode: Send + Sync + 'static + DynClone {
     fn deserialize_state(
         &self,
         value: toml::Value,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error>;
 }
 
@@ -139,18 +153,26 @@ impl<T: GraphNode> ErasedGraphNode for T {
         self.header_color()
     }
 
-    fn create_inputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        state: &Box<dyn Any + Send + Sync>,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
         let state = state
             .downcast_ref::<T::State>()
             .expect("Failed to downcast node state.");
-        self.create_inputs(state)
+        self.create_inputs(state, ctx)
     }
 
-    fn create_outputs(&self, state: &Box<dyn Any + Send + Sync>) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        state: &Box<dyn Any + Send + Sync>,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
         let state = state
             .downcast_ref::<T::State>()
             .expect("Failed to downcast node state.");
-        self.create_outputs(state)
+        self.create_outputs(state, ctx)
     }
 
     fn update_signature(
@@ -236,9 +258,9 @@ impl<T: GraphNode> ErasedGraphNode for T {
     fn deserialize_state(
         &self,
         value: toml::Value,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error> {
-        let state = self.deserialize_state(value, storage)?;
+        let state = self.deserialize_state(value, type_registry)?;
         Ok(Box::new(state))
     }
 }
@@ -298,19 +320,19 @@ impl StatefulGraphNode {
     pub fn deserialize_state(
         &mut self,
         value: toml::Value,
-        storage: &GraphDynamicInstancesStorage,
+        type_registry: &GraphTypeRegistry,
     ) -> Result<(), toml::de::Error> {
-        let state = self.data.deserialize_state(value, storage)?;
+        let state = self.data.deserialize_state(value, type_registry)?;
         self.state = state;
         Ok(())
     }
 
-    pub fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
-        self.data.create_inputs(&self.state)
+    pub fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        self.data.create_inputs(&self.state, ctx)
     }
 
-    pub fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
-        self.data.create_outputs(&self.state)
+    pub fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        self.data.create_outputs(&self.state, ctx)
     }
 
     pub fn update_signature(&self, ctx: GraphNodeUpdateSignatureContext) {
@@ -329,8 +351,8 @@ pub trait StatelessCommonGraphNode: Send + Sync + 'static + DynClone {
     fn input_slot_names(&self) -> &[&'static str];
     fn output_slot_names(&self) -> &[&'static str];
     fn header_color(&self) -> Color;
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot>;
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot>;
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot>;
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot>;
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError>;
 }
 
@@ -351,12 +373,20 @@ impl<T: StatelessCommonGraphNode> GraphNode for T {
         self.header_color()
     }
 
-    fn create_inputs(&self, _state: &Self::State) -> Vec<GraphDefaultInputSlot> {
-        self.create_inputs()
+    fn create_inputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
+        self.create_inputs(ctx)
     }
 
-    fn create_outputs(&self, _state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
-        self.create_outputs()
+    fn create_outputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        self.create_outputs(ctx)
     }
 
     fn view_inputs(
@@ -409,14 +439,16 @@ impl GraphNodeData {
         &self,
         node_id: GraphNodeId,
         slots: &GraphSlots,
-        storage: &GraphDynamicInstancesStorage,
+        resources: &GraphResources,
+        type_registry: &GraphTypeRegistry,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         self.data.view_inputs(
             node_id,
             GraphNodeInputsViewContext {
                 inputs: &self.inputs,
                 slots,
-                storage,
+                resources,
+                type_registry,
             },
         )
     }
@@ -425,14 +457,16 @@ impl GraphNodeData {
         &self,
         node_id: GraphNodeId,
         slots: &GraphSlots,
-        storage: &GraphDynamicInstancesStorage,
+        resources: &GraphResources,
+        type_registry: &GraphTypeRegistry,
     ) -> Element<'static, ErasedGraphNodeMessage, GraphTheme, GraphRenderer> {
         self.data.view_outputs(
             node_id,
             GraphNodeOutputsViewContext {
                 outputs: &self.outputs,
                 slots,
-                storage,
+                resources,
+                type_registry,
             },
         )
     }
@@ -441,23 +475,31 @@ impl GraphNodeData {
         &mut self,
         message: ErasedGraphNodeMessage,
         slots: &mut GraphSlots,
-        storage: &GraphDynamicInstancesStorage,
+        resources: &GraphResources,
+        type_registry: &GraphTypeRegistry,
     ) {
         self.data.update(
             message,
             GraphNodeUpdateContext {
                 inputs: &self.inputs,
                 slots,
-                storage,
+                resources,
+                type_registry,
             },
         );
     }
 }
 
+pub struct GraphNodeCreateSlotsContext<'a> {
+    pub resources: &'a GraphResources,
+    pub type_registry: &'a GraphTypeRegistry,
+}
+
 pub struct GraphNodeInputsViewContext<'a> {
-    inputs: &'a [GraphInputSlotId],
-    slots: &'a GraphSlots,
-    storage: &'a GraphDynamicInstancesStorage,
+    pub inputs: &'a [GraphInputSlotId],
+    pub slots: &'a GraphSlots,
+    pub resources: &'a GraphResources,
+    pub type_registry: &'a GraphTypeRegistry,
 }
 
 impl GraphNodeInputsViewContext<'_> {
@@ -490,25 +532,18 @@ impl GraphNodeInputsViewContext<'_> {
         e
     }
 
-    pub fn input_len(&self) -> usize {
-        self.inputs.len()
-    }
-
     pub fn all_inputs(&self) -> impl Iterator<Item = (&GraphInputSlotId, &GraphInputSlotData)> {
         self.inputs
             .iter()
             .filter_map(move |id| self.slots.get_input(id).map(|slot| (id, slot)))
     }
-
-    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
-        self.storage
-    }
 }
 
 pub struct GraphNodeOutputsViewContext<'a> {
-    outputs: &'a [GraphOutputSlotId],
-    slots: &'a GraphSlots,
-    storage: &'a GraphDynamicInstancesStorage,
+    pub outputs: &'a [GraphOutputSlotId],
+    pub slots: &'a GraphSlots,
+    pub resources: &'a GraphResources,
+    pub type_registry: &'a GraphTypeRegistry,
 }
 
 impl GraphNodeOutputsViewContext<'_> {
@@ -540,25 +575,18 @@ impl GraphNodeOutputsViewContext<'_> {
         e
     }
 
-    pub fn output_len(&self) -> usize {
-        self.outputs.len()
-    }
-
     pub fn all_outputs(&self) -> impl Iterator<Item = (&GraphOutputSlotId, &GraphOutputSlotData)> {
         self.outputs
             .iter()
             .filter_map(move |id| self.slots.get_output(id).map(|slot| (id, slot)))
     }
-
-    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
-        self.storage
-    }
 }
 
 pub struct GraphNodeUpdateContext<'a> {
-    inputs: &'a [GraphInputSlotId],
-    slots: &'a mut GraphSlots,
-    storage: &'a GraphDynamicInstancesStorage,
+    pub inputs: &'a [GraphInputSlotId],
+    pub slots: &'a mut GraphSlots,
+    pub resources: &'a GraphResources,
+    pub type_registry: &'a GraphTypeRegistry,
 }
 
 impl GraphNodeUpdateContext<'_> {
@@ -579,17 +607,15 @@ impl GraphNodeUpdateContext<'_> {
 
         slot.data.update(message);
     }
-
-    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
-        self.storage
-    }
 }
 
 pub struct GraphNodeUpdateSignatureContext<'a> {
     pub inputs: &'a [GraphInputSlotId],
     pub outputs: &'a [GraphOutputSlotId],
-    pub slots: &'a mut GraphSlots,
+    pub slots: &'a GraphSlots,
     pub signature: &'a mut GraphSignature,
+    pub type_registry: &'a GraphTypeRegistry,
+    pub resources: &'a GraphResources,
 }
 
 impl GraphNodeUpdateSignatureContext<'_> {
@@ -626,9 +652,11 @@ pub struct GraphNodeCodeGenContext<'a> {
     pub inputs: &'a [GraphInputSlotId],
     pub outputs: &'a [GraphOutputSlotId],
     pub graph_slots: &'a GraphSlots,
-    pub storage: &'a GraphDynamicInstancesStorage,
     pub output_slot_idents: &'a mut HashMap<GraphOutputSlotId, String>,
     pub ident_generator: &'a mut GraphVarIdentGenerator,
+    pub resources: &'a GraphResources,
+    pub type_registry: &'a GraphTypeRegistry,
+    pub texture_usage: &'a mut GraphTextureUsageRecorder,
 }
 
 impl GraphNodeCodeGenContext<'_> {
@@ -662,8 +690,7 @@ impl GraphNodeCodeGenContext<'_> {
             .ok_or(GraphNodeCodeGenError::MissingOutputSlot)?;
 
         if output_slot.data_ty.name() != slot.data.ty().name() {
-            self.storage
-                .casters
+            self.type_registry
                 .try_cast(&*output_slot.data_ty, slot.data.ty().as_ref(), ident)
                 .ok_or(GraphNodeCodeGenError::FailedToCastVariable)
         } else {
@@ -700,47 +727,6 @@ impl GraphNodeCodeGenContext<'_> {
         };
         Ok(ident)
     }
-
-    pub fn storage(&self) -> &GraphDynamicInstancesStorage {
-        self.storage
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct GraphNodesStorage {
-    nodes: IndexMap<&'static str, Box<dyn ErasedGraphNode>>,
-}
-
-impl GraphNodesStorage {
-    pub fn register<T: ErasedGraphNode + Default>(&mut self) {
-        let node = Box::new(T::default());
-        self.nodes.insert(node.name(), node);
-    }
-
-    pub fn register_non_default<T: ErasedGraphNode>(&mut self, node: T) {
-        let node = Box::new(node);
-        self.nodes.insert(node.name(), node);
-    }
-
-    pub fn get(&self, name: &str) -> Option<&Box<dyn ErasedGraphNode>> {
-        self.nodes.get(name)
-    }
-
-    pub fn get_cloned(&self, name: &str) -> Option<Box<dyn ErasedGraphNode>> {
-        Some(dyn_clone::clone_box(&**self.nodes.get(name)?))
-    }
-
-    pub fn all(&self) -> &IndexMap<&'static str, Box<dyn ErasedGraphNode>> {
-        &self.nodes
-    }
-
-    pub fn merge(&mut self, other: Self) {
-        for (name, node) in other.nodes {
-            if !self.nodes.contains_key(name) {
-                self.nodes.insert(name, node);
-            }
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -774,5 +760,29 @@ impl std::fmt::Display for ContextualGraphNodeCodeGenError {
             "Error in node {:?} of type {}: {}\nCode already generated:\n{}",
             self.node_id, self.node_title, self.err, self.code
         )
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct GraphNodeRegistry {
+    nodes: BTreeMap<&'static str, Box<dyn ErasedGraphNode>>,
+}
+
+impl GraphNodeRegistry {
+    pub fn register<T: ErasedGraphNode + Default>(&mut self) {
+        let node = Box::new(T::default());
+        self.nodes.insert(node.name(), node);
+    }
+
+    pub fn get(&self, name: &str) -> Option<Box<dyn ErasedGraphNode>> {
+        self.nodes.get(name).cloned()
+    }
+
+    pub fn all(&self) -> &BTreeMap<&'static str, Box<dyn ErasedGraphNode>> {
+        &self.nodes
+    }
+
+    pub fn merge(&mut self, other: GraphNodeRegistry) {
+        self.nodes.extend(other.nodes);
     }
 }

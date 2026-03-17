@@ -1472,6 +1472,7 @@ dependencies = [
  "cyancia_runtime",
  "cyancia_utils",
  "cyancia_widgets",
+ "dashmap",
  "downcast-rs 2.0.2",
  "dyn-clone",
  "encase",

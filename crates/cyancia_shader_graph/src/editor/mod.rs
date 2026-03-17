@@ -35,12 +35,15 @@ use crate::{
         GraphSlotId, GraphSlotPinPositionCollection, SlotSide, empty_slot, output_slot, valued_slot,
     },
     graph::{
-        Graph, GraphDynamicInstancesStorage,
-        node::{ErasedGraphNode, ErasedGraphNodeMessage, GraphNodeData, GraphNodeId},
+        Graph, GraphResources,
+        node::{
+            ErasedGraphNode, ErasedGraphNodeMessage, GraphNodeData, GraphNodeId, GraphNodeRegistry,
+        },
         slot::{
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
             GraphSlots,
         },
+        variable::GraphTypeRegistry,
     },
 };
 
@@ -51,7 +54,7 @@ const NODE_BORDER_RADIUS: f32 = 5.0;
 
 #[derive(Clone)]
 pub enum GraphViewMessage {
-    NodeCreateRequest(Point, Box<dyn ErasedGraphNode>),
+    NodeCreateRequest(Point, &'static str),
     NodeMoveRequest(Point, GraphNodeId),
     NodeDeleteRequest(GraphNodeId),
     EdgeCreateRequest(GraphOutputSlotId, GraphInputSlotId),
@@ -135,24 +138,18 @@ impl std::fmt::Debug for GraphViewMessage {
 
 pub struct GraphView<'a> {
     graph: DrawableGraph,
-    storage: Arc<GraphDynamicInstancesStorage>,
     node_creation_menu_items: Vec<NodeCreationMenuItem>,
     node_creation_menu_class: <GraphTheme as menu::Catalog>::Class<'a>,
 }
 
 impl<'a> GraphView<'a> {
-    pub fn new(graph: &Graph) -> Self {
+    pub fn new(graph: &Graph, node_registry: &GraphNodeRegistry) -> Self {
         Self {
             graph: DrawableGraph::new(graph),
-            storage: graph.storage().clone(),
-            node_creation_menu_items: graph
-                .storage()
-                .nodes
+            node_creation_menu_items: node_registry
                 .all()
                 .keys()
-                .map(|title| NodeCreationMenuItem {
-                    node_title: title.to_string(),
-                })
+                .map(|title| NodeCreationMenuItem { node_title: title })
                 .collect(),
             node_creation_menu_class: <GraphTheme as menu::Catalog>::default(),
         }
@@ -161,12 +158,12 @@ impl<'a> GraphView<'a> {
 
 #[derive(Clone)]
 pub struct NodeCreationMenuItem {
-    pub node_title: String,
+    pub node_title: &'static str,
 }
 
 impl ToString for NodeCreationMenuItem {
     fn to_string(&self) -> String {
-        self.node_title.clone()
+        self.node_title.to_string()
     }
 }
 
@@ -191,7 +188,13 @@ impl DrawableGraph {
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
             nodes.insert(
                 *id,
-                DrawableNode::new(*id, node, &graph.slots, graph.storage()),
+                DrawableNode::new(
+                    *id,
+                    node,
+                    &graph.slots,
+                    graph.resources(),
+                    graph.type_registry(),
+                ),
             );
             node_indices.insert(*id, index);
         }
@@ -280,7 +283,8 @@ impl DrawableNode {
         node_id: GraphNodeId,
         node: &GraphNodeData,
         slots: &GraphSlots,
-        storage: &GraphDynamicInstancesStorage,
+        resources: &GraphResources,
+        type_registry: &GraphTypeRegistry,
     ) -> Self {
         // let inputs = node
         //     .inputs
@@ -329,11 +333,11 @@ impl DrawableNode {
             column![
                 header,
                 column!(
-                    node.view_inputs(node_id, slots, storage)
+                    node.view_inputs(node_id, slots, resources, type_registry)
                         .map(GraphViewMessage::NodeUpdate),
                     row![
                         space().width(Length::Fill),
-                        node.view_outputs(node_id, slots, storage)
+                        node.view_outputs(node_id, slots, resources, type_registry)
                             .map(GraphViewMessage::NodeUpdate)
                     ],
                 )
@@ -962,7 +966,7 @@ impl<'a> Widget<GraphViewMessage, GraphTheme, GraphRenderer> for GraphView<'a> {
                     state.node_creation_menu.position = None;
                     GraphViewMessage::NodeCreateRequest(
                         position - state.view_translation,
-                        self.storage.nodes.get_cloned(&name.node_title).unwrap(),
+                        name.node_title,
                     )
                 },
                 None,

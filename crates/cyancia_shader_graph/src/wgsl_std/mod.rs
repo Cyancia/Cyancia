@@ -1,36 +1,46 @@
-use crate::graph::GraphDynamicInstancesStorage;
+use crate::graph::{node::GraphNodeRegistry, variable::GraphTypeRegistry};
 
 pub mod casters;
 pub mod nodes;
 pub mod types;
 
-pub fn std_storage() -> GraphDynamicInstancesStorage {
-    use casters::*;
+pub fn builtin_nodes() -> GraphNodeRegistry {
     use nodes::*;
+
+    let mut nodes = GraphNodeRegistry::default();
+
+    nodes.register::<ScalarMathNode>();
+    nodes.register::<VectorMathNode>();
+    nodes.register::<ClampNode>();
+    nodes.register::<StepNode>();
+    nodes.register::<SmoothStepNode>();
+    nodes.register::<SplitComponentsNode>();
+    nodes.register::<CombineComponentsNode>();
+    nodes.register::<SplitColorComponentsNode>();
+    nodes.register::<CombineColorComponentsNode>();
+    nodes.register::<GetPixelColorNode>();
+    nodes.register::<ColorMixNode>();
+    nodes.register::<TextureNode>();
+    nodes.register::<TextureSizeNode>();
+    nodes.register::<GraphFunctionNode>();
+    nodes.register::<ExternalVariableNode>();
+
+    nodes
+}
+
+pub fn builtin_types() -> GraphTypeRegistry {
+    use casters::*;
     use types::*;
 
-    let mut storage = GraphDynamicInstancesStorage::default();
+    let mut types = GraphTypeRegistry::default();
 
-    storage.nodes.register::<ScalarMathNode>();
-    storage.nodes.register::<VectorMathNode>();
-    storage.nodes.register::<ClampNode>();
-    storage.nodes.register::<StepNode>();
-    storage.nodes.register::<SmoothStepNode>();
-    storage.nodes.register::<SplitComponentsNode>();
-    storage.nodes.register::<CombineComponentsNode>();
-    storage.nodes.register::<SplitColorComponentsNode>();
-    storage.nodes.register::<CombineColorComponentsNode>();
-    storage.nodes.register::<GetPixelColorNode>();
-    storage.nodes.register::<ColorMixNode>();
-    storage.nodes.register::<TextureSizeNode>();
+    types.register_type::<F32Type>();
+    types.register_type::<Vec2FType>();
+    types.register_type::<ColorType>();
+    types.register_type::<TextureType>();
 
-    storage.types.register::<F32Type>();
-    storage.types.register::<Vec2FType>();
-    storage.types.register::<ColorType>();
-    storage.types.register::<TextureType>();
+    types.register_caster::<F32ToVec2FCaster>();
+    types.register_caster::<Vec2FToF32Caster>();
 
-    storage.casters.register::<F32ToVec2FCaster>();
-    storage.casters.register::<Vec2FToF32Caster>();
-
-    storage
+    types
 }

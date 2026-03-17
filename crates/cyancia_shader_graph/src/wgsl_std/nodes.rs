@@ -1,9 +1,17 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+};
 
+use cyancia_math::curve::CubicCurve;
 use cyancia_utils::{count, wrapper};
+use cyancia_widgets::curve_edit::CurveEdit;
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
-use iced_widget::{Column, pick_list, space};
+use iced_widget::{Column, column, keyed::column, pick_list, space, text_input};
 use indexmap::{IndexMap, map::Entry};
 use parking_lot::{RwLock, RwLockReadGuard};
 use parse_display::Display;
@@ -12,13 +20,27 @@ use uuid::Uuid;
 
 use crate::{
     GraphRenderer, GraphTheme,
-    graph::{
-        node::{
-            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
-            GraphNodeOutputsViewContext, GraphNodeUpdateContext, StatelessCommonGraphNode,
-        },
-        slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
+    editor::{
+        NODE_WIDTH,
+        slot::{input_slot, output_slot},
     },
+    graph::{
+        Graph, GraphVarIdentGenerator,
+        external::{ExternalVariableId, generate_external_variable_name},
+        function::GraphFunctionId,
+        node::{
+            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
+            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeUpdateContext,
+            GraphNodeUpdateSignatureContext, StatelessCommonGraphNode,
+        },
+        slot::{
+            ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphDefaultInputSlot,
+            GraphDefaultOutputSlot,
+        },
+        texture::TextureId,
+        variable::GraphTypeRegistry,
+    },
+    save::GraphSerializable,
     wgsl_std::types::{ColorType, F32Type, TextureLocalIndex, TextureType, Vec2FType},
 };
 
@@ -108,7 +130,7 @@ macro_rules! math_node {
                 $header_color
             }
 
-            fn create_inputs(&self, _state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+            fn create_inputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext,) -> Vec<GraphDefaultInputSlot> {
                 vec![
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
                     GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
@@ -116,7 +138,7 @@ macro_rules! math_node {
                 ]
             }
 
-            fn create_outputs(&self, _state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+            fn create_outputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext,) -> Vec<GraphDefaultOutputSlot> {
                 vec![GraphDefaultOutputSlot::new::<$slot_ty>()]
             }
 
@@ -439,7 +461,11 @@ impl GraphNode for VectorMathNode {
         color!(0x79caf2)
     }
 
-    fn create_inputs(&self, _state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
@@ -447,7 +473,11 @@ impl GraphNode for VectorMathNode {
         ]
     }
 
-    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
         match state {
             VectorMathNodeMode::Add
             | VectorMathNodeMode::Subtract
@@ -614,7 +644,7 @@ impl StatelessCommonGraphNode for ClampNode {
         color!(0x4cc9a3)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
@@ -622,7 +652,7 @@ impl StatelessCommonGraphNode for ClampNode {
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>()]
     }
 
@@ -662,14 +692,14 @@ impl StatelessCommonGraphNode for StepNode {
         color!(0x9379f2)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>()]
     }
 
@@ -708,7 +738,7 @@ impl StatelessCommonGraphNode for SmoothStepNode {
         color!(0xe09d45)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<F32Type>(1.0),
@@ -716,7 +746,7 @@ impl StatelessCommonGraphNode for SmoothStepNode {
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>()]
     }
 
@@ -756,11 +786,11 @@ impl StatelessCommonGraphNode for SplitComponentsNode {
         color!(0x65b1c9)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO)]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>(),
             GraphDefaultOutputSlot::new::<F32Type>(),
@@ -802,14 +832,14 @@ impl StatelessCommonGraphNode for CombineComponentsNode {
         color!(0xf279a5)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>()]
     }
 
@@ -848,7 +878,7 @@ impl StatelessCommonGraphNode for CombineColorComponentsNode {
         color!(0xae79f2)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
@@ -857,7 +887,7 @@ impl StatelessCommonGraphNode for CombineColorComponentsNode {
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
 
@@ -898,11 +928,11 @@ impl StatelessCommonGraphNode for SplitColorComponentsNode {
         color!(0xa3f279)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO)]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>(),
             GraphDefaultOutputSlot::new::<F32Type>(),
@@ -964,14 +994,14 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
         color!(0xf279d1)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
 
@@ -991,98 +1021,8 @@ impl StatelessCommonGraphNode for GetPixelColorNode {
     }
 }
 
-wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
-    #[display("{0}")]
-    pub TextureId : Uuid
-}
-
-impl TextureId {
-    // Null texture should have a default fallback, so they're also valid.
-    pub const NULL: Self = Self(Uuid::nil());
-}
-
-#[derive(Clone)]
-pub struct TextureObject {
-    pub external_id: TextureId,
-    pub name: String,
-}
-
-impl PartialEq for TextureObject {
-    fn eq(&self, other: &Self) -> bool {
-        self.external_id == other.external_id
-    }
-}
-
-impl ToString for TextureObject {
-    fn to_string(&self) -> String {
-        self.name.clone()
-    }
-}
-
-#[derive(Default)]
-pub struct TextureStorage {
-    inner: RwLock<HashMap<TextureId, TextureObject>>,
-}
-
-impl TextureStorage {
-    pub fn new(map: Vec<TextureObject>) -> Self {
-        Self {
-            inner: RwLock::new(map.into_iter().map(|obj| (obj.external_id, obj)).collect()),
-        }
-    }
-
-    pub fn insert(&self, object: TextureObject) {
-        self.inner.write().insert(object.external_id, object);
-    }
-
-    pub fn get(&self, id: &TextureId) -> Option<TextureObject> {
-        self.inner.read().get(id).cloned()
-    }
-
-    pub fn all(&self) -> RwLockReadGuard<'_, HashMap<TextureId, TextureObject>> {
-        self.inner.read()
-    }
-}
-
-// TODO: Is there any better way to compute local indices?
-#[derive(Default)]
-pub struct TextureUsageRecorder {
-    inner: RwLock<IndexMap<TextureId, u32>>,
-}
-
-impl TextureUsageRecorder {
-    pub fn use_texture(&self, id: TextureId) -> u32 {
-        let mut inner = self.inner.write();
-        let e = inner.entry(id);
-        let local_index = e.index() as u32;
-        e.and_modify(|index| *index += 1).or_insert(0);
-        local_index
-    }
-
-    pub fn reset(&self) {
-        let mut inner = self.inner.write();
-        inner.clear();
-        // We will always have at lease an empty texture.
-        inner.insert(TextureId::NULL, 0);
-    }
-
-    pub fn get_usage(&self) -> RwLockReadGuard<'_, IndexMap<TextureId, u32>> {
-        self.inner.read()
-    }
-}
-
-#[derive(Clone)]
-pub struct TextureNode {
-    storage: Arc<TextureStorage>,
-    recorder: Arc<TextureUsageRecorder>,
-}
-
-impl TextureNode {
-    pub fn new(storage: Arc<TextureStorage>, recorder: Arc<TextureUsageRecorder>) -> Self {
-        Self { storage, recorder }
-    }
-}
+#[derive(Default, Clone)]
+pub struct TextureNode;
 
 #[derive(Clone)]
 pub enum TextureNodeMessage {
@@ -1106,11 +1046,19 @@ impl GraphNode for TextureNode {
         color!(0xbd79f2)
     }
 
-    fn create_inputs(&self, state: &Self::State) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self, state: &Self::State) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<TextureType>()]
     }
 
@@ -1120,8 +1068,13 @@ impl GraphNode for TextureNode {
         ctx: GraphNodeInputsViewContext,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         pick_list(
-            self.storage.all().values().cloned().collect::<Vec<_>>(),
-            self.storage.get(state),
+            ctx.resources
+                .textures
+                .all()
+                .values()
+                .cloned()
+                .collect::<Vec<_>>(),
+            ctx.resources.textures.get(state).cloned(),
             |t| TextureNodeMessage::TextureChanged(t.external_id),
         )
         .into()
@@ -1151,7 +1104,7 @@ impl GraphNode for TextureNode {
         // It's the external user's responsibility to generate the correct texture binding.
         // The binding should be a texture binding_array. The index of each used texture in graph
         // is corresponding to array index returned by TextureStorage::used_textures()
-        let index = self.recorder.use_texture(*state);
+        let index = ctx.texture_usage.use_texture(*state);
         Ok(format!("let {} = {}u;\n", ctx.get_output(0)?, index))
     }
 }
@@ -1177,7 +1130,7 @@ impl StatelessCommonGraphNode for ColorMixNode {
         color!(0x79caf2)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
@@ -1185,7 +1138,7 @@ impl StatelessCommonGraphNode for ColorMixNode {
         ]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
 
@@ -1225,13 +1178,13 @@ impl StatelessCommonGraphNode for TextureSizeNode {
         color!(0xf2ab79)
     }
 
-    fn create_inputs(&self) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<TextureType>(
             TextureLocalIndex::NULL,
         )]
     }
 
-    fn create_outputs(&self) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(&self, _ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>()]
     }
 
@@ -1245,6 +1198,883 @@ impl StatelessCommonGraphNode for TextureSizeNode {
         Ok(format!(
             "let {} = vec2f(textureDimensions(textures[{}]));\n",
             output_size, input_texture
+        ))
+    }
+}
+
+static UNIQUE_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+#[derive(Default, Clone)]
+pub struct GraphFunctionNode;
+
+#[derive(Clone)]
+pub struct GraphFunctionReference {
+    pub id: GraphFunctionId,
+    pub name: String,
+}
+
+impl ToString for GraphFunctionReference {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+impl PartialEq for GraphFunctionReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GraphFunctionNodeState {
+    pub id: Option<GraphFunctionId>,
+}
+
+#[derive(Clone)]
+pub enum GraphFunctionNodeMessage {
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+    FunctionChanged(GraphFunctionId),
+}
+
+impl GraphNode for GraphFunctionNode {
+    type State = GraphFunctionNodeState;
+
+    type Message = GraphFunctionNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Function"
+    }
+
+    fn default_state(&self) -> Self::State {
+        GraphFunctionNodeState { id: None }
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xb379f2)
+    }
+
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
+        let Some(func) = state
+            .id
+            .as_ref()
+            .and_then(|id| ctx.resources.functions.get(id))
+        else {
+            return Vec::new();
+        };
+
+        func.graph
+            .signature()
+            .inputs
+            .iter()
+            .map(|(slot, var)| GraphDefaultInputSlot::new_boxed_default(var.ty().clone()))
+            .collect()
+    }
+
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        let Some(func) = state
+            .id
+            .as_ref()
+            .and_then(|id| ctx.resources.functions.get(id))
+        else {
+            return Vec::new();
+        };
+
+        func.graph
+            .signature()
+            .outputs
+            .iter()
+            .map(|(slot, var)| GraphDefaultOutputSlot::new_boxed(var.ty().clone()))
+            .collect()
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let all_refs = ctx
+            .resources
+            .functions
+            .all()
+            .iter()
+            .map(|(id, graph)| GraphFunctionReference {
+                id: id.clone(),
+                name: graph.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let cur_ref = state.id.as_ref().and_then(|id| {
+            ctx.resources
+                .functions
+                .get(id)
+                .map(|f| GraphFunctionReference {
+                    id: id.clone(),
+                    name: f.name.clone(),
+                })
+        });
+
+        let column = column![pick_list(all_refs, cur_ref, |r| {
+            GraphFunctionNodeMessage::FunctionChanged(r.id)
+        },)];
+        let Some(func) = state
+            .id
+            .as_ref()
+            .and_then(|id| ctx.resources.functions.get(id))
+        else {
+            return column.into();
+        };
+
+        let signature = func.graph.signature();
+        let slots = ctx
+            .all_inputs()
+            .zip(signature.inputs.values())
+            .map(|((id, slot), var)| {
+                input_slot(*id, var.identifier().to_string(), slot)
+                    .map(GraphFunctionNodeMessage::LiteralUpdate)
+            })
+            .collect::<Vec<_>>();
+
+        column.extend(slots).into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let Some(func) = state
+            .id
+            .as_ref()
+            .and_then(|id| ctx.resources.functions.get(id))
+        else {
+            return space().into();
+        };
+
+        let signature = func.graph.signature();
+        let slots = ctx
+            .all_outputs()
+            .zip(signature.outputs.values())
+            .map(|((id, slot), var)| output_slot(*id, var.identifier().to_string(), slot))
+            .collect::<Vec<_>>();
+        Column::with_children(slots).into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            GraphFunctionNodeMessage::LiteralUpdate(m) => {
+                ctx.update_literal(m);
+            }
+            GraphFunctionNodeMessage::FunctionChanged(id) => {
+                state.id = Some(id);
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let Some(id) = state.id.as_ref() else {
+            return Ok(Default::default());
+        };
+        let Some(func) = ctx.resources.functions.get(id) else {
+            return Ok(Default::default());
+        };
+
+        let input_idents = (0..ctx.inputs.len()).try_fold(
+            Vec::with_capacity(ctx.inputs.len()),
+            |mut acc, i| {
+                acc.push(ctx.get_input(i)?);
+                Ok::<_, GraphNodeCodeGenError>(acc)
+            },
+        )?;
+
+        let (output_idents, code) = func
+            .graph
+            .compile(
+                input_idents,
+                GraphVarIdentGenerator::new(format!(
+                    "{}_{}",
+                    id.to_string().replace('-', "_"),
+                    UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                )),
+                ctx.texture_usage,
+            )
+            .map_err(|e| GraphNodeCodeGenError::Custom(e.into()))?;
+
+        for (slot_id, output_ident) in ctx.outputs.iter().zip(output_idents) {
+            ctx.output_slot_idents.insert(*slot_id, output_ident);
+        }
+
+        Ok(code)
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct GraphInputNode;
+
+#[derive(Default)]
+pub struct GraphInputNodeState {
+    pub name: String,
+    pub ty: Option<Box<dyn ErasedGraphValueType>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerializableGraphInputNodeState {
+    pub name: String,
+    pub ty_name: Option<String>,
+}
+
+impl GraphSerializable for GraphInputNodeState {
+    fn to_toml(&self) -> Result<toml::Value, toml::ser::Error> {
+        toml::Value::try_from(SerializableGraphInputNodeState {
+            name: self.name.clone(),
+            ty_name: self.ty.as_ref().map(|t| t.name().to_string()),
+        })
+    }
+
+    fn from_toml(
+        value: toml::Value,
+        type_registry: &GraphTypeRegistry,
+    ) -> Result<Self, toml::de::Error> {
+        let de = SerializableGraphInputNodeState::deserialize(value)?;
+        let ty = de.ty_name.map(|ty| {
+            type_registry.get_type(&ty).ok_or_else(|| {
+                <toml::de::Error as serde::de::Error>::custom(format!(
+                    "Type '{}' not found in storage",
+                    ty
+                ))
+            })
+        });
+        let ty = match ty {
+            Some(ty) => Some(ty?),
+            None => None,
+        };
+
+        Ok(GraphInputNodeState {
+            name: de.name,
+            ty: ty.map(|t| dyn_clone::clone_box(&**t)),
+        })
+    }
+}
+
+#[derive(Clone)]
+pub enum GraphInputNodeMessage {
+    VarNameChanged(String),
+    TypeChanged(&'static str),
+}
+
+impl GraphNode for GraphInputNode {
+    type State = GraphInputNodeState;
+
+    type Message = GraphInputNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Graph Input"
+    }
+
+    fn default_state(&self) -> Self::State {
+        GraphInputNodeState::default()
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79f2c1)
+    }
+
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        dbg!(state.ty.is_some());
+        match &state.ty {
+            Some(ty) => vec![
+                // Comment that prevents ugly formatting
+                GraphDefaultOutputSlot::new_boxed(dyn_clone::clone_box(&**ty)),
+            ],
+            None => vec![],
+        }
+    }
+
+    fn update_signature(&self, state: &Self::State, mut ctx: GraphNodeUpdateSignatureContext) {
+        ctx.require_output_slot_as_graph_input(0, state.name.clone());
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        column![
+            text_input("Variable Name", &state.name)
+                .on_input(GraphInputNodeMessage::VarNameChanged),
+            pick_list(
+                ctx.type_registry
+                    .all_types()
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                state.ty.as_ref().map(|t| t.name()),
+                GraphInputNodeMessage::TypeChanged
+            )
+        ]
+        .into()
+    }
+
+    fn view_outputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Value"])).into()
+    }
+
+    fn update(&self, state: &mut Self::State, message: Self::Message, ctx: GraphNodeUpdateContext) {
+        match message {
+            GraphInputNodeMessage::VarNameChanged(name) => state.name = name,
+            GraphInputNodeMessage::TypeChanged(ty_name) => {
+                state.ty = ctx.type_registry.get_type(ty_name).cloned();
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(Default::default())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct GraphOutputNode;
+
+#[derive(Default)]
+pub struct GraphOutputNodeState {
+    pub name: String,
+    pub ty: Option<Box<dyn ErasedGraphValueType>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerializableGraphOutputNodeState {
+    pub name: String,
+    pub ty_name: Option<String>,
+}
+
+impl GraphSerializable for GraphOutputNodeState {
+    fn to_toml(&self) -> Result<toml::Value, toml::ser::Error> {
+        toml::Value::try_from(SerializableGraphOutputNodeState {
+            name: self.name.clone(),
+            ty_name: self.ty.as_ref().map(|t| t.name().to_string()),
+        })
+    }
+
+    fn from_toml(
+        value: toml::Value,
+        type_registry: &GraphTypeRegistry,
+    ) -> Result<Self, toml::de::Error> {
+        let de = SerializableGraphOutputNodeState::deserialize(value)?;
+        let ty = de.ty_name.map(|ty| {
+            type_registry.get_type(&ty).ok_or_else(|| {
+                <toml::de::Error as serde::de::Error>::custom(format!(
+                    "Type '{}' not found in storage",
+                    ty
+                ))
+            })
+        });
+        let ty = match ty {
+            Some(ty) => Some(ty?),
+            None => None,
+        };
+
+        Ok(GraphOutputNodeState {
+            name: de.name,
+            ty: ty.map(|t| dyn_clone::clone_box(&**t)),
+        })
+    }
+}
+
+#[derive(Clone)]
+pub enum GraphOutputNodeMessage {
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+    VarNameChanged(String),
+    TypeChanged(&'static str),
+}
+
+impl GraphNode for GraphOutputNode {
+    type State = GraphOutputNodeState;
+
+    type Message = GraphOutputNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Graph Output"
+    }
+
+    fn default_state(&self) -> Self::State {
+        GraphOutputNodeState::default()
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79f2c1)
+    }
+
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
+        match &state.ty {
+            Some(ty) => vec![
+                // Comment that prevents ugly formatting
+                GraphDefaultInputSlot::new_boxed_default(dyn_clone::clone_box(&**ty)),
+            ],
+            None => vec![],
+        }
+    }
+
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![]
+    }
+
+    fn update_signature(&self, state: &Self::State, mut ctx: GraphNodeUpdateSignatureContext) {
+        ctx.require_input_slot_as_graph_output(0, state.name.clone());
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        column![
+            Element::new(
+                text_input("Variable Name", &state.name)
+                    .on_input(GraphOutputNodeMessage::VarNameChanged),
+            ),
+            Element::new(pick_list(
+                ctx.type_registry
+                    .all_types()
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                state.ty.as_ref().map(|t| t.name()),
+                GraphOutputNodeMessage::TypeChanged,
+            )),
+        ]
+        .extend(ctx.view_all_inputs(&["Value"], GraphOutputNodeMessage::LiteralUpdate))
+        .into()
+    }
+
+    fn view_outputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Value"])).into()
+    }
+
+    fn update(&self, state: &mut Self::State, message: Self::Message, ctx: GraphNodeUpdateContext) {
+        match message {
+            GraphOutputNodeMessage::VarNameChanged(name) => state.name = name,
+            GraphOutputNodeMessage::TypeChanged(ty_name) => {
+                state.ty = ctx.type_registry.get_type(ty_name).cloned();
+            }
+            GraphOutputNodeMessage::LiteralUpdate(_) => unreachable!(),
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(Default::default())
+    }
+}
+
+#[derive(Clone)]
+pub struct ExternalVariableReference {
+    pub id: ExternalVariableId,
+    pub name: String,
+}
+
+impl PartialEq for ExternalVariableReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl ToString for ExternalVariableReference {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct ExternalVariableNode;
+
+#[derive(Clone)]
+pub enum ExternalVariableNodeMessage {
+    IdChanged(ExternalVariableId),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
+impl GraphNode for ExternalVariableNode {
+    type State = Option<ExternalVariableId>;
+
+    type Message = ExternalVariableNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "External Variable"
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79c9f2)
+    }
+
+    fn create_inputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        if let Some(id) = state.as_ref() {
+            match ctx.resources.external_vars.get(id) {
+                Some(var) => vec![GraphDefaultOutputSlot::new_boxed(var.value.ty().clone())],
+                None => {
+                    let all = ctx
+                        .resources
+                        .external_vars
+                        .all()
+                        .iter()
+                        .map(|entry| {
+                            let v = entry.value();
+                            format!("{}({})", v.name, v.id)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    log::error!(
+                        "Selected external variable {} not found in storage: {}",
+                        id,
+                        all
+                    );
+                    vec![]
+                }
+            }
+        } else {
+            vec![]
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let id = state
+            .as_ref()
+            .ok_or(anyhow::anyhow!("No external literal selected"))?;
+        let var = ctx.resources.external_vars.get(id).ok_or(anyhow::anyhow!(
+            "Selected external literal not found in storage"
+        ))?;
+        let output = ctx.get_output(0)?;
+        // TODO: Use uniform buffer to transfer external variables into shader.
+        //       For current architecture, everytime user modifies them, the whole shader needs to be recompiled.
+        Ok(format!(
+            "let {} = {};\n",
+            output,
+            generate_external_variable_name(&var)
+        ))
+    }
+
+    fn default_state(&self) -> Self::State {
+        None
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = column![];
+
+        let vars = ctx.resources.external_vars.all();
+        let refs = vars
+            .iter()
+            .map(|entry| ExternalVariableReference {
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let selected = state.as_ref().and_then(|id| {
+            vars.get(id).map(|v| ExternalVariableReference {
+                id: id.clone(),
+                name: v.name.clone(),
+            })
+        });
+        column = column.push(pick_list(refs, selected, |v| {
+            ExternalVariableNodeMessage::IdChanged(v.id)
+        }));
+
+        column
+            .extend(ctx.view_all_inputs(&["Var"], ExternalVariableNodeMessage::LiteralUpdate))
+            .into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Value"])).into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            ExternalVariableNodeMessage::IdChanged(id) => *state = Some(id),
+            ExternalVariableNodeMessage::LiteralUpdate(m) => {
+                ctx.update_literal(m);
+            }
+        }
+    }
+}
+
+pub const CUBIC_CURVE_MAX_CONTROL_POINTS: usize = 16;
+
+#[derive(Default, Clone)]
+pub struct CurveNode;
+
+#[derive(Serialize, Deserialize)]
+pub struct CurveNodeState {
+    pub control_points: Vec<Vec2>,
+}
+
+impl Default for CurveNodeState {
+    fn default() -> Self {
+        Self {
+            control_points: vec![Vec2::ZERO, Vec2::ONE],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SerializableCurveNodeState {
+    pub tension: f32,
+    pub control_points: Vec<Vec2>,
+}
+
+#[derive(Clone)]
+pub enum CurveNodeMessage {
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+    CurvePointCreated(usize, Vec2),
+    CurvePointMoved(usize, Vec2),
+    CurvePointDeleted(usize),
+}
+
+impl GraphNode for CurveNode {
+    type State = CurveNodeState;
+
+    type Message = CurveNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Curve"
+    }
+
+    fn default_state(&self) -> Self::State {
+        Default::default()
+    }
+
+    fn header_color(&self) -> iced_core::Color {
+        color!(0x799af2)
+    }
+
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
+    }
+
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<F32Type>()]
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_inputs(&["X"], CurveNodeMessage::LiteralUpdate))
+            .push(
+                CurveEdit::new(CubicCurve::new(state.control_points.clone()))
+                    .width(NODE_WIDTH)
+                    .height(NODE_WIDTH * 0.75)
+                    .on_point_created(CurveNodeMessage::CurvePointCreated)
+                    .on_point_moved(CurveNodeMessage::CurvePointMoved)
+                    .on_point_deleted(CurveNodeMessage::CurvePointDeleted),
+            )
+            .into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Y"])).into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext,
+    ) {
+        match message {
+            CurveNodeMessage::LiteralUpdate(message) => {
+                ctx.update_literal(message);
+            }
+            CurveNodeMessage::CurvePointCreated(index, position) => {
+                state.control_points.insert(index, position);
+            }
+            CurveNodeMessage::CurvePointMoved(index, position) => {
+                if let Some(point) = state.control_points.get_mut(index) {
+                    *point = position;
+                }
+            }
+            CurveNodeMessage::CurvePointDeleted(index) => {
+                if state.control_points.len() > 2 {
+                    state.control_points.remove(index);
+                }
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let num_control_points = state.control_points.len();
+        let mut control_points = state.control_points.clone();
+        control_points.resize(CUBIC_CURVE_MAX_CONTROL_POINTS, Vec2::ZERO);
+        let mut derivatives = CubicCurve::calculate_derivatives(&state.control_points);
+        derivatives.resize(CUBIC_CURVE_MAX_CONTROL_POINTS + 1, 0.0);
+
+        Ok(format!(
+            "
+let {} = render::math::sample_cubic_curve(
+    render::math::CubicCurve(
+        array<vec2f, {}>({}),
+        array<f32, {}>({}),
+        {}
+    ),
+    {}
+);
+            ",
+            ctx.get_output(0)?,
+            CUBIC_CURVE_MAX_CONTROL_POINTS,
+            control_points
+                .iter()
+                .map(|p| format!("vec2({:.5}, {:.5})", p.x, p.y))
+                .collect::<Vec<_>>()
+                .join(", "),
+            CUBIC_CURVE_MAX_CONTROL_POINTS + 1,
+            derivatives
+                .iter()
+                .map(|d| format!("{:.5}", d))
+                .collect::<Vec<_>>()
+                .join(", "),
+            num_control_points,
+            ctx.get_input(0)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct RandomNode;
+
+impl StatelessCommonGraphNode for RandomNode {
+    fn name(&self) -> &'static str {
+        "Random Number"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Seed"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Scalar", "Vec2"]
+    }
+
+    fn header_color(&self) -> iced_core::Color {
+        color!(0x79edf2)
+    }
+
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
+    }
+
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = render::hash::hash11({});\nlet {} = render::hash::hash21({});\n",
+            ctx.get_output(0)?,
+            ctx.get_input(0)?,
+            ctx.get_output(1)?,
+            ctx.get_input(0)?
         ))
     }
 }
