@@ -317,7 +317,7 @@ impl StatefulGraphNode {
         self.data.serialize_state(&self.state)
     }
 
-    pub fn deserialize_state(
+    pub fn deserialize_and_set_state(
         &mut self,
         value: toml::Value,
         type_registry: &GraphTypeRegistry,

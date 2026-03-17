@@ -136,7 +136,7 @@ impl Graph {
             };
 
             let mut node = StatefulGraphNode::new(node_inst);
-            match node.deserialize_state(ser_node.state.clone(), &type_registry) {
+            match node.deserialize_and_set_state(ser_node.state.clone(), &type_registry) {
                 Ok(_) => {}
                 Err(e) => {
                     errs.push(GraphDeserializeError::NodeStateDeserializeError(e));
