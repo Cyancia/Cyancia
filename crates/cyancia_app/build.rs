@@ -1,6 +1,8 @@
+use std::path::Path;
+
 fn main() {
-    for dst in ["target/debug/assets", "target/release/assets"] {
-        fs_extra::dir::remove(dst).unwrap();
+    for dst in ["../../target/debug", "../../target/release"] {
+        fs_extra::dir::remove(Path::new(dst).join("assets")).unwrap();
         fs_extra::dir::copy(
             "../../assets",
             dst,
