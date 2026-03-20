@@ -56,6 +56,20 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
         }
     }
 
+    pub fn with_capacity(
+        label: Option<&'static str>,
+        usage: BufferUsages,
+        capacity: usize,
+    ) -> Self {
+        Self {
+            label,
+            usage: BufferUsages::COPY_DST | usage,
+            buffer: None,
+            wrapper: encase::DynamicStorageBuffer::new(Vec::with_capacity(capacity)),
+            _marker: PhantomData,
+        }
+    }
+
     pub fn push(&mut self, data: &T) -> BufferAddress {
         self.wrapper.write(data).unwrap()
     }

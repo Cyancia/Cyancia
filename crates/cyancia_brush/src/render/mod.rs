@@ -24,7 +24,7 @@ use uuid::Uuid;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferAddress, BufferBindingType,
     BufferDescriptor, BufferUsages, CommandEncoder, ComputePipeline, ComputePipelineDescriptor,
     Device, Extent3d, MapMode, Origin3d, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
     ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
@@ -83,7 +83,6 @@ impl BrushPresetOperator {
         let instance = self.instance.read();
         self.renderer
             .initialize(&instance, assets, target_layer, tiles);
-        self.renderer.prepare(&instance, tiles);
     }
 
     pub fn update_stroke(&mut self, input: PenInputSample, tiles: &GpuTileStorage) {
@@ -95,14 +94,13 @@ impl BrushPresetOperator {
 
         let now = std::time::Instant::now();
         let mut n_samples = 0;
-        for (i_sample, sample) in self.sampler.drain_samples().into_iter().enumerate() {
-            let params = GraphInputParams {
-                pen_position: sample.position,
-                draw_direction_vec: sample.draw_direction_vec,
-                draw_direction_angle: sample.draw_direction_angle,
-            };
+
+        let all_samples = self.sampler.drain_samples();
+        self.renderer.prepare_samples(&all_samples);
+
+        for i_sample in 0..all_samples.len() {
             ec.push_debug_group(&format!("Draw sample {i_sample}"));
-            self.renderer.draw_main(params, tiles, &mut ec);
+            self.renderer.draw_main(i_sample, &mut ec);
             ec.pop_debug_group();
             n_samples += 1;
         }
@@ -223,7 +221,7 @@ pub struct StrokeInfoUniform {
 }
 
 struct InitializedData {
-    target_layer: LayerId,
+    target_layer_id: LayerId,
     referenced_textures: Vec<TextureView>,
     intermediate_buffers: DynamicIntermediateBuffer,
 
@@ -238,9 +236,7 @@ struct InitializedData {
     stroke_pp_layout: BindGroupLayout,
     stroke_pp_esti_pipelines: Vec<ComputePipeline>,
     stroke_pp_esti_layout: BindGroupLayout,
-}
 
-struct PreparedData {
     external_var_buffers: Vec<Buffer>,
 
     tile_allocation_bind_group: BindGroup,
@@ -249,6 +245,11 @@ struct PreparedData {
     main_esti_bind_groups: [BindGroup; 2],
 
     next_bind_group: usize,
+}
+
+pub struct PreparedData {
+    all_samples: DynamicBuffer<GraphInputUniform>,
+    sample_offsets: Vec<BufferAddress>,
 }
 
 pub struct BrushPresetRenderer {
@@ -372,8 +373,8 @@ impl BrushPresetRenderer {
         &mut self,
         brush: &BrushPresetInstance,
         assets: &AssetRegistry,
-        target_layer: LayerId,
-        tiles_storage: &GpuTileStorage,
+        target_layer_id: LayerId,
+        tiles: &GpuTileStorage,
     ) {
         // TODO: Handle shader compile error
         let compiled_preset = brush.compile(EXTERNAL_VARIABLE_BASE_BINDING).unwrap();
@@ -381,7 +382,7 @@ impl BrushPresetRenderer {
 
         // Prepare intermediate buffers
 
-        let layer_info = tiles_storage.get_layer_info(target_layer).unwrap();
+        let layer_info = tiles.get_layer_info(target_layer_id).unwrap();
         let intermediate_buffers =
             DynamicIntermediateBuffer::new(256, layer_info.texel_type, self.device.clone());
 
@@ -392,6 +393,7 @@ impl BrushPresetRenderer {
             ..Default::default()
         });
         stroke_info.write_buffer(&self.device);
+        let stroke_info = stroke_info.into_inner_buffer().unwrap();
 
         // Prepare referenced textures
 
@@ -431,10 +433,7 @@ impl BrushPresetRenderer {
             cur_binding += 1;
         }
 
-        let target_layer_texel = tiles_storage
-            .get_layer_info(target_layer)
-            .unwrap()
-            .texel_type;
+        let target_layer_texel = tiles.get_layer_info(target_layer_id).unwrap().texel_type;
 
         // Prepare main bind group layout and pipeline
 
@@ -963,40 +962,7 @@ impl BrushPresetRenderer {
             pen_position: Vec2::ZERO,
         });
         graph_input.write_buffer(&self.device);
-
-        self.initialized = Some(InitializedData {
-            graph_input: graph_input.into_inner_buffer().unwrap(),
-            referenced_textures,
-            target_layer,
-            intermediate_buffers,
-            stroke_info: stroke_info.into_inner_buffer().unwrap(),
-
-            main_layout,
-            main_pipeline,
-            main_esti_layout,
-            main_esti_pipeline,
-            stroke_pp_esti_layout,
-            stroke_pp_esti_pipelines,
-            stroke_pp_layout,
-            stroke_pp_pipelines,
-        });
-        self.prepared = None;
-    }
-
-    pub fn prepare(&mut self, brush: &BrushPresetInstance, tiles: &GpuTileStorage) {
-        let Some(InitializedData {
-            target_layer,
-            referenced_textures,
-            intermediate_buffers,
-            graph_input,
-            stroke_info,
-            main_layout,
-            main_esti_layout,
-            ..
-        }) = self.initialized.as_mut()
-        else {
-            return;
-        };
+        let graph_input = graph_input.into_inner_buffer().unwrap();
 
         let mut external_var_buffers = Vec::new();
         for var in brush.external_vars().all().iter() {
@@ -1008,7 +974,7 @@ impl BrushPresetRenderer {
             });
             external_var_buffers.push(gpu_buffer);
         }
-        let referenced_textures = referenced_textures
+        let referenced_texture_views = referenced_textures
             .iter()
             .map(std::convert::identity)
             .collect::<Vec<_>>();
@@ -1025,7 +991,7 @@ impl BrushPresetRenderer {
         }
 
         // Layer bindings
-        let target_layer = tiles.get_layer_binding_or_empty(*target_layer).unwrap();
+        let target_layer = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
 
         let intermediate_textures = intermediate_buffers.textures();
         let intermediate_tile_info = intermediate_buffers.tile_info_buffer();
@@ -1044,7 +1010,7 @@ impl BrushPresetRenderer {
                     },
                     BindGroupEntry {
                         binding: 2,
-                        resource: BindingResource::TextureViewArray(&referenced_textures),
+                        resource: BindingResource::TextureViewArray(&referenced_texture_views),
                     },
                     BindGroupEntry {
                         binding: 3,
@@ -1097,7 +1063,7 @@ impl BrushPresetRenderer {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureViewArray(&referenced_textures),
+                    resource: BindingResource::TextureViewArray(&referenced_texture_views),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -1151,7 +1117,22 @@ impl BrushPresetRenderer {
             ],
         });
 
-        self.prepared = Some(PreparedData {
+        self.initialized = Some(InitializedData {
+            graph_input,
+            referenced_textures,
+            target_layer_id,
+            intermediate_buffers,
+            stroke_info,
+
+            main_layout,
+            main_pipeline,
+            main_esti_layout,
+            main_esti_pipeline,
+            stroke_pp_esti_layout,
+            stroke_pp_esti_pipelines,
+            stroke_pp_layout,
+            stroke_pp_pipelines,
+
             external_var_buffers,
             tile_allocation_bind_group,
             main_esti_bind_groups: [
@@ -1163,18 +1144,31 @@ impl BrushPresetRenderer {
                 main_bind_groups_option[1].take().unwrap(),
             ],
             next_bind_group: 0,
+        });
+        self.prepared = None;
+    }
+
+    pub fn prepare_samples(&mut self, samples: &[ComputedPenInputSample]) {
+        let mut buffer = DynamicBuffer::new(Some("all samples"), BufferUsages::COPY_SRC);
+        let mut offsets = Vec::with_capacity(samples.len());
+        for sample in samples {
+            let offset = buffer.push(&GraphInputUniform {
+                pen_position: sample.position,
+            });
+            offsets.push(offset);
+        }
+        buffer.write_buffer(&self.device);
+
+        self.prepared = Some(PreparedData {
+            all_samples: buffer,
+            sample_offsets: offsets,
         })
     }
 
-    pub fn draw_main(
-        &mut self,
-        params: GraphInputParams,
-        tiles: &GpuTileStorage,
-        ec: &mut CommandEncoder,
-    ) {
+    pub fn draw_main(&mut self, sample_index: usize, ec: &mut CommandEncoder) {
         let (
             Some(InitializedData {
-                target_layer,
+                target_layer_id: target_layer,
                 graph_input,
                 referenced_textures,
                 main_layout,
@@ -1183,9 +1177,6 @@ impl BrushPresetRenderer {
                 main_pipeline,
                 intermediate_buffers,
                 stroke_info,
-                ..
-            }),
-            Some(PreparedData {
                 external_var_buffers,
                 main_bind_groups,
                 main_esti_bind_groups,
@@ -1193,20 +1184,24 @@ impl BrushPresetRenderer {
                 tile_allocation_bind_group,
                 ..
             }),
-        ) = (self.initialized.as_mut(), self.prepared.as_mut())
+            Some(PreparedData {
+                all_samples,
+                sample_offsets,
+            }),
+        ) = (self.initialized.as_mut(), self.prepared.as_ref())
         else {
             return;
         };
 
         // Prepare buffers
 
-        let mut wrapper = StorageBuffer::new(Vec::<u8>::new());
-        wrapper
-            .write(&GraphInputUniform {
-                pen_position: params.pen_position,
-            })
-            .unwrap();
-        self.queue.write_buffer(graph_input, 0, wrapper.as_ref());
+        ec.copy_buffer_to_buffer(
+            all_samples.inner_buffer().unwrap(),
+            sample_offsets[sample_index],
+            graph_input,
+            0,
+            Some(GraphInputUniform::min_size().into()),
+        );
 
         ec.push_debug_group("brush main estimation");
         {
@@ -1250,23 +1245,18 @@ impl BrushPresetRenderer {
     }
 
     pub fn draw_stroke_postprocess(&mut self, tiles: &GpuTileStorage) {
-        let (
-            Some(InitializedData {
-                target_layer,
-                referenced_textures,
-                stroke_info,
-                stroke_pp_pipelines,
-                stroke_pp_layout,
-                stroke_pp_esti_pipelines,
-                stroke_pp_esti_layout,
-                intermediate_buffers,
-                ..
-            }),
-            Some(PreparedData {
-                external_var_buffers,
-                ..
-            }),
-        ) = (self.initialized.as_mut(), self.prepared.as_ref())
+        let (Some(InitializedData {
+            target_layer_id: target_layer,
+            referenced_textures,
+            stroke_info,
+            stroke_pp_pipelines,
+            stroke_pp_layout,
+            stroke_pp_esti_pipelines,
+            stroke_pp_esti_layout,
+            intermediate_buffers,
+            external_var_buffers,
+            ..
+        })) = (self.initialized.as_mut())
         else {
             return;
         };
@@ -1443,7 +1433,7 @@ impl BrushPresetRenderer {
 
     pub fn copy_last_surface_to_target(&self, tiles: &GpuTileStorage) {
         let Some(InitializedData {
-            target_layer,
+            target_layer_id: target_layer,
             intermediate_buffers,
             ..
         }) = self.initialized.as_ref()
