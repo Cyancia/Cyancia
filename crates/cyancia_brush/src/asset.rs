@@ -44,7 +44,10 @@ use wgpu::{
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{
-    BlendColorNode, EllipticalMaskNode, CurrentPixelColorNode, DrawDirectionNode, GraphInputParams, LayerPixelColorNode, OutputWithinBoundsNode, OutputWithinMaskNode, PasteTextureNode, PenPositionNode, PixelPositionNode, StrokeBoundsNode
+    BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
+    DrawDirectionNode, EllipticalMaskNode, GraphInputParams, LayerPixelColorNode,
+    OutputWithinBoundsNode, OutputWithinMaskNode, PasteTextureNode, PenPositionNode,
+    PixelPositionNode, StrokeBoundsNode,
 };
 
 pub struct BrushPreset {
@@ -560,6 +563,8 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.register::<LayerPixelColorNode>();
     nodes.register::<CurrentPixelColorNode>();
     nodes.register::<EllipticalMaskNode>();
+    nodes.register::<BlendWithInputNode>();
+    nodes.register::<BlendWithLayerNode>();
 
     nodes.into()
 }
@@ -586,6 +591,8 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.register::<CurrentPixelColorNode>();
     nodes.register::<StrokeBoundsNode>();
     nodes.register::<EllipticalMaskNode>();
+    nodes.register::<BlendWithInputNode>();
+    nodes.register::<BlendWithLayerNode>();
 
     nodes.into()
 }
