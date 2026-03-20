@@ -25,9 +25,9 @@ use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
-    BufferDescriptor, BufferUsages, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
-    MapMode, Origin3d, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
+    BufferDescriptor, BufferUsages, CommandEncoder, ComputePipeline, ComputePipelineDescriptor,
+    Device, Extent3d, MapMode, Origin3d, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
     TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
     TextureView, TextureViewDimension,
     naga::StorageAccess,
@@ -88,18 +88,27 @@ impl BrushPresetOperator {
 
     pub fn update_stroke(&mut self, input: PenInputSample, tiles: &GpuTileStorage) {
         self.sampler.input(input);
+        let mut ec = self
+            .renderer
+            .device
+            .create_command_encoder(&Default::default());
 
         let now = std::time::Instant::now();
         let mut n_samples = 0;
-        for sample in self.sampler.drain_samples() {
+        for (i_sample, sample) in self.sampler.drain_samples().into_iter().enumerate() {
             let params = GraphInputParams {
                 pen_position: sample.position,
                 draw_direction_vec: sample.draw_direction_vec,
                 draw_direction_angle: sample.draw_direction_angle,
             };
-            self.renderer.draw_main(params, tiles);
+            ec.push_debug_group(&format!("Draw sample {i_sample}"));
+            self.renderer.draw_main(params, tiles, &mut ec);
+            ec.pop_debug_group();
             n_samples += 1;
         }
+
+        self.renderer.queue.submit([ec.finish()]);
+
         log::info!(
             "Draw main graph: {} ms (avg {}ms each, {} samples)",
             now.elapsed().as_secs_f32() * 1000.0,
@@ -160,7 +169,7 @@ impl StrokePenInputSampler {
     }
 
     pub fn set_spacing(&mut self, spacing: f32) {
-        self.spacing = spacing.max(0.0001);
+        self.spacing = spacing.max(1.0);
     }
 
     pub fn input(&mut self, mouse: PenInputSample) {
@@ -978,7 +987,12 @@ impl BrushPresetRenderer {
         })
     }
 
-    pub fn draw_main(&mut self, params: GraphInputParams, tiles: &GpuTileStorage) {
+    pub fn draw_main(
+        &mut self,
+        params: GraphInputParams,
+        tiles: &GpuTileStorage,
+        ec: &mut CommandEncoder,
+    ) {
         let (
             Some(InitializedData {
                 target_layer,
@@ -999,8 +1013,6 @@ impl BrushPresetRenderer {
         else {
             return;
         };
-
-        let mut ec = self.device.create_command_encoder(&Default::default());
 
         // Prepare buffers
 
@@ -1188,8 +1200,6 @@ impl BrushPresetRenderer {
             pass.dispatch_workgroups_indirect(&self.main_dispatch, 0);
         }
         ec.pop_debug_group();
-
-        self.queue.submit([ec.finish()]);
     }
 
     pub fn draw_stroke_postprocess(&mut self, tiles: &GpuTileStorage) {

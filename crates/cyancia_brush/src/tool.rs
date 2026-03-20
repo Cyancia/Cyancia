@@ -34,7 +34,6 @@ impl ToolFunction for BrushTool {
             log::error!("No current brush preset operator found.");
             return;
         };
-        dbg!();
 
         let params = PenInputSample {
             position: canvas
@@ -59,7 +58,6 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        dbg!();
         let params = PenInputSample {
             position: canvas
                 .transform
@@ -82,7 +80,6 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        dbg!();
         let tiles = services.service::<GpuTileStorage>();
         brush.end_stroke(&tiles);
     }
