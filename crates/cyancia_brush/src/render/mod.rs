@@ -83,7 +83,7 @@ impl BrushPresetOperator {
         let instance = self.instance.read();
         self.renderer
             .initialize(&instance, assets, target_layer, tiles);
-        self.renderer.prepare(&instance);
+        self.renderer.prepare(&instance, tiles);
     }
 
     pub fn update_stroke(&mut self, input: PenInputSample, tiles: &GpuTileStorage) {
@@ -227,7 +227,7 @@ struct InitializedData {
     referenced_textures: Vec<TextureView>,
     intermediate_buffers: DynamicIntermediateBuffer,
 
-    graph_input: DynamicBuffer<GraphInputUniform>,
+    graph_input: Buffer,
     stroke_info: Buffer,
 
     main_pipeline: ComputePipeline,
@@ -242,6 +242,13 @@ struct InitializedData {
 
 struct PreparedData {
     external_var_buffers: Vec<Buffer>,
+
+    tile_allocation_bind_group: BindGroup,
+
+    main_bind_groups: [BindGroup; 2],
+    main_esti_bind_groups: [BindGroup; 2],
+
+    next_bind_group: usize,
 }
 
 pub struct BrushPresetRenderer {
@@ -951,8 +958,14 @@ impl BrushPresetRenderer {
             ));
         }
 
+        let mut graph_input = DynamicBuffer::new(Some("graph input buffer"), BufferUsages::STORAGE);
+        graph_input.push(&GraphInputUniform {
+            pen_position: Vec2::ZERO,
+        });
+        graph_input.write_buffer(&self.device);
+
         self.initialized = Some(InitializedData {
-            graph_input: DynamicBuffer::new(Some("graph input buffer"), BufferUsages::STORAGE),
+            graph_input: graph_input.into_inner_buffer().unwrap(),
             referenced_textures,
             target_layer,
             intermediate_buffers,
@@ -970,7 +983,21 @@ impl BrushPresetRenderer {
         self.prepared = None;
     }
 
-    pub fn prepare(&mut self, brush: &BrushPresetInstance) {
+    pub fn prepare(&mut self, brush: &BrushPresetInstance, tiles: &GpuTileStorage) {
+        let Some(InitializedData {
+            target_layer,
+            referenced_textures,
+            intermediate_buffers,
+            graph_input,
+            stroke_info,
+            main_layout,
+            main_esti_layout,
+            ..
+        }) = self.initialized.as_mut()
+        else {
+            return;
+        };
+
         let mut external_var_buffers = Vec::new();
         for var in brush.external_vars().all().iter() {
             let buffer = var.value.try_write_into_shader_buffer().unwrap();
@@ -981,9 +1008,161 @@ impl BrushPresetRenderer {
             });
             external_var_buffers.push(gpu_buffer);
         }
+        let referenced_textures = referenced_textures
+            .iter()
+            .map(std::convert::identity)
+            .collect::<Vec<_>>();
+
+        // Prepare external variable buffers
+
+        let mut external_var_bindings = Vec::with_capacity(external_var_buffers.len());
+        let external_var_base_binding = EXTERNAL_VARIABLE_BASE_BINDING;
+        for (index, buffer) in external_var_buffers.iter().enumerate() {
+            external_var_bindings.push(BindGroupEntry {
+                binding: external_var_base_binding + index as u32,
+                resource: buffer.as_entire_binding(),
+            });
+        }
+
+        // Layer bindings
+        let target_layer = tiles.get_layer_binding_or_empty(*target_layer).unwrap();
+
+        let intermediate_textures = intermediate_buffers.textures();
+        let intermediate_tile_info = intermediate_buffers.tile_info_buffer();
+
+        let mut main_esti_bind_groups_option = [None, None];
+        for i in 0..2 {
+            let main_esti_bind_group_entries = {
+                let mut entries = vec![
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: graph_input.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: stroke_info.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureViewArray(&referenced_textures),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: target_layer.tile_info_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: BindingResource::TextureView(target_layer.texture.as_ref()),
+                    },
+                    BindGroupEntry {
+                        binding: 7,
+                        resource: intermediate_tile_info.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 8,
+                        resource: BindingResource::TextureView(intermediate_textures[i].as_ref()),
+                    },
+                    BindGroupEntry {
+                        binding: 16,
+                        resource: self.tile_allocation_dispatch.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 17,
+                        resource: self.main_dispatch.as_entire_binding(),
+                    },
+                ];
+                entries.extend(external_var_bindings.clone());
+                entries
+            };
+
+            let main_esti_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("brush main estimation bind group"),
+                layout: &main_esti_layout,
+                entries: &main_esti_bind_group_entries,
+            });
+
+            main_esti_bind_groups_option[i].replace(main_esti_bind_group);
+        }
+
+        let mut main_bind_groups_option = [None, None];
+        for i in 0..2 {
+            let mut main_bind_group_entries = vec![
+                BindGroupEntry {
+                    binding: 0,
+                    resource: graph_input.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: stroke_info.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureViewArray(&referenced_textures),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: target_layer.tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(target_layer.texture.as_ref()),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: intermediate_tile_info.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(intermediate_textures[1 - i].as_ref()),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: intermediate_tile_info.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(intermediate_textures[i].as_ref()),
+                },
+            ];
+
+            main_bind_group_entries.extend(external_var_bindings.clone());
+
+            let main_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("brush main bind group"),
+                layout: &main_layout,
+                entries: &main_bind_group_entries,
+            });
+
+            main_bind_groups_option[i].replace(main_bind_group);
+        }
+
+        let tile_allocation_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("tile allocation bind group"),
+            layout: &self.tile_allocation_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: stroke_info.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: intermediate_tile_info.as_entire_binding(),
+                },
+            ],
+        });
 
         self.prepared = Some(PreparedData {
             external_var_buffers,
+            tile_allocation_bind_group,
+            main_esti_bind_groups: [
+                main_esti_bind_groups_option[0].take().unwrap(),
+                main_esti_bind_groups_option[1].take().unwrap(),
+            ],
+            main_bind_groups: [
+                main_bind_groups_option[0].take().unwrap(),
+                main_bind_groups_option[1].take().unwrap(),
+            ],
+            next_bind_group: 0,
         })
     }
 
@@ -1008,106 +1187,32 @@ impl BrushPresetRenderer {
             }),
             Some(PreparedData {
                 external_var_buffers,
+                main_bind_groups,
+                main_esti_bind_groups,
+                next_bind_group,
+                tile_allocation_bind_group,
+                ..
             }),
-        ) = (self.initialized.as_mut(), self.prepared.as_ref())
+        ) = (self.initialized.as_mut(), self.prepared.as_mut())
         else {
             return;
         };
 
         // Prepare buffers
 
-        graph_input.clear();
-        graph_input.push(&GraphInputUniform {
-            pen_position: params.pen_position,
-        });
-        graph_input.write_buffer(&self.device);
-
-        let referenced_textures = referenced_textures
-            .iter()
-            .map(std::convert::identity)
-            .collect::<Vec<_>>();
-
-        // Prepare external variable buffers
-
-        let mut external_var_bindings = Vec::with_capacity(external_var_buffers.len());
-        let external_var_base_binding = EXTERNAL_VARIABLE_BASE_BINDING;
-        for (index, buffer) in external_var_buffers.iter().enumerate() {
-            external_var_bindings.push(BindGroupEntry {
-                binding: external_var_base_binding + index as u32,
-                resource: buffer.as_entire_binding(),
-            });
-        }
-
-        // Layer bindings
-        let target_layer = tiles.get_layer_binding_or_empty(*target_layer).unwrap();
-
-        // *accumulated_affected_tiles = accumulated_affected_tiles.union(affected_tiles);
-        // pp_layers[0].ensure_tile_area(affected_tiles);
-        // pp_layers[1].ensure_tile_area(affected_tiles);
-
-        let src_intermediate_tex = intermediate_buffers.src_tex();
-        let dst_intermediate_tex = intermediate_buffers.dst_tex();
-        let intermediate_tile_info = intermediate_buffers.tile_info_buffer();
-        intermediate_buffers.swap();
-
-        // -----------------------
-        // Step 1: Estimate affected tiles
-        // -----------------------
-
-        let main_esti_bind_group_entries = {
-            let mut entries = vec![
-                BindGroupEntry {
-                    binding: 0,
-                    resource: graph_input.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: stroke_info.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureViewArray(&referenced_textures),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: target_layer.tile_info_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: BindingResource::TextureView(target_layer.texture.as_ref()),
-                },
-                BindGroupEntry {
-                    binding: 7,
-                    resource: intermediate_tile_info.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 8,
-                    resource: BindingResource::TextureView(src_intermediate_tex.as_ref()),
-                },
-                BindGroupEntry {
-                    binding: 16,
-                    resource: self.tile_allocation_dispatch.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 17,
-                    resource: self.main_dispatch.as_entire_binding(),
-                },
-            ];
-            entries.extend(external_var_bindings.clone());
-            entries
-        };
-
-        let main_esti_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush main estimation bind group"),
-            layout: &main_esti_layout,
-            entries: &main_esti_bind_group_entries,
-        });
+        let mut wrapper = StorageBuffer::new(Vec::<u8>::new());
+        wrapper
+            .write(&GraphInputUniform {
+                pen_position: params.pen_position,
+            })
+            .unwrap();
+        self.queue.write_buffer(graph_input, 0, wrapper.as_ref());
 
         ec.push_debug_group("brush main estimation");
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
             pass.set_pipeline(&main_esti_pipeline);
-            pass.set_bind_group(0, &main_esti_bind_group, &[]);
+            pass.set_bind_group(0, &main_esti_bind_groups[*next_bind_group], &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
         ec.pop_debug_group();
@@ -1116,26 +1221,11 @@ impl BrushPresetRenderer {
         // Step 2: Allocate affected tiles
         // -----------------------
 
-        let tile_allocation_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("tile allocation bind group"),
-            layout: &self.tile_allocation_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: stroke_info.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: intermediate_tile_info.as_entire_binding(),
-                },
-            ],
-        });
-
         ec.push_debug_group("tile allocation");
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.tile_allocation_pipeline);
-            pass.set_bind_group(0, &tile_allocation_bind_group, &[]);
+            pass.set_bind_group(0, &*tile_allocation_bind_group, &[]);
             pass.dispatch_workgroups_indirect(&self.tile_allocation_dispatch, 0);
         }
         ec.pop_debug_group();
@@ -1145,61 +1235,18 @@ impl BrushPresetRenderer {
         // -----------------------
 
         // Prepare main bind group
-        let mut main_bind_group_entries = vec![
-            BindGroupEntry {
-                binding: 0,
-                resource: graph_input.binding().unwrap(),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: stroke_info.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 2,
-                resource: BindingResource::TextureViewArray(&referenced_textures),
-            },
-            BindGroupEntry {
-                binding: 3,
-                resource: target_layer.tile_info_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 4,
-                resource: BindingResource::TextureView(target_layer.texture.as_ref()),
-            },
-            BindGroupEntry {
-                binding: 5,
-                resource: intermediate_tile_info.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 6,
-                resource: BindingResource::TextureView(dst_intermediate_tex.as_ref()),
-            },
-            BindGroupEntry {
-                binding: 7,
-                resource: intermediate_tile_info.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 8,
-                resource: BindingResource::TextureView(src_intermediate_tex.as_ref()),
-            },
-        ];
-
-        main_bind_group_entries.extend(external_var_bindings);
-
-        let main_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush main bind group"),
-            layout: &main_layout,
-            entries: &main_bind_group_entries,
-        });
 
         ec.push_debug_group("brush main");
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
             pass.set_pipeline(&main_pipeline);
-            pass.set_bind_group(0, &main_bind_group, &[]);
+            pass.set_bind_group(0, &main_bind_groups[*next_bind_group], &[]);
             pass.dispatch_workgroups_indirect(&self.main_dispatch, 0);
         }
         ec.pop_debug_group();
+
+        *next_bind_group = 1 - *next_bind_group;
+        intermediate_buffers.swap();
     }
 
     pub fn draw_stroke_postprocess(&mut self, tiles: &GpuTileStorage) {

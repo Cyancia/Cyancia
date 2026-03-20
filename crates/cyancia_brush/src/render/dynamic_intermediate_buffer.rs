@@ -79,6 +79,10 @@ impl DynamicIntermediateBuffer {
         self.textures[1 - self.current].clone()
     }
 
+    pub fn textures(&self) -> &[Arc<TextureView>; 2] {
+        &self.textures
+    }
+
     pub fn tile_info_buffer(&self) -> Buffer {
         self.tile_info.inner_buffer().unwrap().clone()
     }
