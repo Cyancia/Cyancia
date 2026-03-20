@@ -15,20 +15,21 @@ use cyancia_input::mouse::PressedMouseState;
 use cyancia_math::number::LerpAngle;
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use cyancia_shader_graph::graph::texture::TextureId;
-use encase::ShaderType;
-use glam::{IVec2, IVec4, UVec2, Vec2, Vec4Swizzles};
+use cyancia_utils::include_shader;
+use encase::{ShaderType, StorageBuffer};
+use glam::{IVec2, IVec4, UVec2, UVec3, UVec4, Vec2, Vec4Swizzles};
 use parking_lot::RwLock;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use uuid::Uuid;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
-    ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode, Origin3d,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
-    TextureViewDimension,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+    BufferDescriptor, BufferUsages, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
+    MapMode, Origin3d, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource,
+    ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
+    TextureView, TextureViewDimension,
     naga::StorageAccess,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::PollType,
@@ -36,18 +37,14 @@ use wgpu::{
 
 use crate::{
     asset::{BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset, GpuImage},
-    render::graph::GraphInputParams,
+    render::{
+        dynamic_intermediate_buffer::{DynamicGpuTileInfoBuffer, DynamicIntermediateBuffer},
+        graph::GraphInputParams,
+    },
 };
 
+pub mod dynamic_intermediate_buffer;
 pub mod graph;
-
-// Ping pong buffer
-pub const STROKE_INTERMEDIATE_SURFACE_A: LayerId =
-    LayerId::new(Uuid::from_u128(74806453124856123074153214863542));
-pub const STROKE_INTERMEDIATE_SURFACE_B: LayerId =
-    LayerId::new(Uuid::from_u128(74806453124856123074153214863543));
-pub const STROKE_INTERMEDIATE_SURFACES: [LayerId; 2] =
-    [STROKE_INTERMEDIATE_SURFACE_A, STROKE_INTERMEDIATE_SURFACE_B];
 
 const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 
@@ -64,6 +61,7 @@ impl BrushPresetOperator {
         queue: Arc<Queue>,
     ) -> Self {
         let renderer = BrushPresetRenderer::new(device, queue);
+
         Self {
             instance,
             renderer,
@@ -81,27 +79,6 @@ impl BrushPresetOperator {
         self.sampler = StrokePenInputSampler::new();
         self.sampler.input(input);
 
-        tiles.declare_layer(
-            STROKE_INTERMEDIATE_SURFACE_A,
-            GpuLayerInfo {
-                texel_type: TexelType {
-                    format: TexelFormat::Rgba,
-                    depth: TexelDepth::Bit8,
-                },
-            },
-        );
-        tiles.declare_layer(
-            STROKE_INTERMEDIATE_SURFACE_B,
-            GpuLayerInfo {
-                texel_type: TexelType {
-                    format: TexelFormat::Rgba,
-                    depth: TexelDepth::Bit8,
-                },
-            },
-        );
-        tiles.clear_layer(STROKE_INTERMEDIATE_SURFACE_A);
-        tiles.clear_layer(STROKE_INTERMEDIATE_SURFACE_B);
-
         // TODO: Conditional reinitialize, this is kinda expensive.
         let instance = self.instance.read();
         self.renderer
@@ -112,19 +89,23 @@ impl BrushPresetOperator {
     pub fn update_stroke(&mut self, input: PenInputSample, tiles: &GpuTileStorage) {
         self.sampler.input(input);
 
+        let now = std::time::Instant::now();
+        let mut n_samples = 0;
         for sample in self.sampler.drain_samples() {
-            let now = std::time::Instant::now();
             let params = GraphInputParams {
                 pen_position: sample.position,
                 draw_direction_vec: sample.draw_direction_vec,
                 draw_direction_angle: sample.draw_direction_angle,
             };
             self.renderer.draw_main(params, tiles);
-            log::info!(
-                "Draw main graph: {} ms",
-                now.elapsed().as_secs_f32() * 1000.0
-            );
+            n_samples += 1;
         }
+        log::info!(
+            "Draw main graph: {} ms (avg {}ms each, {} samples)",
+            now.elapsed().as_secs_f32() * 1000.0,
+            now.elapsed().as_secs_f32() * 1000.0 / (n_samples as f32),
+            n_samples
+        );
     }
 
     pub fn end_stroke(&mut self, tiles: &GpuTileStorage) {
@@ -224,21 +205,22 @@ pub struct GraphInputUniform {
     pub pen_position: Vec2,
 }
 
-#[derive(ShaderType, Debug)]
+#[derive(ShaderType, Debug, Default)]
 pub struct StrokeInfoUniform {
     pub bound_min: IVec2,
     pub bound_max: IVec2,
+    pub accumulated_bound_min: IVec2,
+    pub accumulated_bound_max: IVec2,
 }
 
 struct InitializedData {
     target_layer: LayerId,
     referenced_textures: Vec<TextureView>,
-    accumulated_affected_tiles: IRect,
-    next_output_surface: usize,
+    intermediate_buffers: DynamicIntermediateBuffer,
 
     graph_input: DynamicBuffer<GraphInputUniform>,
+    stroke_info: Buffer,
 
-    affected_pixels: BufferVec<IVec4>,
     main_pipeline: ComputePipeline,
     main_layout: BindGroupLayout,
     main_esti_pipeline: ComputePipeline,
@@ -259,6 +241,12 @@ pub struct BrushPresetRenderer {
 
     initialized: Option<InitializedData>,
     prepared: Option<PreparedData>,
+
+    tile_allocation_dispatch: Buffer,
+    main_dispatch: Buffer,
+
+    tile_allocation_layout: BindGroupLayout,
+    tile_allocation_pipeline: ComputePipeline,
 
     empty_texture: GpuImage,
 }
@@ -281,12 +269,83 @@ impl BrushPresetRenderer {
             view_formats: &[],
         });
 
+        // Prepare buffers
+
+        let mut tile_allocation_dispatch = DynamicBuffer::new(
+            Some("tile allocation dispatch"),
+            BufferUsages::STORAGE | BufferUsages::INDIRECT,
+        );
+        tile_allocation_dispatch.push(&UVec4::ZERO);
+        tile_allocation_dispatch.write_buffer(&device);
+
+        let mut main_dispatch = DynamicBuffer::new(
+            Some("main dispatch"),
+            BufferUsages::STORAGE | BufferUsages::INDIRECT,
+        );
+        main_dispatch.push(&UVec4::ZERO);
+        main_dispatch.write_buffer(&device);
+
+        let tile_allocation_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("brush tile allocation bind group layout"),
+            entries: &[
+                // Estimated affected tiles
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(StrokeInfoUniform::min_size()),
+                    },
+                    count: None,
+                },
+                // Tile info
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let tile_allocation_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("brush tile allocation pipeline layout"),
+                bind_group_layouts: &[&tile_allocation_layout],
+                push_constant_ranges: &[],
+            });
+
+        let tile_allocation_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("brush tile allocation shader"),
+            source: ShaderSource::Wgsl(include_shader!("brush_tile_allocation.wgsl").into()),
+        });
+
+        let tile_allocation_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("brush tile allocation pipeline"),
+            layout: Some(&tile_allocation_pipeline_layout),
+            module: &tile_allocation_shader,
+            entry_point: Some("allocate"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         Self {
             device,
             queue,
             empty_texture: GpuImage {
                 texture: empty_texture,
             },
+
+            main_dispatch: main_dispatch.inner_buffer().unwrap().clone(),
+            tile_allocation_dispatch: tile_allocation_dispatch.inner_buffer().unwrap().clone(),
+
+            tile_allocation_layout,
+            tile_allocation_pipeline,
 
             initialized: None,
             prepared: None,
@@ -303,6 +362,20 @@ impl BrushPresetRenderer {
         // TODO: Handle shader compile error
         let compiled_preset = brush.compile(EXTERNAL_VARIABLE_BASE_BINDING).unwrap();
         println!("Compiled brush preset: \n{compiled_preset}");
+
+        // Prepare intermediate buffers
+
+        let layer_info = tiles_storage.get_layer_info(target_layer).unwrap();
+        let intermediate_buffers =
+            DynamicIntermediateBuffer::new(256, layer_info.texel_type, self.device.clone());
+
+        let mut stroke_info = DynamicBuffer::new(Some("stroke info buffer"), BufferUsages::STORAGE);
+        stroke_info.push(&StrokeInfoUniform {
+            accumulated_bound_min: IVec2::splat(i32::MAX),
+            accumulated_bound_max: IVec2::splat(i32::MIN),
+            ..Default::default()
+        });
+        stroke_info.write_buffer(&self.device);
 
         // Prepare referenced textures
 
@@ -342,13 +415,6 @@ impl BrushPresetRenderer {
             cur_binding += 1;
         }
 
-        // Prepare buffers for brush size estimation
-
-        let mut main_affected_pixels =
-            BufferVec::default().with_usage(BufferUsages::STORAGE | BufferUsages::COPY_SRC);
-        main_affected_pixels.push(&IVec4::ZERO);
-        main_affected_pixels.write_buffer(&self.device);
-
         let target_layer_texel = tiles_storage
             .get_layer_info(target_layer)
             .unwrap()
@@ -373,7 +439,7 @@ impl BrushPresetRenderer {
                 binding: 1,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
+                    ty: BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
                     min_binding_size: Some(StrokeInfoUniform::min_size()),
                 },
@@ -419,7 +485,7 @@ impl BrushPresetRenderer {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
+                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
                 },
                 count: None,
             },
@@ -443,7 +509,7 @@ impl BrushPresetRenderer {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
+                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
                 },
                 count: None,
             },
@@ -471,6 +537,17 @@ impl BrushPresetRenderer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: Some(GraphInputUniform::min_size()),
+                },
+                count: None,
+            },
+            // Stroke Info
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(StrokeInfoUniform::min_size()),
                 },
                 count: None,
             },
@@ -514,7 +591,7 @@ impl BrushPresetRenderer {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
+                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
                 },
                 count: None,
             },
@@ -531,14 +608,25 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Estimated Affected Tiles
+            // Tile allocation dispatch
             BindGroupLayoutEntry {
                 binding: 16,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(IVec4::min_size()),
+                    min_binding_size: Some(UVec3::min_size()),
+                },
+                count: None,
+            },
+            // Main dispatch
+            BindGroupLayoutEntry {
+                binding: 17,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(UVec3::min_size()),
                 },
                 count: None,
             },
@@ -611,7 +699,7 @@ impl BrushPresetRenderer {
                 binding: 1,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
+                    ty: BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
                     min_binding_size: Some(StrokeInfoUniform::min_size()),
                 },
@@ -657,7 +745,7 @@ impl BrushPresetRenderer {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
+                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
                 },
                 count: None,
             },
@@ -681,7 +769,7 @@ impl BrushPresetRenderer {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
+                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
                 },
                 count: None,
             },
@@ -704,7 +792,7 @@ impl BrushPresetRenderer {
                 binding: 1,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
+                    ty: BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
                     min_binding_size: Some(StrokeInfoUniform::min_size()),
                 },
@@ -750,7 +838,7 @@ impl BrushPresetRenderer {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
+                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
                 },
                 count: None,
             },
@@ -767,14 +855,25 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Estimated Affected Tiles
+            // Tile allocation dispatch
             BindGroupLayoutEntry {
                 binding: 16,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
-                    min_binding_size: Some(IVec4::min_size()),
+                    min_binding_size: Some(UVec3::min_size()),
+                },
+                count: None,
+            },
+            // Main dispatch
+            BindGroupLayoutEntry {
+                binding: 17,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(UVec3::min_size()),
                 },
                 count: None,
             },
@@ -844,18 +943,16 @@ impl BrushPresetRenderer {
         }
 
         self.initialized = Some(InitializedData {
-            graph_input: DynamicBuffer::default().with_usage(BufferUsages::STORAGE),
+            graph_input: DynamicBuffer::new(Some("graph input buffer"), BufferUsages::STORAGE),
             referenced_textures,
-            accumulated_affected_tiles: IRect::EMPTY,
             target_layer,
-            next_output_surface: 0,
+            intermediate_buffers,
+            stroke_info: stroke_info.into_inner_buffer().unwrap(),
 
             main_layout,
             main_pipeline,
             main_esti_layout,
             main_esti_pipeline,
-            affected_pixels: main_affected_pixels,
-
             stroke_pp_esti_layout,
             stroke_pp_esti_pipelines,
             stroke_pp_layout,
@@ -887,13 +984,12 @@ impl BrushPresetRenderer {
                 target_layer,
                 graph_input,
                 referenced_textures,
-                accumulated_affected_tiles,
                 main_layout,
                 main_esti_layout,
                 main_esti_pipeline,
-                affected_pixels,
-                next_output_surface,
                 main_pipeline,
+                intermediate_buffers,
+                stroke_info,
                 ..
             }),
             Some(PreparedData {
@@ -903,6 +999,8 @@ impl BrushPresetRenderer {
         else {
             return;
         };
+
+        let mut ec = self.device.create_command_encoder(&Default::default());
 
         // Prepare buffers
 
@@ -930,15 +1028,29 @@ impl BrushPresetRenderer {
 
         // Layer bindings
         let target_layer = tiles.get_layer_binding_or_empty(*target_layer).unwrap();
-        let input_layer = tiles
-            .get_layer_binding_or_empty(STROKE_INTERMEDIATE_SURFACE_B)
-            .unwrap();
+
+        // *accumulated_affected_tiles = accumulated_affected_tiles.union(affected_tiles);
+        // pp_layers[0].ensure_tile_area(affected_tiles);
+        // pp_layers[1].ensure_tile_area(affected_tiles);
+
+        let src_intermediate_tex = intermediate_buffers.src_tex();
+        let dst_intermediate_tex = intermediate_buffers.dst_tex();
+        let intermediate_tile_info = intermediate_buffers.tile_info_buffer();
+        intermediate_buffers.swap();
+
+        // -----------------------
+        // Step 1: Estimate affected tiles
+        // -----------------------
 
         let main_esti_bind_group_entries = {
             let mut entries = vec![
                 BindGroupEntry {
                     binding: 0,
                     resource: graph_input.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: stroke_info.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -954,15 +1066,19 @@ impl BrushPresetRenderer {
                 },
                 BindGroupEntry {
                     binding: 7,
-                    resource: input_layer.tile_info_buffer.as_entire_binding(),
+                    resource: intermediate_tile_info.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 8,
-                    resource: BindingResource::TextureView(input_layer.texture.as_ref()),
+                    resource: BindingResource::TextureView(src_intermediate_tex.as_ref()),
                 },
                 BindGroupEntry {
                     binding: 16,
-                    resource: affected_pixels.binding().unwrap(),
+                    resource: self.tile_allocation_dispatch.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 17,
+                    resource: self.main_dispatch.as_entire_binding(),
                 },
             ];
             entries.extend(external_var_bindings.clone());
@@ -975,88 +1091,46 @@ impl BrushPresetRenderer {
             entries: &main_esti_bind_group_entries,
         });
 
-        let main_affected_tiles_buf = affected_pixels.inner_buffer().unwrap();
-
-        let pixels_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("affected pixels staging"),
-            size: main_affected_tiles_buf.size(),
-            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
-        let mut ec = self.device.create_command_encoder(&Default::default());
-
+        ec.push_debug_group("brush main estimation");
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
-            pass.set_pipeline(main_esti_pipeline);
+            pass.set_pipeline(&main_esti_pipeline);
             pass.set_bind_group(0, &main_esti_bind_group, &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
+        ec.pop_debug_group();
 
-        // Copy storage buffers into staging buffers
-        ec.copy_buffer_to_buffer(
-            main_affected_tiles_buf,
-            0,
-            &pixels_staging,
-            0,
-            pixels_staging.size(),
-        );
+        // -----------------------
+        // Step 2: Allocate affected tiles
+        // -----------------------
 
-        let submission = self.queue.submit([ec.finish()]);
-
-        let (tx, rx) = std::sync::mpsc::channel();
-        pixels_staging
-            .slice(..)
-            .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
-
-        self.device
-            .poll(PollType::Wait {
-                submission_index: Some(submission),
-                timeout: None,
-            })
-            .unwrap();
-
-        rx.recv().unwrap().unwrap();
-
-        let affected_pixels =
-            bytemuck::cast_slice::<_, IVec4>(&pixels_staging.slice(..).get_mapped_range())[0];
-
-        let affected_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {
-            min: affected_pixels.xy(),
-            max: affected_pixels.zw(),
+        let tile_allocation_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("tile allocation bind group"),
+            layout: &self.tile_allocation_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: stroke_info.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: intermediate_tile_info.as_entire_binding(),
+                },
+            ],
         });
 
-        pixels_staging.unmap();
-
-        if affected_tiles.is_empty() {
-            log::error!("Brush preset estimation shader returned 0 affected tiles.");
-            return;
+        ec.push_debug_group("tile allocation");
+        {
+            let mut pass = ec.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&self.tile_allocation_pipeline);
+            pass.set_bind_group(0, &tile_allocation_bind_group, &[]);
+            pass.dispatch_workgroups_indirect(&self.tile_allocation_dispatch, 0);
         }
+        ec.pop_debug_group();
 
-        let mut pp_layers = [
-            tiles.get_layer_mut(STROKE_INTERMEDIATE_SURFACE_A).unwrap(),
-            tiles.get_layer_mut(STROKE_INTERMEDIATE_SURFACE_B).unwrap(),
-        ];
-
-        *accumulated_affected_tiles = accumulated_affected_tiles.union(affected_tiles);
-        pp_layers[0].ensure_tile_area(affected_tiles);
-        pp_layers[1].ensure_tile_area(affected_tiles);
-
-        let pp_textures = [
-            pp_layers[0].texture().unwrap(),
-            pp_layers[1].texture().unwrap(),
-        ];
-        let pp_info_buffers = [
-            pp_layers[0].tile_info_buffer().unwrap(),
-            pp_layers[1].tile_info_buffer().unwrap(),
-        ];
-
-        let mut stroke_info = DynamicBuffer::default().with_usage(BufferUsages::STORAGE);
-        stroke_info.push(&StrokeInfoUniform {
-            bound_min: affected_tiles.min * GpuTileStorageInner::TILE_SIZE as i32,
-            bound_max: affected_tiles.max * GpuTileStorageInner::TILE_SIZE as i32,
-        });
-        stroke_info.write_buffer(&self.device);
+        // -----------------------
+        // Step 3: Main pass
+        // -----------------------
 
         // Prepare main bind group
         let mut main_bind_group_entries = vec![
@@ -1066,7 +1140,7 @@ impl BrushPresetRenderer {
             },
             BindGroupEntry {
                 binding: 1,
-                resource: stroke_info.binding().unwrap(),
+                resource: stroke_info.as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 2,
@@ -1082,21 +1156,19 @@ impl BrushPresetRenderer {
             },
             BindGroupEntry {
                 binding: 5,
-                resource: pp_info_buffers[*next_output_surface].as_entire_binding(),
+                resource: intermediate_tile_info.as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 6,
-                resource: BindingResource::TextureView(pp_textures[*next_output_surface].as_ref()),
+                resource: BindingResource::TextureView(dst_intermediate_tex.as_ref()),
             },
             BindGroupEntry {
                 binding: 7,
-                resource: pp_info_buffers[1 - *next_output_surface].as_entire_binding(),
+                resource: intermediate_tile_info.as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 8,
-                resource: BindingResource::TextureView(
-                    pp_textures[1 - *next_output_surface].as_ref(),
-                ),
+                resource: BindingResource::TextureView(src_intermediate_tex.as_ref()),
             },
         ];
 
@@ -1107,17 +1179,15 @@ impl BrushPresetRenderer {
             layout: &main_layout,
             entries: &main_bind_group_entries,
         });
-        *next_output_surface = 1 - *next_output_surface;
 
-        let mut ec = self.device.create_command_encoder(&Default::default());
-
+        ec.push_debug_group("brush main");
         {
             let mut pass = ec.begin_compute_pass(&Default::default());
             pass.set_pipeline(&main_pipeline);
             pass.set_bind_group(0, &main_bind_group, &[]);
-            let size = affected_tiles.size().as_uvec2() * GpuTileStorageInner::TILE_SIZE;
-            pass.dispatch_workgroups(size.x.div_ceil(16), size.y.div_ceil(16), 1);
+            pass.dispatch_workgroups_indirect(&self.main_dispatch, 0);
         }
+        ec.pop_debug_group();
 
         self.queue.submit([ec.finish()]);
     }
@@ -1127,13 +1197,12 @@ impl BrushPresetRenderer {
             Some(InitializedData {
                 target_layer,
                 referenced_textures,
-                accumulated_affected_tiles,
-                next_output_surface,
-                affected_pixels,
+                stroke_info,
                 stroke_pp_pipelines,
                 stroke_pp_layout,
                 stroke_pp_esti_pipelines,
                 stroke_pp_esti_layout,
+                intermediate_buffers,
                 ..
             }),
             Some(PreparedData {
@@ -1145,24 +1214,7 @@ impl BrushPresetRenderer {
             return;
         };
 
-        if accumulated_affected_tiles.is_empty() {
-            return;
-        }
-
         let target_layer_tiles = tiles.get_layer_binding_or_empty(*target_layer).unwrap();
-        let pp_layers = [
-            tiles
-                .get_layer_binding_or_empty(STROKE_INTERMEDIATE_SURFACE_A)
-                .unwrap(),
-            tiles
-                .get_layer_binding_or_empty(STROKE_INTERMEDIATE_SURFACE_B)
-                .unwrap(),
-        ];
-        let pp_textures = [pp_layers[0].texture.as_ref(), pp_layers[1].texture.as_ref()];
-        let pp_info_buffers = [
-            pp_layers[0].tile_info_buffer.as_entire_binding(),
-            pp_layers[1].tile_info_buffer.as_entire_binding(),
-        ];
 
         let referenced_texture_views = referenced_textures
             .iter()
@@ -1198,35 +1250,40 @@ impl BrushPresetRenderer {
         }
         bind_group_entries_base.extend(external_var_bindings);
 
-        let mut stroke_info = DynamicBuffer::default().with_usage(BufferUsages::STORAGE);
+        let mut ec = self.device.create_command_encoder(&Default::default());
+
         for pp_index in 0..total_stroke_pp {
-            stroke_info.clear();
-            stroke_info.push(&StrokeInfoUniform {
-                bound_min: accumulated_affected_tiles.min * GpuTileStorageInner::TILE_SIZE as i32,
-                bound_max: accumulated_affected_tiles.max * GpuTileStorageInner::TILE_SIZE as i32,
-            });
-            stroke_info.write_buffer(&self.device);
+            let src_tex = intermediate_buffers.src_tex();
+            let dst_tex = intermediate_buffers.dst_tex();
+            let tile_info_buf = intermediate_buffers.tile_info_buffer();
+            intermediate_buffers.swap();
+
+            // -----------------------
+            // Step 1: Estimate affected tiles
+            // -----------------------
 
             let esti_entries = {
                 let mut entries = bind_group_entries_base.clone();
                 entries.extend([
                     BindGroupEntry {
                         binding: 1,
-                        resource: stroke_info.binding().unwrap(),
+                        resource: stroke_info.as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 7,
-                        resource: pp_info_buffers[1 - *next_output_surface].clone(),
+                        resource: tile_info_buf.as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 8,
-                        resource: BindingResource::TextureView(
-                            pp_textures[1 - *next_output_surface],
-                        ),
+                        resource: BindingResource::TextureView(src_tex.as_ref()),
                     },
                     BindGroupEntry {
                         binding: 16,
-                        resource: affected_pixels.binding().unwrap(),
+                        resource: self.tile_allocation_dispatch.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 17,
+                        resource: self.main_dispatch.as_entire_binding(),
                     },
                 ]);
                 entries
@@ -1238,92 +1295,72 @@ impl BrushPresetRenderer {
                 entries: &esti_entries,
             });
 
-            let affected_tiles_buf = affected_pixels.inner_buffer().unwrap();
-
-            let pixels_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("affected pixels staging"),
-                size: affected_tiles_buf.size(),
-                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            let mut ec = self.device.create_command_encoder(&Default::default());
-
+            ec.push_debug_group(&format!("brush stroke postprocess estimation {}", pp_index));
             {
                 let mut pass = ec.begin_compute_pass(&Default::default());
                 pass.set_pipeline(&stroke_pp_esti_pipelines[pp_index]);
                 pass.set_bind_group(0, &esti_bind_group, &[]);
                 pass.dispatch_workgroups(1, 1, 1);
             }
+            ec.pop_debug_group();
 
-            // Copy storage buffers into staging buffers
-            ec.copy_buffer_to_buffer(
-                affected_tiles_buf,
-                0,
-                &pixels_staging,
-                0,
-                pixels_staging.size(),
-            );
+            // -----------------------
+            // Step 2: Allocate affected tiles
+            // -----------------------
 
-            let submission = self.queue.submit([ec.finish()]);
-
-            let (tx, rx) = std::sync::mpsc::channel();
-            pixels_staging
-                .slice(..)
-                .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
-
-            self.device
-                .poll(PollType::Wait {
-                    submission_index: Some(submission),
-                    timeout: None,
-                })
-                .unwrap();
-
-            rx.recv().unwrap().unwrap();
-
-            let affected_pixels =
-                bytemuck::cast_slice::<_, IVec4>(&pixels_staging.slice(..).get_mapped_range())[0];
-
-            println!("affected: {:?}", affected_pixels);
-            let affected_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {
-                min: affected_pixels.xy(),
-                max: affected_pixels.zw(),
+            let tile_allocation_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("tile allocation bind group"),
+                layout: &self.tile_allocation_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: stroke_info.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: tile_info_buf.as_entire_binding(),
+                    },
+                ],
             });
-            *accumulated_affected_tiles = accumulated_affected_tiles.union(affected_tiles);
 
-            pixels_staging.unmap();
+            ec.push_debug_group(&format!(
+                "brush stroke postprocess tile allocation {}",
+                pp_index
+            ));
+            {
+                let mut pass = ec.begin_compute_pass(&Default::default());
+                pass.set_pipeline(&self.tile_allocation_pipeline);
+                pass.set_bind_group(0, &tile_allocation_bind_group, &[]);
+                pass.dispatch_workgroups_indirect(&self.tile_allocation_dispatch, 0);
+            }
+            ec.pop_debug_group();
 
-            stroke_info.clear();
-            stroke_info.push(&StrokeInfoUniform {
-                bound_min: affected_tiles.min * GpuTileStorageInner::TILE_SIZE as i32,
-                bound_max: affected_tiles.max * GpuTileStorageInner::TILE_SIZE as i32,
-            });
-            stroke_info.write_buffer(&self.device);
+            // -----------------------
+            // Step 3: Main pass
+            // -----------------------
 
             let entries = {
                 let mut entries = bind_group_entries_base.clone();
                 entries.extend([
                     BindGroupEntry {
                         binding: 1,
-                        resource: stroke_info.binding().unwrap(),
+                        resource: stroke_info.as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 5,
-                        resource: pp_info_buffers[*next_output_surface].clone(),
+                        resource: tile_info_buf.as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 6,
-                        resource: BindingResource::TextureView(pp_textures[*next_output_surface]),
+                        resource: BindingResource::TextureView(dst_tex.as_ref()),
                     },
                     BindGroupEntry {
                         binding: 7,
-                        resource: pp_info_buffers[1 - *next_output_surface].clone(),
+                        resource: tile_info_buf.as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 8,
-                        resource: BindingResource::TextureView(
-                            pp_textures[1 - *next_output_surface],
-                        ),
+                        resource: BindingResource::TextureView(src_tex.as_ref()),
                     },
                 ]);
                 entries
@@ -1334,115 +1371,102 @@ impl BrushPresetRenderer {
                 entries: &entries,
             });
 
-            let mut ec = self.device.create_command_encoder(&Default::default());
-
+            ec.push_debug_group(&format!("brush stroke postprocess {}", pp_index));
             {
                 let mut pass = ec.begin_compute_pass(&Default::default());
                 pass.set_pipeline(&stroke_pp_pipelines[pp_index]);
                 pass.set_bind_group(0, &bind_group, &[]);
-                let size = affected_tiles.size().as_uvec2() * GpuTileStorageInner::TILE_SIZE;
-                pass.dispatch_workgroups(size.x.div_ceil(16), size.y.div_ceil(16), 1);
+                pass.dispatch_workgroups_indirect(&self.main_dispatch, 0);
             }
-
-            self.queue.submit([ec.finish()]);
-            *next_output_surface = 1 - *next_output_surface;
+            ec.pop_debug_group();
         }
+
+        self.queue.submit([ec.finish()]);
     }
 
-    // pub fn copy_last_surface_to_target(&self, tiles: &GpuTileStorage) {
-    //     let (Some(initialized), Some(stroke_pp_prepared)) = (
-    //         self.initialized.as_ref(),
-    //         self.stroke_postprocess_prepared.as_ref(),
-    //     ) else {
-    //         return;
-    //     };
-
-    //     let result_layer = tiles.get_layer(stroke_pp_prepared.last_surface).unwrap();
-    //     let mut target_layer = tiles.get_layer_mut(initialized.target_layer).unwrap();
-
-    //     let mut ec = self.device.create_command_encoder(&Default::default());
-    //     for index in &initialized.affected_tiles {
-    //         let src_layer = result_layer.get_tile_layer(*index).unwrap();
-    //         target_layer.get_tile_or_allocate(*index);
-    //         let dst_layer = target_layer.get_tile_layer(*index).unwrap();
-
-    //         ec.copy_texture_to_texture(
-    //             TexelCopyTextureInfo {
-    //                 texture: result_layer.texture().unwrap().texture(),
-    //                 mip_level: 0,
-    //                 origin: Origin3d {
-    //                     x: 0,
-    //                     y: 0,
-    //                     z: src_layer,
-    //                 },
-    //                 aspect: TextureAspect::All,
-    //             },
-    //             TexelCopyTextureInfo {
-    //                 texture: target_layer.texture().unwrap().texture(),
-    //                 mip_level: 0,
-    //                 origin: Origin3d {
-    //                     x: 0,
-    //                     y: 0,
-    //                     z: dst_layer,
-    //                 },
-    //                 aspect: TextureAspect::All,
-    //             },
-    //             Extent3d {
-    //                 width: GpuTileStorageInner::TILE_SIZE,
-    //                 height: GpuTileStorageInner::TILE_SIZE,
-    //                 depth_or_array_layers: 1,
-    //             },
-    //         );
-    //     }
-
-    //     self.queue.submit([ec.finish()]);
-    // }
     pub fn copy_last_surface_to_target(&self, tiles: &GpuTileStorage) {
         let Some(InitializedData {
-            accumulated_affected_tiles,
             target_layer,
-            next_output_surface,
+            intermediate_buffers,
             ..
         }) = self.initialized.as_ref()
         else {
             return;
         };
 
-        let result_layer = tiles
-            .get_layer(STROKE_INTERMEDIATE_SURFACES[1 - *next_output_surface])
-            .unwrap();
-        let mut target_layer = tiles.get_layer_mut(*target_layer).unwrap();
-        target_layer.ensure_tile_area(*accumulated_affected_tiles);
+        let tile_info = intermediate_buffers.tile_info_buffer();
+
+        let tile_info_staging = self.device.create_buffer(&BufferDescriptor {
+            label: Some("tile info staging"),
+            size: tile_info.size(),
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
 
         let mut ec = self.device.create_command_encoder(&Default::default());
-        for y in accumulated_affected_tiles.min.y..accumulated_affected_tiles.max.y {
-            for x in accumulated_affected_tiles.min.x..accumulated_affected_tiles.max.x {
-                let coord = IVec2::new(x, y);
-                let Some(src) = result_layer.get_tile_layer(coord) else {
-                    continue;
-                };
-                let dst = target_layer.get_tile_layer(coord).unwrap();
+        ec.copy_buffer_to_buffer(&tile_info, 0, &tile_info_staging, 0, tile_info.size());
+        let submission_index = self.queue.submit([ec.finish()]);
 
-                ec.copy_texture_to_texture(
-                    TexelCopyTextureInfo {
-                        texture: result_layer.texture().unwrap().texture(),
-                        mip_level: 0,
-                        origin: Origin3d { x: 0, y: 0, z: src },
-                        aspect: TextureAspect::All,
-                    },
-                    TexelCopyTextureInfo {
-                        texture: target_layer.texture().unwrap().texture(),
-                        mip_level: 0,
-                        origin: Origin3d { x: 0, y: 0, z: dst },
-                        aspect: TextureAspect::All,
-                    },
-                    Extent3d {
-                        width: GpuTileStorageInner::TILE_SIZE,
-                        height: GpuTileStorageInner::TILE_SIZE,
-                        depth_or_array_layers: 1,
-                    },
-                );
+        let (tx, rx) = std::sync::mpsc::channel();
+        tile_info_staging
+            .slice(..)
+            .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
+        self.device
+            .poll(PollType::Wait {
+                submission_index: Some(submission_index),
+                timeout: None,
+            })
+            .unwrap();
+        rx.recv().unwrap().unwrap();
+
+        let tile_info_data = tile_info_staging.slice(..).get_mapped_range();
+        let tile_info = {
+            let storage = encase::StorageBuffer::new(tile_info_data.as_ref());
+            storage.create::<DynamicGpuTileInfoBuffer>().unwrap()
+        };
+        drop(tile_info_data);
+
+        let mut target_layer = tiles.get_layer_mut(*target_layer).unwrap();
+
+        for tile in &tile_info.buf {
+            if tile.index == IVec2::MIN {
+                break;
             }
+            target_layer.get_tile_or_allocate(tile.index);
+        }
+
+        let result_layer = intermediate_buffers.src_tex();
+        let mut ec = self.device.create_command_encoder(&Default::default());
+        for (src, tile) in tile_info.buf.iter().enumerate() {
+            if tile.index == IVec2::MIN {
+                break;
+            }
+
+            let dst = target_layer.get_tile_layer(tile.index).unwrap();
+
+            ec.copy_texture_to_texture(
+                TexelCopyTextureInfo {
+                    texture: result_layer.texture(),
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: src as u32,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfo {
+                    texture: target_layer.texture().unwrap().texture(),
+                    mip_level: 0,
+                    origin: Origin3d { x: 0, y: 0, z: dst },
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: GpuTileStorageInner::TILE_SIZE,
+                    height: GpuTileStorageInner::TILE_SIZE,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
 
         self.queue.submit([ec.finish()]);

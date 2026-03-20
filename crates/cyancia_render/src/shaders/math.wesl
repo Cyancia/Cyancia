@@ -57,3 +57,11 @@ fn sample_cubic_curve(curve: CubicCurve, x: f32) -> f32 {
 
     return saturate((1.0 - t) * curve.control_points[i - 1u].y + t * curve.control_points[i].y + t * (1.0 - t) * (a * (1.0 - t) + b * t));
 }
+
+fn unsigned_div_ceil(lhs: u32, rhs: u32) -> u32 {
+    return (lhs + rhs - 1u) / rhs;
+}
+
+fn unsigned_div_ceil2(lhs: vec2u, rhs: vec2u) -> vec2u {
+    return (lhs + rhs - 1u) / rhs;
+}

@@ -1,5 +1,5 @@
 import image::image_tiling::{TileInfo, TILE_SIZE};
-import render::math::{Rect, transform_rect};
+import render::math::{Rect, transform_rect, unsigned_div_ceil2};
 
 struct GraphInput {
     pen_position: vec2f,
@@ -8,18 +8,23 @@ struct GraphInput {
 struct StrokeInfo {
     bound_min: vec2i,
     bound_max: vec2i,
+    accumulated_bound_min: vec2i,
+    accumulated_bound_max: vec2i,
+}
+
+struct DynamicTileInfo {
+    n_tiles: u32,
+    buf: array<TileInfo>,
 }
 
 @if(!POSTPROCESSING) @group(0) @binding(0) var<storage> graph_input: GraphInput;
-// During postprocessing estimation, we can know the bounds of the stroke, but we also needs to estimate the bounds after this postprocess pass.
-// But during main pass estimation, we have no idea about the bounds, so this will binding be vacant in main pass estimation.
-@if((!POSTPROCESSING && !SIZE_ESTIMATION) || POSTPROCESSING) @group(0) @binding(1) var<storage> stroke_info: StrokeInfo;
+@group(0) @binding(1) var<storage, read_write> stroke_info: StrokeInfo;
 @group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
 @group(0) @binding(4) var target_layer: texture_storage_2d_array<r32uint, read>;
-@if(!SIZE_ESTIMATION) @group(0) @binding(5) var<storage> outputs_tile_info: array<TileInfo>;
+@if(!SIZE_ESTIMATION) @group(0) @binding(5) var<storage> outputs_tile_info: DynamicTileInfo;
 @if(!SIZE_ESTIMATION) @group(0) @binding(6) var outputs: texture_storage_2d_array<r32uint, write>;
-@group(0) @binding(7) var<storage> inputs_tile_info: array<TileInfo>;
+@group(0) @binding(7) var<storage> inputs_tile_info: DynamicTileInfo;
 @group(0) @binding(8) var inputs: texture_storage_2d_array<r32uint, read>;
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
@@ -35,8 +40,8 @@ fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {
 }
 
 fn convert_pixel_to_output_tile(pixel: vec2i) -> vec3u {
-    for (var i = 0u; i < arrayLength(&outputs_tile_info); i = i + 1u) {
-        let info = outputs_tile_info[i];
+    for (var i = 0u; i < outputs_tile_info.n_tiles; i = i + 1u) {
+        let info = outputs_tile_info.buf[i];
         if (pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
             pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE)) {;
             return vec3u(vec2u(pixel - info.origin), i);
@@ -46,8 +51,8 @@ fn convert_pixel_to_output_tile(pixel: vec2i) -> vec3u {
 }
 
 fn convert_pixel_to_input_tile(pixel: vec2i) -> vec3u {
-    for (var i = 0u; i < arrayLength(&inputs_tile_info); i = i + 1u) {
-        let info = inputs_tile_info[i];
+    for (var i = 0u; i < inputs_tile_info.n_tiles; i = i + 1u) {
+        let info = inputs_tile_info.buf[i];
         if (pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
             pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE)) {;
             return vec3u(vec2u(pixel - info.origin), i);
@@ -149,24 +154,29 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
-    if any(id.xy >= vec2u(stroke_info.bound_max - stroke_info.bound_min)) {
+    let pixel_pos = vec2i(id.xy) + stroke_info.bound_min * i32(TILE_SIZE);
+    if any(pixel_pos >= stroke_info.bound_max * i32(TILE_SIZE)) {
         return;
     }
-    let pixel_pos = vec2i(id.xy) + stroke_info.bound_min;
     let pixel_posf = vec2f(pixel_pos);
 
     //CODEGENFLAG_COMPILED_GRAPH
 }
 
-@if(SIZE_ESTIMATION) @group(0) @binding(16) var<storage, read_write> estimated_affected: vec4i;
+@if(SIZE_ESTIMATION) @group(0) @binding(16) var<storage, read_write> tile_allocation_dispatch: vec3u;
+@if(SIZE_ESTIMATION) @group(0) @binding(17) var<storage, read_write> main_dispatch: vec3u;
+var<workgroup> affected_pixels_precise: vec4i;
 
 @if(SIZE_ESTIMATION)
 fn require_bounds(pixel_min: vec2i, pixel_max: vec2i) {
-    estimated_affected = vec4i(
-        min(estimated_affected.xy, pixel_min),
-        max(estimated_affected.zw, pixel_max + 1)
+    affected_pixels_precise = vec4i(
+        min(affected_pixels_precise.xy, pixel_min),
+        max(affected_pixels_precise.zw, pixel_max + 1)
     );
 }
+
+const TILE_ALLOCATION_WORKGROUP_SIZE = vec2u(8);
+const MAIN_WORKGROUP_SIZE = vec2u(16);
 
 @if(SIZE_ESTIMATION)
 @compute
@@ -174,7 +184,20 @@ fn require_bounds(pixel_min: vec2i, pixel_max: vec2i) {
 fn estimate(@builtin(global_invocation_id) id: vec3u) {
     let pixel_pos = vec2i(0);
     let pixel_posf = vec2f(pixel_pos);
-    estimated_affected = vec4i(0x7FFFFFFF, 0x7FFFFFFF, -0x7FFFFFFF, -0x7FFFFFFF);
+    affected_pixels_precise = vec4i(0x7FFFFFFF, 0x7FFFFFFF, -0x7FFFFFFF, -0x7FFFFFFF);
 
     //CODEGENFLAG_COMPILED_GRAPH
+
+    let affected_tiles = vec4i(affected_pixels_precise.xy / i32(TILE_SIZE), (affected_pixels_precise.zw - 1) / i32(TILE_SIZE) + 1);
+
+    let affected_tiles_count = vec2u(affected_tiles.zw - affected_tiles.xy);
+    let affected_pixels = affected_tiles_count * TILE_SIZE;
+
+    tile_allocation_dispatch = vec3u(unsigned_div_ceil2(affected_tiles_count, TILE_ALLOCATION_WORKGROUP_SIZE), 1);
+    main_dispatch = vec3u(unsigned_div_ceil2(affected_pixels, MAIN_WORKGROUP_SIZE), 1);
+
+    stroke_info.bound_min = affected_tiles.xy;
+    stroke_info.bound_max = affected_tiles.zw;
+    stroke_info.accumulated_bound_min = min(stroke_info.accumulated_bound_min, affected_tiles.xy);
+    stroke_info.accumulated_bound_max = max(stroke_info.accumulated_bound_max, affected_tiles.zw);
 }

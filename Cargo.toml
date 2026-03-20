@@ -82,11 +82,11 @@ parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 futures = "0.3"
 bitflags = "2"
 wgpu = "27"
-glam = { version = "0.30", features = ["encase", "serde"] }
+glam = { version = "0.30", features = ["encase", "serde", "bytemuck"] }
 dashmap = "6"
 wesl = { version = "0.3", features = ["package", "naga-ext"] }
 encase = "0.12"
-bytemuck = "1"
+bytemuck = { version = "1", features = ["derive"] }
 image = "0.25"
 palette = "0.7"
 rayon = "1"

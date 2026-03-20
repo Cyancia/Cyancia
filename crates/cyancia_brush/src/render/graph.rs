@@ -602,7 +602,7 @@ impl StatelessCommonGraphNode for StrokeBoundsNode {
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = vec2f(stroke_info.bound_min);\nlet {} = vec2f(stroke_info.bound_max);\n",
+            "let {} = vec2f(stroke_info.accumulated_bound_min * i32(TILE_SIZE));\nlet {} = vec2f(stroke_info.accumulated_bound_max * i32(TILE_SIZE));\n",
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))

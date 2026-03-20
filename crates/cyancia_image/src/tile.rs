@@ -79,6 +79,13 @@ pub struct GpuTileInfo {
     pub origin: IVec2,
 }
 
+impl GpuTileInfo {
+    pub const NULL: Self = Self {
+        index: IVec2::splat(i32::MIN),
+        origin: IVec2::splat(i32::MIN),
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GpuLayerInfo {
     pub texel_type: TexelType,
