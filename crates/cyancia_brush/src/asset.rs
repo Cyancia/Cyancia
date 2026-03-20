@@ -433,6 +433,7 @@ impl BrushPresetInstance {
         }
 
         let mut texture_usage = GraphTextureUsageRecorder::default();
+        texture_usage.use_texture(TextureId::NULL);
         let main_graph = compile(
             &self.main_graph,
             &mut texture_usage,
