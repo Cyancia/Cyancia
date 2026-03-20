@@ -1,5 +1,5 @@
 import image::image_tiling::{TileInfo, TILE_SIZE};
-import render::math::{Rect, transform_rect, unsigned_div_ceil2};
+import render::math::{Rect, transform_rect, unsigned_div_ceil2, sdf_ellipse};
 
 struct GraphInput {
     pen_position: vec2f,
@@ -27,6 +27,18 @@ struct DynamicTileInfo {
 @group(0) @binding(7) var<storage> inputs_tile_info: DynamicTileInfo;
 @group(0) @binding(8) var inputs: texture_storage_2d_array<r32uint, read>;
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
+
+struct CircularMask {
+    min_bounds: vec2f,
+    max_bounds: vec2f,
+    value: f32,
+}
+
+fn circular_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> CircularMask {
+    let dist = sdf_ellipse(pixel, center, ab);
+    let value = smoothstep(1.0, 0.0, dist);
+    return CircularMask(center - ab, center + ab, value);
+}
 
 fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {
     for (var i = 0u; i < arrayLength(&target_layer_tile_info); i = i + 1u) {

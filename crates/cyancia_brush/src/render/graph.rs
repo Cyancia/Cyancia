@@ -608,3 +608,57 @@ impl StatelessCommonGraphNode for StrokeBoundsNode {
         ))
     }
 }
+
+#[derive(Default, Clone)]
+pub struct EllipticalMaskNode;
+
+impl StatelessCommonGraphNode for EllipticalMaskNode {
+    fn name(&self) -> &'static str {
+        "Elliptical Mask"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Sample Position", "Center", "Radii"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Mask Value", "Min Bounds", "Max Bounds"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x462bbb)
+    }
+
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+        ]
+    }
+
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let mask = ctx.ident_generator.next_output();
+
+        Ok(format!(
+            "let {mask} = circular_mask({}, {}, {});\nlet {} = {mask}.value;\nlet {} = {mask}.min_bounds;\nlet {} = {mask}.max_bounds;\n",
+            ctx.get_input(0)?,
+            ctx.get_input(1)?,
+            ctx.get_input(2)?,
+            ctx.get_output(0)?,
+            ctx.get_output(1)?,
+            ctx.get_output(2)?,
+        ))
+    }
+}
