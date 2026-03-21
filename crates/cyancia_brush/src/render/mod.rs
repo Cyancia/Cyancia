@@ -1452,12 +1452,15 @@ impl BrushPresetRenderer {
             target_layer.get_tile_or_allocate(tile.index);
         }
 
+        let mut n_copied = 0;
+
         let result_layer = intermediate_buffers.src_tex();
         let mut ec = self.device.create_command_encoder(&Default::default());
         for (src, tile) in tile_info.buf.iter().enumerate() {
             if tile.index == IVec2::MIN {
                 break;
             }
+            n_copied += 1;
 
             let dst = target_layer.get_tile_layer(tile.index).unwrap();
 
@@ -1487,5 +1490,7 @@ impl BrushPresetRenderer {
         }
 
         self.queue.submit([ec.finish()]);
+
+        log::info!("Copied {} tiles to target layer", n_copied);
     }
 }

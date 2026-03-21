@@ -15,8 +15,6 @@ struct DynamicTileInfo {
 @group(0) @binding(0) var<storage, read> stroke_info: StrokeInfo;
 @group(0) @binding(1) var<storage, read_write> tile_info: DynamicTileInfo;
 
-var<workgroup> lock: atomic<u32>;
-
 @compute
 @workgroup_size(8, 8, 1)
 fn allocate(@builtin(global_invocation_id) global_id: vec3u) {
@@ -38,7 +36,11 @@ fn allocate(@builtin(global_invocation_id) global_id: vec3u) {
     }
 
     let new_index = atomicAdd(&tile_info.n_tiles, 1u);
-    if new_index < arrayLength(&tile_info.buf) {
+    let buffer_max = arrayLength(&tile_info.buf);
+    if new_index < buffer_max {
         tile_info.buf[new_index] = TileInfo(tile_index, tile_index * i32(TILE_SIZE));
+    } else {
+        // TODO prevent overflow
+        atomicMax(&tile_info.n_tiles, buffer_max);
     }
 }
