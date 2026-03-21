@@ -22,10 +22,9 @@ struct DynamicTileInfo {
 @group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
 @group(0) @binding(4) var target_layer: texture_storage_2d_array<r32uint, read>;
-@if(!SIZE_ESTIMATION) @group(0) @binding(5) var<storage> outputs_tile_info: DynamicTileInfo;
+@group(0) @binding(5) var<storage> buffer_tile_info: DynamicTileInfo;
 @if(!SIZE_ESTIMATION) @group(0) @binding(6) var outputs: texture_storage_2d_array<r32uint, write>;
-@group(0) @binding(7) var<storage> inputs_tile_info: DynamicTileInfo;
-@group(0) @binding(8) var inputs: texture_storage_2d_array<r32uint, read>;
+@group(0) @binding(7) var inputs: texture_storage_2d_array<r32uint, read>;
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
 struct CircularMask {
@@ -51,20 +50,9 @@ fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {
     return vec3u(0xffffffffu, 0, 0);
 }
 
-fn convert_pixel_to_output_tile(pixel: vec2i) -> vec3u {
-    for (var i = 0u; i < outputs_tile_info.n_tiles; i = i + 1u) {
-        let info = outputs_tile_info.buf[i];
-        if (pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
-            pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE)) {;
-            return vec3u(vec2u(pixel - info.origin), i);
-        }
-    }
-    return vec3u(0xffffffffu, 0, 0);
-}
-
-fn convert_pixel_to_input_tile(pixel: vec2i) -> vec3u {
-    for (var i = 0u; i < inputs_tile_info.n_tiles; i = i + 1u) {
-        let info = inputs_tile_info.buf[i];
+fn convert_pixel_to_buffer_tile(pixel: vec2i) -> vec3u {
+    for (var i = 0u; i < buffer_tile_info.n_tiles; i = i + 1u) {
+        let info = buffer_tile_info.buf[i];
         if (pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
             pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE)) {;
             return vec3u(vec2u(pixel - info.origin), i);
@@ -109,7 +97,7 @@ fn sample_local_texture(local_index: u32, pixel: vec2u) -> vec4f {
 }
 
 fn current_input_color(pixel_pos: vec2i) -> vec4f {
-    let tile_index = convert_pixel_to_input_tile(pixel_pos);
+    let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
     if tile_index.z == 0xFFFFFFFFu {
         return vec4f(0.0);
     }
@@ -155,7 +143,7 @@ fn set_output_color_within_bounds(pixel: vec2i, color: vec4f, bounds_min: vec2f,
 
 @if(!SIZE_ESTIMATION)
 fn set_output_color(pixel_pos: vec2i, color: vec4f) {
-    let tile_index = convert_pixel_to_output_tile(pixel_pos);
+    let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
     if tile_index.z == 0xFFFFFFFFu {
         return;
     }

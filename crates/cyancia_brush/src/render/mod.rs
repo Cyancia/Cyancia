@@ -493,7 +493,7 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Output Tile Info
+            // Buffer Tile Info
             BindGroupLayoutEntry {
                 binding: 5,
                 visibility: ShaderStages::COMPUTE,
@@ -517,20 +517,9 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Input Tile Info
-            BindGroupLayoutEntry {
-                binding: 7,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
-                },
-                count: None,
-            },
             // Input
             BindGroupLayoutEntry {
-                binding: 8,
+                binding: 7,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
@@ -599,9 +588,9 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Input Tile Info
+            // Buffer Tile Info
             BindGroupLayoutEntry {
-                binding: 7,
+                binding: 5,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
@@ -612,7 +601,7 @@ impl BrushPresetRenderer {
             },
             // Input
             BindGroupLayoutEntry {
-                binding: 8,
+                binding: 7,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
@@ -753,7 +742,7 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Output tile info
+            // Buffer tile info
             BindGroupLayoutEntry {
                 binding: 5,
                 visibility: ShaderStages::COMPUTE,
@@ -777,20 +766,9 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Input tile info
-            BindGroupLayoutEntry {
-                binding: 7,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
-                },
-                count: None,
-            },
             // Input
             BindGroupLayoutEntry {
-                binding: 8,
+                binding: 7,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
@@ -846,9 +824,9 @@ impl BrushPresetRenderer {
                 },
                 count: None,
             },
-            // Input Tile Info
+            // Buffer Tile Info
             BindGroupLayoutEntry {
-                binding: 7,
+                binding: 5,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },
@@ -859,7 +837,7 @@ impl BrushPresetRenderer {
             },
             // Input
             BindGroupLayoutEntry {
-                binding: 8,
+                binding: 7,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::StorageTexture {
                     access: StorageTextureAccess::ReadOnly,
@@ -1021,11 +999,11 @@ impl BrushPresetRenderer {
                         resource: BindingResource::TextureView(target_layer.texture.as_ref()),
                     },
                     BindGroupEntry {
-                        binding: 7,
+                        binding: 5,
                         resource: intermediate_tile_info.as_entire_binding(),
                     },
                     BindGroupEntry {
-                        binding: 8,
+                        binding: 7,
                         resource: BindingResource::TextureView(intermediate_textures[i].as_ref()),
                     },
                     BindGroupEntry {
@@ -1083,10 +1061,6 @@ impl BrushPresetRenderer {
                 },
                 BindGroupEntry {
                     binding: 7,
-                    resource: intermediate_tile_info.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 8,
                     resource: BindingResource::TextureView(intermediate_textures[i].as_ref()),
                 },
             ];
@@ -1317,11 +1291,11 @@ impl BrushPresetRenderer {
                         resource: stroke_info.as_entire_binding(),
                     },
                     BindGroupEntry {
-                        binding: 7,
+                        binding: 5,
                         resource: tile_info_buf.as_entire_binding(),
                     },
                     BindGroupEntry {
-                        binding: 8,
+                        binding: 7,
                         resource: BindingResource::TextureView(src_tex.as_ref()),
                     },
                     BindGroupEntry {
@@ -1403,10 +1377,6 @@ impl BrushPresetRenderer {
                     },
                     BindGroupEntry {
                         binding: 7,
-                        resource: tile_info_buf.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 8,
                         resource: BindingResource::TextureView(src_tex.as_ref()),
                     },
                 ]);
