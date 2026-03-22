@@ -144,17 +144,11 @@ impl StatelessCommonGraphNode for PixelPositionNode {
 }
 
 #[derive(Default, Clone)]
-pub struct OutputWithinMaskNode;
+pub struct FilterWithinMaskNode;
 
-#[derive(Clone)]
-pub enum OutputWithinMaskMessage {
-    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
-    SetBlendMode(BlendMode),
-}
-
-impl StatelessCommonGraphNode for OutputWithinMaskNode {
+impl StatelessCommonGraphNode for FilterWithinMaskNode {
     fn name(&self) -> &'static str {
-        "Output Within Mask"
+        "Filter Within Mask"
     }
 
     fn input_slot_names(&self) -> &[&'static str] {
@@ -169,7 +163,7 @@ impl StatelessCommonGraphNode for OutputWithinMaskNode {
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
-        &[]
+        &["Color"]
     }
 
     fn header_color(&self) -> Color {
@@ -188,12 +182,16 @@ impl StatelessCommonGraphNode for OutputWithinMaskNode {
     }
 
     fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
-        vec![]
+        vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "set_output_color_within_mask(pixel_pos, {}, {}, {}, {}, {}, {});\n",
+            "let {} = filter_within_mask(pixel_pos, {}, {}, {}, {}, {}, {});\n",
+            ctx.get_output(0)?,
             ctx.get_input(0)?,
             ctx.get_input(1)?,
             ctx.get_input(4)?,
@@ -205,11 +203,11 @@ impl StatelessCommonGraphNode for OutputWithinMaskNode {
 }
 
 #[derive(Default, Clone)]
-pub struct OutputWithinBoundsNode;
+pub struct FilterWithinBoundsNode;
 
-impl StatelessCommonGraphNode for OutputWithinBoundsNode {
+impl StatelessCommonGraphNode for FilterWithinBoundsNode {
     fn name(&self) -> &'static str {
-        "Output Within Bounds"
+        "Filter Within Bounds"
     }
 
     fn input_slot_names(&self) -> &[&'static str] {
@@ -217,7 +215,7 @@ impl StatelessCommonGraphNode for OutputWithinBoundsNode {
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
-        &[]
+        &["Color"]
     }
 
     fn header_color(&self) -> Color {
@@ -233,15 +231,55 @@ impl StatelessCommonGraphNode for OutputWithinBoundsNode {
     }
 
     fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = filter_within_bounds(pixel_pos, {}, {}, {});\n",
+            ctx.get_output(0)?,
+            ctx.get_input(0)?,
+            ctx.get_input(1)?,
+            ctx.get_input(2)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct OutputColorNode;
+
+impl StatelessCommonGraphNode for OutputColorNode {
+    fn name(&self) -> &'static str {
+        "Output Color"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Color"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xf50687)
+    }
+
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO)]
+    }
+
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
 
     fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "set_output_color_within_bounds(pixel_pos, {}, {}, {});\n",
+            "set_output_color(pixel_pos, {});\n",
             ctx.get_input(0)?,
-            ctx.get_input(1)?,
-            ctx.get_input(2)?
         ))
     }
 }
@@ -652,7 +690,7 @@ impl StatelessCommonGraphNode for EllipticalMaskNode {
         let mask = ctx.ident_generator.next_output();
 
         Ok(format!(
-            "let {mask} = circular_mask({}, {}, {});\nlet {} = {mask}.value;\nlet {} = {mask}.min_bounds;\nlet {} = {mask}.max_bounds;\n",
+            "let {mask} = elliptical_mask({}, {}, {});\nlet {} = {mask}.value;\nlet {} = {mask}.min_bounds;\nlet {} = {mask}.max_bounds;\n",
             ctx.get_input(0)?,
             ctx.get_input(1)?,
             ctx.get_input(2)?,

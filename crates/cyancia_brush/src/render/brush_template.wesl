@@ -33,7 +33,7 @@ struct CircularMask {
     value: f32,
 }
 
-fn circular_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> CircularMask {
+fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> CircularMask {
     let dist = sdf_ellipse(pixel, center, ab);
     let value = smoothstep(1.0, 0.0, dist);
     return CircularMask(center - ab, center + ab, value);
@@ -112,42 +112,43 @@ fn target_layer_color(pixel_pos: vec2i) -> vec4f {
     return image::texture_unpack::unpack_rgba8_texel(textureLoad(target_layer, vec2i(tile_index.xy), tile_index.z));
 }
 
-fn set_output_color_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_scale: vec2f, mask_rotation: f32, mask_translation: vec2f, mask_anchor: vec2f) {
+fn filter_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_scale: vec2f, mask_rotation: f32, mask_translation: vec2f, mask_anchor: vec2f) -> vec4f {
     let tex_size = vec2f(textureDimensions(textures[mask_local_index]));
     let mat = texture_transform_mat(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor);
 
     @if(SIZE_ESTIMATION) {
         let rect = transform_rect(Rect(vec2f(0.0), tex_size), mat);
         require_bounds(vec2i(rect.min), vec2i(rect.max));
-    } @else {
-        let tex_px = (render::math::inverse_mat3x3(mat) * vec3f(vec2f(pixel), 1.0)).xy;
-        if (tex_px.x < 0.0 || tex_px.x >= tex_size.x || tex_px.y < 0.0 || tex_px.y >= tex_size.y) {
-            return;
-        }
-        let mask_value = textureLoad(textures[mask_local_index], vec2i(tex_px), 0).r;
-        set_output_color(pixel, vec4f(color * mask_value));
     }
+
+    let tex_px = (render::math::inverse_mat3x3(mat) * vec3f(vec2f(pixel), 1.0)).xy;
+    if (tex_px.x < 0.0 || tex_px.x >= tex_size.x || tex_px.y < 0.0 || tex_px.y >= tex_size.y) {
+        return vec4f(0.0);
+    }
+    let mask_value = textureLoad(textures[mask_local_index], vec2i(tex_px), 0).r;
+    return vec4f(color * mask_value);
 }
 
-fn set_output_color_within_bounds(pixel: vec2i, color: vec4f, bounds_min: vec2f, bounds_max: vec2f) {
+fn filter_within_bounds(pixel: vec2i, color: vec4f, bounds_min: vec2f, bounds_max: vec2f) -> vec4f {
     @if(SIZE_ESTIMATION) {
         require_bounds(vec2i(bounds_min), vec2i(bounds_max));
-    } @else {
-        let pixelf = vec2f(pixel);
-        if (pixelf.x < bounds_min.x || pixelf.x >= bounds_max.x || pixelf.y < bounds_min.y || pixelf.y >= bounds_max.y) {
-            return;
-        }
-        set_output_color(pixel, color);
     }
+
+    let pixelf = vec2f(pixel);
+    if (pixelf.x < bounds_min.x || pixelf.x >= bounds_max.x || pixelf.y < bounds_min.y || pixelf.y >= bounds_max.y) {
+        return vec4f(0.0);
+    }
+    return color;
 }
 
-@if(!SIZE_ESTIMATION)
 fn set_output_color(pixel_pos: vec2i, color: vec4f) {
-    let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
-    if tile_index.z == 0xFFFFFFFFu {
-        return;
+    @if(!SIZE_ESTIMATION) {
+        let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
+        if tile_index.z == 0xFFFFFFFFu {
+            return;
+        }
+        textureStore(outputs, vec2i(tile_index.xy), tile_index.z, image::texture_unpack::pack_rgba8_texel(color));
     }
-    textureStore(outputs, vec2i(tile_index.xy), tile_index.z, image::texture_unpack::pack_rgba8_texel(color));
 }
 
 @if(!SIZE_ESTIMATION)

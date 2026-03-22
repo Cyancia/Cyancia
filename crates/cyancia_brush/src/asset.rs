@@ -44,10 +44,7 @@ use wgpu::{
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{
-    BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
-    DrawDirectionNode, EllipticalMaskNode, GraphInputParams, LayerPixelColorNode,
-    OutputWithinBoundsNode, OutputWithinMaskNode, PasteTextureNode, PenPositionNode,
-    PixelPositionNode, StrokeBoundsNode,
+    BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, GraphInputParams, LayerPixelColorNode, OutputColorNode, PasteTextureNode, PenPositionNode, PixelPositionNode, StrokeBoundsNode
 };
 
 pub struct BrushPreset {
@@ -556,8 +553,9 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.register::<PenPositionNode>();
     nodes.register::<DrawDirectionNode>();
     nodes.register::<PixelPositionNode>();
-    nodes.register::<OutputWithinMaskNode>();
-    nodes.register::<OutputWithinBoundsNode>();
+    nodes.register::<FilterWithinMaskNode>();
+    nodes.register::<FilterWithinBoundsNode>();
+    nodes.register::<OutputColorNode>();
     nodes.register::<PasteTextureNode>();
     nodes.register::<BlendColorNode>();
     nodes.register::<LayerPixelColorNode>();
@@ -583,8 +581,9 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.register::<PenPositionNode>();
     nodes.register::<DrawDirectionNode>();
     nodes.register::<PixelPositionNode>();
-    nodes.register::<OutputWithinMaskNode>();
-    nodes.register::<OutputWithinBoundsNode>();
+    nodes.register::<FilterWithinMaskNode>();
+    nodes.register::<FilterWithinBoundsNode>();
+    nodes.register::<OutputColorNode>();
     nodes.register::<PasteTextureNode>();
     nodes.register::<BlendColorNode>();
     nodes.register::<LayerPixelColorNode>();
