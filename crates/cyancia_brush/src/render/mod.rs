@@ -109,6 +109,7 @@ impl BrushPresetOperator {
         };
 
         let now = std::time::Instant::now();
+        renderer.postprocess_stroke(&self.device, &self.queue);
         renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
     }
@@ -120,6 +121,7 @@ pub struct BrushPresetRenderer {
     estimate: BrushEstimatePipeline,
     main: BrushMainPipeline,
     stroke_pp_estimate: BrushEstimatePipeline,
+    stroke_pp_tile_allocation: BrushTileAllocationPipeline,
     stroke_pp_main: BrushMainPipeline,
     resources: StrokeResources,
 }
@@ -134,6 +136,7 @@ impl BrushPresetRenderer {
         assets: &AssetRegistry,
     ) -> Self {
         let compiled_brush = brush.compile(EXTERNAL_VARIABLE_BASE_BINDING).unwrap();
+        println!("Compiled brush preset:\n{}", compiled_brush);
         let resources = StrokeResources::new(
             device,
             queue,
@@ -148,7 +151,7 @@ impl BrushPresetRenderer {
             &resources,
             compiled_brush.input_sampling.into(),
         );
-        let tile_allocation = BrushTileAllocationPipeline::new(device, &resources);
+        let tile_allocation = BrushTileAllocationPipeline::new(device, &resources, false);
         let estimate = BrushEstimatePipeline::new(
             device,
             &resources,
@@ -164,6 +167,7 @@ impl BrushPresetRenderer {
                 .size_estimation
                 .into(),
         );
+        let stroke_pp_tile_allocation = BrushTileAllocationPipeline::new(device, &resources, true);
         let stroke_pp_main = BrushMainPipeline::new(
             device,
             &resources,
@@ -176,6 +180,7 @@ impl BrushPresetRenderer {
             estimate,
             main,
             stroke_pp_estimate,
+            stroke_pp_tile_allocation,
             stroke_pp_main,
             resources,
         }
@@ -206,6 +211,24 @@ impl BrushPresetRenderer {
             self.main.dispatch(&mut ec, &self.resources);
             ec.pop_debug_group();
         }
+
+        queue.submit([ec.finish()]);
+    }
+
+    pub fn postprocess_stroke(&self, device: &Device, queue: &Queue) {
+        if self.resources.n_stroke_pp == 0 {
+            return;
+        }
+
+        let mut ec = device.create_command_encoder(&Default::default());
+        ec.clear_buffer(&self.resources.pass_fence, 0, None);
+
+        ec.push_debug_group("brush preset stroke postprocess");
+        self.stroke_pp_estimate.dispatch(&mut ec, 1, 1, 1);
+        self.stroke_pp_tile_allocation
+            .dispatch(&mut ec, &self.resources);
+        self.stroke_pp_main.dispatch(&mut ec, &self.resources);
+        ec.pop_debug_group();
 
         queue.submit([ec.finish()]);
     }
@@ -282,9 +305,9 @@ impl BrushPresetRenderer {
         }
 
         let result_layer = if (stroke_info.total_dabs + self.resources.n_stroke_pp) % 2 == 0 {
-            &self.resources.intermediate_buffers.textures()[1]
-        } else {
             &self.resources.intermediate_buffers.textures()[0]
+        } else {
+            &self.resources.intermediate_buffers.textures()[1]
         };
 
         let mut ec = device.create_command_encoder(&Default::default());

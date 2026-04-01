@@ -598,15 +598,16 @@ fn compile_template_stroke_postprocess(
 
     let mut concated_graphs_size_estimation = String::new();
     let mut concated_graphs_main = String::new();
+    let len = compiled_graphs.len();
     for (i, (_, g)) in compiled_graphs.into_iter().enumerate() {
         concated_graphs_size_estimation.extend(g.chars().chain(['\n']));
         concated_graphs_main.extend(
             format!(
                 "
-                wait_for_sample({i} + stroke_info.total_dabs);
-                {g}
-                finish_sample_thread();
-                storageBarrier();
+                    wait_for_sample({i});
+                    {g}
+                    finish_sample_thread();
+                    storageBarrier();
                 "
             )
             .chars(),

@@ -1,6 +1,6 @@
 import package::image::image_tiling::{TileInfo, TILE_SIZE};
 import package::render::math::{Rect, IRect, transform_rect, unsigned_div_ceil, sdf_ellipse};
-import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfos, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE};
+import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfos, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
 @group(0) @binding(0) var<storage> samples: OutputSamples;
 @group(0) @binding(1) var<storage, read_write> stroke_info: StrokeInfo;
@@ -200,7 +200,7 @@ fn finish_sample_thread() {
     atomicAdd(&fence.cur_sample_finished_threads, 1u);
 }
 
-@if(!SIZE_ESTIMATION)
+@if(!SIZE_ESTIMATION && !POSTPROCESS)
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -219,6 +219,21 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     finish_sample_thread();
 }
 
+@if(!SIZE_ESTIMATION && POSTPROCESS)
+@compute
+@workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+    let bounds = get_accumulated_pixel_bounds();
+    let pixel_pos = vec2i(id.xy) + bounds.min;
+    if any(pixel_pos >= bounds.max) {
+        return;
+    }
+    let pixel_posf = vec2f(pixel_pos);
+
+    let dummy_input = ComputedPenInput();
+    main_graph(dummy_input, pixel_pos, pixel_posf);
+}
+
 @if(SIZE_ESTIMATION) var<private> affected_pixels_precise: vec4i;
 
 @if(SIZE_ESTIMATION)
@@ -229,7 +244,7 @@ fn require_bounds(pixel_min: vec2i, pixel_max: vec2i) {
     );
 }
 
-@if(SIZE_ESTIMATION)
+@if(SIZE_ESTIMATION && !POSTPROCESS)
 @compute
 @workgroup_size(1, 1, 8)
 fn estimate(@builtin(global_invocation_id) id: vec3u) {
@@ -282,4 +297,40 @@ fn estimate(@builtin(global_invocation_id) id: vec3u) {
             unsigned_div_ceil(samples.n_samples, MAIN_WORKGROUP_SIZE.z)
         );
     }
+}
+
+@if(SIZE_ESTIMATION && POSTPROCESS)
+@compute
+@workgroup_size(1, 1, 1)
+fn estimate() {
+    affected_pixels_precise = vec4i(0x7FFFFFFF, 0x7FFFFFFF, -0x7FFFFFFF, -0x7FFFFFFF);
+
+    let pixel_pos = vec2i(0);
+    let pixel_posf = vec2f(pixel_pos);
+    let dummy_input = ComputedPenInput();
+    main_graph(dummy_input, pixel_pos, pixel_posf);
+
+    let accu_min_x = atomicLoad(&stroke_info.accumulated_bound_min_x);
+    let accu_min_y = atomicLoad(&stroke_info.accumulated_bound_min_y);
+    let accu_max_x = atomicLoad(&stroke_info.accumulated_bound_max_x);
+    let accu_max_y = atomicLoad(&stroke_info.accumulated_bound_max_y);
+    let affected_tiles = vec4i(
+        min(affected_pixels_precise.xy / i32(TILE_SIZE), vec2i(accu_min_x, accu_min_y)),
+        max((affected_pixels_precise.zw - 1) / i32(TILE_SIZE) + 1, vec2i(accu_max_x, accu_max_y))
+    );
+
+    let affected_tiles_count = vec2u(affected_tiles.zw - affected_tiles.xy);
+
+    tile_allocation_dispatch = vec3u(
+        unsigned_div_ceil(affected_tiles_count.x, TILE_ALLOCATION_WORKGROUP_SIZE.x),
+        unsigned_div_ceil(affected_tiles_count.y, TILE_ALLOCATION_WORKGROUP_SIZE.y),
+        unsigned_div_ceil(samples.n_samples, TILE_ALLOCATION_WORKGROUP_SIZE.z)
+    );
+
+    let affected_pixels_count = affected_tiles_count * vec2u(TILE_SIZE);
+    main_dispatch = vec3u(
+        unsigned_div_ceil(affected_pixels_count.x, MAIN_WORKGROUP_SIZE.x),
+        unsigned_div_ceil(affected_pixels_count.y, MAIN_WORKGROUP_SIZE.y),
+        unsigned_div_ceil(samples.n_samples, MAIN_WORKGROUP_SIZE.z)
+    );
 }

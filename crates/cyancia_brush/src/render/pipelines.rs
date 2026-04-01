@@ -164,7 +164,7 @@ pub struct BrushTileAllocationPipeline {
 }
 
 impl BrushTileAllocationPipeline {
-    pub fn new(device: &Device, resources: &StrokeResources) -> Self {
+    pub fn new(device: &Device, resources: &StrokeResources, is_postprocess: bool) -> Self {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush tile allocation layout"),
             entries: &[
@@ -188,6 +188,16 @@ impl BrushTileAllocationPipeline {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(StrokeInfo::min_size()),
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -205,6 +215,10 @@ impl BrushTileAllocationPipeline {
                         .intermediate_buffers
                         .tile_info_buffer()
                         .as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: resources.stroke_info.as_entire_binding(),
                 },
             ],
         });
@@ -226,6 +240,7 @@ impl BrushTileAllocationPipeline {
         compiler.set_mangler(Default::default());
         compiler.set_options(Default::default());
         compiler.set_feature("TILE_ALLOCATION", true);
+        compiler.set_feature("POSTPROCESS", is_postprocess);
         let shader_code = compiler
             .compile(&"package::brush_tile_allocation".parse().unwrap())
             .unwrap()
