@@ -92,7 +92,7 @@ impl ToolProxy {
     pub fn switch_tool(&mut self, tool: ToolId, services: Arc<Services>) -> Task<()> {
         let last = match self.state.take() {
             Some(st) => {
-                st.tx.unbounded_send(ToolEvent::Deactivate).unwrap();
+                self.try_send(ToolEvent::Deactivate);
                 st.tx.close_channel();
                 st.current
             }
