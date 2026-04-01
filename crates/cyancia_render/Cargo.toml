@@ -15,6 +15,7 @@ futures.workspace = true
 iced_renderer.workspace = true
 serde.workspace = true
 parse-display.workspace = true
+anyhow.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

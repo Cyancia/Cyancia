@@ -1,36 +1,41 @@
-import image::image_tiling::{TileInfo, TILE_SIZE};
+import package::image::image_tiling::{TileInfo, TILE_SIZE};
+import package::brush::brush_types::{DabInfos, DynamicTileInfo, StrokeInfo};
 
-struct StrokeInfo {
-    bound_min: vec2i,
-    bound_max: vec2i,
-    accumulated_bound_min: vec2i,
-    accumulated_bound_max: vec2i,
-}
-
-struct DynamicTileInfo {
-    n_tiles: atomic<u32>,
-    buf: array<TileInfo>,
-}
-
-@group(0) @binding(0) var<storage, read> stroke_info: StrokeInfo;
+@group(0) @binding(0) var<storage> dab_infos: DabInfos;
 @group(0) @binding(1) var<storage, read_write> tile_info: DynamicTileInfo;
 
 @compute
-@workgroup_size(8, 8, 1)
-fn allocate(@builtin(global_invocation_id) global_id: vec3u) {
-    let tile_index = stroke_info.bound_min + vec2i(global_id.xy);
-    if any(tile_index >= stroke_info.bound_max) {
+@workgroup_size(1, 1, 8)
+fn allocate(@builtin(global_invocation_id) id: vec3u) {
+    let sample_index = id.z;
+    if sample_index > dab_infos.n_dabs {
+        return;
+    }
+    let dab_info = dab_infos.buf[sample_index];
+
+    let tile_index = dab_info.bound_min + vec2i(id.xy);
+    if any(tile_index >= dab_info.bound_max) {
         return;
     }
 
+    // We need to ensure that only one invocation handles allocation at certain index.
+    // Here we check if there's another dab after this one also allocates this tile.
+    // If there is, skip this invocation.
+    // If there isn't, then this invocation will be the only one allocating this tile.
+    for (var i = sample_index + 1u; i < dab_infos.n_dabs; i++) {
+        if all(dab_infos.buf[i].bound_min <= tile_index) && all(dab_infos.buf[i].bound_max > tile_index) {
+            return;
+        }
+    }
+
     var allocated = false;
-    for (var i = 0u; i < tile_info.n_tiles; i++) {
+    let n_tiles = atomicLoad(&tile_info.n_tiles);
+    for (var i = 0u; i < n_tiles; i++) {
         if all(tile_info.buf[i].index == tile_index) {
             allocated = true;
             break;
         }
     }
-
     if allocated {
         return;
     }

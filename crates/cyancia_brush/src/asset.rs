@@ -44,7 +44,10 @@ use wgpu::{
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{
-    BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, GraphInputParams, LayerPixelColorNode, OutputColorNode, PasteTextureNode, PenPositionNode, PixelPositionNode, StrokeBoundsNode
+    BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
+    DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
+    GraphInputParams, LayerPixelColorNode, OutputColorNode, PasteTextureNode, PenPositionNode,
+    PixelPositionNode, StrokeBoundsNode,
 };
 
 pub struct BrushPreset {
@@ -265,14 +268,14 @@ impl AssetSerializer for ImageSerializer {
 }
 
 pub struct CompiledBrushGraph {
-    pub shader: String,
+    pub main: String,
     pub size_estimation: String,
 }
 
 impl Display for CompiledBrushGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "-------------- Shader --------------")?;
-        writeln!(f, "{}", self.shader)?;
+        writeln!(f, "{}", self.main)?;
         writeln!(f, "-------------- Size estimation --------------")?;
         writeln!(f, "{}", self.size_estimation)?;
         Ok(())
@@ -280,9 +283,12 @@ impl Display for CompiledBrushGraph {
 }
 
 pub struct CompiledBrushPreset {
+    pub input_sampling: String,
     pub main_graph: CompiledBrushGraph,
-    pub stroke_postprocess_graphs: Vec<CompiledBrushGraph>,
+    pub stroke_postprocess_graphs: CompiledBrushGraph,
+    pub n_stroke_postprocess_graphs: u32,
     pub texture_usage: Vec<TextureId>,
+    pub external_vars: Arc<GraphExternalVariableStorage>,
 }
 
 impl Display for CompiledBrushPreset {
@@ -290,16 +296,19 @@ impl Display for CompiledBrushPreset {
         writeln!(f, "-------------- Compiled brush preset --------------")?;
         writeln!(
             f,
+            "-------------- Input sampling shader -------------- \n{}",
+            self.input_sampling
+        )?;
+        writeln!(
+            f,
             "-------------- Main graph shader -------------- \n{}",
             self.main_graph
         )?;
-        for (i, graph) in self.stroke_postprocess_graphs.iter().enumerate() {
-            writeln!(
-                f,
-                "-------------- Stroke postprocess graph {} shader -------------- \n{}",
-                i, graph
-            )?;
-        }
+        writeln!(
+            f,
+            "-------------- Stroke postprocess graph shader -------------- \n{}",
+            self.stroke_postprocess_graphs
+        )?;
         writeln!(f, "-------------- Texture usages --------------")?;
         for usage in &self.texture_usage {
             writeln!(f, "  - {}", usage)?;
@@ -417,10 +426,7 @@ impl BrushPresetInstance {
         })
     }
 
-    pub fn compile(
-        &self,
-        mut existing_binding_count: u32,
-    ) -> Result<CompiledBrushPreset, anyhow::Error> {
+    pub fn compile(&self, mut existing_binding_count: u32) -> anyhow::Result<CompiledBrushPreset> {
         let mut external_variable_bindings = String::new();
         for entry in self.external_vars().all().iter() {
             external_variable_bindings.extend(
@@ -432,28 +438,28 @@ impl BrushPresetInstance {
 
         let mut texture_usage = GraphTextureUsageRecorder::default();
         texture_usage.use_texture(TextureId::NULL);
-        let main_graph = compile(
+
+        let input_sampling = compile_input_sampling()?;
+
+        let main_graph = compile_template_main(
             &self.main_graph,
             &mut texture_usage,
             &external_variable_bindings,
-            false,
         )?;
 
-        let mut compiled_stroke_postprocess_graphs =
-            Vec::with_capacity(self.stroke_postprocess_graphs.len());
-        for graph in self.stroke_postprocess_graphs.iter() {
-            compiled_stroke_postprocess_graphs.push(compile(
-                graph,
-                &mut texture_usage,
-                &external_variable_bindings,
-                true,
-            )?);
-        }
+        let stroke_postprocess_graphs = compile_template_stroke_postprocess(
+            &self.stroke_postprocess_graphs,
+            &mut texture_usage,
+            &external_variable_bindings,
+        )?;
 
         Ok(CompiledBrushPreset {
+            input_sampling,
             main_graph,
-            stroke_postprocess_graphs: compiled_stroke_postprocess_graphs,
+            stroke_postprocess_graphs,
+            n_stroke_postprocess_graphs: self.stroke_postprocess_graphs.len() as u32,
             texture_usage: texture_usage.used_textures_ordered(),
+            external_vars: self.graph_resources.external_vars.clone(),
         })
     }
 
@@ -479,15 +485,72 @@ impl BrushPresetInstance {
     }
 }
 
-fn compile(
-    graph: &Graph,
-    texture_usage: &mut GraphTextureUsageRecorder,
+fn add_modules(resolver: &mut VirtualResolver) {
+    resolver.add_module(
+        "package::image::texture_unpack".parse().unwrap(),
+        include_str!("../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
+    );
+    resolver.add_module(
+        "package::brush::brush_types".parse().unwrap(),
+        include_str!("render/brush_types.wesl").into(),
+    );
+    resolver.add_module(
+        "package::render::math".parse().unwrap(),
+        include_str!("../../cyancia_render/src/shaders/math.wesl").into(),
+    );
+    resolver.add_module(
+        "package::render::hash".parse().unwrap(),
+        include_str!("../../cyancia_render/src/shaders/hash.wesl").into(),
+    );
+    resolver.add_module(
+        "package::image::blend_modes".parse().unwrap(),
+        include_str!("../../cyancia_image/src/shaders/blend_modes.wesl").into(),
+    );
+    resolver.add_module(
+        "package::image::image_tiling".parse().unwrap(),
+        include_str!("../../cyancia_image/src/shaders/image_tiling.wesl").into(),
+    );
+}
+
+// TODO
+// fn compile_input_sampling(factor: &Graph, required: &Graph) -> anyhow::Result<String> {
+fn compile_input_sampling() -> anyhow::Result<String> {
+    // let (_, factor) = factor.compile(
+    //     Vec::new(),
+    //     Default::default(),
+    //     &mut GraphTextureUsageRecorder::default(),
+    // )?;
+    // let (_, required) = required.compile(
+    //     Vec::new(),
+    //     Default::default(),
+    //     &mut GraphTextureUsageRecorder::default(),
+    // )?;
+
+    let shader = include_str!("render/brush_sample.wesl").to_string();
+    // .replace("//CODEGENFLAG_COMPUTED_GRAPH_SPACING_FACTOR", &factor)
+    // .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &required);
+
+    let mut resolver = VirtualResolver::new();
+    resolver.add_module("package::template".parse().unwrap(), shader.into());
+    add_modules(&mut resolver);
+
+    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
+    compiler.set_mangler(Default::default());
+    compiler.set_options(Default::default());
+    let shader = compiler
+        .compile(&"package::template".parse().unwrap())?
+        .to_string();
+
+    Ok(shader)
+}
+
+fn compile_template(
+    shader: &str,
     external_variable_bindings: &str,
-    is_postprocessing: bool,
-) -> anyhow::Result<CompiledBrushGraph> {
-    let template = include_str!("render/brush_template.wesl");
-    let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
-    let shader = template
+    size_estimation: bool,
+    postprocess: bool,
+) -> anyhow::Result<String> {
+    let shader = include_str!("render/brush_template.wesl")
         .replace("//CODEGENFLAG_COMPILED_GRAPH", &shader)
         .replace(
             "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
@@ -495,40 +558,74 @@ fn compile(
         );
 
     let mut resolver = VirtualResolver::new();
-    resolver.add_module("template".parse().unwrap(), shader.into());
-    resolver.add_module(
-        "template/image::texture_unpack".parse().unwrap(),
-        include_str!("../../cyancia_image/src/shaders/texture_unpack.wesl").into(),
-    );
-    resolver.add_module(
-        "template/render::math".parse().unwrap(),
-        include_str!("../../cyancia_render/src/shaders/math.wesl").into(),
-    );
-    resolver.add_module(
-        "template/render::hash".parse().unwrap(),
-        include_str!("../../cyancia_render/src/shaders/hash.wesl").into(),
-    );
-    resolver.add_module(
-        "template/image::blend_modes".parse().unwrap(),
-        include_str!("../../cyancia_image/src/shaders/blend_modes.wesl").into(),
-    );
-    resolver.add_module(
-        "template/image::image_tiling".parse().unwrap(),
-        include_str!("../../cyancia_image/src/shaders/image_tiling.wesl").into(),
-    );
+    resolver.add_module("package::template".parse().unwrap(), shader.into());
+    add_modules(&mut resolver);
 
     let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
     compiler.set_mangler(Default::default());
     compiler.set_options(Default::default());
-    compiler.set_feature("POSTPROCESSING", is_postprocessing);
-    compiler.set_feature("SIZE_ESTIMATION", false);
-    let shader = compiler.compile(&"template".parse().unwrap())?.to_string();
-    compiler.set_feature("SIZE_ESTIMATION", true);
-    let size_estimation = compiler.compile(&"template".parse().unwrap())?.to_string();
+    compiler.set_feature("SIZE_ESTIMATION", size_estimation);
+    compiler.set_feature("POSTPROCESS", postprocess);
+    let compiled_shader = compiler
+        .compile(&"package::template".parse().unwrap())?
+        .to_string();
+
+    Ok(compiled_shader)
+}
+
+fn compile_template_main(
+    graph: &Graph,
+    texture_usage: &mut GraphTextureUsageRecorder,
+    external_variable_bindings: &str,
+) -> anyhow::Result<CompiledBrushGraph> {
+    let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
 
     Ok(CompiledBrushGraph {
-        shader,
-        size_estimation,
+        main: compile_template(&shader, external_variable_bindings, false, false)?,
+        size_estimation: compile_template(&shader, external_variable_bindings, true, false)?,
+    })
+}
+
+fn compile_template_stroke_postprocess(
+    graphs: &[Graph],
+    texture_usage: &mut GraphTextureUsageRecorder,
+    external_variable_bindings: &str,
+) -> anyhow::Result<CompiledBrushGraph> {
+    let compiled_graphs = graphs
+        .iter()
+        .map(|graph| graph.compile(Default::default(), Default::default(), texture_usage))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut concated_graphs_size_estimation = String::new();
+    let mut concated_graphs_main = String::new();
+    for (i, (_, g)) in compiled_graphs.into_iter().enumerate() {
+        concated_graphs_size_estimation.extend(g.chars().chain(['\n']));
+        concated_graphs_main.extend(
+            format!(
+                "
+                wait_for_sample({i} + stroke_info.total_dabs);
+                {g}
+                finish_sample_thread();
+                storageBarrier();
+                "
+            )
+            .chars(),
+        );
+    }
+
+    Ok(CompiledBrushGraph {
+        main: compile_template(
+            &concated_graphs_main,
+            external_variable_bindings,
+            false,
+            true,
+        )?,
+        size_estimation: compile_template(
+            &concated_graphs_size_estimation,
+            external_variable_bindings,
+            true,
+            true,
+        )?,
     })
 }
 

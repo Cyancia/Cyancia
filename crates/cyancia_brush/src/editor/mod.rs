@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs::read_to_string,
+    ops::Deref,
     str::FromStr,
     sync::{Arc, LazyLock},
 };
@@ -448,8 +449,8 @@ impl WindowView for BrushEditorView {
                                     runtime.insert_service(CurrentBrushPresetOperator::new(
                                         BrushPresetOperator::new(
                                             brush.instance.clone(),
-                                            ctx.device.clone(),
-                                            ctx.queue.clone(),
+                                            ctx.device.deref().clone(),
+                                            ctx.queue.deref().clone(),
                                         ),
                                     ));
                                 }
@@ -543,7 +544,11 @@ impl WindowView for BrushEditorView {
 
                     let ctx = runtime.service::<RenderContext>();
                     runtime.insert_service(CurrentBrushPresetOperator::new(
-                        BrushPresetOperator::new(instance, ctx.device.clone(), ctx.queue.clone()),
+                        BrushPresetOperator::new(
+                            instance,
+                            ctx.device.deref().clone(),
+                            ctx.queue.deref().clone(),
+                        ),
                     ));
                 }
 

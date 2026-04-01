@@ -3,6 +3,11 @@ struct Rect {
     max: vec2f,
 }
 
+struct IRect {
+    min: vec2i,
+    max: vec2i,
+}
+
 fn div_ceil(lhs: u32, rhs: u32) -> u32 {
     let d = lhs / rhs;
     let r = lhs % rhs;

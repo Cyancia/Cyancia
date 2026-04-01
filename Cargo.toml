@@ -130,3 +130,6 @@ fs_extra = "1"
 # iced_wgpu = { path = "D:/iced_fork/wgpu", features = ["geometry"] }
 # iced_widget = { path = "D:/iced_fork/widget", features = ["wgpu"] }
 # iced_winit = { path = "D:/iced_fork/winit" }
+
+[patch.crates-io]
+naga = { git = "https://github.com/gfx-rs/wgpu", rev = "7a2afeb014cb30a976059717c4ae7c85f01d858e", package = "naga" }

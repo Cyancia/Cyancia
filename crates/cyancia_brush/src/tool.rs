@@ -13,9 +13,7 @@ use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
     asset::BrushPresetInstance,
-    render::{
-        BrushPresetOperator, ComputedPenInputSample, PenInputSample, graph::GraphInputParams,
-    },
+    render::{BrushPresetOperator, PenInput, graph::GraphInputParams},
 };
 
 #[derive(Default)]
@@ -35,7 +33,7 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let params = PenInputSample {
+        let params = PenInput {
             position: canvas
                 .transform
                 .read()
@@ -58,7 +56,7 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let params = PenInputSample {
+        let params = PenInput {
             position: canvas
                 .transform
                 .read()
@@ -67,8 +65,9 @@ impl ToolFunction for BrushTool {
                 .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
         };
 
-        let tiles = services.service::<GpuTileStorage>();
-        brush.update_stroke(params, &tiles);
+        let now = std::time::Instant::now();
+        brush.update_stroke(params);
+        log::info!("Brush update took: {:?}", now.elapsed());
     }
 
     fn end(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
@@ -81,7 +80,7 @@ impl ToolFunction for BrushTool {
         };
 
         let tiles = services.service::<GpuTileStorage>();
-        brush.end_stroke(&tiles);
+        brush.end_stroke(&tiles, canvas.image.root().id);
     }
 }
 

@@ -20,15 +20,15 @@ pub struct DynamicGpuTileInfoBuffer {
 }
 
 pub struct DynamicIntermediateBuffer {
-    device: Arc<Device>,
-    textures: [Arc<TextureView>; 2],
+    device: Device,
+    textures: [TextureView; 2],
     tile_info: DynamicBuffer<DynamicGpuTileInfoBuffer>,
     texel_type: TexelType,
     current: usize,
 }
 
 impl DynamicIntermediateBuffer {
-    pub fn new(initial: u32, texel_type: TexelType, device: Arc<Device>) -> Self {
+    pub fn new(initial: u32, texel_type: TexelType, device: Device) -> Self {
         let desc = TextureDescriptor {
             label: Some("dynamic intermediate buffer texture"),
             size: Extent3d {
@@ -64,27 +64,27 @@ impl DynamicIntermediateBuffer {
 
         Self {
             device,
-            textures: [Arc::new(texture_a), Arc::new(texture_b)],
+            textures: [texture_a, texture_b],
             tile_info: info,
             texel_type,
             current: 0,
         }
     }
 
-    pub fn src_tex(&self) -> Arc<TextureView> {
+    pub fn src_tex(&self) -> TextureView {
         self.textures[self.current].clone()
     }
 
-    pub fn dst_tex(&self) -> Arc<TextureView> {
+    pub fn dst_tex(&self) -> TextureView {
         self.textures[1 - self.current].clone()
     }
 
-    pub fn textures(&self) -> &[Arc<TextureView>; 2] {
+    pub fn textures(&self) -> &[TextureView; 2] {
         &self.textures
     }
 
-    pub fn tile_info_buffer(&self) -> Buffer {
-        self.tile_info.inner_buffer().unwrap().clone()
+    pub fn tile_info_buffer(&self) -> &Buffer {
+        self.tile_info.inner_buffer().unwrap()
     }
 
     pub fn swap(&mut self) {

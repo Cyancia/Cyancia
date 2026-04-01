@@ -58,7 +58,7 @@ impl StatelessCommonGraphNode for PenPositionNode {
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = graph_input.pen_position;",
+            "let {} = graph_input.position;",
             ctx.get_output(0)?
         ))
     }
@@ -595,7 +595,7 @@ impl GraphNode for BlendColorNode {
         let output = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = image::blend_modes::{}({}, {});\n",
+            "let {} = package::image::blend_modes::{}({}, {});\n",
             output,
             state.blend_mode.shader_func(),
             src,
@@ -639,8 +639,13 @@ impl StatelessCommonGraphNode for StrokeBoundsNode {
         &self,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let bounds = ctx.ident_generator.next_output();
         Ok(format!(
-            "let {} = vec2f(stroke_info.accumulated_bound_min * i32(TILE_SIZE));\nlet {} = vec2f(stroke_info.accumulated_bound_max * i32(TILE_SIZE));\n",
+            "
+            let {bounds} = get_accumulated_pixel_bounds();
+            let {} = vec2f({bounds}.min);
+            let {} = vec2f({bounds}.max);
+            ",
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))
@@ -796,7 +801,7 @@ impl GraphNode for BlendWithInputNode {
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = image::blend_modes::{}({}, current_input_color(pixel_pos));\n",
+            "let {} = package::image::blend_modes::{}({}, current_input_color(pixel_pos));\n",
             ctx.get_output(0)?,
             state.blend_mode.shader_func(),
             ctx.get_input(0)?,
@@ -899,7 +904,7 @@ impl GraphNode for BlendWithLayerNode {
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = image::blend_modes::{}({}, target_layer_color(pixel_pos));\n",
+            "let {} = package::image::blend_modes::{}({}, target_layer_color(pixel_pos));\n",
             ctx.get_output(0)?,
             state.blend_mode.shader_func(),
             ctx.get_input(0)?,
