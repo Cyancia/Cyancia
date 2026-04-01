@@ -220,6 +220,7 @@ impl BrushPresetRenderer {
             return;
         }
 
+        unsafe { device.start_graphics_debugger_capture() };
         let mut ec = device.create_command_encoder(&Default::default());
         ec.clear_buffer(&self.resources.pass_fence, 0, None);
 
@@ -231,6 +232,7 @@ impl BrushPresetRenderer {
         ec.pop_debug_group();
 
         queue.submit([ec.finish()]);
+        unsafe { device.stop_graphics_debugger_capture() };
     }
 
     pub fn copy_last_surface_to_layer(
@@ -364,13 +366,25 @@ pub struct PenInput {
     pub position: Vec2,
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Clone, Copy)]
 pub struct StrokeInfo {
     pub accumulated_bound_min: IVec2,
     pub accumulated_bound_max: IVec2,
     pub max_affected_tiles_count: UVec2,
     pub total_dabs: u32,
     pub _padding: u32,
+}
+
+impl Default for StrokeInfo {
+    fn default() -> Self {
+        Self {
+            accumulated_bound_min: IVec2::MAX,
+            accumulated_bound_max: IVec2::MIN,
+            max_affected_tiles_count: Default::default(),
+            total_dabs: Default::default(),
+            _padding: Default::default(),
+        }
+    }
 }
 
 #[derive(ShaderType, Clone, Copy)]
