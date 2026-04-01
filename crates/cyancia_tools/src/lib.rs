@@ -120,50 +120,41 @@ impl ToolProxy {
     }
 
     pub fn mouse_pressed(&self, keyboard: &KeyboardState, mouse: &PressedMouseState) {
-        if let Some(state) = self.state.as_ref() {
-            state
-                .tx
-                .unbounded_send(ToolEvent::Begin {
-                    keyboard: keyboard.clone(),
-                    mouse: mouse.clone(),
-                })
-                .unwrap();
-        }
+        self.try_send(ToolEvent::Begin {
+            keyboard: keyboard.clone(),
+            mouse: mouse.clone(),
+        });
     }
 
     pub fn mouse_moved_pressing(&self, keyboard: &KeyboardState, mouse: &PressedMouseState) {
-        if let Some(state) = self.state.as_ref() {
-            state
-                .tx
-                .unbounded_send(ToolEvent::Update {
-                    keyboard: keyboard.clone(),
-                    mouse: mouse.clone(),
-                })
-                .unwrap();
-        }
+        self.try_send(ToolEvent::Update {
+            keyboard: keyboard.clone(),
+            mouse: mouse.clone(),
+        });
     }
 
     pub fn mouse_moved_hovering(&self, keyboard: &KeyboardState, mouse: &HoverMouseState) {
-        if let Some(state) = self.state.as_ref() {
-            state
-                .tx
-                .unbounded_send(ToolEvent::Hover {
-                    keyboard: keyboard.clone(),
-                    mouse: mouse.clone(),
-                })
-                .unwrap();
-        }
+        self.try_send(ToolEvent::Hover {
+            keyboard: keyboard.clone(),
+            mouse: mouse.clone(),
+        });
     }
 
     pub fn mouse_released(&self, keyboard: &KeyboardState, mouse: &PressedMouseState) {
+        self.try_send(ToolEvent::End {
+            keyboard: keyboard.clone(),
+            mouse: mouse.clone(),
+        });
+    }
+
+    fn try_send(&self, event: ToolEvent) {
         if let Some(state) = self.state.as_ref() {
-            state
-                .tx
-                .unbounded_send(ToolEvent::End {
-                    keyboard: keyboard.clone(),
-                    mouse: mouse.clone(),
-                })
-                .unwrap();
+            match state.tx.unbounded_send(event) {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Failed to send tool event: {:?}", err);
+                }
+            }
         }
     }
 }

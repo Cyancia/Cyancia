@@ -26,7 +26,7 @@ impl<T: Default> FromRuntime for T {
     }
 }
 
-/// A read guard for a service held in an `Arc<RwLock<dyn Service>>`.  
+/// A read guard for a service held in an `Arc<RwLock<dyn Service>>`.
 /// SAFETY: `guard` is declared before `_arc` so it is dropped first, releasing
 /// the read lock before the Arc (and thus the RwLock) is freed.
 pub struct ServiceRef<T: Service> {
@@ -151,6 +151,13 @@ impl Default for RenderContext {
                 })
                 .await
                 .unwrap();
+
+            device.on_uncaptured_error(Arc::new(|err| {
+                log::error!("WGPU device error:\n{err}");
+            }));
+            device.set_device_lost_callback(|reason, err| {
+                log::error!("WGPU device lost: {reason:?} {err}");
+            });
 
             RenderContext {
                 instance: instance.into(),
