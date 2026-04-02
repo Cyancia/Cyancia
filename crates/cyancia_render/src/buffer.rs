@@ -109,6 +109,7 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
     pub fn clear(&mut self) {
         self.wrapper.as_mut().clear();
         self.wrapper.set_offset(0);
+        self.last_written = None;
     }
 
     pub fn usage(&self) -> BufferUsages {
@@ -233,7 +234,7 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
 
     pub fn clear(&mut self) {
         self.data.clear();
-        self.buffer = None;
+        self.last_written = None;
     }
 
     pub fn usage(&self) -> BufferUsages {
