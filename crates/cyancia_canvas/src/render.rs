@@ -66,6 +66,7 @@ pub const INTERMEDIATE_BUFFER_FORMAT: TextureFormat = TextureFormat::Rgba16Float
 #[derive(Debug)]
 pub struct CanvasRenderer {
     device: Arc<Device>,
+    queue: Arc<Queue>,
     buffer: Option<TextureView>,
     render_pipeline: CanvasRenderPipeline,
     present_pipeline: CanvasPresentPipeline,
@@ -86,6 +87,7 @@ impl FromRuntime for CanvasRenderer {
         );
         Self {
             device: render_context.device.clone(),
+            queue: render_context.queue.clone(),
             buffer: Default::default(),
             render_pipeline,
             present_pipeline,
@@ -118,7 +120,8 @@ impl CanvasRenderer {
     }
 
     pub fn prepare(&mut self, canvas: CanvasUniform) {
-        self.render_pipeline.prepare(&self.device, canvas);
+        self.render_pipeline
+            .prepare(&self.device, &self.queue, canvas);
     }
 
     pub fn draw(
@@ -343,10 +346,10 @@ impl CanvasRenderPipeline {
         self.main_layout = Some(main_layout);
     }
 
-    pub fn prepare(&mut self, device: &Device, uniform: CanvasUniform) {
+    pub fn prepare(&mut self, device: &Device, queue: &Queue, uniform: CanvasUniform) {
         self.uniform_buffer.clear();
         self.uniform_buffer.push(&uniform);
-        self.uniform_buffer.write_buffer(device);
+        self.uniform_buffer.write_buffer(device, queue);
         self.uniform = Some(uniform);
     }
 

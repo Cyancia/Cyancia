@@ -8,8 +8,7 @@ use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use encase::ShaderType;
 use glam::IVec2;
 use wgpu::{
-    Buffer, BufferUsages, Device, Extent3d, Texture, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView,
+    Buffer, BufferUsages, Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView
 };
 
 #[derive(ShaderType)]
@@ -21,6 +20,7 @@ pub struct DynamicGpuTileInfoBuffer {
 
 pub struct DynamicIntermediateBuffer {
     device: Device,
+    queue: Queue,
     textures: [TextureView; 2],
     tile_info: DynamicBuffer<DynamicGpuTileInfoBuffer>,
     texel_type: TexelType,
@@ -28,7 +28,7 @@ pub struct DynamicIntermediateBuffer {
 }
 
 impl DynamicIntermediateBuffer {
-    pub fn new(initial: u32, texel_type: TexelType, device: Device) -> Self {
+    pub fn new(initial: u32, texel_type: TexelType, device: Device, queue: Queue) -> Self {
         let desc = TextureDescriptor {
             label: Some("dynamic intermediate buffer texture"),
             size: Extent3d {
@@ -60,10 +60,11 @@ impl DynamicIntermediateBuffer {
             n_tiles: 0,
             buf: vec![GpuTileInfo::NULL; initial as usize],
         });
-        info.write_buffer(&device);
+        info.write_buffer(&device, &queue);
 
         Self {
             device,
+            queue,
             textures: [texture_a, texture_b],
             tile_info: info,
             texel_type,

@@ -190,7 +190,7 @@ impl BrushPresetRenderer {
         let mut input_staging =
             DynamicBuffer::new(Some("pen input staging buffer"), BufferUsages::COPY_SRC);
         input_staging.push(&input);
-        input_staging.write_buffer(device);
+        input_staging.write_buffer(device, queue);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -471,33 +471,33 @@ impl StrokeResources {
     ) -> Self {
         let mut pen_input = DynamicBuffer::new(Some("pen input buffer"), BufferUsages::STORAGE);
         pen_input.push(&PenInput::default());
-        pen_input.write_buffer(device);
+        pen_input.write_buffer(device, queue);
 
         let mut input_sampler =
             DynamicBuffer::new(Some("pen input sampler buffer"), BufferUsages::STORAGE);
         input_sampler.push(&PenInputSampler::default());
-        input_sampler.write_buffer(device);
+        input_sampler.write_buffer(device, queue);
 
         let mut output_samples =
             DynamicBuffer::new(Some("output samples buffer"), BufferUsages::STORAGE);
         output_samples.push(&OutputSamples::default());
-        output_samples.write_buffer(device);
+        output_samples.write_buffer(device, queue);
 
         let mut stroke_info = DynamicBuffer::new(
             Some("stroke info buffer"),
             BufferUsages::STORAGE | BufferUsages::COPY_SRC,
         );
         stroke_info.push(&StrokeInfo::default());
-        stroke_info.write_buffer(device);
+        stroke_info.write_buffer(device, queue);
 
         let mut dab_infos = DynamicBuffer::new(Some("dab infos buffer"), BufferUsages::STORAGE);
         dab_infos.push(&DabInfos::default());
-        dab_infos.write_buffer(device);
+        dab_infos.write_buffer(device, queue);
 
         let mut main_pass_sync =
             DynamicBuffer::new(Some("main pass sync buffer"), BufferUsages::STORAGE);
         main_pass_sync.push(&PassFence::default());
-        main_pass_sync.write_buffer(device);
+        main_pass_sync.write_buffer(device, queue);
 
         let mut external_var_layouts = Vec::new();
         let mut cur_binding = EXTERNAL_VARIABLE_BASE_BINDING;
@@ -560,29 +560,33 @@ impl StrokeResources {
         let target_layer_binding = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
         let target_layer_info = tiles.get_layer_info(target_layer_id).unwrap();
 
-        let intermediate_buffers =
-            DynamicIntermediateBuffer::new(256, target_layer_info.texel_type, device.clone());
+        let intermediate_buffers = DynamicIntermediateBuffer::new(
+            256,
+            target_layer_info.texel_type,
+            device.clone(),
+            queue.clone(),
+        );
 
         let mut estimate_dispatch = DynamicBuffer::new(
             Some("estimate dispatch buffer"),
             BufferUsages::STORAGE | BufferUsages::INDIRECT,
         );
         estimate_dispatch.push(&UVec4::ZERO);
-        estimate_dispatch.write_buffer(device);
+        estimate_dispatch.write_buffer(device, queue);
 
         let mut tile_allocation_dispatch = DynamicBuffer::new(
             Some("tile allocation dispatch buffer"),
             BufferUsages::STORAGE | BufferUsages::INDIRECT,
         );
         tile_allocation_dispatch.push(&UVec4::ZERO);
-        tile_allocation_dispatch.write_buffer(device);
+        tile_allocation_dispatch.write_buffer(device, queue);
 
         let mut main_dispatch = DynamicBuffer::new(
             Some("main dispatch buffer"),
             BufferUsages::STORAGE | BufferUsages::INDIRECT,
         );
         main_dispatch.push(&UVec4::ZERO);
-        main_dispatch.write_buffer(device);
+        main_dispatch.write_buffer(device, queue);
 
         Self {
             n_stroke_pp: brush.n_stroke_postprocess_graphs,

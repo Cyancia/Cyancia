@@ -467,7 +467,8 @@ impl DynamicLayerStorage {
             index: coord,
             origin: coord * IVec2::splat(Self::TILE_SIZE as i32),
         });
-        self.tile_info_buffer.write_buffer(&self.device);
+        self.tile_info_buffer
+            .write_buffer(&self.device, &self.queue);
 
         tile
     }
@@ -532,7 +533,8 @@ impl DynamicLayerStorage {
     pub fn clear(&mut self) {
         self.tiles.clear();
         self.tile_info_buffer.clear();
-        self.tile_info_buffer.write_buffer(&self.device);
+        self.tile_info_buffer
+            .write_buffer(&self.device, &self.queue);
 
         if let Some(tex) = self.texture.as_ref() {
             let mut ec = self.device.create_command_encoder(&Default::default());
