@@ -32,20 +32,26 @@ fn get_accumulated_pixel_bounds() -> IRect {
     @if(SIZE_ESTIMATION) {
         return IRect(
             vec2i(atomicLoad(&stroke_info.accumulated_bound_min_x), atomicLoad(&stroke_info.accumulated_bound_min_y)) * i32(TILE_SIZE),
-            (vec2i(atomicLoad(&stroke_info.accumulated_bound_max_x), atomicLoad(&stroke_info.accumulated_bound_max_y)) - 1) * i32(TILE_SIZE) + 1
+            vec2i(atomicLoad(&stroke_info.accumulated_bound_max_x), atomicLoad(&stroke_info.accumulated_bound_max_y)) * i32(TILE_SIZE) + 1
         );
     }
 
     @if(!SIZE_ESTIMATION) {
         return IRect(
             stroke_info.accumulated_bound_min * i32(TILE_SIZE),
-            (stroke_info.accumulated_bound_max - 1) * i32(TILE_SIZE) + 1
+            stroke_info.accumulated_bound_max * i32(TILE_SIZE) + 1
         );
     }
 }
 
 fn is_current_input_buffer_a() -> bool {
-    return atomicLoad(&fence.cur_sample) % 2 == 0;
+    @if(POSTPROCESS) {
+        return (atomicLoad(&fence.cur_sample) + stroke_info.total_dabs) % 2u == 0;
+    }
+
+    @if(!POSTPROCESS) {
+        return atomicLoad(&fence.cur_sample) % 2u == 0u;
+    }
 }
 
 fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> CircularMask {
