@@ -54,7 +54,7 @@ fn allocate(@builtin(global_invocation_id) id: vec3u) {
 
 @if(POSTPROCESS)
 @compute
-@workgroup_size(1, 1, 8)
+@workgroup_size(1, 1, 1)
 fn allocate(@builtin(global_invocation_id) id: vec3u) {
     let tile_index = stroke_info.accumulated_bound_min + vec2i(id.xy);
     if any(tile_index >= stroke_info.accumulated_bound_max) {
