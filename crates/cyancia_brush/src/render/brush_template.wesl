@@ -185,6 +185,7 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
 }
 
 fn wait_for_sample(expected_sample_index: u32) {
+    var timeout = 5000u;
     loop {
         let cur_sample_index = atomicLoad(&fence.cur_sample);
         if cur_sample_index == expected_sample_index {
@@ -198,6 +199,16 @@ fn wait_for_sample(expected_sample_index: u32) {
         let expected_threads = vec2u(waiting_for_dab.bound_max - waiting_for_dab.bound_min) * TILE_SIZE;
         if atomicCompareExchangeWeak(&fence.cur_sample_finished_threads, expected_threads.x * expected_threads.y, 0u).exchanged {
             atomicStore(&fence.cur_sample, expected_sample_index);
+            return;
+        }
+
+        timeout -= 1u;
+        // TODO: This should not happen... But adding a timeout actually fixes the device loss some times.
+        //       So find out why and fix that in the future.
+        if timeout == 0u {
+            atomicStore(&fence.cur_sample_finished_threads, 0u);
+            atomicStore(&fence.cur_sample, expected_sample_index);
+            return;
         }
     }
 }
