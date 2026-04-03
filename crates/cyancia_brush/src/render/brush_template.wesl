@@ -291,6 +291,9 @@ fn estimate(@builtin(global_invocation_id) id: vec3u) {
     atomicMax(&stroke_info.max_affected_tiles_count_x, affected_tiles_count.x);
     atomicMax(&stroke_info.max_affected_tiles_count_y, affected_tiles_count.y);
 
+    storageBarrier();
+
+    // TODO This isn't really correct, add some global barrier.
     if all(id == vec3u(0u)) {
         let max_affected_tiles_count = vec2u(
             atomicLoad(&stroke_info.max_affected_tiles_count_x),

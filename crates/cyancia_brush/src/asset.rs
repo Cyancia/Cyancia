@@ -318,6 +318,7 @@ impl Display for CompiledBrushPreset {
 }
 
 pub struct BrushPresetInstance {
+    pub brush_id: AssetId<BrushPreset>,
     pub metadata: BrushPresetMetadata,
 
     pub main_graph: Graph,
@@ -326,20 +327,13 @@ pub struct BrushPresetInstance {
 }
 
 impl BrushPresetInstance {
-    pub fn new(metadata: BrushPresetMetadata, resources: GraphResources) -> Self {
-        Self {
-            metadata,
-            main_graph: Graph::new(resources.clone(), MAIN_GRAPH_TYPES.clone()),
-            stroke_postprocess_graphs: Vec::new(),
-            graph_resources: resources,
-        }
-    }
-
     pub fn from_asset(
-        preset: &BrushPreset,
+        handle: &AssetHandle<BrushPreset>,
         textures: Arc<GraphTextureStorage>,
         functions: Arc<GraphFunctionStorage>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
+        let preset = handle.get().unwrap();
+
         let external_vars = preset
             .external_vars
             .iter()
@@ -395,6 +389,7 @@ impl BrushPresetInstance {
 
         (
             Some(Self {
+                brush_id: handle.id(),
                 metadata: preset.metadata.clone(),
                 main_graph,
                 stroke_postprocess_graphs,

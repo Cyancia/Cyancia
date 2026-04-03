@@ -32,6 +32,7 @@ fn main() {
         input_sampler.last_sample = new_sample;
         input_sampler.has_last_sample = 1;
 
+        output_samples.samples[output_samples.n_samples] = new_sample;
         output_samples.n_samples += 1;
         return;
     }

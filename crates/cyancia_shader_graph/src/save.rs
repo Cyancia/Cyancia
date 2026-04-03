@@ -100,12 +100,7 @@ impl Graph {
                 return (None, vec![GraphDeserializeError::DeserializerError(e)]);
             }
         };
-        Self::from_serialized(
-            &graph,
-            resources,
-            type_registry,
-            node_registry,
-        )
+        Self::from_serialized(&graph, resources, type_registry, node_registry)
     }
 
     pub fn from_serialized(
@@ -323,7 +318,7 @@ impl Graph {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct SerializableGraph {
     pub nodes: Vec<SerializableNodeData>,
     pub inputs: HashMap<GraphInputSlotId, SerializableInputSlotData>,

@@ -29,7 +29,7 @@ use cyancia_shader_graph::{
         texture::{GraphTextureStorage, TextureId, TextureObject},
         variable::{GraphLiteral, GraphTypeRegistry},
     },
-    save::SerializableGraphFunction,
+    save::{SerializableGraph, SerializableGraphFunction},
     wgsl_std::{
         builtin_nodes, builtin_types,
         nodes::{GraphInputNode, GraphOutputNode},
@@ -529,7 +529,7 @@ impl WindowView for BrushEditorView {
                     return Task::none();
                 };
                 let (instance, errors) = BrushPresetInstance::from_asset(
-                    &brush.get().unwrap(),
+                    &brush,
                     self.texture_storage.clone(),
                     self.function_storage.clone(),
                 );
@@ -603,19 +603,36 @@ impl WindowView for BrushEditorView {
                 self.has_unsaved_changes = true;
             }
             BrushEditorMessage::CreateNewBrushPreset => {
-                let instance = Arc::new(RwLock::new(BrushPresetInstance::new(
-                    BrushPresetMetadata {
+                let new_brush = BrushPreset {
+                    metadata: BrushPresetMetadata {
                         name: "[Unnamed Brush]".to_string(),
                     },
-                    GraphResources {
-                        textures: self.texture_storage.clone(),
-                        functions: self.function_storage.clone(),
-                        external_vars: Default::default(),
-                    },
-                )));
+                    main_graph: SerializableGraph::default(),
+                    stroke_postprocess_graphs: Vec::new(),
+                    external_vars: Vec::new(),
+                };
+                let new_brush = Arc::new(new_brush);
+                let assets = runtime.service_mut::<AssetRegistry>();
+                let id = assets
+                    .add_asset(
+                        // TODO
+                        BundleId::new(
+                            Uuid::from_str("b92c20f6-8cdb-42b8-efae-a92705efd029").unwrap(),
+                        ),
+                        "unnamed_brush.cbp".to_string(),
+                        new_brush.clone(),
+                    )
+                    .unwrap();
+                let handle = assets.handle(id).unwrap();
+
+                let (instance, _) = BrushPresetInstance::from_asset(
+                    &handle,
+                    self.texture_storage.clone(),
+                    self.function_storage.clone(),
+                );
                 self.selected = Some(Selected::Brush(SelectedBrush {
                     asset_id: None,
-                    instance,
+                    instance: Arc::new(RwLock::new(instance.unwrap())),
                     viewing_graph: BrushPresetGraph::Main,
                 }));
                 self.has_unsaved_changes = true;

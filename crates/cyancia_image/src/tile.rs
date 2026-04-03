@@ -73,7 +73,7 @@ pub struct Tile {
     pub texture: Arc<TextureView>,
 }
 
-#[derive(ShaderType, Clone, Copy)]
+#[derive(ShaderType, Clone, Copy, PartialEq, Eq)]
 pub struct GpuTileInfo {
     pub index: IVec2,
     pub origin: IVec2,

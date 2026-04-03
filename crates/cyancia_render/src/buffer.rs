@@ -112,6 +112,10 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
         self.last_written = None;
     }
 
+    pub fn size(&self) -> BufferAddress {
+        self.last_written.unwrap_or(0)
+    }
+
     pub fn usage(&self) -> BufferUsages {
         self.usage
     }
@@ -235,6 +239,10 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
     pub fn clear(&mut self) {
         self.data.clear();
         self.last_written = None;
+    }
+
+    pub fn size(&self) -> BufferAddress {
+        self.last_written.unwrap_or(0)
     }
 
     pub fn usage(&self) -> BufferUsages {

@@ -95,15 +95,15 @@ impl BrushInputSamplingPipeline {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: resources.pen_input.as_entire_binding(),
+                    resource: resources.pen_input.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: resources.input_sampler.as_entire_binding(),
+                    resource: resources.input_sampler.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: resources.output_samples.as_entire_binding(),
+                    resource: resources.output_samples.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -111,7 +111,7 @@ impl BrushInputSamplingPipeline {
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: resources.stroke_info.as_entire_binding(),
+                    resource: resources.stroke_info.binding().unwrap(),
                 },
             ],
         });
@@ -207,7 +207,7 @@ impl BrushTileAllocationPipeline {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: resources.dab_infos.as_entire_binding(),
+                    resource: resources.dab_infos.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -218,7 +218,7 @@ impl BrushTileAllocationPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: resources.stroke_info.as_entire_binding(),
+                    resource: resources.stroke_info.binding().unwrap(),
                 },
             ],
         });
@@ -433,11 +433,11 @@ impl BrushEstimatePipeline {
             let mut entries = vec![
                 BindGroupEntry {
                     binding: 0,
-                    resource: resources.output_samples.as_entire_binding(),
+                    resource: resources.output_samples.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: resources.stroke_info.as_entire_binding(),
+                    resource: resources.stroke_info.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -472,7 +472,7 @@ impl BrushEstimatePipeline {
                 },
                 BindGroupEntry {
                     binding: 8,
-                    resource: resources.dab_infos.as_entire_binding(),
+                    resource: resources.dab_infos.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 16,
@@ -684,11 +684,11 @@ impl BrushMainPipeline {
             let mut entries = vec![
                 BindGroupEntry {
                     binding: 0,
-                    resource: resources.output_samples.as_entire_binding(),
+                    resource: resources.output_samples.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: resources.stroke_info.as_entire_binding(),
+                    resource: resources.stroke_info.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -723,11 +723,11 @@ impl BrushMainPipeline {
                 },
                 BindGroupEntry {
                     binding: 8,
-                    resource: resources.dab_infos.as_entire_binding(),
+                    resource: resources.dab_infos.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 9,
-                    resource: resources.pass_fence.as_entire_binding(),
+                    resource: resources.pass_fence.binding().unwrap(),
                 },
             ];
             entries.extend(resources.external_var_bindings());
