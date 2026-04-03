@@ -137,16 +137,14 @@ impl Default for RenderContext {
                 })
                 .await
                 .unwrap();
+            log::info!("Adapter limits: {:#?}", adapter.limits());
+            log::info!("Adapter features: {:#?}", adapter.features());
             let (device, queue) = adapter
                 .request_device(&wgpu::DeviceDescriptor {
                     required_features: Features::TEXTURE_BINDING_ARRAY
                         | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
                         | Features::CLEAR_TEXTURE,
-                    required_limits: Limits {
-                        max_texture_array_layers: 2048,
-                        max_binding_array_elements_per_shader_stage: 500_000,
-                        ..Default::default()
-                    },
+                    required_limits: adapter.limits(),
                     ..Default::default()
                 })
                 .await
