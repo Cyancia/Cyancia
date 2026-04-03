@@ -106,10 +106,11 @@ winit = "0.30"
 rustc-hash = "1"
 rusqlite = { version = "0.38", features = ["bundled-full"] }
 async-trait = "0.1"
-bevy_math = { version = "0.18", default-features = false, features = [
+bevy_math = { version = "0.18", git = "https://github.com/443eb9/bevy.git", branch = "release-0.18.1", features = [
     "serialize",
     "std",
     "curve",
+    "encase",
 ] }
 ringbuffer = "0.16"
 fs_extra = "1"
