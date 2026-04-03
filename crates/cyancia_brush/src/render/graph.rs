@@ -800,11 +800,13 @@ impl GraphNode for BlendWithInputNode {
         state: &Self::State,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let color = ctx.get_input(0)?;
+        let opacity = ctx.get_input(1)?;
+
         Ok(format!(
-            "let {} = package::image::blend_modes::{}({}, current_input_color(pixel_pos));\n",
+            "let {} = package::image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), current_input_color(pixel_pos));\n",
             ctx.get_output(0)?,
-            state.blend_mode.shader_func(),
-            ctx.get_input(0)?,
+            state.blend_mode.shader_func()
         ))
     }
 }
@@ -903,11 +905,13 @@ impl GraphNode for BlendWithLayerNode {
         state: &Self::State,
         mut ctx: GraphNodeCodeGenContext,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let color = ctx.get_input(0)?;
+        let opacity = ctx.get_input(1)?;
+
         Ok(format!(
-            "let {} = package::image::blend_modes::{}({}, target_layer_color(pixel_pos));\n",
+            "let {} = package::image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), target_layer_color(pixel_pos));\n",
             ctx.get_output(0)?,
-            state.blend_mode.shader_func(),
-            ctx.get_input(0)?,
+            state.blend_mode.shader_func()
         ))
     }
 }
