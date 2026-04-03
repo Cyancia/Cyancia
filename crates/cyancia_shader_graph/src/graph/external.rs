@@ -24,9 +24,15 @@ use crate::{
 };
 
 pub fn generate_external_variable_name(var: &ExternalVariable) -> String {
+    let sanitized_name = var
+        .name
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>();
+
     format!(
         "external_{}_{}",
-        var.name,
+        sanitized_name,
         var.id.to_string().replace('-', "_")
     )
 }
