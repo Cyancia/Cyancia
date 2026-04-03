@@ -16,10 +16,12 @@ use cyancia_shader_graph::{
     graph::{
         Graph, GraphCompileError, GraphResources,
         external::{
-            ExternalVariableId, GraphExternalVariableStorage, generate_external_variable_binding,
+            ExternalVariable, ExternalVariableId, GraphExternalVariableStorage,
+            generate_external_variable_binding,
         },
         function::GraphFunctionStorage,
         node::GraphNodeRegistry,
+        slot::ErasedGraphLiteralUpdateMessage,
         texture::{GraphTextureStorage, GraphTextureUsageRecorder, TextureId},
         variable::{GraphLiteral, GraphTypeRegistry},
     },
@@ -318,12 +320,13 @@ impl Display for CompiledBrushPreset {
 }
 
 pub struct BrushPresetInstance {
-    pub brush_id: AssetId<BrushPreset>,
-    pub metadata: BrushPresetMetadata,
+    brush_id: AssetId<BrushPreset>,
+    metadata: BrushPresetMetadata,
 
-    pub main_graph: Graph,
-    pub stroke_postprocess_graphs: Vec<Graph>,
-    pub graph_resources: GraphResources,
+    main_graph: Graph,
+    stroke_postprocess_graphs: Vec<Graph>,
+    graph_resources: GraphResources,
+    is_dirty: bool,
 }
 
 impl BrushPresetInstance {
@@ -394,6 +397,7 @@ impl BrushPresetInstance {
                 main_graph,
                 stroke_postprocess_graphs,
                 graph_resources: resources,
+                is_dirty: true,
             }),
             errors,
         )
@@ -407,7 +411,8 @@ impl BrushPresetInstance {
             .map(|g| g.as_serialized())
             .collect::<anyhow::Result<Vec<_>>>()?;
         let external_vars = self
-            .external_vars()
+            .graph_resources
+            .external_vars
             .all()
             .iter()
             .map(|entry| SerializableExternalVariable::serialize(entry.value()))
@@ -423,7 +428,7 @@ impl BrushPresetInstance {
 
     pub fn compile(&self, mut existing_binding_count: u32) -> anyhow::Result<CompiledBrushPreset> {
         let mut external_variable_bindings = String::new();
-        for entry in self.external_vars().all().iter() {
+        for entry in self.graph_resources.external_vars.all().iter() {
             external_variable_bindings.extend(
                 generate_external_variable_binding(0, existing_binding_count, entry.value())
                     .chars(),
@@ -467,8 +472,57 @@ impl BrushPresetInstance {
         self.stroke_postprocess_graphs.len() - 1
     }
 
-    pub fn external_vars(&self) -> &Arc<GraphExternalVariableStorage> {
-        &self.graph_resources.external_vars
+    pub fn main_graph(&self) -> &Graph {
+        &self.main_graph
+    }
+
+    pub fn main_graph_mut(&mut self) -> &mut Graph {
+        self.is_dirty = true;
+        &mut self.main_graph
+    }
+
+    pub fn stroke_postprocess_graphs(&self) -> &Vec<Graph> {
+        &self.stroke_postprocess_graphs
+    }
+
+    pub fn stroke_postprocess_graphs_mut(&mut self) -> &mut Vec<Graph> {
+        self.is_dirty = true;
+        &mut self.stroke_postprocess_graphs
+    }
+
+    pub fn metadata(&self) -> &BrushPresetMetadata {
+        &self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut BrushPresetMetadata {
+        self.is_dirty = true;
+        &mut self.metadata
+    }
+
+    pub fn iter_external_vars(
+        &self,
+    ) -> impl Iterator<Item = (ExternalVariableId, ExternalVariable)> + '_ {
+        self.graph_resources
+            .external_vars
+            .all()
+            .iter()
+            .map(|entry| {
+                let var = entry.value().clone();
+                (var.id, var)
+            })
+    }
+
+    pub fn insert_external_var(&mut self, var: ExternalVariable) {
+        self.is_dirty = true;
+        self.graph_resources.external_vars.insert(var);
+    }
+
+    pub fn update_external_var(
+        &self,
+        id: &ExternalVariableId,
+        msg: ErasedGraphLiteralUpdateMessage,
+    ) {
+        self.graph_resources.external_vars.update(&id, msg);
     }
 
     pub fn textures(&self) -> &Arc<GraphTextureStorage> {
@@ -477,6 +531,14 @@ impl BrushPresetInstance {
 
     pub fn functions(&self) -> &Arc<GraphFunctionStorage> {
         &self.graph_resources.functions
+    }
+
+    pub fn mark_undirty(&mut self) {
+        self.is_dirty = false;
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.is_dirty
     }
 }
 

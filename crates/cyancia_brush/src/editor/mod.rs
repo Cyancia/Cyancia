@@ -178,9 +178,9 @@ pub enum BrushPresetGraph {
 impl BrushPresetGraph {
     pub fn graph<'a>(&self, brush: &'a BrushPresetInstance) -> &'a Graph {
         match self {
-            BrushPresetGraph::Main => &brush.main_graph,
+            BrushPresetGraph::Main => brush.main_graph(),
             BrushPresetGraph::StrokePostprocess { index } => {
-                brush.stroke_postprocess_graphs.get(*index).unwrap()
+                brush.stroke_postprocess_graphs().get(*index).unwrap()
             }
         }
     }
@@ -194,10 +194,11 @@ impl BrushPresetGraph {
 
     pub fn graph_mut<'a>(&self, brush: &'a mut BrushPresetInstance) -> &'a mut Graph {
         match self {
-            BrushPresetGraph::Main => &mut brush.main_graph,
-            BrushPresetGraph::StrokePostprocess { index } => {
-                brush.stroke_postprocess_graphs.get_mut(*index).unwrap()
-            }
+            BrushPresetGraph::Main => brush.main_graph_mut(),
+            BrushPresetGraph::StrokePostprocess { index } => brush
+                .stroke_postprocess_graphs_mut()
+                .get_mut(*index)
+                .unwrap(),
         }
     }
 }
@@ -290,7 +291,7 @@ impl WindowView for BrushEditorView {
                 )
             } else {
                 let title = match selected {
-                    Selected::Brush(brush) => &brush.instance.read().metadata.name.clone(),
+                    Selected::Brush(brush) => &brush.instance.read().metadata().name.clone(),
                     Selected::Function(func) => &func.instance.name.clone(),
                 };
                 let title = if self.has_unsaved_changes {
@@ -322,8 +323,8 @@ impl WindowView for BrushEditorView {
                     // TODO: External var browser may not only be placed in editor. They're modifiable values for the user.
                     //       For example the brush size and opacity.
                     let ext_vars = external_var_view(
-                        instance.external_vars(),
-                        instance.main_graph.type_registry(),
+                        instance.iter_external_vars(),
+                        instance.main_graph().type_registry(),
                         self.create_new_name.clone(),
                         self.create_new_type,
                     )
@@ -338,7 +339,7 @@ impl WindowView for BrushEditorView {
                     ]
                     .push(
                         DragDropColumn::with_children(
-                            instance.stroke_postprocess_graphs.iter().enumerate().map(
+                            instance.stroke_postprocess_graphs().iter().enumerate().map(
                                 |(index, graph)| {
                                     Element::new(
                                         button(text(format!("Stroke Postprocess {}", index)))
@@ -409,7 +410,10 @@ impl WindowView for BrushEditorView {
                             && modifiers.control()
                         {
                             if let Some(Selected::Brush(brush)) = &mut self.selected {
-                                println!("{}", brush.instance.read().main_graph.to_toml().unwrap());
+                                println!(
+                                    "{}",
+                                    brush.instance.read().main_graph().to_toml().unwrap()
+                                );
                             } else {
                                 println!("No brush graph to generate shader from.");
                             }
@@ -437,7 +441,7 @@ impl WindowView for BrushEditorView {
                                                     )
                                                     .unwrap(),
                                                 ),
-                                                format!("{}.cbp", instance.metadata.name),
+                                                format!("{}.cbp", instance.metadata().name),
                                                 Arc::new(preset),
                                             )
                                             .unwrap();
@@ -640,7 +644,7 @@ impl WindowView for BrushEditorView {
             BrushEditorMessage::StartEditName => {
                 self.editing_name = true;
                 self.name_buffer = match &self.selected {
-                    Some(Selected::Brush(brush)) => brush.instance.read().metadata.name.clone(),
+                    Some(Selected::Brush(brush)) => brush.instance.read().metadata().name.clone(),
                     Some(Selected::Function(func)) => func.instance.name.clone(),
                     None => String::new(),
                 };
@@ -653,7 +657,7 @@ impl WindowView for BrushEditorView {
                 if let Some(selected) = &mut self.selected {
                     match selected {
                         Selected::Brush(brush) => {
-                            brush.instance.write().metadata.name = self.name_buffer.clone()
+                            brush.instance.write().metadata_mut().name = self.name_buffer.clone()
                         }
                         Selected::Function(func) => func.instance.name = self.name_buffer.clone(),
                     }
@@ -697,8 +701,10 @@ impl WindowView for BrushEditorView {
                 }
 
                 let mut instance = brush.instance.write();
-                let graph = instance.stroke_postprocess_graphs.remove(old_index);
-                instance.stroke_postprocess_graphs.insert(new_index, graph);
+                let graph = instance.stroke_postprocess_graphs_mut().remove(old_index);
+                instance
+                    .stroke_postprocess_graphs_mut()
+                    .insert(new_index, graph);
             }
         }
 
@@ -754,7 +760,7 @@ impl BrushEditorView {
                 };
 
                 let instance = brush.instance.read();
-                instance.external_vars().update(&id, message);
+                instance.update_external_var(&id, message);
             }
             ExternalVarViewMessage::CreateNewNameChanged(name) => {
                 self.create_new_name = name;
@@ -771,20 +777,21 @@ impl BrushEditorView {
                     return;
                 }
 
-                let instance = brush.instance.read();
+                let mut instance = brush.instance.write();
 
                 let Some(ty) = self
                     .create_new_type
-                    .and_then(|t| instance.main_graph.type_registry().get_type(t))
+                    .and_then(|t| instance.main_graph().type_registry().get_type(t))
                 else {
                     return;
                 };
 
                 let id = ExternalVariableId::new(Uuid::new_v4());
-                instance.external_vars().insert(ExternalVariable {
+                let value = GraphLiteral::new_boxed(ty.default_literal(), ty.clone());
+                instance.insert_external_var(ExternalVariable {
                     id,
                     name: self.create_new_name.clone(),
-                    value: GraphLiteral::new_boxed(ty.default_literal(), ty.clone()),
+                    value,
                 });
 
                 self.create_new_name.clear();

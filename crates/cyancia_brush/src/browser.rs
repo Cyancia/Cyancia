@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cyancia_assets::asset::{AssetHandle, AssetId};
 use cyancia_shader_graph::graph::{
-    external::{ExternalVariableId, GraphExternalVariableStorage},
+    external::{ExternalVariable, ExternalVariableId, GraphExternalVariableStorage},
     slot::{ErasedGraphLiteralUpdateMessage, GraphInputSlotId, GraphLiteralUpdateMessage},
     variable::GraphTypeRegistry,
 };
@@ -50,16 +50,12 @@ pub enum ExternalVarViewMessage {
 }
 
 pub fn external_var_view<'a>(
-    storage: &GraphExternalVariableStorage,
+    all: impl IntoIterator<Item = (ExternalVariableId, ExternalVariable)>,
     types: &GraphTypeRegistry,
     create_new_name: String,
     create_new_type: Option<&'static str>,
 ) -> Element<'a, ExternalVarViewMessage, Theme, Renderer> {
-    let all = storage.all().clone();
-
-    let existing_vars = if all.is_empty() {
-        Element::new(text("No external variables"))
-    } else {
+    let existing_vars = {
         let elems = all
             .into_iter()
             .map(|(id, var)| {
@@ -75,7 +71,11 @@ pub fn external_var_view<'a>(
             })
             .collect::<Vec<_>>();
 
-        Element::new(Column::from_iter(elems))
+        if elems.is_empty() {
+            Element::new(text("No external variables"))
+        } else {
+            Element::new(Column::from_iter(elems))
+        }
     };
 
     let create_new = column![
