@@ -215,10 +215,9 @@ impl Graph {
             .collect::<HashMap<_, _>>();
 
         let mut run_order = Vec::with_capacity(self.nodes.len());
-        let mut ready_nodes = self
-            .nodes
+        let mut ready_nodes = out_degrees
             .iter()
-            .filter(|(_, node)| node.outputs.len() == 0)
+            .filter(|(_, degree)| **degree == 0)
             .map(|(node_id, _)| *node_id)
             .collect::<VecDeque<_>>();
 
