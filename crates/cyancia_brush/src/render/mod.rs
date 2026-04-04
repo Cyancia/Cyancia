@@ -398,7 +398,18 @@ impl BrushPresetRenderer {
         ec.pop_debug_group();
         queue.submit([ec.finish()]);
 
-        log::info!("Copied {} tiles to target layer", n_copied);
+        log::info!(
+            "Copied {} tiles to target layer, affected tiles aabb: [{}, {})",
+            n_copied,
+            stroke_info.accumulated_bound_min,
+            stroke_info.accumulated_bound_max
+        );
+        if stroke_info.fence_sync_failures > 0 {
+            log::warn!(
+                "{} fence sync failures occurred during stroke rendering.",
+                stroke_info.fence_sync_failures
+            );
+        }
     }
 }
 
@@ -420,7 +431,7 @@ pub struct StrokeInfo {
     pub accumulated_bound_max: IVec2,
     pub max_affected_tiles_count: UVec2,
     pub total_dabs: u32,
-    pub _padding: u32,
+    pub fence_sync_failures: u32,
 }
 
 impl Default for StrokeInfo {
@@ -430,7 +441,7 @@ impl Default for StrokeInfo {
             accumulated_bound_max: IVec2::MIN,
             max_affected_tiles_count: Default::default(),
             total_dabs: Default::default(),
-            _padding: Default::default(),
+            fence_sync_failures: Default::default(),
         }
     }
 }

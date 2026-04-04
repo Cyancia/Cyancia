@@ -208,6 +208,7 @@ fn wait_for_sample(expected_sample_index: u32) {
         if timeout == 0u {
             atomicStore(&fence.cur_sample_finished_threads, 0u);
             atomicStore(&fence.cur_sample, expected_sample_index);
+            stroke_info.fence_sync_failures += 1u;
             return;
         }
     }
@@ -328,14 +329,15 @@ fn estimate() {
     let dummy_input = ComputedPenInput();
     main_graph(dummy_input, pixel_pos, pixel_posf);
 
-    let accu_min_x = atomicLoad(&stroke_info.accumulated_bound_min_x);
-    let accu_min_y = atomicLoad(&stroke_info.accumulated_bound_min_y);
-    let accu_max_x = atomicLoad(&stroke_info.accumulated_bound_max_x);
-    let accu_max_y = atomicLoad(&stroke_info.accumulated_bound_max_y);
     let affected_tiles = IRect(
-        min(affected_pixels_precise.min / i32(TILE_SIZE), vec2i(accu_min_x, accu_min_y)),
-        max((affected_pixels_precise.max - 1) / i32(TILE_SIZE) + 1, vec2i(accu_max_x, accu_max_y))
+        affected_pixels_precise.min / i32(TILE_SIZE),
+        (affected_pixels_precise.max - 1) / i32(TILE_SIZE) + 1,
     );
+
+    atomicMin(&stroke_info.accumulated_bound_min_x, affected_tiles.min.x);
+    atomicMin(&stroke_info.accumulated_bound_min_y, affected_tiles.min.y);
+    atomicMax(&stroke_info.accumulated_bound_max_x, affected_tiles.max.x);
+    atomicMax(&stroke_info.accumulated_bound_max_y, affected_tiles.max.y);
 
     let affected_tiles_count = vec2u(affected_tiles.max - affected_tiles.min);
 

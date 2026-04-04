@@ -20,7 +20,7 @@ struct StrokeInfo {
     @if(!SIZE_ESTIMATION) max_affected_tiles_count: vec2u,
 
     total_dabs: u32,
-    _padding: u32,
+    fence_sync_failures: u32,
 }
 
 struct DynamicTileInfo {
