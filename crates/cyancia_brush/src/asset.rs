@@ -48,8 +48,8 @@ use zip::{ZipArchive, ZipWriter, write::FileOptions};
 use crate::render::graph::{
     BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
     DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
-    GraphInputParams, LayerPixelColorNode, OutputColorNode, PasteTextureNode, PenPositionNode,
-    PixelPositionNode, StrokeBoundsNode,
+    LayerPixelColorNode, OutputColorNode, PasteTextureNode, PenPositionNode, PixelPositionNode,
+    StrokeBoundsNode,
 };
 
 pub struct BrushPreset {

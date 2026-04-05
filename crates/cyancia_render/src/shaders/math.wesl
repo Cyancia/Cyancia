@@ -8,6 +8,13 @@ struct IRect {
     max: vec2i,
 }
 
+const PI: f32 = 3.14159265359;
+const FRAC_PI_2: f32 = 1.57079632679;
+const INV_PI: f32 = 0.31830988618;
+const INV_FRAC_PI_2: f32 = 0.63661977236;
+const TAU: f32 = 6.28318530718;
+const INV_TAU: f32 = 0.15915494309;
+
 fn div_ceil(lhs: u32, rhs: u32) -> u32 {
     let d = lhs / rhs;
     let r = lhs % rhs;
@@ -112,4 +119,11 @@ fn bezier_eval(p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> vec2f {
          + 3.0 * mt * mt * t * p1
          + 3.0 * mt * t * t * p2
          + t * t * t * p3;
+}
+
+fn bezier_tangent_eval(p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> vec2f {
+    let mt = 1.0 - t;
+    return 3.0 * mt * mt * (p1 - p0)
+         + 6.0 * mt * t * (p2 - p1)
+         + 3.0 * t * t * (p3 - p2);
 }

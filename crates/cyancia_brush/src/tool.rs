@@ -12,9 +12,7 @@ use glam::{FloatExt, Vec2};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
-    asset::BrushPresetInstance,
-    input_processing::RawPenInput,
-    render::{BrushPresetOperator, graph::GraphInputParams},
+    asset::BrushPresetInstance, input_processing::RawPenInput, render::BrushPresetOperator,
 };
 
 #[derive(Default)]

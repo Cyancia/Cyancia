@@ -18,13 +18,6 @@ use iced_widget::{Column, column, pick_list, space};
 use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 
-#[derive(Debug, Clone, Copy)]
-pub struct GraphInputParams {
-    pub pen_position: Vec2,
-    pub draw_direction_vec: Vec2,
-    pub draw_direction_angle: f32,
-}
-
 #[derive(Default, Clone)]
 pub struct PenPositionNode;
 
