@@ -47,13 +47,16 @@ use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 use crate::render::graph::{
     BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
-    DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
-    LayerPixelColorNode, OutputColorNode, PasteTextureNode, PenPositionNode, PixelPositionNode,
+    DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode,
+    FilterWithinMaskNode, LayerPixelColorNode, OutputColorNode, OutputRequiredSpacingNode,
+    OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
     StrokeBoundsNode,
 };
 
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
+    pub spacing_factor_graph: SerializableGraph,
+    pub required_spacing_graph: SerializableGraph,
     pub main_graph: SerializableGraph,
     pub stroke_postprocess_graphs: Vec<SerializableGraph>,
     pub external_vars: Vec<SerializableExternalVariable>,
@@ -112,6 +115,19 @@ impl AssetSerializer for BrushPresetSerializer {
             .read_to_string(&mut metadata_buffer)?;
         let metadata = toml::from_str::<BrushPresetMetadata>(&metadata_buffer)?;
 
+        let mut spacing_factor_graph_buffer = String::new();
+        archive
+            .by_name("spacing_factor.csg")?
+            .read_to_string(&mut spacing_factor_graph_buffer)?;
+        let spacing_factor_graph =
+            toml::from_str::<SerializableGraph>(&spacing_factor_graph_buffer)?;
+        let mut required_spacing_graph_buffer = String::new();
+        archive
+            .by_name("required_spacing.csg")?
+            .read_to_string(&mut required_spacing_graph_buffer)?;
+        let required_spacing_graph =
+            toml::from_str::<SerializableGraph>(&required_spacing_graph_buffer)?;
+
         let external_vars = match archive.by_name("external_vars.toml") {
             Ok(mut f) => {
                 let mut external_vars_buffer = String::new();
@@ -139,6 +155,8 @@ impl AssetSerializer for BrushPresetSerializer {
 
         Ok(BrushPreset {
             metadata,
+            required_spacing_graph,
+            spacing_factor_graph,
             main_graph,
             stroke_postprocess_graphs,
             external_vars,
@@ -152,6 +170,14 @@ impl AssetSerializer for BrushPresetSerializer {
     ) -> Result<(), Self::Error> {
         let mut buf = Vec::new();
         let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+
+        zip.start_file("spacing_factor.csg", FileOptions::<()>::default())?;
+        let spacing_factor_graph_buffer = toml::to_string(&asset.spacing_factor_graph)?;
+        zip.write_all(spacing_factor_graph_buffer.as_bytes())?;
+
+        zip.start_file("required_spacing.csg", FileOptions::<()>::default())?;
+        let required_spacing_graph_buffer = toml::to_string(&asset.required_spacing_graph)?;
+        zip.write_all(required_spacing_graph_buffer.as_bytes())?;
 
         zip.start_file("main.csg", FileOptions::<()>::default())?;
         let main_graph_buffer = toml::to_string(&asset.main_graph)?;
@@ -323,6 +349,8 @@ pub struct BrushPresetInstance {
     brush_id: AssetId<BrushPreset>,
     metadata: BrushPresetMetadata,
 
+    spacing_factor_graph: Graph,
+    required_spacing_graph: Graph,
     main_graph: Graph,
     stroke_postprocess_graphs: Vec<Graph>,
     graph_resources: GraphResources,
@@ -341,7 +369,7 @@ impl BrushPresetInstance {
             .external_vars
             .iter()
             .filter_map(|var| {
-                var.deserialize(MAIN_GRAPH_TYPES.as_ref())
+                var.deserialize(BRUSH_GRAPH_TYPES.as_ref())
                     .inspect_err(|err| {
                         log::error!(
                             "Error deserializing external variable '{}': {}",
@@ -360,11 +388,40 @@ impl BrushPresetInstance {
         };
 
         let mut errors = Vec::new();
+
+        let required_spacing_graph = {
+            let (g, e) = Graph::from_serialized(
+                &preset.required_spacing_graph,
+                resources.clone(),
+                BRUSH_GRAPH_TYPES.clone(),
+                REQUIRED_SPACING_GRAPH_NODES.as_ref(),
+            );
+            errors.extend(e);
+            match g {
+                Some(g) => g,
+                None => return (None, errors),
+            }
+        };
+
+        let spacing_factor_graph = {
+            let (g, e) = Graph::from_serialized(
+                &preset.spacing_factor_graph,
+                resources.clone(),
+                BRUSH_GRAPH_TYPES.clone(),
+                SPACING_FACTOR_GRAPH_NODES.as_ref(),
+            );
+            errors.extend(e);
+            match g {
+                Some(g) => g,
+                None => return (None, errors),
+            }
+        };
+
         let main_graph = {
             let (g, e) = Graph::from_serialized(
                 &preset.main_graph,
                 resources.clone(),
-                MAIN_GRAPH_TYPES.clone(),
+                BRUSH_GRAPH_TYPES.clone(),
                 MAIN_GRAPH_NODES.as_ref(),
             );
             errors.extend(e);
@@ -380,7 +437,7 @@ impl BrushPresetInstance {
             let (g, e) = Graph::from_serialized(
                 serialized,
                 resources.clone(),
-                STROKE_POSTPROCESS_GRAPH_TYPES.clone(),
+                BRUSH_GRAPH_TYPES.clone(),
                 STROKE_POSTPROCESS_GRAPH_NODES.as_ref(),
             );
             errors.extend(e);
@@ -394,6 +451,8 @@ impl BrushPresetInstance {
             Some(Self {
                 brush_id: handle.id(),
                 metadata: preset.metadata.clone(),
+                required_spacing_graph,
+                spacing_factor_graph,
                 main_graph,
                 stroke_postprocess_graphs,
                 graph_resources: resources,
@@ -404,6 +463,8 @@ impl BrushPresetInstance {
     }
 
     pub fn as_asset(&self) -> anyhow::Result<BrushPreset> {
+        let spacing_factor_graph = self.spacing_factor_graph.as_serialized()?;
+        let required_spacing_graph = self.required_spacing_graph.as_serialized()?;
         let main_graph = self.main_graph.as_serialized()?;
         let stroke_postprocess_graphs = self
             .stroke_postprocess_graphs
@@ -420,6 +481,8 @@ impl BrushPresetInstance {
 
         Ok(BrushPreset {
             metadata: self.metadata.clone(),
+            spacing_factor_graph,
+            required_spacing_graph,
             main_graph,
             stroke_postprocess_graphs,
             external_vars,
@@ -439,7 +502,8 @@ impl BrushPresetInstance {
         let mut texture_usage = GraphTextureUsageRecorder::default();
         texture_usage.use_texture(TextureId::NULL);
 
-        let input_sampling = compile_input_sampling()?;
+        let input_sampling =
+            compile_input_sampling(&self.spacing_factor_graph, &self.required_spacing_graph)?;
 
         let main_graph = compile_template_main(
             &self.main_graph,
@@ -464,12 +528,27 @@ impl BrushPresetInstance {
     }
 
     pub fn new_stroke_postprocess_graph(&mut self) -> usize {
-        let graph = Graph::new(
-            self.graph_resources.clone(),
-            STROKE_POSTPROCESS_GRAPH_TYPES.clone(),
-        );
+        let graph = Graph::new(self.graph_resources.clone(), BRUSH_GRAPH_TYPES.clone());
         self.stroke_postprocess_graphs.push(graph);
         self.stroke_postprocess_graphs.len() - 1
+    }
+
+    pub fn required_spacing_graph(&self) -> &Graph {
+        &self.required_spacing_graph
+    }
+
+    pub fn required_spacing_graph_mut(&mut self) -> &mut Graph {
+        self.is_dirty = true;
+        &mut self.required_spacing_graph
+    }
+
+    pub fn spacing_factor_graph(&self) -> &Graph {
+        &self.spacing_factor_graph
+    }
+
+    pub fn spacing_factor_graph_mut(&mut self) -> &mut Graph {
+        self.is_dirty = true;
+        &mut self.spacing_factor_graph
     }
 
     pub fn main_graph(&self) -> &Graph {
@@ -569,23 +648,22 @@ fn add_modules(resolver: &mut VirtualResolver) {
     );
 }
 
-// TODO
-// fn compile_input_sampling(factor: &Graph, required: &Graph) -> anyhow::Result<String> {
-fn compile_input_sampling() -> anyhow::Result<String> {
-    // let (_, factor) = factor.compile(
-    //     Vec::new(),
-    //     Default::default(),
-    //     &mut GraphTextureUsageRecorder::default(),
-    // )?;
-    // let (_, required) = required.compile(
-    //     Vec::new(),
-    //     Default::default(),
-    //     &mut GraphTextureUsageRecorder::default(),
-    // )?;
+fn compile_input_sampling(factor: &Graph, required: &Graph) -> anyhow::Result<String> {
+    let (_, factor) = factor.compile(
+        Vec::new(),
+        Default::default(),
+        &mut GraphTextureUsageRecorder::default(),
+    )?;
+    let (_, required) = required.compile(
+        Vec::new(),
+        Default::default(),
+        &mut GraphTextureUsageRecorder::default(),
+    )?;
 
-    let shader = include_str!("render/brush_sample.wesl").to_string();
-    // .replace("//CODEGENFLAG_COMPUTED_GRAPH_SPACING_FACTOR", &factor)
-    // .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &required);
+    let shader = include_str!("render/brush_sample.wesl")
+        .to_string()
+        .replace("//CODEGENFLAG_COMPUTED_GRAPH_SPACING_FACTOR", &factor)
+        .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &required);
 
     let mut resolver = VirtualResolver::new();
     resolver.add_module("package::template".parse().unwrap(), shader.into());
@@ -687,18 +765,42 @@ fn compile_template_stroke_postprocess(
     })
 }
 
-pub const MAIN_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(main_graph_types);
+pub const BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
+pub const REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+    LazyLock::new(required_spacing_graph_nodes);
+pub const SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+    LazyLock::new(spacing_factor_graph_nodes);
 pub const MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> = LazyLock::new(main_graph_nodes);
-pub const STROKE_POSTPROCESS_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> =
-    LazyLock::new(stroke_postprocess_graph_types);
 pub const STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
     LazyLock::new(stroke_postprocess_graph_nodes);
 
-fn main_graph_types() -> Arc<GraphTypeRegistry> {
+fn brush_graph_types() -> Arc<GraphTypeRegistry> {
     let mut types = GraphTypeRegistry::default();
     types.merge(builtin_types());
 
     types.into()
+}
+
+fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry> {
+    let mut nodes = GraphNodeRegistry::default();
+    nodes.merge(builtin_nodes());
+
+    nodes.register::<PenPositionNode>();
+    nodes.register::<DrawDirectionNode>();
+    nodes.register::<OutputRequiredSpacingNode>();
+
+    nodes.into()
+}
+
+fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry> {
+    let mut nodes = GraphNodeRegistry::default();
+    nodes.merge(builtin_nodes());
+
+    nodes.register::<PenPositionsNode>();
+    nodes.register::<DrawDirectionsNode>();
+    nodes.register::<OutputSpacingNode>();
+
+    nodes.into()
 }
 
 fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
@@ -720,13 +822,6 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.register::<BlendWithLayerNode>();
 
     nodes.into()
-}
-
-fn stroke_postprocess_graph_types() -> Arc<GraphTypeRegistry> {
-    let mut types = GraphTypeRegistry::default();
-    types.merge(builtin_types());
-
-    types.into()
 }
 
 fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {

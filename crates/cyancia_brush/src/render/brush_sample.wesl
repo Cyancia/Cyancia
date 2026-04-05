@@ -11,12 +11,10 @@ const BEZIER_SAMPLES: u32 = 32u;
 
 fn compute_spacing_factor(src: ComputedPenInput, dst: ComputedPenInput) -> f32 {
     //CODEGENFLAG_COMPUTED_GRAPH_SPACING_FACTOR
-    return distance(src.position, dst.position); // TODO
 }
 
-fn compute_required_spacing(sample: ComputedPenInput) -> f32 {
+fn compute_required_spacing(graph_input: ComputedPenInput) -> f32 {
     //CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING
-    return 1.0; // TODO
 }
 
 fn bezier_t_for_arc_length(table: ptr<function, array<f32, BEZIER_SAMPLES + 1u>>, arc_goal: f32) -> f32 {

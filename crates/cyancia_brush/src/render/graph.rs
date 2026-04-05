@@ -908,3 +908,173 @@ impl GraphNode for BlendWithLayerNode {
         ))
     }
 }
+
+#[derive(Default, Clone)]
+pub struct OutputSpacingNode;
+
+impl StatelessCommonGraphNode for OutputSpacingNode {
+    fn name(&self) -> &'static str {
+        "Output Spacing"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Spacing"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x23948d)
+    }
+
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
+    }
+
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        vec![]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!("return {};\n", ctx.get_input(0)?))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct PenPositionsNode;
+
+impl StatelessCommonGraphNode for PenPositionsNode {
+    fn name(&self) -> &'static str {
+        "Pen Positions"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Src Position", "Dst Position"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79f2c9)
+    }
+
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "
+            let {} = src.position;
+            let {} = dst.position;
+            ",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?,
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct DrawDirectionsNode;
+
+impl StatelessCommonGraphNode for DrawDirectionsNode {
+    fn name(&self) -> &'static str {
+        "Draw Directions"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Src Angle", "Dst Angle", "Src Direction", "Dst Direction"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x79f2c0)
+    }
+
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+            GraphDefaultOutputSlot::new::<Vec2FType>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "
+            let {} = src.draw_direction_angle;
+            let {} = dst.draw_direction_angle;
+            let {} = src.draw_direction_vec;
+            let {} = dst.draw_direction_vec;
+            ",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?,
+            ctx.get_output(2)?,
+            ctx.get_output(3)?,
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct OutputRequiredSpacingNode;
+
+impl StatelessCommonGraphNode for OutputRequiredSpacingNode {
+    fn name(&self) -> &'static str {
+        "Output Required Spacing"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Required Spacing"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x3f463c)
+    }
+
+    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
+    }
+
+    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+        vec![]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!("return {};\n", ctx.get_input(0)?))
+    }
+}

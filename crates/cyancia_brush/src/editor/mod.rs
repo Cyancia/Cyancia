@@ -50,7 +50,7 @@ use wgpu::{Device, Queue};
 use crate::{
     asset::{
         BrushPreset, BrushPresetInstance, BrushPresetMetadata, GpuImage, Image, MAIN_GRAPH_NODES,
-        STROKE_POSTPROCESS_GRAPH_NODES,
+        REQUIRED_SPACING_GRAPH_NODES, SPACING_FACTOR_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
     input_processing::InputProcessor,
@@ -172,6 +172,8 @@ impl FromRuntime for BrushEditorView {
 
 #[derive(Clone)]
 pub enum BrushPresetGraph {
+    RequiredSpacing,
+    SpacingFactor,
     Main,
     StrokePostprocess { index: usize },
 }
@@ -179,6 +181,8 @@ pub enum BrushPresetGraph {
 impl BrushPresetGraph {
     pub fn graph<'a>(&self, brush: &'a BrushPresetInstance) -> &'a Graph {
         match self {
+            BrushPresetGraph::RequiredSpacing => brush.required_spacing_graph(),
+            BrushPresetGraph::SpacingFactor => brush.spacing_factor_graph(),
             BrushPresetGraph::Main => brush.main_graph(),
             BrushPresetGraph::StrokePostprocess { index } => {
                 brush.stroke_postprocess_graphs().get(*index).unwrap()
@@ -188,6 +192,8 @@ impl BrushPresetGraph {
 
     pub fn node_registry(&self) -> Arc<GraphNodeRegistry> {
         match self {
+            BrushPresetGraph::RequiredSpacing => REQUIRED_SPACING_GRAPH_NODES.clone(),
+            BrushPresetGraph::SpacingFactor => SPACING_FACTOR_GRAPH_NODES.clone(),
             BrushPresetGraph::Main => MAIN_GRAPH_NODES.clone(),
             BrushPresetGraph::StrokePostprocess { index } => STROKE_POSTPROCESS_GRAPH_NODES.clone(),
         }
@@ -195,6 +201,8 @@ impl BrushPresetGraph {
 
     pub fn graph_mut<'a>(&self, brush: &'a mut BrushPresetInstance) -> &'a mut Graph {
         match self {
+            BrushPresetGraph::RequiredSpacing => brush.required_spacing_graph_mut(),
+            BrushPresetGraph::SpacingFactor => brush.spacing_factor_graph_mut(),
             BrushPresetGraph::Main => brush.main_graph_mut(),
             BrushPresetGraph::StrokePostprocess { index } => brush
                 .stroke_postprocess_graphs_mut()
@@ -334,6 +342,12 @@ impl WindowView for BrushEditorView {
                     let graph_switcher = column![
                         button("New Stroke Postprocess Graph")
                             .on_press_with(|| BrushEditorMessage::CreateNewStrokePostprocessGraph),
+                        button("Required Spacing").on_press_with(move || {
+                            BrushEditorMessage::SwitchToGraph(BrushPresetGraph::RequiredSpacing)
+                        }),
+                        button("Spacing Factor").on_press_with(move || {
+                            BrushEditorMessage::SwitchToGraph(BrushPresetGraph::SpacingFactor)
+                        }),
                         button("Main").on_press_with(move || BrushEditorMessage::SwitchToGraph(
                             BrushPresetGraph::Main
                         )),
@@ -614,6 +628,8 @@ impl WindowView for BrushEditorView {
                     metadata: BrushPresetMetadata {
                         name: "[Unnamed Brush]".to_string(),
                     },
+                    spacing_factor_graph: SerializableGraph::default(),
+                    required_spacing_graph: SerializableGraph::default(),
                     main_graph: SerializableGraph::default(),
                     stroke_postprocess_graphs: Vec::new(),
                     external_vars: Vec::new(),
