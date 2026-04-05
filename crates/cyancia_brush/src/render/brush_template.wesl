@@ -184,6 +184,15 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
     }
 }
 
+// TODO: This function is actually not working as expected currently, although it looks correct.
+//       As it said in WGPU spec, memory ordering of atomic operations are relaxed, so it's actually impossible to
+//       implement something like a global mutex.
+//       We're observing some severe artifacts on some dabs, and it seems that this cannot be resolved currently.
+//       We may need to wait for the next update of winit and iced, when they are depending on wgpu 28 or later
+//       because currently, naga has problem handling atomic operations, and the naga version we are using is patched
+//       from a PR.
+//       Once everything is updated, we may need to hack around the final generated spirv or somehow by pass the WGPU spec.
+//       Not sure how this will be finally solved.
 fn wait_for_sample(expected_sample_index: u32) {
     var timeout = 5000u;
     loop {
