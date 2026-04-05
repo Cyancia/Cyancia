@@ -298,7 +298,6 @@ impl BrushPresetRenderer {
             return;
         }
 
-        unsafe { device.start_graphics_debugger_capture() };
         let mut ec = device.create_command_encoder(&Default::default());
         ec.clear_buffer(self.resources.pass_fence.inner_buffer().unwrap(), 0, None);
 
@@ -310,7 +309,6 @@ impl BrushPresetRenderer {
         ec.pop_debug_group();
 
         queue.submit([ec.finish()]);
-        unsafe { device.stop_graphics_debugger_capture() };
     }
 
     pub fn copy_last_surface_to_layer(
