@@ -57,6 +57,10 @@ struct PenInputSampler {
 
 struct PenInput {
     position: vec2f,
+    // Inner control points of the cubic Bezier from the previous position to
+    // this one.  Computed on the CPU by BezierInputSampler.
+    bezier_control_prev: vec2f,
+    bezier_control_cur: vec2f,
 }
 
 struct PassFence {

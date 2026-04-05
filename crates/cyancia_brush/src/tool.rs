@@ -13,7 +13,8 @@ use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
     asset::BrushPresetInstance,
-    render::{BrushPresetOperator, PenInput, graph::GraphInputParams},
+    input_processing::RawPenInput,
+    render::{BrushPresetOperator, graph::GraphInputParams},
 };
 
 #[derive(Default)]
@@ -33,7 +34,7 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let params = PenInput {
+        let params = RawPenInput {
             position: canvas
                 .transform
                 .read()
@@ -56,7 +57,7 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let params = PenInput {
+        let params = RawPenInput {
             position: canvas
                 .transform
                 .read()
@@ -80,7 +81,15 @@ impl ToolFunction for BrushTool {
         };
 
         let tiles = services.service::<GpuTileStorage>();
-        brush.end_stroke(&tiles, canvas.image.root().id);
+        let final_input = RawPenInput {
+            position: canvas
+                .transform
+                .read()
+                .pixel_to_widget
+                .inverse()
+                .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
+        };
+        brush.end_stroke(final_input, &tiles, canvas.image.root().id);
     }
 }
 

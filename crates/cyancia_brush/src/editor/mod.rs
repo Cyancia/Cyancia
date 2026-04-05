@@ -53,6 +53,7 @@ use crate::{
         STROKE_POSTPROCESS_GRAPH_NODES,
     },
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
+    input_processing::InputProcessor,
     render::BrushPresetOperator,
     tool::CurrentBrushPresetOperator,
 };
@@ -455,6 +456,7 @@ impl WindowView for BrushEditorView {
                                             brush.instance.clone(),
                                             ctx.device.deref().clone(),
                                             ctx.queue.deref().clone(),
+                                            InputProcessor::default(),
                                         ),
                                     ));
                                 }
@@ -552,6 +554,7 @@ impl WindowView for BrushEditorView {
                             instance,
                             ctx.device.deref().clone(),
                             ctx.queue.deref().clone(),
+                            InputProcessor::default(),
                         ),
                     ));
                 }

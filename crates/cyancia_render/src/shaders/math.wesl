@@ -105,3 +105,11 @@ fn sdf_ellipse(pixel: vec2f, center: vec2f, ab: vec2f) -> f32
         return -d;
     }
 }
+
+fn bezier_eval(p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> vec2f {
+    let mt = 1.0 - t;
+    return mt * mt * mt * p0
+         + 3.0 * mt * mt * t * p1
+         + 3.0 * mt * t * t * p2
+         + t * t * t * p3;
+}

@@ -42,6 +42,7 @@ use wgpu::{
 
 use crate::{
     asset::{BrushPreset, BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset, GpuImage},
+    input_processing::{InputProcessor, RawPenInput},
     render::{
         dynamic_intermediate_buffer::{DynamicGpuTileInfoBuffer, DynamicIntermediateBuffer},
         graph::GraphInputParams,
@@ -69,22 +70,29 @@ pub struct BrushPresetOperator {
     queue: Queue,
     renderer: Option<BrushPresetRenderer>,
     last_session: Option<BrushStrokeSessionInfo>,
+    input_processor: InputProcessor,
 }
 
 impl BrushPresetOperator {
-    pub fn new(instance: Arc<RwLock<BrushPresetInstance>>, device: Device, queue: Queue) -> Self {
+    pub fn new(
+        instance: Arc<RwLock<BrushPresetInstance>>,
+        device: Device,
+        queue: Queue,
+        input_processor: InputProcessor,
+    ) -> Self {
         Self {
             instance,
             renderer: None,
             device,
             queue,
             last_session: None,
+            input_processor,
         }
     }
 
     pub fn begin_stroke(
         &mut self,
-        input: PenInput,
+        input: RawPenInput,
         tiles: &GpuTileStorage,
         assets: &AssetRegistry,
         target_layer: LayerId,
@@ -131,19 +139,47 @@ impl BrushPresetOperator {
         });
 
         renderer.reset(&self.device, &self.queue);
-        renderer.update(&self.device, &self.queue, input);
+
+        // Reset the CPU-side Bezier sampler and prime it with the first position.
+        // The GPU handles the first point via the `has_last_sample == 0` branch,
+        // so control points are irrelevant here.
+        self.input_processor.reset();
+        let _ = self.input_processor.push(input);
+        let pen_input = PenInput {
+            position: input.position,
+            bezier_control_prev: Vec2::ZERO,
+            bezier_control_cur: Vec2::ZERO,
+        };
+        renderer.update(&self.device, &self.queue, pen_input);
     }
 
-    pub fn update_stroke(&mut self, input: PenInput) {
-        if let Some(renderer) = &self.renderer {
-            renderer.update(&self.device, &self.queue, input);
-        }
-    }
-
-    pub fn end_stroke(&mut self, tiles: &GpuTileStorage, target_layer: LayerId) {
+    pub fn update_stroke(&mut self, input: RawPenInput) {
         let Some(renderer) = &self.renderer else {
             return;
         };
+        let pen_input = self.input_processor.push(input).unwrap_or(PenInput {
+            position: input.position,
+            bezier_control_prev: input.position,
+            bezier_control_cur: input.position,
+        });
+        renderer.update(&self.device, &self.queue, pen_input);
+    }
+
+    pub fn end_stroke(
+        &mut self,
+        final_input: RawPenInput,
+        tiles: &GpuTileStorage,
+        target_layer: LayerId,
+    ) {
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+
+        // Gradually converge the stabilizer toward the pen-up position by
+        // repeatedly pushing it (mirrors Krita's stabilizerEnd mechanism).
+        for pen_input in self.input_processor.flush(final_input) {
+            renderer.update(&self.device, &self.queue, pen_input);
+        }
 
         let now = std::time::Instant::now();
         renderer.postprocess_stroke(&self.device, &self.queue);
@@ -423,6 +459,11 @@ pub struct ComputedPenInput {
 #[derive(ShaderType, Default, Clone, Copy)]
 pub struct PenInput {
     pub position: Vec2,
+    /// First inner control point of the cubic Bezier from the previous position
+    /// to this one (CPU-computed by [`crate::input_sampling::BezierInputSampler`]).
+    pub bezier_control_prev: Vec2,
+    /// Second inner control point (near this position).
+    pub bezier_control_cur: Vec2,
 }
 
 #[derive(ShaderType, Clone, Copy)]

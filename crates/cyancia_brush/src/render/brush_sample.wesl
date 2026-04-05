@@ -1,11 +1,13 @@
 import package::brush::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, ESTIMATION_WORKGROUP_SIZE};
-import package::render::math::{unsigned_div_ceil};
+import package::render::math::{unsigned_div_ceil, bezier_eval};
 
 @group(0) @binding(0) var<storage> new_input: PenInput;
 @group(0) @binding(1) var<storage, read_write> input_sampler: PenInputSampler;
 @group(0) @binding(2) var<storage, read_write> output_samples: OutputSamples;
 @group(0) @binding(3) var<storage, read_write> estimate_dispatch: vec3u;
 @group(0) @binding(4) var<storage, read_write> stroke_info: StrokeInfo;
+
+const BEZIER_SAMPLES: u32 = 32u;
 
 fn compute_spacing_factor(src: ComputedPenInput, dst: ComputedPenInput) -> f32 {
     //CODEGENFLAG_COMPUTED_GRAPH_SPACING_FACTOR
@@ -17,46 +19,88 @@ fn compute_required_spacing(sample: ComputedPenInput) -> f32 {
     return 1.0; // TODO
 }
 
+fn bezier_t_for_arc_length(table: ptr<function, array<f32, BEZIER_SAMPLES + 1u>>, arc_goal: f32) -> f32 {
+    const BISECT_ITERATIONS: u32 = u32(ceil(log2(f32(BEZIER_SAMPLES)))) + 1u;
+    var lo: u32 = 0u;
+    var hi: u32 = BEZIER_SAMPLES;
+    for (var i = 0u; i < BISECT_ITERATIONS; i++) {
+        let mid = (lo + hi) / 2u;
+        if (*table)[mid] < arc_goal {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let lo_arc = (*table)[lo];
+    let hi_arc = (*table)[hi];
+    let lo_t = f32(lo) / f32(BEZIER_SAMPLES);
+    let hi_t = f32(hi) / f32(BEZIER_SAMPLES);
+    if hi_arc <= lo_arc {
+        return lo_t;
+    }
+    return mix(lo_t, hi_t, (arc_goal - lo_arc) / (hi_arc - lo_arc));
+}
+
 @compute
 // TODO: Parallel
 @workgroup_size(1, 1, 1)
 fn main() {
     output_samples.n_samples = 0;
 
-    let new_sample = ComputedPenInput(
-        new_input.position,
-    );
+    let new_computed = ComputedPenInput(new_input.position);
 
     if input_sampler.has_last_sample == 0 {
         input_sampler.last_input = new_input;
-        input_sampler.last_sample = new_sample;
+        input_sampler.last_sample = new_computed;
         input_sampler.has_last_sample = 1;
 
-        output_samples.samples[output_samples.n_samples] = new_sample;
-        output_samples.n_samples += 1;
+        output_samples.samples[0] = new_computed;
+        output_samples.n_samples = 1u;
+        estimate_dispatch = vec3u(1u, 1u, unsigned_div_ceil(1u, ESTIMATION_WORKGROUP_SIZE.z));
+        stroke_info.total_dabs += 1u;
         return;
     }
 
-    let spacing = compute_required_spacing(new_sample);
-    let total_spacing = compute_spacing_factor(new_sample, input_sampler.last_sample);
-    var remaining_spacing = total_spacing;
+    let p0 = input_sampler.last_sample.position;
+    let p1 = new_input.bezier_control_prev;
+    let p2 = new_input.bezier_control_cur;
+    let p3 = new_input.position;
+
+    var arc_table: array<f32, BEZIER_SAMPLES + 1u>;
+    arc_table[0] = 0.0;
+    var prev_p = p0;
+    for (var i: u32 = 1u; i <= BEZIER_SAMPLES; i++) {
+        let t = f32(i) / f32(BEZIER_SAMPLES);
+        let p = bezier_eval(p0, p1, p2, p3, t);
+        arc_table[i] = arc_table[i - 1u] + distance(prev_p, p);
+        prev_p = p;
+    }
+    let total_arc = arc_table[BEZIER_SAMPLES];
+
+    let spacing = compute_required_spacing(new_computed);
+    if total_arc < 0.0001 || spacing <= 0.0 {
+        input_sampler.last_input = new_input;
+        return;
+    }
+
+    var remaining_arc = total_arc;
     while output_samples.n_samples < arrayLength(&output_samples.samples) {
-        let t = (total_spacing - remaining_spacing) / total_spacing;
-        let interpolated_sample = ComputedPenInput(
-            mix(input_sampler.last_sample.position, new_sample.position, t),
-        );
+        let target_arc = total_arc - remaining_arc;
+        let t = bezier_t_for_arc_length(&arc_table, target_arc);
+        let pos = bezier_eval(p0, p1, p2, p3, t);
+        let interpolated = ComputedPenInput(pos);
 
-        output_samples.samples[output_samples.n_samples] = interpolated_sample;
-        output_samples.n_samples += 1;
-        remaining_spacing -= spacing;
+        output_samples.samples[output_samples.n_samples] = interpolated;
+        output_samples.n_samples += 1u;
+        remaining_arc -= spacing;
 
-        if remaining_spacing < spacing {
+        if remaining_arc < spacing {
             input_sampler.last_input = new_input;
-            input_sampler.last_sample = interpolated_sample;
+            input_sampler.last_sample = interpolated;
             break;
         }
     }
 
-    estimate_dispatch = vec3u(1, 1, unsigned_div_ceil(output_samples.n_samples, ESTIMATION_WORKGROUP_SIZE.z));
+    estimate_dispatch = vec3u(1u, 1u, unsigned_div_ceil(output_samples.n_samples, ESTIMATION_WORKGROUP_SIZE.z));
     stroke_info.total_dabs += output_samples.n_samples;
 }

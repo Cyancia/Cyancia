@@ -11,6 +11,7 @@ use crate::{
 pub mod asset;
 pub mod browser;
 pub mod editor;
+pub mod input_processing;
 pub mod render;
 pub mod tool;
 
