@@ -374,12 +374,8 @@ impl BrushPresetRenderer {
 
         let mut target_layer = tiles.get_layer_mut(target_layer_id).unwrap();
 
-        for tile in &tile_info.buf {
-            if *tile == GpuTileInfo::NULL {
-                break;
-            }
-
-            target_layer.get_tile_or_allocate(tile.index);
+        for i in 0..tile_info.n_tiles as usize {
+            target_layer.get_tile_or_allocate(tile_info.buf[i].index);
         }
 
         let result_layer = if (stroke_info.total_dabs + self.resources.n_stroke_pp) % 2 == 0 {
@@ -390,13 +386,12 @@ impl BrushPresetRenderer {
 
         let mut ec = device.create_command_encoder(&Default::default());
         ec.push_debug_group("copy brush preset result to target layer");
-        let mut n_copied = 0;
-        for (src, tile) in tile_info.buf.iter().enumerate() {
-            if *tile == GpuTileInfo::NULL {
-                break;
-            }
-            n_copied += 1;
-
+        for (src, tile) in tile_info
+            .buf
+            .iter()
+            .take(tile_info.n_tiles as usize)
+            .enumerate()
+        {
             let dst = target_layer.get_tile_layer(tile.index).unwrap();
 
             ec.copy_texture_to_texture(
@@ -428,7 +423,7 @@ impl BrushPresetRenderer {
 
         log::info!(
             "Copied {} tiles to target layer, affected tiles aabb: [{}, {})",
-            n_copied,
+            tile_info.n_tiles,
             stroke_info.accumulated_bound_min,
             stroke_info.accumulated_bound_max
         );

@@ -57,7 +57,7 @@ impl DynamicIntermediateBuffer {
         );
         info.push(&DynamicGpuTileInfoBuffer {
             n_tiles: 0,
-            buf: vec![GpuTileInfo::NULL; initial as usize],
+            buf: vec![GpuTileInfo::default(); initial as usize],
         });
         info.write_buffer(&device, &queue);
 
