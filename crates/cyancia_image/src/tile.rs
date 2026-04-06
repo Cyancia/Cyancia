@@ -79,6 +79,12 @@ pub struct GpuTileInfo {
     pub origin: IVec2,
 }
 
+impl Default for GpuTileInfo {
+    fn default() -> Self {
+        Self::NULL
+    }
+}
+
 impl GpuTileInfo {
     pub const NULL: Self = Self {
         index: IVec2::splat(i32::MIN),
