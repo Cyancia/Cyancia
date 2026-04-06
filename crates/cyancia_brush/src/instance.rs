@@ -17,7 +17,7 @@ use cyancia_shader_graph::{
             ExternalVariable, ExternalVariableId, GraphExternalVariableStorage,
             generate_external_variable_binding,
         },
-        function::GraphFunctionStorage,
+        function::{GraphFunction, GraphFunctionStorage},
         node::GraphNodeRegistry,
         slot::ErasedGraphLiteralUpdateMessage,
         texture::{GraphTextureStorage, GraphTextureUsageRecorder, TextureId},
@@ -591,4 +591,35 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.register::<BlendWithLayerNode>();
 
     nodes.into()
+}
+
+pub struct GraphFunctionInstance {
+    graph_function: GraphFunction,
+    runtime_revision: AtomicU64,
+}
+
+impl GraphFunctionInstance {
+    pub fn new(graph_function: GraphFunction) -> Self {
+        Self {
+            graph_function,
+            runtime_revision: AtomicU64::new(0),
+        }
+    }
+
+    pub fn graph_function(&self) -> &GraphFunction {
+        &self.graph_function
+    }
+
+    pub fn graph_function_mut(&mut self) -> &mut GraphFunction {
+        self.increment_runtime_revision();
+        &mut self.graph_function
+    }
+
+    pub fn runtime_revision(&self) -> u64 {
+        self.runtime_revision.load(Ordering::Acquire)
+    }
+
+    fn increment_runtime_revision(&self) {
+        self.runtime_revision.fetch_add(1, Ordering::AcqRel);
+    }
 }
