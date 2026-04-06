@@ -65,10 +65,7 @@ fn main() {
         input_sampler.last_sample = new_computed;
         input_sampler.has_last_sample = 1;
 
-        output_samples.samples[0] = new_computed;
-        output_samples.n_samples = 1u;
-        estimate_dispatch = vec3u(1u, 1u, unsigned_div_ceil(1u, ESTIMATION_WORKGROUP_SIZE.z));
-        stroke_info.total_dabs += 1u;
+        estimate_dispatch = vec3u(0u);
         return;
     }
 
