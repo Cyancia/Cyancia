@@ -612,7 +612,7 @@ impl StrokeResources {
         }
 
         let empty_texture = device.create_texture(&TextureDescriptor {
-            label: None,
+            label: Some("empty texture"),
             size: Extent3d {
                 width: 1,
                 height: 1,
@@ -622,7 +622,9 @@ impl StrokeResources {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING
+                | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let mut referenced_textures_builder =
