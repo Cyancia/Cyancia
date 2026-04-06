@@ -43,6 +43,51 @@ fn transform_rect(rect: Rect, mat: mat3x3f) -> Rect {
     return Rect(min, max);
 }
 
+fn scale_rotate_transform(scale: vec2f, angle: f32, translation: vec2f) -> mat3x3f {
+    let c = cos(angle);
+    let s = sin(angle);
+    return mat3x3f(
+        vec3f(c * scale.x, s * scale.x, 0.0),
+        vec3f(-s * scale.y, c * scale.y, 0.0),
+        vec3f(translation, 1.0)
+    );
+}
+
+fn scale_rotate_transform_inv(scale: vec2f, angle: f32, translation: vec2f) -> mat3x3f {
+    let c = cos(angle);
+    let s = sin(angle);
+    let inv_scale = 1.0 / scale;
+    let a_inv = mat2x2f(c * inv_scale.x, -s * inv_scale.y, s * inv_scale.x, c * inv_scale.y);
+    return mat3x3f(
+        vec3f(c * inv_scale.x, -s * inv_scale.y, 0.0),
+        vec3f(s * inv_scale.x,  c * inv_scale.y, 0.0),
+        vec3f(-(a_inv * translation), 1.0)
+    );
+}
+
+fn scale_rotate_transform_anchored(scale: vec2f, angle: f32, translation: vec2f, anchor: vec2f) -> mat3x3f {
+    let c = cos(angle);
+    let s = sin(angle);
+    let a = mat2x2f(c * scale.x, s * scale.x, -s * scale.y, c * scale.y);
+    return mat3x3f(
+        vec3f(c * scale.x, s * scale.x, 0.0),
+        vec3f(-s * scale.y, c * scale.y, 0.0),
+        vec3f(translation + anchor - (a * anchor), 1.0)
+    );
+}
+
+fn scale_rotate_transform_anchored_inv(scale: vec2f, angle: f32, translation: vec2f, anchor: vec2f) -> mat3x3f {
+    let c = cos(angle);
+    let s = sin(angle);
+    let inv_scale = 1.0 / scale;
+    let a_inv = mat2x2f(c * inv_scale.x, -s * inv_scale.y, s * inv_scale.x, c * inv_scale.y);
+    return mat3x3f(
+        vec3f(c * inv_scale.x, -s * inv_scale.y, 0.0),
+        vec3f(s * inv_scale.x,  c * inv_scale.y, 0.0),
+        vec3f(anchor - a_inv * (translation + anchor), 1.0)
+    );
+}
+
 const CUBIC_CURVE_MAX_CONTROL_POINTS: u32 = 16;
 
 struct CubicCurve {

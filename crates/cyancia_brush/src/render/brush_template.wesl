@@ -1,5 +1,5 @@
 import package::image::image_tiling::{TileInfo, TILE_SIZE};
-import package::render::math::{Rect, IRect, transform_rect, unsigned_div_ceil, sdf_ellipse};
+import package::render::math::{Rect, IRect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
 import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfos, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
 @group(0) @binding(0) var<storage> samples: OutputSamples;
@@ -83,26 +83,24 @@ fn convert_pixel_to_buffer_tile(pixel: vec2i) -> vec3u {
 }
 
 fn texture_transform_mat(local_index: u32, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> mat3x3f {
-    let s = sin(rotate);
-    let c = cos(rotate);
-    let anchor_offset = anchor * vec2f(textureDimensions(textures[local_index]));
-    let mat = mat3x3f(
-        c / scale.x, -s / scale.y, 0.0,
-        s / scale.x, c / scale.y, 0.0,
-        translate.x - anchor_offset.x, translate.y - anchor_offset.y, 1.0,
-    );
-    return mat;
+    let tex_size = vec2f(textureDimensions(textures[local_index]));
+    return scale_rotate_transform_anchored(scale, rotate, translate - 0.5 * tex_size, anchor * tex_size);
+}
+
+fn texture_transform_mat_inv(local_index: u32, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> mat3x3f {
+    let tex_size = vec2f(textureDimensions(textures[local_index]));
+    return scale_rotate_transform_anchored_inv(scale, rotate, translate - 0.5 * tex_size, anchor * tex_size);
 }
 
 fn sample_transformed_local_texture_clamp(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
-    let mat = texture_transform_mat(local_index, scale, rotate, translate, anchor);
-    let tex_px = (package::render::math::inverse_mat3x3(mat) * vec3f(pixel, 1.0)).xy;
+    let mat = texture_transform_mat_inv(local_index, scale, rotate, translate, anchor);
+    let tex_px = (mat * vec3f(pixel, 1.0)).xy;
     return textureLoad(textures[local_index], vec2i(tex_px), 0);
 }
 
 fn sample_transformed_local_texture_wrap(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
-    let mat = texture_transform_mat(local_index, scale, rotate, translate, anchor);
-    let tex_px = (package::render::math::inverse_mat3x3(mat) * vec3f(pixel, 1.0)).xy;
+    let mat = texture_transform_mat_inv(local_index, scale, rotate, translate, anchor);
+    let tex_px = (mat * vec3f(pixel, 1.0)).xy;
     let tex_size = textureDimensions(textures[local_index]);
     let wrapped_tex_px = abs(vec2i(tex_px) % vec2i(tex_size));
     return textureLoad(textures[local_index], wrapped_tex_px, 0);
@@ -142,14 +140,14 @@ fn target_layer_color(pixel_pos: vec2i) -> vec4f {
 
 fn filter_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_scale: vec2f, mask_rotation: f32, mask_translation: vec2f, mask_anchor: vec2f) -> vec4f {
     let tex_size = vec2f(textureDimensions(textures[mask_local_index]));
-    let mat = texture_transform_mat(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor);
+    let mat = texture_transform_mat_inv(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor);
 
     @if(SIZE_ESTIMATION) {
-        let rect = transform_rect(Rect(vec2f(0.0), tex_size), mat);
+        let rect = transform_rect(Rect(vec2f(0.0), tex_size), texture_transform_mat(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor));
         require_bounds(vec2i(rect.min), vec2i(rect.max));
     }
 
-    let tex_px = (package::render::math::inverse_mat3x3(mat) * vec3f(vec2f(pixel), 1.0)).xy;
+    let tex_px = (mat * vec3f(vec2f(pixel), 1.0)).xy;
     if tex_px.x < 0.0 || tex_px.x >= tex_size.x || tex_px.y < 0.0 || tex_px.y >= tex_size.y {
         return vec4f(0.0);
     }
