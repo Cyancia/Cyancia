@@ -363,40 +363,6 @@ impl BrushEstimatePipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: resources.intermediate_buffers.textures()[0]
-                            .texture()
-                            .format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: resources.intermediate_buffers.textures()[1]
-                            .texture()
-                            .format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
                     binding: 9,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
@@ -463,25 +429,6 @@ impl BrushEstimatePipeline {
                 BindGroupEntry {
                     binding: 5,
                     resource: BindingResource::TextureView(&resources.target_layer),
-                },
-                BindGroupEntry {
-                    binding: 6,
-                    resource: resources
-                        .intermediate_buffers
-                        .tile_info_buffer()
-                        .as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 7,
-                    resource: BindingResource::TextureView(
-                        &resources.intermediate_buffers.textures()[0],
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 8,
-                    resource: BindingResource::TextureView(
-                        &resources.intermediate_buffers.textures()[1],
-                    ),
                 },
                 BindGroupEntry {
                     binding: 9,
