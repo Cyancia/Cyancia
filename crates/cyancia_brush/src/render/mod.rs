@@ -64,6 +64,7 @@ const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct BrushStrokeSessionInfo {
+    pub brush_runtime_revision: u64,
     pub target_layer_texture: Option<TextureView>,
 }
 
@@ -100,7 +101,10 @@ impl BrushPresetOperator {
         assets: &AssetRegistry,
         target_layer: LayerId,
     ) {
+        let instance = self.instance.read();
+
         let session = BrushStrokeSessionInfo {
+            brush_runtime_revision: instance.runtime_revision(),
             target_layer_texture: tiles
                 .get_layer(target_layer)
                 .and_then(|l| l.texture().as_deref().cloned()),
@@ -116,16 +120,6 @@ impl BrushPresetOperator {
                 self.last_session = Some(session);
             }
         }
-
-        {
-            let mut instance = self.instance.write();
-            if instance.is_dirty() {
-                self.renderer = None;
-                instance.mark_undirty();
-            }
-        }
-
-        let instance = self.instance.read();
 
         let renderer = self.renderer.get_or_insert_with(|| {
             let now = std::time::Instant::now();
