@@ -39,6 +39,7 @@ cyancia_utils.workspace = true
 cyancia_widgets.workspace = true
 ringbuffer.workspace = true
 cyancia_math.workspace = true
+iced_aw.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

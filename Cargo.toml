@@ -41,29 +41,22 @@ iced = { version = "0.14", features = [
     "canvas",
     "selector",
     "tokio",
-], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_beacon = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_core = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_debug = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_devtools = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_futures = { version = "0.14", features = [
-    "tokio",
-], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_graphics = { version = "0.14", features = [
-    "geometry",
-], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_highlighter = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_program = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_renderer = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_runtime = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_selector = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_wgpu = { version = "0.14", features = [
-    "geometry",
-], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_widget = { version = "0.14", features = [
-    "wgpu",
-], git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_winit = { version = "0.14", git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+] }
+iced_beacon = { version = "0.14" }
+iced_core = { version = "0.14" }
+iced_debug = { version = "0.14" }
+iced_devtools = { version = "0.14" }
+iced_futures = { version = "0.14", features = ["tokio"] }
+iced_graphics = { version = "0.14", features = ["geometry"] }
+iced_highlighter = { version = "0.14" }
+iced_program = { version = "0.14" }
+iced_renderer = { version = "0.14" }
+iced_runtime = { version = "0.14" }
+iced_selector = { version = "0.14" }
+iced_wgpu = { version = "0.14", features = ["geometry"] }
+iced_widget = { version = "0.14", features = ["wgpu"] }
+iced_winit = { version = "0.14" }
+iced_aw = { version = "0.13", features = ["context_menu"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 syn = "2"
 quote = "1"
@@ -115,7 +108,6 @@ bevy_math = { version = "0.18", git = "https://github.com/443eb9/bevy.git", bran
 ringbuffer = "0.16"
 fs_extra = "1"
 
-# [patch."https://github.com/443eb9/iced.git"]
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }
 # iced_beacon = { path = "D:/iced_fork/beacon" }
 # iced_core = { path = "D:/iced_fork/core" }
@@ -134,3 +126,18 @@ fs_extra = "1"
 
 [patch.crates-io]
 naga = { git = "https://github.com/gfx-rs/wgpu", rev = "7a2afeb014cb30a976059717c4ae7c85f01d858e", package = "naga" }
+iced = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_beacon = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_core = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_debug = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_devtools = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_futures = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_graphics = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_highlighter = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_program = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_renderer = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_runtime = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_selector = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_wgpu = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_widget = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+iced_winit = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
