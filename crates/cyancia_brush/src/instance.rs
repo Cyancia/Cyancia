@@ -3,7 +3,10 @@ use std::{
     fmt::Display,
     io::{Cursor, Read, Write},
     path::Path,
-    sync::{Arc, LazyLock},
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use cyancia_assets::asset::{Asset, AssetHandle, AssetId};
@@ -29,13 +32,16 @@ use cyancia_shader_graph::{
 use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 
-use crate::{asset::{BrushPreset, BrushPresetMetadata}, render::graph::{
-    BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
-    DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode,
-    FilterWithinMaskNode, LayerPixelColorNode, OutputColorNode, OutputRequiredSpacingNode,
-    OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
-    StrokeBoundsNode,
-}};
+use crate::{
+    asset::{BrushPreset, BrushPresetMetadata},
+    render::graph::{
+        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
+        DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode,
+        FilterWithinMaskNode, LayerPixelColorNode, OutputColorNode, OutputRequiredSpacingNode,
+        OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
+        StrokeBoundsNode,
+    },
+};
 
 pub struct CompiledBrushGraph {
     pub main: String,
@@ -96,7 +102,7 @@ pub struct BrushPresetInstance {
     main_graph: Graph,
     stroke_postprocess_graphs: Vec<Graph>,
     graph_resources: GraphResources,
-    is_dirty: bool,
+    runtime_revision: AtomicU64,
 }
 
 impl BrushPresetInstance {
@@ -198,7 +204,7 @@ impl BrushPresetInstance {
                 main_graph,
                 stroke_postprocess_graphs,
                 graph_resources: resources,
-                is_dirty: true,
+                runtime_revision: AtomicU64::new(0),
             }),
             errors,
         )
@@ -279,7 +285,7 @@ impl BrushPresetInstance {
     }
 
     pub fn required_spacing_graph_mut(&mut self) -> &mut Graph {
-        self.is_dirty = true;
+        self.increment_runtime_revision();
         &mut self.required_spacing_graph
     }
 
@@ -288,7 +294,7 @@ impl BrushPresetInstance {
     }
 
     pub fn spacing_factor_graph_mut(&mut self) -> &mut Graph {
-        self.is_dirty = true;
+        self.increment_runtime_revision();
         &mut self.spacing_factor_graph
     }
 
@@ -297,7 +303,7 @@ impl BrushPresetInstance {
     }
 
     pub fn main_graph_mut(&mut self) -> &mut Graph {
-        self.is_dirty = true;
+        self.increment_runtime_revision();
         &mut self.main_graph
     }
 
@@ -306,7 +312,7 @@ impl BrushPresetInstance {
     }
 
     pub fn stroke_postprocess_graphs_mut(&mut self) -> &mut Vec<Graph> {
-        self.is_dirty = true;
+        self.increment_runtime_revision();
         &mut self.stroke_postprocess_graphs
     }
 
@@ -315,7 +321,7 @@ impl BrushPresetInstance {
     }
 
     pub fn metadata_mut(&mut self) -> &mut BrushPresetMetadata {
-        self.is_dirty = true;
+        self.increment_runtime_revision();
         &mut self.metadata
     }
 
@@ -333,7 +339,7 @@ impl BrushPresetInstance {
     }
 
     pub fn insert_external_var(&mut self, var: ExternalVariable) {
-        self.is_dirty = true;
+        self.increment_runtime_revision();
         self.graph_resources.external_vars.insert(var);
     }
 
@@ -353,12 +359,12 @@ impl BrushPresetInstance {
         &self.graph_resources.functions
     }
 
-    pub fn mark_undirty(&mut self) {
-        self.is_dirty = false;
+    pub fn runtime_revision(&self) -> u64 {
+        self.runtime_revision.load(Ordering::Acquire)
     }
 
-    pub fn is_dirty(&self) -> bool {
-        self.is_dirty
+    fn increment_runtime_revision(&self) {
+        self.runtime_revision.fetch_add(1, Ordering::AcqRel);
     }
 }
 
