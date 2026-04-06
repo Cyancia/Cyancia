@@ -672,12 +672,14 @@ impl GraphNodeCodeGenContext<'_> {
             .ok_or(GraphNodeCodeGenError::MissingInputSlot)?;
 
         let Some(connected) = slot.connected else {
+            dbg!();
             // Literal value should always has the same type as the slot type.
             return slot
                 .data
                 .to_code()
                 .ok_or(GraphNodeCodeGenError::LiteralToCodeFailed);
         };
+        dbg!();
 
         let output_slot = self
             .graph_slots

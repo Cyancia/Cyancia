@@ -1423,6 +1423,7 @@ name = "cyancia_render"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bevy_math",
  "cyancia_runtime",
  "cyancia_utils",
  "encase",

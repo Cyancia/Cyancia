@@ -16,6 +16,7 @@ iced_renderer.workspace = true
 serde.workspace = true
 parse-display.workspace = true
 anyhow.workspace = true
+bevy_math.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

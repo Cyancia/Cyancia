@@ -1,17 +1,18 @@
 import package::image::image_tiling::{TileInfo, TILE_SIZE};
-import package::render::math::{Rect, IRect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
+import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
 import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfos, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
 @group(0) @binding(0) var<storage> samples: OutputSamples;
 @group(0) @binding(1) var<storage, read_write> stroke_info: StrokeInfo;
-@group(0) @binding(2) var textures: binding_array<texture_2d<f32>>;
-@group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
-@group(0) @binding(4) var target_layer: texture_storage_2d_array<r32uint, read>;
-@if(!SIZE_ESTIMATION) @group(0) @binding(5) var<storage> buffer_tile_info: DynamicTileInfo;
-@if(!SIZE_ESTIMATION) @group(0) @binding(6) var stroke_buffer_a: texture_storage_2d_array<r32uint, read_write>;
-@if(!SIZE_ESTIMATION) @group(0) @binding(7) var stroke_buffer_b: texture_storage_2d_array<r32uint, read_write>;
-@group(0) @binding(8) var<storage, read_write> dab_infos: DabInfos;
-@if(!SIZE_ESTIMATION) @group(0) @binding(9) var<storage, read_write> fence: PassFence;
+@group(0) @binding(2) var textures: texture_2d<f32>;
+@group(0) @binding(3) var<storage> texture_bounds: array<URect>;
+@group(0) @binding(4) var<storage> target_layer_tile_info: array<TileInfo>;
+@group(0) @binding(5) var target_layer: texture_storage_2d_array<r32uint, read>;
+@if(!SIZE_ESTIMATION) @group(0) @binding(6) var<storage> buffer_tile_info: DynamicTileInfo;
+@if(!SIZE_ESTIMATION) @group(0) @binding(7) var stroke_buffer_a: texture_storage_2d_array<r32uint, read_write>;
+@if(!SIZE_ESTIMATION) @group(0) @binding(8) var stroke_buffer_b: texture_storage_2d_array<r32uint, read_write>;
+@group(0) @binding(9) var<storage, read_write> dab_infos: DabInfos;
+@if(!SIZE_ESTIMATION) @group(0) @binding(10) var<storage, read_write> fence: PassFence;
 
 @if(SIZE_ESTIMATION) @group(0) @binding(16) var<storage, read_write> tile_allocation_dispatch: vec3u;
 @if(SIZE_ESTIMATION) @group(0) @binding(17) var<storage, read_write> main_dispatch: vec3u;
@@ -26,6 +27,11 @@ struct CircularMask {
 
 fn main_graph(graph_input: ComputedPenInput, pixel_pos: vec2i, pixel_posf: vec2f) {
     //CODEGENFLAG_COMPILED_GRAPH
+}
+
+fn atlas_size(local_index: u32) -> vec2u {
+    let bounds = texture_bounds[local_index];
+    return bounds.max - bounds.min;
 }
 
 fn get_accumulated_pixel_bounds() -> IRect {
@@ -83,31 +89,35 @@ fn convert_pixel_to_buffer_tile(pixel: vec2i) -> vec3u {
 }
 
 fn texture_transform_mat(local_index: u32, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> mat3x3f {
-    let tex_size = vec2f(textureDimensions(textures[local_index]));
+    let tex_size = vec2f(atlas_size(local_index));
     return scale_rotate_transform_anchored(scale, rotate, translate - 0.5 * tex_size, anchor * tex_size);
 }
 
 fn texture_transform_mat_inv(local_index: u32, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> mat3x3f {
-    let tex_size = vec2f(textureDimensions(textures[local_index]));
+    let tex_size = vec2f(atlas_size(local_index));
     return scale_rotate_transform_anchored_inv(scale, rotate, translate - 0.5 * tex_size, anchor * tex_size);
 }
 
 fn sample_transformed_local_texture_clamp(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
     let mat = texture_transform_mat_inv(local_index, scale, rotate, translate, anchor);
     let tex_px = (mat * vec3f(pixel, 1.0)).xy;
-    return textureLoad(textures[local_index], vec2i(tex_px), 0);
+    return sample_local_texture(local_index, vec2u(tex_px));
 }
 
 fn sample_transformed_local_texture_wrap(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
     let mat = texture_transform_mat_inv(local_index, scale, rotate, translate, anchor);
     let tex_px = (mat * vec3f(pixel, 1.0)).xy;
-    let tex_size = textureDimensions(textures[local_index]);
+    let tex_size = atlas_size(local_index);
     let wrapped_tex_px = abs(vec2i(tex_px) % vec2i(tex_size));
-    return textureLoad(textures[local_index], wrapped_tex_px, 0);
+    return sample_local_texture(local_index, vec2u(wrapped_tex_px));
 }
 
 fn sample_local_texture(local_index: u32, pixel: vec2u) -> vec4f {
-    return textureLoad(textures[local_index], pixel, 0);
+    let bounds = texture_bounds[local_index];
+    if any(pixel >= bounds.max - bounds.min) {
+        return vec4f(0.0);
+    }
+    return textureLoad(textures, pixel + bounds.min, 0);
 }
 
 fn current_input_color(pixel_pos: vec2i) -> vec4f {
@@ -139,7 +149,7 @@ fn target_layer_color(pixel_pos: vec2i) -> vec4f {
 }
 
 fn filter_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_scale: vec2f, mask_rotation: f32, mask_translation: vec2f, mask_anchor: vec2f) -> vec4f {
-    let tex_size = vec2f(textureDimensions(textures[mask_local_index]));
+    let tex_size = vec2f(atlas_size(mask_local_index));
     let mat = texture_transform_mat_inv(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor);
 
     @if(SIZE_ESTIMATION) {
@@ -151,7 +161,7 @@ fn filter_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_sc
     if tex_px.x < 0.0 || tex_px.x >= tex_size.x || tex_px.y < 0.0 || tex_px.y >= tex_size.y {
         return vec4f(0.0);
     }
-    let mask_value = textureLoad(textures[mask_local_index], vec2i(tex_px), 0).r;
+    let mask_value = sample_local_texture(mask_local_index, vec2u(tex_px)).r;
     return vec4f(color * mask_value);
 }
 

@@ -1196,8 +1196,8 @@ impl StatelessCommonGraphNode for TextureSizeNode {
         let output_size = ctx.get_output(0)?;
 
         Ok(format!(
-            "let {} = vec2f(textureDimensions(textures[{}]));\n",
-            output_size, input_texture
+            "let {} = vec2f(texture_bounds[{}].max - texture_bounds[{}].min);\n",
+            output_size, input_texture, input_texture
         ))
     }
 }

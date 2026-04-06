@@ -18,7 +18,10 @@ use cyancia_image::{
 };
 use cyancia_input::mouse::PressedMouseState;
 use cyancia_math::number::LerpAngle;
-use cyancia_render::buffer::{BufferVec, DynamicBuffer};
+use cyancia_render::{
+    buffer::{BufferVec, DynamicBuffer},
+    texture_atlas::{TextureAtlas, TextureAtlasBuilder},
+};
 use cyancia_shader_graph::graph::texture::TextureId;
 use cyancia_utils::include_shader;
 use encase::{ShaderType, StorageBuffer};
@@ -533,7 +536,7 @@ pub struct StrokeResources {
 
     pub external_var_layouts: Vec<BindGroupLayoutEntry>,
     pub external_var_buffers: Vec<Buffer>,
-    pub referenced_textures: Vec<TextureView>,
+    pub referenced_textures: TextureAtlas,
 
     pub intermediate_buffers: DynamicIntermediateBuffer,
     pub target_layer_id: LayerId,
@@ -624,10 +627,11 @@ impl StrokeResources {
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         });
-        let mut referenced_textures = Vec::new();
+        let mut referenced_textures_builder =
+            TextureAtlasBuilder::with_capacity(brush.texture_usage.len());
         for id in &brush.texture_usage {
             if *id == TextureId::NULL {
-                referenced_textures.push(empty_texture.create_view(&Default::default()));
+                referenced_textures_builder.add_texture(empty_texture.clone());
                 continue;
             }
 
@@ -636,10 +640,20 @@ impl StrokeResources {
                 &device,
                 &queue,
                 &handle.get().unwrap(),
-                TextureUsages::TEXTURE_BINDING,
+                // TODO: This is weird but, adding TEXTURE_BINDING usage to avoid vulkan validation error:
+                // VALIDATION [VUID-VkImageViewCreateInfo-image-04441 (0xb75da543)]
+                // vkCreateImageView(): pCreateInfo->image (VkImage 0xb550000000b55) was created with VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT but requires VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT|VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT|VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR|VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT|VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR|VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR|VK_IMAGE_USAGE_SAMPLE_WEIGHT_BIT_QCOM|VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM|VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR.
+                // The Vulkan spec states: image must have been created with a usage value containing at least one of the following: VK_IMAGE_USAGE_SAMPLED_BIT VK_IMAGE_USAGE_STORAGE_BIT VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR VK_IMAGE_USAGE_SAMPLE_WEIGHT_BIT_QCOM VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR (https://docs.vulkan.org/spec/latest/chapters/resources.html#VUID-VkImageViewCreateInfo-image-04441)
+                TextureUsages::COPY_SRC | TextureUsages::TEXTURE_BINDING,
             );
-            referenced_textures.push(gpu_image.texture.create_view(&Default::default()));
+            referenced_textures_builder.add_texture(gpu_image.texture.clone());
         }
+        if referenced_textures_builder.is_empty() {
+            referenced_textures_builder.add_texture(empty_texture.clone());
+        }
+        let referenced_textures = referenced_textures_builder
+            .build(Some("referenced textures"), device, queue)
+            .unwrap();
 
         let target_layer_binding = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
         let target_layer_info = tiles.get_layer_info(target_layer_id).unwrap();

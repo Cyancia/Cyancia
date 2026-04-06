@@ -8,6 +8,11 @@ struct IRect {
     max: vec2i,
 }
 
+struct URect {
+    min: vec2u,
+    max: vec2u,
+}
+
 const PI: f32 = 3.14159265359;
 const FRAC_PI_2: f32 = 1.57079632679;
 const INV_PI: f32 = 0.31830988618;

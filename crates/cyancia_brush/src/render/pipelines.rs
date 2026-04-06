@@ -3,6 +3,7 @@ use std::{
     num::{NonZeroU32, NonZeroU64},
 };
 
+use bevy_math::URect;
 use cyancia_image::tile::{GpuTileInfo, GpuTileStorageInner};
 use cyancia_render::buffer::DynamicBuffer;
 use encase::ShaderType;
@@ -329,12 +330,20 @@ impl BrushEstimatePipeline {
                         view_dimension: TextureViewDimension::D2,
                         multisampled: false,
                     },
-                    count: Some(
-                        NonZeroU32::new(resources.referenced_textures.len() as u32).unwrap(),
-                    ),
+                    count: None,
                 },
                 BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(URect::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -344,7 +353,7 @@ impl BrushEstimatePipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 5,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
@@ -354,7 +363,7 @@ impl BrushEstimatePipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 5,
+                    binding: 6,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -364,7 +373,7 @@ impl BrushEstimatePipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 6,
+                    binding: 7,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -376,7 +385,7 @@ impl BrushEstimatePipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 7,
+                    binding: 8,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -388,7 +397,7 @@ impl BrushEstimatePipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 8,
+                    binding: 9,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: false },
@@ -427,8 +436,6 @@ impl BrushEstimatePipeline {
             entries: &layout_entries,
         });
 
-        let referenced_textures = resources.referenced_textures.iter().collect::<Vec<_>>();
-
         let bind_group_entries = {
             let mut entries = vec![
                 BindGroupEntry {
@@ -441,37 +448,43 @@ impl BrushEstimatePipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureViewArray(&referenced_textures),
+                    resource: BindingResource::TextureView(
+                        resources.referenced_textures.texture_view(),
+                    ),
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: resources.target_layer_tile_info.as_entire_binding(),
+                    resource: resources.referenced_textures.atlas_bounds_buffer_binding(),
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: BindingResource::TextureView(&resources.target_layer),
+                    resource: resources.target_layer_tile_info.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 5,
+                    resource: BindingResource::TextureView(&resources.target_layer),
+                },
+                BindGroupEntry {
+                    binding: 6,
                     resource: resources
                         .intermediate_buffers
                         .tile_info_buffer()
                         .as_entire_binding(),
                 },
                 BindGroupEntry {
-                    binding: 6,
+                    binding: 7,
                     resource: BindingResource::TextureView(
                         &resources.intermediate_buffers.textures()[0],
                     ),
                 },
                 BindGroupEntry {
-                    binding: 7,
+                    binding: 8,
                     resource: BindingResource::TextureView(
                         &resources.intermediate_buffers.textures()[1],
                     ),
                 },
                 BindGroupEntry {
-                    binding: 8,
+                    binding: 9,
                     resource: resources.dab_infos.binding().unwrap(),
                 },
                 BindGroupEntry {
@@ -590,12 +603,20 @@ impl BrushMainPipeline {
                         view_dimension: TextureViewDimension::D2,
                         multisampled: false,
                     },
-                    count: Some(
-                        NonZeroU32::new(resources.referenced_textures.len() as u32).unwrap(),
-                    ),
+                    count: None,
                 },
                 BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(URect::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -605,7 +626,7 @@ impl BrushMainPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 5,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
@@ -615,7 +636,7 @@ impl BrushMainPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 5,
+                    binding: 6,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -625,7 +646,7 @@ impl BrushMainPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 6,
+                    binding: 7,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -637,7 +658,7 @@ impl BrushMainPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 7,
+                    binding: 8,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -649,7 +670,7 @@ impl BrushMainPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 8,
+                    binding: 9,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: false },
@@ -659,7 +680,7 @@ impl BrushMainPipeline {
                     count: None,
                 },
                 BindGroupLayoutEntry {
-                    binding: 9,
+                    binding: 10,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: false },
@@ -678,8 +699,6 @@ impl BrushMainPipeline {
             entries: &layout_entries,
         });
 
-        let referenced_textures = resources.referenced_textures.iter().collect::<Vec<_>>();
-
         let bind_group_entries = {
             let mut entries = vec![
                 BindGroupEntry {
@@ -692,41 +711,47 @@ impl BrushMainPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureViewArray(&referenced_textures),
+                    resource: BindingResource::TextureView(
+                        resources.referenced_textures.texture_view(),
+                    ),
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: resources.target_layer_tile_info.as_entire_binding(),
+                    resource: resources.referenced_textures.atlas_bounds_buffer_binding(),
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: BindingResource::TextureView(&resources.target_layer),
+                    resource: resources.target_layer_tile_info.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 5,
+                    resource: BindingResource::TextureView(&resources.target_layer),
+                },
+                BindGroupEntry {
+                    binding: 6,
                     resource: resources
                         .intermediate_buffers
                         .tile_info_buffer()
                         .as_entire_binding(),
                 },
                 BindGroupEntry {
-                    binding: 6,
+                    binding: 7,
                     resource: BindingResource::TextureView(
                         &resources.intermediate_buffers.textures()[0],
                     ),
                 },
                 BindGroupEntry {
-                    binding: 7,
+                    binding: 8,
                     resource: BindingResource::TextureView(
                         &resources.intermediate_buffers.textures()[1],
                     ),
                 },
                 BindGroupEntry {
-                    binding: 8,
+                    binding: 9,
                     resource: resources.dab_infos.binding().unwrap(),
                 },
                 BindGroupEntry {
-                    binding: 9,
+                    binding: 10,
                     resource: resources.pass_fence.binding().unwrap(),
                 },
             ];

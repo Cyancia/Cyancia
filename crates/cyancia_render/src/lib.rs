@@ -10,6 +10,7 @@ use crate::resources::{FullscreenVertex, GlobalSamplers};
 
 pub mod buffer;
 pub mod resources;
+pub mod texture_atlas;
 
 pub struct RenderPlugin;
 
