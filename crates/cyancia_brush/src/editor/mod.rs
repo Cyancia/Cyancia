@@ -48,12 +48,13 @@ use uuid::Uuid;
 use wgpu::{Device, Queue};
 
 use crate::{
-    asset::{
-        BrushPreset, BrushPresetInstance, BrushPresetMetadata, GpuImage, Image, MAIN_GRAPH_NODES,
-        REQUIRED_SPACING_GRAPH_NODES, SPACING_FACTOR_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
-    },
+    asset::{BrushPreset, BrushPresetMetadata, GpuImage, Image},
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
     input_processing::InputProcessor,
+    instance::{
+        BrushPresetInstance, MAIN_GRAPH_NODES, REQUIRED_SPACING_GRAPH_NODES,
+        SPACING_FACTOR_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
+    },
     render::BrushPresetOperator,
     tool::CurrentBrushPresetOperator,
 };

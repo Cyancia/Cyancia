@@ -44,8 +44,9 @@ use wgpu::{
 };
 
 use crate::{
-    asset::{BrushPreset, BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset, GpuImage},
+    asset::{BrushPreset, GpuImage},
     input_processing::{InputProcessor, RawPenInput},
+    instance::{BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset},
     render::{
         dynamic_intermediate_buffer::{DynamicGpuTileInfoBuffer, DynamicIntermediateBuffer},
         pipelines::{
