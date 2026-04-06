@@ -6,6 +6,7 @@ use cyancia_shader_graph::graph::{
     slot::{ErasedGraphLiteralUpdateMessage, GraphInputSlotId, GraphLiteralUpdateMessage},
     variable::GraphTypeRegistry,
 };
+use iced_aw::ContextMenu;
 use iced_core::{Element, Length, Theme};
 use iced_wgpu::Renderer;
 use iced_widget::{Column, button, column, pick_list, row, space, text, text_input};
@@ -47,6 +48,7 @@ pub enum ExternalVarViewMessage {
     CreateNewNameChanged(String),
     CreateNewSelectedType(&'static str),
     RequestCreateNew,
+    RequestRemove(ExternalVariableId),
 }
 
 pub fn external_var_view<'a>(
@@ -60,7 +62,10 @@ pub fn external_var_view<'a>(
             .into_iter()
             .map(|(id, var)| {
                 column![
-                    text(var.name.clone()),
+                    ContextMenu::new(text(var.name.clone()), move || column![
+                        button("Remove").on_press(ExternalVarViewMessage::RequestRemove(id))
+                    ]
+                    .into()),
                     var.value
                         .ty()
                         .view_literal(GraphInputSlotId::new(Uuid::nil()), &var.value.value())

@@ -87,6 +87,10 @@ impl GraphExternalVariableStorage {
 
         var.value.update(message);
     }
+
+    pub fn remove(&self, id: &ExternalVariableId) {
+        self.contents.remove(id);
+    }
 }
 
 wrapper! {

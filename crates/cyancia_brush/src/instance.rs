@@ -351,6 +351,11 @@ impl BrushPresetInstance {
         self.graph_resources.external_vars.update(&id, msg);
     }
 
+    pub fn remove_external_var(&mut self, id: &ExternalVariableId) {
+        self.increment_runtime_revision();
+        self.graph_resources.external_vars.remove(id);
+    }
+
     pub fn textures(&self) -> &Arc<GraphTextureStorage> {
         &self.graph_resources.textures
     }

@@ -836,6 +836,14 @@ impl BrushEditorView {
                 self.create_new_name.clear();
                 self.create_new_type = None;
             }
+            ExternalVarViewMessage::RequestRemove(id) => {
+                let Some(Selected::Brush(brush)) = self.selected.as_ref() else {
+                    return;
+                };
+
+                let mut instance = brush.instance.write();
+                instance.remove_external_var(&id);
+            }
         }
     }
 }
