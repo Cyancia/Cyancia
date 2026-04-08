@@ -1,0 +1,93 @@
+pub mod tab_row;
+
+pub use tab_row::TabRowWidget;
+
+use crate::dock::DockId;
+use indexmap::IndexSet;
+use serde::Serialize;
+
+/// Data belonging to a dock group (not widget state).
+///
+/// Stored in `pane_grid::State<DockGroupData>`.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct DockGroupData {
+    docks: IndexSet<DockId>,
+    active: Option<DockId>,
+}
+
+impl DockGroupData {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_dock(dock_id: DockId) -> Self {
+        let mut g = Self::new();
+        g.add_dock(dock_id);
+        g
+    }
+
+    pub fn with_docks(docks: impl IntoIterator<Item = DockId>) -> Self {
+        let mut g = Self::new();
+        for id in docks {
+            g.add_dock(id);
+        }
+        g
+    }
+
+    pub fn add_dock(&mut self, dock_id: DockId) {
+        self.docks.insert(dock_id);
+        if self.active.is_none() {
+            self.active = Some(dock_id);
+        }
+    }
+
+    pub fn remove_dock(&mut self, dock_id: DockId) {
+        if self.active == Some(dock_id) {
+            let mut prev = None;
+            for &id in self.docks.iter() {
+                if id == dock_id {
+                    break;
+                }
+                prev = Some(id);
+            }
+            self.docks.shift_remove(&dock_id);
+            self.active = prev.or_else(|| self.docks.first().copied());
+        } else {
+            self.docks.shift_remove(&dock_id);
+        }
+    }
+
+    pub fn set_active(&mut self, dock_id: DockId) {
+        if self.docks.contains(&dock_id) {
+            self.active = Some(dock_id);
+        }
+    }
+
+    pub fn reorder(&mut self, dock_id: DockId, index: usize) {
+        if !self.docks.contains(&dock_id) {
+            return;
+        }
+        let mut vec: Vec<_> = self.docks.iter().copied().collect();
+        if let Some(pos) = vec.iter().position(|&id| id == dock_id) {
+            vec.remove(pos);
+            vec.insert(index.min(vec.len()), dock_id);
+            self.docks = vec.into_iter().collect();
+        }
+    }
+
+    pub fn active(&self) -> Option<DockId> {
+        self.active
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.docks.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &DockId> {
+        self.docks.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.docks.len()
+    }
+}

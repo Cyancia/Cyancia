@@ -1352,6 +1352,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_dock"
+version = "0.1.0"
+dependencies = [
+ "cyancia_utils",
+ "iced",
+ "iced_core",
+ "iced_runtime",
+ "iced_widget",
+ "indexmap",
+ "parse-display",
+ "serde",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "cyancia_graph"
 version = "0.1.0"
 dependencies = [
@@ -1641,6 +1657,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a"
 dependencies = [
  "libloading",
+]
+
+[[package]]
+name = "docking_test"
+version = "0.1.0"
+dependencies = [
+ "cyancia_dock",
+ "iced",
+ "iced_widget",
 ]
 
 [[package]]

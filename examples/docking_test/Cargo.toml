@@ -1,0 +1,9 @@
+[package]
+name = "docking_test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cyancia_dock = { workspace = true }
+iced = { workspace = true }
+iced_widget = { workspace = true }

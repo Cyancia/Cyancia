@@ -15,6 +15,8 @@ members = [
     "crates/cyancia_utils",
     "crates/cyancia_utils_derive",
     "crates/cyancia_widgets",
+    "crates/cyancia_dock",
+    "examples/docking_test",
     # "examples/*",
 ]
 resolver = "2"
@@ -35,6 +37,7 @@ cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
 cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
 cyancia_runtime = { version = "0.1.0", path = "crates/cyancia_runtime" }
 cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
+cyancia_dock = { version = "0.1.0", path = "crates/cyancia_dock" }
 
 iced = { version = "0.14", features = [
     "debug",
@@ -92,6 +95,7 @@ atomicow = "1"
 tokio = { version = "1", default-features = false }
 md5 = "0.8"
 zip = "8"
+taffy = { path = "D:/taffy", features = ["detailed_layout_info"] }
 parse-display = "0.10"
 env_logger = "0.11"
 path-clean = "1"
