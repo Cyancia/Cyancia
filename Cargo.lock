@@ -1665,6 +1665,8 @@ version = "0.1.0"
 dependencies = [
  "cyancia_dock",
  "iced",
+ "iced_core",
+ "iced_runtime",
  "iced_widget",
 ]
 

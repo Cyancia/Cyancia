@@ -1,4 +1,4 @@
-use crate::{dock::{DockAction, DockId}, group::DockGroupData, style::DockCatalog};
+use crate::{dock::{DockId, TabEvent}, group::DockGroupData, style::DockCatalog};
 use iced_core::{
     Element, Event, Font, Layout, Length, Point, Rectangle, Shell, Size,
     alignment,
@@ -9,7 +9,6 @@ use iced_core::{
     text::{self, LineHeight, Shaping},
     widget::{tree, Tree},
 };
-use iced_widget::pane_grid;
 
 pub const TAB_WIDTH: f32 = 120.0;
 pub const TAB_HEIGHT: f32 = 36.0;
@@ -77,9 +76,9 @@ pub struct TabRowWidget<'a, Message, Theme = iced::Theme, Renderer = iced::Rende
 where
     Renderer: iced_core::text::Renderer,
 {
-    pane: pane_grid::Pane,
     group_data: &'a DockGroupData,
-    on_action: Box<dyn Fn(DockAction) -> Message + 'a>,
+    on_action: Box<dyn Fn(TabEvent) -> Message + 'a>,
+    on_title_drag: Option<Box<dyn Fn() -> Message + 'a>>,
     title_of: Box<dyn Fn(DockId) -> String + 'a>,
     _theme: std::marker::PhantomData<Theme>,
     _renderer: std::marker::PhantomData<Renderer>,
@@ -90,18 +89,22 @@ where
     Renderer: iced_core::text::Renderer,
 {
     pub fn new(
-        pane: pane_grid::Pane,
         group_data: &'a DockGroupData,
-        on_action: impl Fn(DockAction) -> Message + 'a,
+        on_action: impl Fn(TabEvent) -> Message + 'a,
     ) -> Self {
         Self {
-            pane,
             group_data,
             on_action: Box::new(on_action),
+            on_title_drag: None,
             title_of: Box::new(|id| id.to_string()),
             _theme: std::marker::PhantomData,
             _renderer: std::marker::PhantomData,
         }
+    }
+
+    pub fn on_title_drag(mut self, f: impl Fn() -> Message + 'a) -> Self {
+        self.on_title_drag = Some(Box::new(f));
+        self
     }
 
     pub fn title_of(mut self, f: impl Fn(DockId) -> String + 'a) -> Self {
@@ -132,17 +135,27 @@ where
     }
 
     fn size(&self) -> Size<Length> {
-        Size::new(Length::Shrink, Length::Fixed(TAB_HEIGHT))
+        let width = if self.on_title_drag.is_some() {
+            Length::Fill
+        } else {
+            Length::Shrink
+        };
+        Size::new(width, Length::Fixed(TAB_HEIGHT))
     }
 
     fn layout(
         &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
-        _limits: &layout::Limits,
+        limits: &layout::Limits,
     ) -> layout::Node {
         let n = self.group_data.len().max(1) as f32;
-        layout::Node::new(Size::new(n * TAB_WIDTH, TAB_HEIGHT))
+        let intrinsic = Size::new(n * TAB_WIDTH, TAB_HEIGHT);
+        if self.on_title_drag.is_some() {
+            layout::Node::new(limits.resolve(Length::Fill, Length::Fixed(TAB_HEIGHT), intrinsic))
+        } else {
+            layout::Node::new(intrinsic)
+        }
     }
 
     fn draw(
@@ -295,7 +308,16 @@ where
                                 TabAction::Pressing { index: i, origin: pos, is_close: true };
                             shell.capture_event();
                         }
-                        TabHit::Miss => {}
+                        TabHit::Miss => {
+                            // Non-tab title bar area: forward to on_title_drag if set.
+                            // If not set, do not capture → pane_grid handles it as a drag pick.
+                            if bounds.contains(pos) {
+                                if let Some(f) = &self.on_title_drag {
+                                    shell.publish(f());
+                                    shell.capture_event();
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -304,17 +326,13 @@ where
                 match state.action {
                     TabAction::Pressing { index: i, is_close: false, .. } => {
                         if let Some(dock_id) = self.group_data.iter().nth(i).copied() {
-                            shell.publish((self.on_action)(DockAction::TabSelect(
-                                self.pane, dock_id,
-                            )));
+                            shell.publish((self.on_action)(TabEvent::Select(dock_id)));
                         }
                         state.action = TabAction::Idle;
                     }
                     TabAction::Pressing { index: i, is_close: true, .. } => {
                         if let Some(dock_id) = self.group_data.iter().nth(i).copied() {
-                            shell.publish((self.on_action)(DockAction::TabClose(
-                                self.pane, dock_id,
-                            )));
+                            shell.publish((self.on_action)(TabEvent::Close(dock_id)));
                         }
                         state.action = TabAction::Idle;
                     }
@@ -323,11 +341,7 @@ where
                             let to = drag_target_index(self.group_data, bounds, pos);
                             let to = if to > from { to - 1 } else { to };
                             if to != from {
-                                shell.publish((self.on_action)(DockAction::TabReorder {
-                                    pane: self.pane,
-                                    from,
-                                    to,
-                                }));
+                                shell.publish((self.on_action)(TabEvent::Reorder { from, to }));
                             }
                         }
                         state.action = TabAction::Idle;
@@ -357,7 +371,13 @@ where
         if let Some(pos) = cursor.position() {
             match hit_test(self.group_data, layout.bounds(), pos) {
                 TabHit::Tab(_) | TabHit::Close(_) => mouse::Interaction::Pointer,
-                TabHit::Miss => mouse::Interaction::default(),
+                TabHit::Miss => {
+                    if self.on_title_drag.is_some() && layout.bounds().contains(pos) {
+                        mouse::Interaction::Grab
+                    } else {
+                        mouse::Interaction::default()
+                    }
+                }
             }
         } else {
             mouse::Interaction::default()

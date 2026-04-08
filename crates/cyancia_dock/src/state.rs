@@ -32,6 +32,15 @@ impl DockState {
         self.panes.split(axis, pane, new_group)
     }
 
+    /// Remove a pane from the grid and return its `DockGroupData`.
+    ///
+    /// Returns `None` if the pane does not exist. When the last pane is removed
+    /// `pane_grid::State` returns `None` from `close()` — in that case the group
+    /// data is lost; callers should guard against this if needed.
+    pub fn detach_pane(&mut self, pane: pane_grid::Pane) -> Option<DockGroupData> {
+        self.panes.close(pane).map(|(data, _adjacent)| data)
+    }
+
     /// Apply a `DockAction` and return any resulting `Task`.
     pub fn update(&mut self, action: DockAction) -> Task<DockAction> {
         match action {
