@@ -8,8 +8,8 @@ use iced_runtime::window as win;
 use iced_widget::pane_grid;
 
 use cyancia_dock::{
-    DockAction, DockGroupData, DockId, DockState, DockWidget,
-    FloatAction, FloatingDockWidget, TabEvent,
+    DockAction, DockGroupData, DockId, DockState, DockWidget, FloatAction, FloatingDockWidget,
+    TabEvent,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -32,6 +32,7 @@ fn dock(s: &'static str) -> DockId {
 
 /// Pixels the cursor must travel after `Picked` before a detach is triggered.
 const DETACH_THRESHOLD: f32 = 10.0;
+const DWELL: Duration = Duration::from_millis(200);
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -55,8 +56,11 @@ struct DetachedInfo {
     group: DockGroupData,
     window_pos: Point,
     window_size: Size,
-    /// Last time this window moved (for the 200 ms stillness check).
-    last_move: Instant,
+    /// Last time this window moved while overlapping the main window.
+    /// `None` when not overlapping.  Re-attach fires once the elapsed time
+    /// since the last move exceeds `DWELL` and `is_dragging` is false.
+    last_overlap: Option<(Instant, Point)>,
+    is_dragging: bool,
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -66,15 +70,17 @@ enum Message {
     /// Actions from the main DockWidget.
     Dock(DockAction),
     /// Actions from a floating window.
-    Float { id: WindowId, action: FloatAction },
+    Float {
+        id: WindowId,
+        action: FloatAction,
+    },
     /// OS window event.
     WinEvent(WindowId, window::Event),
     /// Cursor moved (window-relative, from the main window).
     CursorMoved(Point),
+    CursorReleased,
     /// Floating window finished opening — initiate OS-native drag.
     FloatReady(WindowId),
-    /// Periodic timer to check whether any floating pane should re-attach.
-    ReattachTick,
     Noop,
 }
 
@@ -87,17 +93,10 @@ impl App {
             ..Default::default()
         });
 
-        let left = DockGroupData::with_docks([
-            dock("Properties"),
-            dock("Timeline"),
-            dock("Layers"),
-        ]);
+        let left =
+            DockGroupData::with_docks([dock("Properties"), dock("Timeline"), dock("Layers")]);
         let (mut dock_state, left_pane) = DockState::new(left);
-        let right = DockGroupData::with_docks([
-            dock("Viewport"),
-            dock("Assets"),
-            dock("Console"),
-        ]);
+        let right = DockGroupData::with_docks([dock("Viewport"), dock("Assets"), dock("Console")]);
         dock_state.split(pane_grid::Axis::Vertical, left_pane, right);
 
         let app = App {
@@ -144,22 +143,59 @@ impl App {
             }
 
             // ── Other dock actions ────────────────────────────────────────────
-            Message::Dock(action) => {
-                self.dock_state.update(action).map(Message::Dock)
-            }
+            Message::Dock(action) => self.dock_state.update(action).map(Message::Dock),
 
             // ── Initiate OS drag once the floating window is ready ────────────
             Message::FloatReady(id) => {
+                if let Some(info) = self.detached.get_mut(&id) {
+                    info.is_dragging = true;
+                }
+
+                win::drag(id)
+            },
+
+            // ── Floating window: OS window drag ──────────────────────────────
+            Message::Float {
+                id,
+                action: FloatAction::StartWindowDrag,
+            } => {
+                if let Some(info) = self.detached.get_mut(&id) {
+                    info.is_dragging = true;
+                }
+
                 win::drag(id)
             }
 
-            // ── Floating window: OS window drag ──────────────────────────────
-            Message::Float { id, action: FloatAction::StartWindowDrag } => {
-                win::drag(id)
+            Message::CursorReleased => {
+                let mut to_detach = None;
+                for (id, info) in &mut self.detached {
+                    if !info.is_dragging {
+                        dbg!();
+                        continue;
+                    }
+
+                    info.is_dragging = false;
+                    dbg!(info.last_overlap.map(|t|t.0.elapsed()));
+                    if let Some((last_overlap, _)) = info.last_overlap.take()
+                        && last_overlap.elapsed() > DWELL
+                    {
+                        to_detach = Some(*id);
+                        break;
+                    }
+                }
+
+                if let Some(id) = to_detach {
+                    self.reattach(id)
+                } else {
+                    Task::none()
+                }
             }
 
             // ── Floating window: tab actions ──────────────────────────────────
-            Message::Float { id, action: FloatAction::Tab(ev) } => {
+            Message::Float {
+                id,
+                action: FloatAction::Tab(ev),
+            } => {
                 let Some(info) = self.detached.get_mut(&id) else {
                     return Task::none();
                 };
@@ -198,7 +234,21 @@ impl App {
                             self.main_window_pos = pos;
                         } else if let Some(info) = self.detached.get_mut(&id) {
                             info.window_pos = pos;
-                            info.last_move = Instant::now();
+                            if info
+                                .last_overlap
+                                .is_none_or(|(_, p)| p.distance(pos) > 10.0)
+                            {
+                                if overlaps(
+                                    info.window_pos,
+                                    info.window_size,
+                                    self.main_window_pos,
+                                    self.main_window_size,
+                                ) {
+                                    info.last_overlap = Some((Instant::now(), pos));
+                                } else {
+                                    info.last_overlap = None;
+                                }
+                            }
                         }
                     }
                     window::Event::Resized(size) => {
@@ -210,7 +260,9 @@ impl App {
                     }
                     window::Event::Closed => {
                         self.detached.remove(&id);
-                        if id == self.main_window_id || self.detached.is_empty() && self.dock_state.panes.is_empty() {
+                        if id == self.main_window_id
+                            || self.detached.is_empty() && self.dock_state.panes.is_empty()
+                        {
                             return iced::exit();
                         }
                     }
@@ -229,27 +281,6 @@ impl App {
                     }
                 }
                 Task::none()
-            }
-
-            // ── Periodic re-attach check ──────────────────────────────────────
-            Message::ReattachTick => {
-                let now = Instant::now();
-                let candidates: Vec<WindowId> = self.detached.iter()
-                    .filter(|(_, info)| {
-                        now.duration_since(info.last_move) >= Duration::from_millis(200)
-                            && overlaps(
-                                info.window_pos, info.window_size,
-                                self.main_window_pos, self.main_window_size,
-                            )
-                    })
-                    .map(|(id, _)| *id)
-                    .collect();
-
-                let tasks: Vec<Task<Message>> = candidates
-                    .into_iter()
-                    .map(|id| self.reattach(id))
-                    .collect();
-                Task::batch(tasks)
             }
 
             Message::Noop => Task::none(),
@@ -282,12 +313,16 @@ impl App {
             },
             ..Default::default()
         });
-        self.detached.insert(win_id, DetachedInfo {
-            group,
-            window_pos: scr,
-            window_size: win_size,
-            last_move: Instant::now(),
-        });
+        self.detached.insert(
+            win_id,
+            DetachedInfo {
+                group,
+                window_pos: scr,
+                window_size: win_size,
+                last_overlap: None,
+                is_dragging: false,
+            },
+        );
         open_task.map(Message::FloatReady)
     }
 
@@ -298,7 +333,7 @@ impl App {
 
         // Floating window centre in main-window-relative coordinates.
         let rel = Point::new(
-            info.window_pos.x + info.window_size.width  / 2.0 - self.main_window_pos.x,
+            info.window_pos.x + info.window_size.width / 2.0 - self.main_window_pos.x,
             info.window_pos.y + info.window_size.height / 2.0 - self.main_window_pos.y,
         );
 
@@ -307,12 +342,13 @@ impl App {
         let regions = node.pane_regions(SPACING, 0.0, self.main_window_size);
 
         // Find the pane under the floating window's centre, fall back to first pane.
-        let target = regions.iter()
+        let target = regions
+            .iter()
             .find(|(_, r)| r.contains(rel))
             .or_else(|| regions.iter().next())
             .map(|(&pane, r)| {
                 // Horizontal split if we're closer to top/bottom edge, else vertical.
-                let cx = r.x + r.width  / 2.0;
+                let cx = r.x + r.width / 2.0;
                 let cy = r.y + r.height / 2.0;
                 let axis = if (rel.x - cx).abs() > (rel.y - cy).abs() {
                     pane_grid::Axis::Vertical
@@ -332,7 +368,7 @@ impl App {
 
 fn overlaps(pos_a: Point, size_a: Size, pos_b: Point, size_b: Size) -> bool {
     pos_a.x < pos_b.x + size_b.width
-        && pos_a.x + size_a.width  > pos_b.x
+        && pos_a.x + size_a.width > pos_b.x
         && pos_a.y < pos_b.y + size_b.height
         && pos_a.y + size_a.height > pos_b.y
 }
@@ -343,18 +379,19 @@ impl App {
     fn subscription(&self) -> Subscription<Message> {
         let win_events = win::events().map(|(id, ev)| Message::WinEvent(id, ev));
 
-        let mouse_events = iced::event::listen_with(|event, _status, _id| {
-            if let iced::Event::Mouse(iced_core::mouse::Event::CursorMoved { position }) = event {
+        let mouse_events = iced::event::listen_with(|event, _status, _id| match event {
+            iced::Event::Mouse(iced_core::mouse::Event::CursorMoved { position }) => {
                 Some(Message::CursorMoved(position))
-            } else {
-                None
             }
+            iced::Event::Mouse(iced_core::mouse::Event::ButtonReleased { .. }) => {
+                Some(Message::CursorReleased)
+            }
+            _ => None,
         });
 
-        let tick = iced::time::every(Duration::from_millis(50))
-            .map(|_| Message::ReattachTick);
+        let update_tick = iced::time::every(std::time::Duration::from_millis(20)).map(|_| Message::Noop);
 
-        Subscription::batch([win_events, mouse_events, tick])
+        Subscription::batch([win_events, mouse_events, update_tick])
     }
 }
 
@@ -365,22 +402,20 @@ impl App {
         if window_id == self.main_window_id {
             // Compute drag hint from the first floating window currently overlapping the main
             // window.  The hint is the floating window's centre in main-window coordinates.
-            let drag_hint = self.detached.iter()
-                .find(|(_, info)| {
-                    overlaps(info.window_pos, info.window_size,
-                             self.main_window_pos, self.main_window_size)
-                })
-                .map(|(_, info)| Point::new(
-                    info.window_pos.x + info.window_size.width  / 2.0 - self.main_window_pos.x,
-                    info.window_pos.y + info.window_size.height / 2.0 - self.main_window_pos.y,
-                ));
-
-            let dock_w = DockWidget::new(&self.dock_state, Message::Dock)
-                .content(|_pane, id| {
-                    iced::widget::center(
-                        iced::widget::text(id.to_string()).size(20)
-                    ).into()
+            let drag_hint = self
+                .detached
+                .iter()
+                .find(|(_, info)| info.last_overlap.is_some())
+                .map(|(_, info)| {
+                    Point::new(
+                        info.window_pos.x + info.window_size.width / 2.0 - self.main_window_pos.x,
+                        info.window_pos.y + info.window_size.height / 2.0 - self.main_window_pos.y,
+                    )
                 });
+
+            let dock_w = DockWidget::new(&self.dock_state, Message::Dock).content(|_pane, id| {
+                iced::widget::center(iced::widget::text(id.to_string()).size(20)).into()
+            });
 
             if let Some(pos) = drag_hint {
                 dock_w.drag_hint(pos).into()
@@ -389,14 +424,12 @@ impl App {
             }
         } else if let Some(info) = self.detached.get(&window_id) {
             let win_id = window_id;
-            FloatingDockWidget::new(
-                &info.group,
-                move |action| Message::Float { id: win_id, action },
-            )
+            FloatingDockWidget::new(&info.group, move |action| Message::Float {
+                id: win_id,
+                action,
+            })
             .content(|dock_id| {
-                iced::widget::center(
-                    iced::widget::text(dock_id.to_string()).size(20)
-                ).into()
+                iced::widget::center(iced::widget::text(dock_id.to_string()).size(20)).into()
             })
             .into()
         } else {

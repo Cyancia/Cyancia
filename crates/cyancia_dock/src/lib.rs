@@ -150,12 +150,12 @@ impl<'a, Message: Clone + 'a> From<FloatingDockWidget<'a, Message>> for iced::El
 
         let on_action: Rc<dyn Fn(FloatAction) -> Message + 'a> = Rc::from(on_action);
         let a_tab   = Rc::clone(&on_action);
-        let a_title = Rc::clone(&on_action);
+        let a_title_drag = Rc::clone(&on_action);
 
         let tab_row = TabRowWidget::new(group_data, move |ev| {
             (a_tab.as_ref())(FloatAction::Tab(ev))
         })
-        .on_title_drag(move || (a_title.as_ref())(FloatAction::StartWindowDrag));
+        .on_title_drag(move || (a_title_drag.as_ref())(FloatAction::StartWindowDrag));
 
         let body: iced::Element<Message> = group_data
             .active()
