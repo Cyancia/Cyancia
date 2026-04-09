@@ -23,6 +23,7 @@ use crate::dock::{DockWidget, FloatingDockWidget, PaneEvent};
 
 const ATTACH_DWELL: Duration = Duration::from_millis(200);
 const MERGE_DISTANCE: f32 = 30.0;
+const FLOATING_WINDOW_SNAP_DISTANCE: f32 = 10.0;
 
 pub struct DockManager {
     main_window: GroupWindowInfo,
@@ -111,17 +112,28 @@ impl DockManager {
         self.cursor_pos = Some((window, pos));
 
         if let Some(pane) = self.dock_state.try_detach(pos) {
-            self.detach(pane)
-        } else {
-            let cursor_pos = self.screen_cursor_pos().unwrap();
-            for window in self.detached.values() {
-                if let Some(p) = window.dragging_cursor_relative {
-                    return iced_runtime::window::move_to(window.id, cursor_pos - p);
+            return self.detach(pane);
+        }
+
+        let cursor_pos = self.screen_cursor_pos().unwrap();
+        for window in self.detached.values() {
+            let Some(p) = window.dragging_cursor_relative else {
+                continue;
+            };
+
+            let mut pos = cursor_pos - p;
+            for another in self.detached.values() {
+                if another.id == window.id {
+                    continue;
                 }
+
+                pos = snap(pos, window.size, another.position, another.size);
             }
 
-            Task::none()
+            return iced_runtime::window::move_to(window.id, pos);
         }
+
+        Task::none()
     }
 
     pub fn on_float_window_drag_end(&mut self) -> Task<()> {
@@ -526,6 +538,48 @@ fn overlaps(pos_a: Point, size_a: Size, pos_b: Point, size_b: Size) -> bool {
         && pos_a.x + size_a.width > pos_b.x
         && pos_a.y < pos_b.y + size_b.height
         && pos_a.y + size_a.height > pos_b.y
+}
+
+fn snap(pos_a: Point, size_a: Size, pos_b: Point, size_b: Size) -> Point {
+    let mut result = pos_a;
+
+    // snap left to left
+    if (pos_a.x - pos_b.x).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.x = pos_b.x;
+    }
+    // snap left to right
+    else if (pos_a.x - (pos_b.x + size_b.width)).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.x = pos_b.x + size_b.width;
+    }
+
+    // snap right to right
+    if (pos_a.x + size_a.width - (pos_b.x + size_b.width)).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.x = pos_b.x + size_b.width - size_a.width;
+    }
+    // snap right to left
+    else if (pos_a.x + size_a.width - pos_b.x).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.x = pos_b.x - size_a.width;
+    }
+
+    // snap top to top
+    if (pos_a.y - pos_b.y).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.y = pos_b.y;
+    }
+    // snap top to bottom
+    else if (pos_a.y - (pos_b.y + size_b.height)).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.y = pos_b.y + size_b.height;
+    }
+
+    // snap bottom to bottom
+    if (pos_a.y + size_a.height - (pos_b.y + size_b.height)).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.y = pos_b.y + size_b.height - size_a.height;
+    }
+    // snap bottom to top
+    else if (pos_a.y + size_a.height - pos_b.y).abs() < FLOATING_WINDOW_SNAP_DISTANCE {
+        result.y = pos_b.y - size_a.height;
+    }
+
+    result
 }
 
 #[derive(Debug, Clone)]
