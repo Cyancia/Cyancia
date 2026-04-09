@@ -28,7 +28,7 @@ pub struct DockManager {
     main_window: GroupWindowInfo,
     dock_state: DockState,
     detached: HashMap<window::Id, GroupWindowInfo>,
-    cursor_pos: Point,
+    cursor_pos: Option<(window::Id, Point)>,
 }
 
 impl DockManager {
@@ -44,13 +44,23 @@ impl DockManager {
             },
             dock_state,
             detached: HashMap::new(),
-            cursor_pos: Point::default(),
+            cursor_pos: None,
         }
     }
 
     pub fn on_dock_action(&mut self, action: DockAction) -> Task<()> {
         match action {
-            DockAction::Pane(event) => self.dock_state.update(event, self.cursor_pos),
+            DockAction::Pane(event) => {
+                if let Some(cursor_pos) = self.screen_cursor_pos() {
+                    self.dock_state.update(
+                        event,
+                        Point::new(
+                            cursor_pos.x - self.main_window.position.x,
+                            cursor_pos.y - self.main_window.position.y,
+                        ),
+                    )
+                }
+            }
             DockAction::Tab(pane, tab_event) => {
                 let pane_state = self.dock_state.panes_state_mut();
                 match tab_event {
@@ -84,7 +94,10 @@ impl DockManager {
 
                             let mut new_group = DockGroupData::new();
                             new_group.add_dock(dock_id);
-                            return self.detach_group(new_group).1.discard();
+                            return match self.detach_group(new_group) {
+                                Some((_, task)) => task.discard(),
+                                None => Task::none(),
+                            };
                         }
                     }
                 }
@@ -94,8 +107,9 @@ impl DockManager {
         Task::none()
     }
 
-    pub fn on_main_window_cursor_moved(&mut self, pos: Point) -> Task<()> {
-        self.cursor_pos = pos;
+    pub fn on_cursor_moved(&mut self, window: window::Id, pos: Point) -> Task<()> {
+        self.cursor_pos = Some((window, pos));
+
         if let Some(pane) = self.dock_state.try_detach(pos) {
             self.detach(pane)
         } else {
@@ -202,7 +216,10 @@ impl DockManager {
                     info.group.remove_dock(&dock_id);
                     let mut new_group = DockGroupData::new();
                     new_group.add_dock(dock_id);
-                    return self.detach_group(new_group).1.discard();
+                    return match self.detach_group(new_group) {
+                        Some((_, task)) => task.discard(),
+                        None => Task::none(),
+                    };
                 }
             },
             FloatAction::StartWindowDrag => {
@@ -259,14 +276,18 @@ impl DockManager {
             return Task::none();
         };
 
-        self.detach_group(group).1.discard()
+        if let Some((_, task)) = self.detach_group(group) {
+            task.discard()
+        } else {
+            Task::none()
+        }
     }
 
-    fn detach_group(&mut self, group: DockGroupData) -> (window::Id, Task<window::Id>) {
+    fn detach_group(&mut self, group: DockGroupData) -> Option<(window::Id, Task<window::Id>)> {
         let window_size = Size::new(400.0, 350.0);
         let (window_id, open_task) = iced_runtime::window::open(window::Settings {
             decorations: false,
-            position: window::Position::Specific(self.screen_cursor_pos()),
+            position: window::Position::Specific(self.screen_cursor_pos()?),
             size: window_size,
             level: window::Level::AlwaysOnTop,
             platform_specific: window::settings::PlatformSpecific {
@@ -281,23 +302,35 @@ impl DockManager {
             GroupWindowInfo {
                 id: window_id,
                 group,
-                position: self.screen_cursor_pos(),
+                position: self.screen_cursor_pos()?,
                 size: window_size,
                 is_dragging: true,
                 last_overlap: None,
             },
         );
-        (
+
+        Some((
             window_id,
             open_task.then(|id| iced_runtime::window::drag(id)),
-        )
+        ))
     }
 
-    fn screen_cursor_pos(&self) -> Point {
-        Point::new(
-            self.cursor_pos.x + self.main_window.position.x,
-            self.cursor_pos.y + self.main_window.position.y,
-        )
+    pub fn screen_cursor_pos(&self) -> Option<Point> {
+        let (window, cursor) = self.cursor_pos?;
+
+        if window == self.main_window.id {
+            Some(Point::new(
+                self.main_window.position.x + cursor.x,
+                self.main_window.position.y + cursor.y,
+            ))
+        } else if let Some(info) = self.detached.get(&window) {
+            Some(Point::new(
+                info.position.x + cursor.x,
+                info.position.y + cursor.y,
+            ))
+        } else {
+            None
+        }
     }
 
     pub fn is_over_main_window(&self, id: window::Id) -> bool {

@@ -38,7 +38,7 @@ enum Message {
     Dock(DockAction),
     Float { id: WindowId, action: FloatAction },
     WinEvent(WindowId, window::Event),
-    MainWindowCursorMoved(Point),
+    CursorMoved(window::Id, Point),
     CursorReleased,
 }
 
@@ -67,8 +67,8 @@ impl App {
             Message::Dock(dock_action) => self.manager.on_dock_action(dock_action).discard(),
             Message::Float { id, action } => self.manager.on_float_action(id, action).discard(),
             Message::WinEvent(id, event) => self.manager.on_window_event(id, event).discard(),
-            Message::MainWindowCursorMoved(point) => {
-                self.manager.on_main_window_cursor_moved(point).discard()
+            Message::CursorMoved(window, position) => {
+                self.manager.on_cursor_moved(window, position).discard()
             }
             Message::CursorReleased => self.manager.on_float_window_drag_end().discard(),
         }
@@ -78,25 +78,13 @@ impl App {
         let win_events = win::events().map(|(id, ev)| Message::WinEvent(id, ev));
 
         let mouse_events = iced::event::listen_with(|event, _status, window| match event {
-            iced::Event::Mouse(e) => Some((e, window)),
-            _ => None,
-        })
-        .with(self.manager.main_window().id)
-        .filter_map(|(main_window, (ev, window))| match ev {
-            iced::mouse::Event::CursorMoved { position } => {
-                if window == main_window {
-                    Some(Message::MainWindowCursorMoved(position))
-                } else {
-                    None
+            iced::Event::Mouse(e) => match e {
+                iced::mouse::Event::CursorMoved { position } => {
+                    Some(Message::CursorMoved(window, position))
                 }
-            }
-            iced::mouse::Event::ButtonReleased(button) => {
-                if button == iced::mouse::Button::Left {
-                    Some(Message::CursorReleased)
-                } else {
-                    None
-                }
-            }
+                iced::mouse::Event::ButtonReleased(_) => Some(Message::CursorReleased),
+                _ => None,
+            },
             _ => None,
         });
 
