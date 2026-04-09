@@ -9,7 +9,7 @@ use iced_widget::pane_grid;
 
 use cyancia_dock::{
     DockAction, DockGroupData, DockId, DockManager, DockState, DockWidget, FloatAction,
-    FloatingDockWidget, SplitInfo, TabEvent,
+    FloatingDockWidget, AttachInfo, TabEvent,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ impl App {
                     iced::widget::center(iced::widget::text(id.to_string()).size(20)).into()
                 });
 
-            if let Some(pos) = self.manager.current_attach_split_info() {
+            if let Some(pos) = self.manager.current_attach_info() {
                 dock_w.drag_hint(pos).into()
             } else {
                 dock_w.into()

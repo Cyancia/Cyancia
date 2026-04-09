@@ -1,5 +1,5 @@
 use crate::{
-    SplitInfo,
+    AttachInfo,
     dock::{DockAction, PaneEvent},
     group::DockGroupData,
 };

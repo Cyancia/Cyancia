@@ -212,7 +212,7 @@ impl DockManager {
     }
 
     pub fn attach(&mut self, id: window::Id) -> Task<()> {
-        let Some(split) = self.attach_split_info(id) else {
+        let Some(attach) = self.attach_info(id) else {
             return Task::none();
         };
 
@@ -220,8 +220,18 @@ impl DockManager {
             return Task::none();
         };
 
-        self.dock_state
-            .split(split.pane, split.result_edge, info.group);
+        match attach {
+            AttachInfo::Split { pane, result_edge } => {
+                self.dock_state.split(pane, result_edge, info.group);
+            }
+            AttachInfo::Merge { pane } => {
+                if let Some(group) = self.dock_state.panes_state_mut().get_mut(pane) {
+                    for dock in info.group.iter() {
+                        group.add_dock(*dock);
+                    }
+                }
+            }
+        }
 
         iced_runtime::window::close(id)
     }
@@ -308,7 +318,7 @@ impl DockManager {
         &self.dock_state
     }
 
-    pub fn attach_split_info(&self, window: window::Id) -> Option<SplitInfo> {
+    pub fn attach_info(&self, window: window::Id) -> Option<AttachInfo> {
         const SPACING: f32 = 2.0;
         let info = self.detached_window(window)?;
         let node = self.dock_state.panes_state().layout();
@@ -318,6 +328,7 @@ impl DockManager {
             info.position.x + info.size.width / 2.0 - self.main_window.position.x,
             info.position.y + info.size.height / 2.0 - self.main_window.position.y,
         );
+        let half_window_size = Size::new(info.size.width / 2.0, info.size.height / 2.0);
 
         let target = regions
             .iter()
@@ -326,8 +337,14 @@ impl DockManager {
                 let cx = r.x + r.width / 2.0;
                 let cy = r.y + r.height / 2.0;
 
-                let edge =
-                    if (relative_window_pos.y - cy).abs() > (relative_window_pos.x - cx).abs() {
+                if (relative_window_pos.x - cx).abs() < half_window_size.width
+                    && (relative_window_pos.y - cy).abs() < half_window_size.height
+                {
+                    AttachInfo::Merge { pane }
+                } else {
+                    let edge = if (relative_window_pos.y - cy).abs()
+                        > (relative_window_pos.x - cx).abs()
+                    {
                         if relative_window_pos.y < cy {
                             pane_grid::Edge::Top
                         } else {
@@ -341,21 +358,22 @@ impl DockManager {
                         }
                     };
 
-                SplitInfo {
-                    pane,
-                    result_edge: edge,
+                    AttachInfo::Split {
+                        pane,
+                        result_edge: edge,
+                    }
                 }
             });
 
         target
     }
 
-    pub fn current_attach_split_info(&self) -> Option<SplitInfo> {
+    pub fn current_attach_info(&self) -> Option<AttachInfo> {
         let Some((window, _, _)) = self.last_overlap else {
             return None;
         };
 
-        self.attach_split_info(window)
+        self.attach_info(window)
     }
 }
 
@@ -376,9 +394,23 @@ pub struct GroupWindowInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct SplitInfo {
-    pub pane: pane_grid::Pane,
-    pub result_edge: pane_grid::Edge,
+pub enum AttachInfo {
+    Split {
+        pane: pane_grid::Pane,
+        result_edge: pane_grid::Edge,
+    },
+    Merge {
+        pane: pane_grid::Pane,
+    },
+}
+
+impl AttachInfo {
+    pub fn target_pane(&self) -> pane_grid::Pane {
+        match self {
+            AttachInfo::Split { pane, .. } => *pane,
+            AttachInfo::Merge { pane } => *pane,
+        }
+    }
 }
 
 // ── DockWidget ────────────────────────────────────────────────────────────────
@@ -390,7 +422,7 @@ pub struct DockWidget<'a, Message, Theme, Renderer> {
         Option<Box<dyn Fn(pane_grid::Pane, DockId) -> Element<'a, Message, Theme, Renderer> + 'a>>,
     on_action: Box<dyn Fn(DockAction) -> Message + 'a>,
     spacing: f32,
-    drag_hint: Option<SplitInfo>,
+    drag_hint: Option<AttachInfo>,
 }
 
 impl<'a, Message: Clone + 'a, Theme, Renderer> DockWidget<'a, Message, Theme, Renderer> {
@@ -417,7 +449,7 @@ impl<'a, Message: Clone + 'a, Theme, Renderer> DockWidget<'a, Message, Theme, Re
         self
     }
 
-    pub fn drag_hint(mut self, split_info: SplitInfo) -> Self {
+    pub fn drag_hint(mut self, split_info: AttachInfo) -> Self {
         self.drag_hint = Some(split_info);
         self
     }
@@ -479,7 +511,7 @@ where
         if let Some(split_info) = drag_hint {
             let overlay = HintOverlay {
                 state,
-                split_info,
+                attach_info: split_info,
                 spacing,
             };
             iced_widget::stack![grid, Element::new(overlay)]
@@ -569,7 +601,7 @@ where
 /// floating window would re-attach (the pane half closest to the hint cursor).
 struct HintOverlay<'a> {
     state: &'a DockState,
-    split_info: SplitInfo,
+    attach_info: AttachInfo,
     spacing: f32,
 }
 
@@ -607,34 +639,42 @@ where
                 .layout()
                 .pane_regions(self.spacing, 0.0, bounds.size());
 
-        let Some(region) = regions.get(&self.split_info.pane) else {
+        let Some(region) = regions.get(&self.attach_info.target_pane()) else {
             return;
         };
 
-        let highlight = match self.split_info.result_edge {
-            pane_grid::Edge::Left => iced_core::Rectangle {
-                x: bounds.x + region.x,
-                y: bounds.y + region.y,
-                width: region.width / 2.0,
-                height: region.height,
+        let highlight = match self.attach_info {
+            AttachInfo::Split { pane, result_edge } => match result_edge {
+                pane_grid::Edge::Left => iced_core::Rectangle {
+                    x: bounds.x + region.x,
+                    y: bounds.y + region.y,
+                    width: region.width / 2.0,
+                    height: region.height,
+                },
+                pane_grid::Edge::Right => iced_core::Rectangle {
+                    x: bounds.x + region.x + region.width / 2.0,
+                    y: bounds.y + region.y,
+                    width: region.width / 2.0,
+                    height: region.height,
+                },
+                pane_grid::Edge::Top => iced_core::Rectangle {
+                    x: bounds.x + region.x,
+                    y: bounds.y + region.y,
+                    width: region.width,
+                    height: region.height / 2.0,
+                },
+                pane_grid::Edge::Bottom => iced_core::Rectangle {
+                    x: bounds.x + region.x,
+                    y: bounds.y + region.y + region.height / 2.0,
+                    width: region.width,
+                    height: region.height / 2.0,
+                },
             },
-            pane_grid::Edge::Right => iced_core::Rectangle {
-                x: bounds.x + region.x + region.width / 2.0,
-                y: bounds.y + region.y,
-                width: region.width / 2.0,
-                height: region.height,
-            },
-            pane_grid::Edge::Top => iced_core::Rectangle {
+            AttachInfo::Merge { pane } => iced_core::Rectangle {
                 x: bounds.x + region.x,
                 y: bounds.y + region.y,
                 width: region.width,
-                height: region.height / 2.0,
-            },
-            pane_grid::Edge::Bottom => iced_core::Rectangle {
-                x: bounds.x + region.x,
-                y: bounds.y + region.y + region.height / 2.0,
-                width: region.width,
-                height: region.height / 2.0,
+                height: region.height,
             },
         };
 
