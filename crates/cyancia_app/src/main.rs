@@ -18,7 +18,7 @@ use cyancia_render::RenderPlugin;
 use cyancia_runtime::{
     Application, Runtime, Services,
     service::{FromRuntime, RenderContext},
-    windows::{WindowCommandBuffer, WindowManager, WindowView},
+    windows::{WindowCommandBuffer, WindowViewManager, WindowView},
 };
 use cyancia_shader_graph::ShaderGraphPlugin;
 use cyancia_tools::ToolsPlugin;

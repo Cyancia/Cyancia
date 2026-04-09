@@ -117,16 +117,16 @@ impl Hash for OpenedViewMap {
 }
 
 #[derive(Default)]
-pub struct WindowManager {
+pub struct WindowViewManager {
     windows: HashMap<window::Id, WindowViewId>,
     views: HashMap<WindowViewId, Box<dyn ErasedWindowView>>,
     opened_views: OpenedViewMap,
     root_view: Option<WindowViewId>,
 }
 
-impl Service for WindowManager {}
+impl Service for WindowViewManager {}
 
-impl WindowManager
+impl WindowViewManager
 where
     Theme: 'static,
 {
@@ -221,8 +221,11 @@ where
 }
 
 pub trait WindowCommand: Send + Sync + 'static {
-    fn execute(self: Box<Self>, wm: &mut WindowManager, runtime: Arc<Services>)
-    -> Option<Task<()>>;
+    fn execute(
+        self: Box<Self>,
+        wm: &mut WindowViewManager,
+        runtime: Arc<Services>,
+    ) -> Option<Task<()>>;
 }
 
 #[derive(Default)]
@@ -237,7 +240,7 @@ impl WindowCommandBuffer {
         self.commands.push(Box::new(command));
     }
 
-    pub fn execute(&mut self, wm: &mut WindowManager, runtime: Arc<Services>) -> Task<()> {
+    pub fn execute(&mut self, wm: &mut WindowViewManager, runtime: Arc<Services>) -> Task<()> {
         let mut tasks = Vec::new();
         for command in self.commands.drain(..) {
             if let Some(task) = command.execute(wm, runtime.clone()) {
@@ -255,7 +258,7 @@ pub struct OpenWindowCommand {
 impl WindowCommand for OpenWindowCommand {
     fn execute(
         self: Box<Self>,
-        wm: &mut WindowManager,
+        wm: &mut WindowViewManager,
         runtime: Arc<Services>,
     ) -> Option<Task<()>> {
         Some(wm.open_window(self.view_id))
@@ -275,7 +278,7 @@ pub struct CloseWindowCommand {
 impl WindowCommand for CloseWindowCommand {
     fn execute(
         self: Box<Self>,
-        wm: &mut WindowManager,
+        wm: &mut WindowViewManager,
         runtime: Arc<Services>,
     ) -> Option<Task<()>> {
         Some(wm.close_window(self.view_id))
@@ -295,7 +298,7 @@ pub struct ToggleWindowCommand {
 impl WindowCommand for ToggleWindowCommand {
     fn execute(
         self: Box<Self>,
-        wm: &mut WindowManager,
+        wm: &mut WindowViewManager,
         runtime: Arc<Services>,
     ) -> Option<Task<()>> {
         if wm.opened_views.contains_key(&self.view_id) {

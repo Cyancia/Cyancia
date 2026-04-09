@@ -17,7 +17,7 @@ use parking_lot::RwLock;
 use crate::{
     plugin::Plugin,
     service::{FromRuntime, RenderContext, Service, ServiceMut, ServiceRef},
-    windows::{ErasedWindowMessage, WindowCommandBuffer, WindowManager, WindowViewId},
+    windows::{ErasedWindowMessage, WindowCommandBuffer, WindowViewManager, WindowViewId},
 };
 
 pub mod plugin;
@@ -207,7 +207,7 @@ impl Program for Application {
 #[derive(Default)]
 pub struct Runtime {
     services: Arc<Services>,
-    wm: WindowManager,
+    wm: WindowViewManager,
 }
 
 impl Runtime {
@@ -229,11 +229,11 @@ impl Runtime {
         &self.services
     }
 
-    pub fn window_manager(&self) -> &WindowManager {
+    pub fn window_manager(&self) -> &WindowViewManager {
         &self.wm
     }
 
-    pub fn window_manager_mut(&mut self) -> &mut WindowManager {
+    pub fn window_manager_mut(&mut self) -> &mut WindowViewManager {
         &mut self.wm
     }
 }
