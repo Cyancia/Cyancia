@@ -4,10 +4,12 @@ pub mod state;
 pub mod style;
 
 use std::{
+    any::Any,
     collections::HashMap,
     time::{Duration, Instant},
 };
 
+use cyancia_utils::cloneable_any::ClonableAnySync;
 use dock::{DockAction, DockId, FloatAction, TabEvent};
 use group::{DockGroupData, TabRowWidget};
 use iced_core::{
@@ -19,21 +21,26 @@ use iced_widget::{pane_grid, space};
 use state::DockState;
 use style::{DockCatalog, DockStatus, DockStyle, TabBarStyle, TabStyle};
 
-use crate::dock::{DockWidget, FloatingDockWidget, PaneEvent};
+use crate::dock::{Dock, DockWidget, ErasedDock, FloatingDockWidget, PaneEvent};
 
 const ATTACH_DWELL: Duration = Duration::from_millis(200);
 const MERGE_DISTANCE: f32 = 30.0;
 const FLOATING_WINDOW_SNAP_DISTANCE: f32 = 10.0;
 
-pub struct DockManager {
+pub struct DockManager<Theme, Renderer> {
     main_window: GroupWindowInfo,
     dock_state: DockState,
     detached: HashMap<window::Id, GroupWindowInfo>,
+    docks: HashMap<DockId, Box<dyn ErasedDock<Theme, Renderer>>>,
     cursor_pos: Option<(window::Id, Point)>,
 }
 
-impl DockManager {
-    pub fn new(main_window: window::Id, dock_state: DockState) -> Self {
+impl<Theme, Renderer> DockManager<Theme, Renderer>
+where
+    Theme: DockCatalog + iced_widget::pane_grid::Catalog + 'static,
+    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
+{
+    pub fn new(main_window: window::Id) -> Self {
         Self {
             main_window: GroupWindowInfo {
                 id: main_window,
@@ -43,10 +50,24 @@ impl DockManager {
                 dragging_cursor_relative: None,
                 last_overlap: None,
             },
-            dock_state,
+            dock_state: DockState::new(DockGroupData::new()).0,
+            docks: HashMap::new(),
             detached: HashMap::new(),
             cursor_pos: None,
         }
+    }
+
+    pub fn register_dock<T: Dock<Theme, Renderer>>(&mut self, dock: T) {
+        self.docks.insert(dock.id(), Box::new(dock));
+    }
+
+    pub fn register_dock_boxed(&mut self, dock: Box<dyn ErasedDock<Theme, Renderer>>) {
+        self.docks.insert(dock.id(), dock);
+    }
+
+    pub fn open_dock(&mut self, dock_id: DockId) {
+        let (_, group) = self.dock_state.panes_state_mut().iter_mut().next().unwrap();
+        group.add_dock(dock_id);
     }
 
     pub fn on_dock_action(&mut self, action: DockAction) -> Task<()> {
@@ -489,18 +510,20 @@ impl DockManager {
         }
     }
 
-    pub fn view<'a, Theme, Renderer>(
+    pub fn view<'a>(
         &'a self,
         window_id: window::Id,
-        content: impl Fn(DockId) -> Element<'a, DockMessage, Theme, Renderer> + 'a,
-    ) -> Option<Element<'a, DockMessage, Theme, Renderer>>
-    where
-        Theme: DockCatalog + iced_widget::pane_grid::Catalog + 'a,
-        Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
-    {
+    ) -> Option<Element<'a, DockMessage, Theme, Renderer>> {
         if window_id == self.main_window.id {
-            let dock_w = DockWidget::new(&self.dock_state, DockMessage::Main)
-                .content(move |_, dock| content(dock));
+            let dock_w =
+                DockWidget::new(&self.dock_state, DockMessage::Main).content(move |_, dock_id| {
+                    let dock = self
+                        .docks
+                        .get(&dock_id)
+                        .expect(&format!("Dock not found: {}", dock_id));
+                    dock.view()
+                        .map(move |m| DockMessage::Dock(dock_id.clone(), m))
+                });
 
             if let Some(AttachOrMergeInfo::Attach(attach)) = self.current_attach_or_merge_info() {
                 Some(dock_w.attach_info(attach).into())
@@ -513,7 +536,14 @@ impl DockManager {
                     id: window_id,
                     action,
                 })
-                .content(content)
+                .content(|dock_id| {
+                    let dock = self
+                        .docks
+                        .get(&dock_id)
+                        .expect(&format!("Dock not found: {}", dock_id));
+                    dock.view()
+                        .map(move |m| DockMessage::Dock(dock_id.clone(), m))
+                })
                 .is_merging(match self.current_attach_or_merge_info() {
                     Some(AttachOrMergeInfo::Merge { dst }) => dst == window_id,
                     _ => false,
@@ -529,6 +559,15 @@ impl DockManager {
         match action {
             DockMessage::Main(dock_action) => self.on_dock_action(dock_action).discard(),
             DockMessage::Float { id, action } => self.on_float_action(id, action).discard(),
+            DockMessage::Dock(dock_id, msg) => {
+                if let Some(dock) = self.docks.get_mut(&dock_id) {
+                    dock.update(msg)
+                        .map(move |m| DockMessage::Dock(dock_id.clone(), m))
+                        .discard()
+                } else {
+                    Task::none()
+                }
+            }
         }
     }
 }
@@ -582,10 +621,24 @@ fn snap(pos_a: Point, size_a: Size, pos_b: Point, size_b: Size) -> Point {
     result
 }
 
-#[derive(Debug, Clone)]
 pub enum DockMessage {
     Main(DockAction),
     Float { id: window::Id, action: FloatAction },
+    Dock(DockId, Box<dyn Any + Send + Sync + 'static>),
+}
+
+impl std::fmt::Debug for DockMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Main(arg0) => f.debug_tuple("Main").field(arg0).finish(),
+            Self::Float { id, action } => f
+                .debug_struct("Float")
+                .field("id", id)
+                .field("action", action)
+                .finish(),
+            Self::Dock(arg0, arg1) => f.debug_tuple("Dock").field(arg0).finish(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

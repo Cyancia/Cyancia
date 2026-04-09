@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cyancia_dock::dock::{DockAction, DockId, DockWidget, FloatAction, FloatingDockWidget};
+use cyancia_dock::dock::{Dock, DockAction, DockId, DockWidget, FloatAction, FloatingDockWidget};
 use cyancia_dock::group::DockGroupData;
 use cyancia_dock::state::DockState;
 use cyancia_dock::{AttachOrMergeInfo, DockManager, DockMessage};
-use iced::{Element, Subscription, Task};
+use iced::{Element, Renderer, Subscription, Task, Theme};
 use iced_core::window::{self, Id as WindowId, Position};
 use iced_core::{Point, Size};
 use iced_runtime::window as win;
@@ -25,15 +25,40 @@ fn app_theme(_: &App, _: WindowId) -> iced::Theme {
     iced::Theme::Dark
 }
 
-fn dock(s: &'static str) -> DockId {
-    DockId::new(s.into())
+macro_rules! text_dock {
+    ($name:ident, $text:expr) => {
+        struct $name;
+
+        impl Dock<Theme, Renderer> for $name {
+            type Message = ();
+
+            fn id(&self) -> DockId {
+                DockId::new($text.into())
+            }
+
+            fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
+                text(stringify!($text)).into()
+            }
+
+            fn update(&mut self, _message: ()) -> Task<()> {
+                Task::none()
+            }
+        }
+    };
 }
+
+text_dock!(PropertiesDock, "Properties");
+text_dock!(TimelineDock, "Timeline");
+text_dock!(LayersDock, "Layers");
+text_dock!(ViewportDock, "Viewport");
+text_dock!(AssetsDock, "Assets");
+text_dock!(ConsoleDock, "Console");
 
 struct App {
-    manager: DockManager,
+    manager: DockManager<Theme, Renderer>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum Message {
     Dock(DockMessage),
     WinEvent(WindowId, window::Event),
@@ -48,15 +73,22 @@ impl App {
             ..Default::default()
         });
 
-        let left =
-            DockGroupData::with_docks([dock("Properties"), dock("Timeline"), dock("Layers")]);
-        let (mut dock_state, left_pane) = DockState::new(left);
-        let right = DockGroupData::with_docks([dock("Viewport"), dock("Assets"), dock("Console")]);
-        dock_state.split(left_pane, pane_grid::Edge::Right, right);
+        let mut manager = DockManager::new(main_id);
+        manager.register_dock(PropertiesDock);
+        manager.register_dock(TimelineDock);
+        manager.register_dock(LayersDock);
+        manager.register_dock(ViewportDock);
+        manager.register_dock(AssetsDock);
+        manager.register_dock(ConsoleDock);
 
-        let app = App {
-            manager: DockManager::new(main_id, dock_state),
-        };
+        manager.open_dock(DockId::new("Properties".into()));
+        manager.open_dock(DockId::new("Timeline".into()));
+        manager.open_dock(DockId::new("Layers".into()));
+        manager.open_dock(DockId::new("Viewport".into()));
+        manager.open_dock(DockId::new("Assets".into()));
+        manager.open_dock(DockId::new("Console".into()));
+
+        let app = App { manager };
 
         (app, open_task.discard())
     }
@@ -91,7 +123,7 @@ impl App {
 
     fn view(&self, window_id: WindowId) -> Element<'_, Message> {
         self.manager
-            .view(window_id, |dock_id| text!("{}", dock_id).into())
+            .view(window_id)
             .unwrap_or_else(|| Element::new(space()))
             .map(Message::Dock)
     }

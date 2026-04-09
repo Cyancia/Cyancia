@@ -132,7 +132,7 @@ impl<'a, Message> TabRowWidget<'a, Message> {
 impl<'a, Message, Theme, Renderer> iced_core::Widget<Message, Theme, Renderer>
     for TabRowWidget<'a, Message>
 where
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: DockCatalog,
     Renderer: iced_core::Renderer + iced_core::text::Renderer,
 {
@@ -455,7 +455,7 @@ where
 impl<'a, Message, Theme, Renderer> From<TabRowWidget<'a, Message>>
     for Element<'a, Message, Theme, Renderer>
 where
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: DockCatalog + 'a,
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
 {

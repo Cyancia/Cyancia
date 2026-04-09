@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use cyancia_utils::wrapper;
-use iced::Event;
 use iced_core::{
-    Element, Layout, Length, Point, Rectangle, Size, layout, mouse, renderer, widget, window,
+    Element, Event, Layout, Length, Point, Rectangle, Size, layout, mouse, renderer, widget, window,
 };
+use iced_runtime::Task;
 use iced_widget::{pane_grid, space, stack};
 use parse_display::Display;
 use serde::Serialize;
@@ -13,6 +13,54 @@ use crate::{
     AttachInfo, DockState,
     group::{DockGroupData, TabRowWidget},
 };
+
+pub trait Dock<Theme, Renderer>: Send + Sync + 'static
+where
+    Theme: 'static,
+    Renderer: iced_core::Renderer + 'static,
+{
+    type Message: Send + Sync + 'static;
+
+    fn id(&self) -> DockId;
+    fn view<'a>(&'a self) -> Element<'a, Self::Message, Theme, Renderer>;
+    fn update(&mut self, message: Self::Message) -> Task<Self::Message>;
+}
+
+pub trait ErasedDock<Theme, Renderer>: Send + Sync + 'static {
+    fn id(&self) -> DockId;
+    fn view<'a>(&'a self) -> Element<'a, Box<dyn std::any::Any + Send + Sync>, Theme, Renderer>;
+    fn update(
+        &mut self,
+        message: Box<dyn std::any::Any + Send + Sync>,
+    ) -> Task<Box<dyn std::any::Any + Send + Sync>>;
+}
+
+impl<T, Theme, Renderer> ErasedDock<Theme, Renderer> for T
+where
+    T: Dock<Theme, Renderer>,
+    Theme: 'static,
+    Renderer: iced_core::Renderer + 'static,
+{
+    fn id(&self) -> DockId {
+        self.id()
+    }
+
+    fn view<'a>(&'a self) -> Element<'a, Box<dyn std::any::Any + Send + Sync>, Theme, Renderer> {
+        self.view()
+            .map(|m| Box::new(m) as Box<dyn std::any::Any + Send + Sync>)
+    }
+
+    fn update(
+        &mut self,
+        message: Box<dyn std::any::Any + Send + Sync>,
+    ) -> Task<Box<dyn std::any::Any + Send + Sync>> {
+        let msg = *message
+            .downcast::<T::Message>()
+            .expect("invalid message type");
+        self.update(msg)
+            .map(|m| Box::new(m) as Box<dyn std::any::Any + Send + Sync>)
+    }
+}
 
 wrapper! {
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, Serialize)]
@@ -68,7 +116,7 @@ pub struct DockWidget<'a, Message, Theme, Renderer> {
     attach_info: Option<AttachInfo>,
 }
 
-impl<'a, Message: Clone + 'a, Theme, Renderer> DockWidget<'a, Message, Theme, Renderer> {
+impl<'a, Message, Theme, Renderer> DockWidget<'a, Message, Theme, Renderer> {
     pub fn new(state: &'a DockState, on_action: impl Fn(DockAction) -> Message + 'a) -> Self {
         Self {
             state,
@@ -101,7 +149,7 @@ impl<'a, Message: Clone + 'a, Theme, Renderer> DockWidget<'a, Message, Theme, Re
 impl<'a, Message, Theme, Renderer> From<DockWidget<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: iced_widget::container::Catalog
         + iced_widget::pane_grid::Catalog
         + crate::style::DockCatalog
@@ -183,7 +231,7 @@ pub struct FloatingDockWidget<'a, Message, Theme, Renderer> {
 
 impl<'a, Message, Theme, Renderer> FloatingDockWidget<'a, Message, Theme, Renderer>
 where
-    Message: Clone + 'a,
+    Message: 'a,
 {
     pub fn new(
         group_data: &'a DockGroupData,
@@ -214,7 +262,7 @@ where
 impl<'a, Message, Theme, Renderer> From<FloatingDockWidget<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: crate::style::DockCatalog + 'a,
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
 {
