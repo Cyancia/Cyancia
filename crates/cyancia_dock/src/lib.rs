@@ -201,7 +201,7 @@ impl DockManager {
                 group,
                 position: self.screen_cursor_pos(),
                 size: win_size,
-                is_dragging: false,
+                is_dragging: true,
             },
         );
         open_task.then(|id| iced_runtime::window::drag(id))
