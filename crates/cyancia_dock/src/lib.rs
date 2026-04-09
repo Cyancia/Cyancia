@@ -22,13 +22,13 @@ use iced_widget::{pane_grid, space};
 use crate::dock::PaneEvent;
 
 const ATTACH_DWELL: Duration = Duration::from_millis(200);
+const MERGE_DISTANCE: f32 = 30.0;
 
 pub struct DockManager {
     main_window: GroupWindowInfo,
     dock_state: DockState,
     detached: HashMap<window::Id, GroupWindowInfo>,
     cursor_pos: Point,
-    last_overlap: Option<(window::Id, std::time::Instant, Point)>,
 }
 
 impl DockManager {
@@ -40,11 +40,11 @@ impl DockManager {
                 size: Size::ZERO,
                 group: DockGroupData::new(),
                 is_dragging: false,
+                last_overlap: None,
             },
             dock_state,
             detached: HashMap::new(),
             cursor_pos: Point::default(),
-            last_overlap: None,
         }
     }
 
@@ -104,28 +104,30 @@ impl DockManager {
     }
 
     pub fn on_float_window_drag_end(&mut self) -> Task<()> {
-        let mut try_detach = None;
+        let mut try_attach_or_merge = None;
         for (id, info) in &mut self.detached {
             if !info.is_dragging {
                 continue;
             }
 
             info.is_dragging = false;
-            try_detach = Some(*id);
+            try_attach_or_merge = Some((*id, info.last_overlap.take()));
         }
 
-        let Some(detach_window) = try_detach else {
+        let Some((src_window, Some((overlap_dst_window, overlap_since, _)))) = try_attach_or_merge
+        else {
             return Task::none();
         };
 
-        if let Some((window, last_overlap, _)) = self.last_overlap.take()
-            && last_overlap.elapsed() > ATTACH_DWELL
-            && window == detach_window
-        {
-            self.attach(window)
-        } else {
-            Task::none()
+        if overlap_since.elapsed() > ATTACH_DWELL {
+            if overlap_dst_window == self.main_window.id {
+                return self.attach_to_main(src_window);
+            } else {
+                return self.merge_floating(src_window, overlap_dst_window);
+            }
         }
+
+        Task::none()
     }
 
     pub fn on_window_event(&mut self, id: window::Id, event: window::Event) -> Task<()> {
@@ -141,20 +143,20 @@ impl DockManager {
                     self.main_window.position = pos;
                 } else if let Some(info) = self.detached.get_mut(&id) {
                     info.position = pos;
-                    if self
+
+                    if info
                         .last_overlap
                         .is_none_or(|(_, _, p)| p.distance(pos) > 10.0)
                     {
-                        if overlaps(
-                            info.position,
-                            info.size,
-                            self.main_window.position,
-                            self.main_window.size,
-                        ) {
-                            self.last_overlap = Some((id, Instant::now(), pos));
-                        } else {
-                            self.last_overlap = None;
+                        let mut next_dst = None;
+                        if let Some(dst_id) = self.floating_merge_info(id) {
+                            next_dst = Some(dst_id);
+                        } else if self.is_over_main_window(id) {
+                            next_dst.get_or_insert(self.main_window.id);
                         }
+
+                        self.detached.get_mut(&id).unwrap().last_overlap =
+                            next_dst.map(|dst| (dst, Instant::now(), pos));
                     }
                 }
             }
@@ -211,8 +213,8 @@ impl DockManager {
         Task::none()
     }
 
-    pub fn attach(&mut self, id: window::Id) -> Task<()> {
-        let Some(attach) = self.attach_info(id) else {
+    pub fn attach_to_main(&mut self, id: window::Id) -> Task<()> {
+        let Some(attach) = self.main_attach_info(id) else {
             return Task::none();
         };
 
@@ -234,6 +236,21 @@ impl DockManager {
         }
 
         iced_runtime::window::close(id)
+    }
+
+    pub fn merge_floating(&mut self, src: window::Id, dst: window::Id) -> Task<()> {
+        let Some(src_info) = self.detached.remove(&src) else {
+            return Task::none();
+        };
+        let Some(dst_info) = self.detached.get_mut(&dst) else {
+            return Task::none();
+        };
+
+        for dock in src_info.group.iter() {
+            dst_info.group.add_dock(dock.clone());
+        }
+
+        iced_runtime::window::close(src)
     }
 
     pub fn detach(&mut self, pane: pane_grid::Pane) -> Task<()> {
@@ -266,6 +283,7 @@ impl DockManager {
                 position: self.screen_cursor_pos(),
                 size: window_size,
                 is_dragging: true,
+                last_overlap: None,
             },
         );
         (
@@ -318,7 +336,7 @@ impl DockManager {
         &self.dock_state
     }
 
-    pub fn attach_info(&self, window: window::Id) -> Option<AttachInfo> {
+    pub fn main_attach_info(&self, window: window::Id) -> Option<AttachInfo> {
         const SPACING: f32 = 2.0;
         let info = self.detached_window(window)?;
         let node = self.dock_state.panes_state().layout();
@@ -368,12 +386,42 @@ impl DockManager {
         target
     }
 
-    pub fn current_attach_info(&self) -> Option<AttachInfo> {
-        let Some((window, _, _)) = self.last_overlap else {
-            return None;
-        };
+    pub fn floating_merge_info(&self, src_window: window::Id) -> Option<window::Id> {
+        let info = self.detached_window(src_window)?;
+        let src_center = Point::new(
+            info.position.x + info.size.width / 2.0,
+            info.position.y + info.size.height / 2.0,
+        );
 
-        self.attach_info(window)
+        for (dst_id, dst_window) in &self.detached {
+            if *dst_id == src_window {
+                continue;
+            }
+
+            let dst_center = Point::new(
+                dst_window.position.x + dst_window.size.width / 2.0,
+                dst_window.position.y + dst_window.size.height / 2.0,
+            );
+
+            if src_center.distance(dst_center) < MERGE_DISTANCE {
+                return Some(*dst_id);
+            }
+        }
+
+        None
+    }
+
+    pub fn current_attach_or_merge_info(&self) -> Option<AttachOrMergeInfo> {
+        let dragging = self.detached.values().find(|info| info.is_dragging)?;
+
+        let src_id = dragging.id;
+        let dst_id = dragging.last_overlap?.0;
+        dbg!(src_id, dst_id);
+        if dst_id == self.main_window.id {
+            self.main_attach_info(src_id).map(AttachOrMergeInfo::Attach)
+        } else {
+            Some(AttachOrMergeInfo::Merge { dst: dst_id })
+        }
     }
 }
 
@@ -391,6 +439,13 @@ pub struct GroupWindowInfo {
     pub size: Size,
     pub group: DockGroupData,
     pub is_dragging: bool,
+    pub last_overlap: Option<(window::Id, std::time::Instant, Point)>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AttachOrMergeInfo {
+    Attach(AttachInfo),
+    Merge { dst: window::Id },
 }
 
 #[derive(Debug, Clone)]

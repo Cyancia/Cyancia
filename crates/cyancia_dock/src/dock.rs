@@ -4,7 +4,7 @@ use cyancia_utils::wrapper;
 use iced_core::{
     Element, Layout, Length, Point, Rectangle, Size, layout, mouse, renderer, widget, window,
 };
-use iced_widget::{pane_grid, space};
+use iced_widget::{pane_grid, space, stack};
 use parse_display::Display;
 use serde::Serialize;
 
@@ -62,7 +62,7 @@ pub struct DockWidget<'a, Message, Theme, Renderer> {
         Option<Box<dyn Fn(pane_grid::Pane, DockId) -> Element<'a, Message, Theme, Renderer> + 'a>>,
     on_action: Box<dyn Fn(DockAction) -> Message + 'a>,
     spacing: f32,
-    drag_hint: Option<AttachInfo>,
+    attach_info: Option<AttachInfo>,
 }
 
 impl<'a, Message: Clone + 'a, Theme, Renderer> DockWidget<'a, Message, Theme, Renderer> {
@@ -72,7 +72,7 @@ impl<'a, Message: Clone + 'a, Theme, Renderer> DockWidget<'a, Message, Theme, Re
             content: None,
             on_action: Box::new(on_action),
             spacing: 2.0,
-            drag_hint: None,
+            attach_info: None,
         }
     }
 
@@ -89,8 +89,8 @@ impl<'a, Message: Clone + 'a, Theme, Renderer> DockWidget<'a, Message, Theme, Re
         self
     }
 
-    pub fn drag_hint(mut self, split_info: AttachInfo) -> Self {
-        self.drag_hint = Some(split_info);
+    pub fn attach_info(mut self, split_info: AttachInfo) -> Self {
+        self.attach_info = Some(split_info);
         self
     }
 }
@@ -113,7 +113,7 @@ where
             content,
             on_action,
             spacing,
-            drag_hint,
+            attach_info: drag_hint,
         } = w;
 
         let on_action = Rc::<dyn Fn(DockAction) -> Message>::from(on_action);
@@ -149,7 +149,7 @@ where
             .into();
 
         if let Some(split_info) = drag_hint {
-            let overlay = HintOverlay {
+            let overlay = PaneHintOverlay {
                 state,
                 attach_info: split_info,
                 spacing,
@@ -175,6 +175,7 @@ pub struct FloatingDockWidget<'a, Message, Theme, Renderer> {
     group_data: &'a DockGroupData,
     content: Option<Box<dyn Fn(DockId) -> Element<'a, Message, Theme, Renderer> + 'a>>,
     on_action: Box<dyn Fn(FloatAction) -> Message + 'a>,
+    is_attaching: bool,
 }
 
 impl<'a, Message, Theme, Renderer> FloatingDockWidget<'a, Message, Theme, Renderer>
@@ -189,6 +190,7 @@ where
             group_data,
             content: None,
             on_action: Box::new(on_action),
+            is_attaching: false,
         }
     }
 
@@ -197,6 +199,11 @@ where
         f: impl Fn(DockId) -> Element<'a, Message, Theme, Renderer> + 'a,
     ) -> Self {
         self.content = Some(Box::new(f));
+        self
+    }
+
+    pub fn is_merging(mut self, attaching: bool) -> Self {
+        self.is_attaching = attaching;
         self
     }
 }
@@ -215,6 +222,7 @@ where
             group_data,
             content,
             on_action,
+            is_attaching,
         } = w;
 
         let on_action: Rc<dyn Fn(FloatAction) -> Message + 'a> = Rc::from(on_action);
@@ -230,22 +238,35 @@ where
             .and_then(|id| content.map(|c| c(id.clone())))
             .unwrap_or_else(|| Element::new(space()));
 
-        iced_widget::column![Element::from(tab_row), body,]
+        let content = iced_widget::column![Element::from(tab_row), body]
             .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .height(Length::Fill);
+
+        if is_attaching {
+            stack![Element::new(WindowHintOverlay), content].into()
+        } else {
+            content.into()
+        }
     }
 }
 
+const ATTACH_HINT_COLOR: iced_core::Color = iced_core::Color {
+    r: 0.15,
+    g: 0.55,
+    b: 1.0,
+    a: 0.35,
+};
+
 /// Transparent overlay widget drawn on top of `DockWidget` to show where a
 /// floating window would re-attach (the pane half closest to the hint cursor).
-struct HintOverlay<'a> {
+struct PaneHintOverlay<'a> {
     state: &'a DockState,
     attach_info: AttachInfo,
     spacing: f32,
 }
 
-impl<'a, Message, Theme, Renderer> iced_core::Widget<Message, Theme, Renderer> for HintOverlay<'a>
+impl<'a, Message, Theme, Renderer> iced_core::Widget<Message, Theme, Renderer>
+    for PaneHintOverlay<'a>
 where
     Renderer: iced_core::Renderer,
 {
@@ -284,7 +305,7 @@ where
         };
 
         let highlight = match self.attach_info {
-            AttachInfo::Split { pane, result_edge } => match result_edge {
+            AttachInfo::Split { result_edge, .. } => match result_edge {
                 pane_grid::Edge::Left => iced_core::Rectangle {
                     x: bounds.x + region.x,
                     y: bounds.y + region.y,
@@ -310,7 +331,7 @@ where
                     height: region.height / 2.0,
                 },
             },
-            AttachInfo::Merge { pane } => iced_core::Rectangle {
+            AttachInfo::Merge { .. } => iced_core::Rectangle {
                 x: bounds.x + region.x,
                 y: bounds.y + region.y,
                 width: region.width,
@@ -323,12 +344,46 @@ where
                 bounds: highlight,
                 ..iced_core::renderer::Quad::default()
             },
-            iced_core::Background::Color(iced_core::Color {
-                r: 0.15,
-                g: 0.55,
-                b: 1.0,
-                a: 0.35,
-            }),
+            iced_core::Background::Color(ATTACH_HINT_COLOR),
+        );
+    }
+}
+
+struct WindowHintOverlay;
+
+impl<Message, Theme, Renderer> iced_core::Widget<Message, Theme, Renderer> for WindowHintOverlay
+where
+    Renderer: iced_core::Renderer,
+{
+    fn size(&self) -> Size<Length> {
+        Size::new(Length::Fill, Length::Fill)
+    }
+
+    fn layout(
+        &mut self,
+        _tree: &mut widget::Tree,
+        _renderer: &Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        layout::Node::new(limits.max())
+    }
+
+    fn draw(
+        &self,
+        _tree: &widget::Tree,
+        renderer: &mut Renderer,
+        _theme: &Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+    ) {
+        renderer.fill_quad(
+            iced_core::renderer::Quad {
+                bounds: layout.bounds(),
+                ..Default::default()
+            },
+            iced_core::Background::Color(ATTACH_HINT_COLOR),
         );
     }
 }

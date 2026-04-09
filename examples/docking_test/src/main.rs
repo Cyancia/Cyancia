@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cyancia_dock::DockManager;
 use cyancia_dock::dock::{DockAction, DockId, DockWidget, FloatAction, FloatingDockWidget};
 use cyancia_dock::group::DockGroupData;
 use cyancia_dock::state::DockState;
+use cyancia_dock::{AttachOrMergeInfo, DockManager};
 use iced::{Element, Subscription, Task};
 use iced_core::window::{self, Id as WindowId, Position};
 use iced_core::{Point, Size};
@@ -110,19 +110,24 @@ impl App {
                     iced::widget::center(iced::widget::text(id.to_string()).size(20)).into()
                 });
 
-            if let Some(pos) = self.manager.current_attach_info() {
-                dock_w.drag_hint(pos).into()
+            if let Some(AttachOrMergeInfo::Attach(attach)) =
+                self.manager.current_attach_or_merge_info()
+            {
+                dock_w.attach_info(attach).into()
             } else {
                 dock_w.into()
             }
         } else if let Some(info) = self.manager.detached_window(window_id) {
-            let win_id = window_id;
             FloatingDockWidget::new(&info.group, move |action| Message::Float {
-                id: win_id,
+                id: window_id,
                 action,
             })
             .content(|dock_id| {
                 iced::widget::center(iced::widget::text(dock_id.to_string()).size(20)).into()
+            })
+            .is_merging(match self.manager.current_attach_or_merge_info() {
+                Some(AttachOrMergeInfo::Merge { .. }) => true,
+                _ => false,
             })
             .into()
         } else {
