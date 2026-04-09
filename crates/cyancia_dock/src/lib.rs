@@ -10,14 +10,14 @@ use std::{
 
 use dock::{DockAction, DockId, FloatAction, TabEvent};
 use group::{DockGroupData, TabRowWidget};
-use iced::Task;
 use iced_core::{
-    Element, Layout, Length, Point, Rectangle, Size, layout, mouse, renderer, widget, window,
+    Element, Layout, Length, Point, Rectangle, Size, Vector, layout, mouse, renderer, widget,
+    window,
 };
+use iced_runtime::Task;
+use iced_widget::{pane_grid, space};
 use state::DockState;
 use style::{DockCatalog, DockStatus, DockStyle, TabBarStyle, TabStyle};
-
-use iced_widget::{pane_grid, space};
 
 use crate::dock::{DockWidget, FloatingDockWidget, PaneEvent};
 
@@ -39,7 +39,7 @@ impl DockManager {
                 position: Point::ORIGIN,
                 size: Size::ZERO,
                 group: DockGroupData::new(),
-                is_dragging: false,
+                dragging_cursor_relative: None,
                 last_overlap: None,
             },
             dock_state,
@@ -113,6 +113,13 @@ impl DockManager {
         if let Some(pane) = self.dock_state.try_detach(pos) {
             self.detach(pane)
         } else {
+            let cursor_pos = self.screen_cursor_pos().unwrap();
+            for window in self.detached.values() {
+                if let Some(p) = window.dragging_cursor_relative {
+                    return iced_runtime::window::move_to(window.id, cursor_pos - p);
+                }
+            }
+
             Task::none()
         }
     }
@@ -120,11 +127,11 @@ impl DockManager {
     pub fn on_float_window_drag_end(&mut self) -> Task<()> {
         let mut try_attach_or_merge = None;
         for (id, info) in &mut self.detached {
-            if !info.is_dragging {
+            if !info.dragging_cursor_relative.is_some() {
                 continue;
             }
 
-            info.is_dragging = false;
+            info.dragging_cursor_relative = None;
             try_attach_or_merge = Some((*id, info.last_overlap.take()));
         }
 
@@ -223,8 +230,15 @@ impl DockManager {
                 }
             },
             FloatAction::StartWindowDrag => {
-                info.is_dragging = true;
-                return iced_runtime::window::drag(id);
+                let Some(cursor_pos) = self.screen_cursor_pos() else {
+                    return Task::none();
+                };
+
+                let info = self.detached.get_mut(&id).unwrap();
+                info.dragging_cursor_relative = Some(Vector::new(
+                    cursor_pos.x - info.position.x,
+                    cursor_pos.y - info.position.y,
+                ));
             }
             FloatAction::StartResize(dir) => {
                 return iced_runtime::window::drag_resize(id, dir);
@@ -307,7 +321,7 @@ impl DockManager {
                 group,
                 position: self.screen_cursor_pos()?,
                 size: window_size,
-                is_dragging: true,
+                dragging_cursor_relative: Some(Vector::ZERO),
                 last_overlap: None,
             },
         );
@@ -449,7 +463,10 @@ impl DockManager {
     }
 
     pub fn current_attach_or_merge_info(&self) -> Option<AttachOrMergeInfo> {
-        let dragging = self.detached.values().find(|info| info.is_dragging)?;
+        let dragging = self
+            .detached
+            .values()
+            .find(|info| info.dragging_cursor_relative.is_some())?;
 
         let src_id = dragging.id;
         let dst_id = dragging.last_overlap?.0;
@@ -523,7 +540,7 @@ pub struct GroupWindowInfo {
     pub position: Point,
     pub size: Size,
     pub group: DockGroupData,
-    pub is_dragging: bool,
+    pub dragging_cursor_relative: Option<Vector>,
     pub last_overlap: Option<(window::Id, std::time::Instant, Point)>,
 }
 
