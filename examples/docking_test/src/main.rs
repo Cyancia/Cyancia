@@ -114,7 +114,7 @@ impl App {
                 iced::widget::center(iced::widget::text(dock_id.to_string()).size(20)).into()
             })
             .is_merging(match self.manager.current_attach_or_merge_info() {
-                Some(AttachOrMergeInfo::Merge { .. }) => true,
+                Some(AttachOrMergeInfo::Merge { dst }) => dst == window_id,
                 _ => false,
             })
             .into()
