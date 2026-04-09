@@ -199,6 +199,7 @@ impl DockManager {
                     }
                 }
                 TabEvent::Detach(dock_id) => {
+                    info.group.remove_dock(&dock_id);
                     let mut new_group = DockGroupData::new();
                     new_group.add_dock(dock_id);
                     return self.detach_group(new_group).1.discard();
@@ -416,7 +417,6 @@ impl DockManager {
 
         let src_id = dragging.id;
         let dst_id = dragging.last_overlap?.0;
-        dbg!(src_id, dst_id);
         if dst_id == self.main_window.id {
             self.main_attach_info(src_id).map(AttachOrMergeInfo::Attach)
         } else {
