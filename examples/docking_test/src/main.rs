@@ -2,16 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use cyancia_dock::DockManager;
+use cyancia_dock::dock::{DockAction, DockId, DockWidget, FloatAction, FloatingDockWidget};
+use cyancia_dock::group::DockGroupData;
+use cyancia_dock::state::DockState;
 use iced::{Element, Subscription, Task};
 use iced_core::window::{self, Id as WindowId, Position};
 use iced_core::{Point, Size};
 use iced_runtime::window as win;
 use iced_widget::pane_grid;
-
-use cyancia_dock::{
-    AttachInfo, DockAction, DockGroupData, DockId, DockManager, DockState, DockWidget, FloatAction,
-    FloatingDockWidget, TabEvent,
-};
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
