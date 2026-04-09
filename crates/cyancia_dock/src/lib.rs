@@ -19,6 +19,8 @@ pub use style::{DockCatalog, DockStatus, DockStyle, TabBarStyle, TabStyle};
 
 use iced_widget::{pane_grid, space};
 
+use crate::dock::PaneEvent;
+
 const ATTACH_DWELL: Duration = Duration::from_millis(200);
 
 pub struct DockManager {
@@ -46,8 +48,37 @@ impl DockManager {
         }
     }
 
-    pub fn on_dock_action(&mut self, action: DockAction) -> Task<DockAction> {
-        self.dock_state.update(action, self.cursor_pos)
+    pub fn on_dock_action(&mut self, action: DockAction) {
+        match action {
+            DockAction::Pane(event) => self.dock_state.update(event, self.cursor_pos),
+            DockAction::Tab(pane, tab_event) => {
+                let pane_state = self.dock_state.panes_state_mut();
+                match tab_event {
+                    TabEvent::Select(dock_id) => {
+                        if let Some(group) = pane_state.get_mut(pane) {
+                            group.set_active(dock_id);
+                        }
+                    }
+                    TabEvent::Close(dock_id) => {
+                        if let Some(group) = pane_state.get_mut(pane) {
+                            group.remove_dock(dock_id);
+                            if group.is_empty() {
+                                pane_state.close(pane);
+                            }
+                        }
+                    }
+                    TabEvent::Reorder { from, to } => {
+                        if let Some(group) = pane_state.get_mut(pane) {
+                            let dock_id = group.iter().nth(from).copied();
+                            if let Some(dock_id) = dock_id {
+                                group.reorder(dock_id, to);
+                            }
+                        }
+                    }
+                    TabEvent::Detach(dock_id) => todo!(),
+                }
+            }
+        }
     }
 
     pub fn on_main_window_cursor_moved(&mut self, pos: Point) -> Task<()> {
@@ -152,6 +183,11 @@ impl DockManager {
                         info.group.reorder(d, to);
                     }
                 }
+                TabEvent::Detach(dock_id) => {
+                    let mut new_group = DockGroupData::new();
+                    new_group.add_dock(dock_id);
+                    return self.detach_group(new_group).1.discard();
+                }
             },
             FloatAction::StartWindowDrag => {
                 info.is_dragging = true;
@@ -178,14 +214,19 @@ impl DockManager {
     }
 
     pub fn detach(&mut self, pane: pane_grid::Pane) -> Task<()> {
-        let Some(group) = self.dock_state.detach_pane(pane) else {
+        let Some(group) = self.dock_state.close(pane) else {
             return Task::none();
         };
-        let win_size = Size::new(400.0, 350.0);
-        let (win_id, open_task) = iced_runtime::window::open(window::Settings {
+
+        self.detach_group(group).1.discard()
+    }
+
+    fn detach_group(&mut self, group: DockGroupData) -> (window::Id, Task<window::Id>) {
+        let window_size = Size::new(400.0, 350.0);
+        let (window_id, open_task) = iced_runtime::window::open(window::Settings {
             decorations: false,
             position: window::Position::Specific(self.screen_cursor_pos()),
-            size: win_size,
+            size: window_size,
             level: window::Level::AlwaysOnTop,
             platform_specific: window::settings::PlatformSpecific {
                 skip_taskbar: true,
@@ -195,16 +236,19 @@ impl DockManager {
             ..Default::default()
         });
         self.detached.insert(
-            win_id,
+            window_id,
             GroupWindowInfo {
-                id: win_id,
+                id: window_id,
                 group,
                 position: self.screen_cursor_pos(),
-                size: win_size,
+                size: window_size,
                 is_dragging: true,
             },
         );
-        open_task.then(|id| iced_runtime::window::drag(id))
+        (
+            window_id,
+            open_task.then(|id| iced_runtime::window::drag(id)),
+        )
     }
 
     fn screen_cursor_pos(&self) -> Point {
@@ -402,22 +446,17 @@ where
 
                 let a = Rc::clone(&a_content);
                 let tabs = TabRowWidget::new(group_data, move |ev| {
-                    let action = match ev {
-                        TabEvent::Select(id) => DockAction::TabSelect(pane, id),
-                        TabEvent::Close(id) => DockAction::TabClose(pane, id),
-                        TabEvent::Reorder { from, to } => DockAction::TabReorder { pane, from, to },
-                    };
-                    (a.as_ref())(action)
+                    (a.as_ref())(DockAction::Tab(pane, ev))
                 });
                 // No on_title_drag set — non-tab area is pane_grid's drag pick area.
 
                 pane_grid::Content::new(body)
                     .title_bar(pane_grid::TitleBar::new(Element::new(tabs)))
             })
-            .on_click(move |p| (a_click.as_ref())(DockAction::PaneClicked(p)))
-            .on_drag(move |e| (a_drag.as_ref())(DockAction::PaneDragged(e)))
+            .on_click(move |p| (a_click.as_ref())(DockAction::Pane(PaneEvent::Clicked(p))))
+            .on_drag(move |e| (a_drag.as_ref())(DockAction::Pane(PaneEvent::Dragged(e))))
             .on_resize(5.0, move |e| {
-                (a_resize.as_ref())(DockAction::PaneResized(e))
+                (a_resize.as_ref())(DockAction::Pane(PaneEvent::Resized(e)))
             })
             .width(Length::Fill)
             .height(Length::Fill)

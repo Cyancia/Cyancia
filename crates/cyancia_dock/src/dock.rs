@@ -12,19 +12,15 @@ wrapper! {
 /// Events the docking system can emit.
 #[derive(Debug, Clone)]
 pub enum DockAction {
-    // ── Pane-level (forwarded from PaneGrid) ──
-    PaneClicked(pane_grid::Pane),
-    PaneDragged(pane_grid::DragEvent),
-    PaneResized(pane_grid::ResizeEvent),
+    Pane(PaneEvent),
+    Tab(pane_grid::Pane, TabEvent),
+}
 
-    // ── Tab-level ──
-    TabSelect(pane_grid::Pane, DockId),
-    TabClose(pane_grid::Pane, DockId),
-    TabReorder {
-        pane: pane_grid::Pane,
-        from: usize,
-        to: usize,
-    },
+#[derive(Debug, Clone)]
+pub enum PaneEvent {
+    Clicked(pane_grid::Pane),
+    Dragged(pane_grid::DragEvent),
+    Resized(pane_grid::ResizeEvent),
 }
 
 /// Low-level tab events emitted by `TabRowWidget` (no pane coupling).
@@ -36,6 +32,7 @@ pub enum TabEvent {
     Select(DockId),
     Close(DockId),
     Reorder { from: usize, to: usize },
+    Detach(DockId),
 }
 
 /// Actions emitted by `FloatingDockWidget`.

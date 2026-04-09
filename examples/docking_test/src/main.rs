@@ -65,7 +65,8 @@ impl App {
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
             Message::Dock(dock_action) => {
-                self.manager.on_dock_action(dock_action).map(Message::Dock)
+                self.manager.on_dock_action(dock_action);
+                Task::none()
             }
             Message::Float { id, action } => self.manager.on_float_action(id, action).discard(),
             Message::WinEvent(id, event) => self.manager.on_window_event(id, event).discard(),
