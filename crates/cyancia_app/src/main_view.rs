@@ -76,6 +76,7 @@ impl WindowView for MainView {
 
     fn view<'a>(
         &'a self,
+        window: window::Id,
         runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>> {
         let canvas_manager = runtime.service::<CanvasManager>();

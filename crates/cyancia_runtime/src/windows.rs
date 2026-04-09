@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::Hash,
     sync::{
         Arc,
@@ -28,6 +28,7 @@ pub trait WindowView: Send + Sync + 'static {
     fn id(&self) -> WindowViewId;
     fn view<'a>(
         &'a self,
+        window: window::Id,
         runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>>;
     fn update(
@@ -40,12 +41,16 @@ pub trait WindowView: Send + Sync + 'static {
     fn subscription(&self) -> Subscription<(window::Id, Self::Message)> {
         Subscription::none()
     }
+    fn sub_windows(&self) -> HashSet<window::Id> {
+        HashSet::new()
+    }
 }
 
 pub trait ErasedWindowView: Send + Sync + 'static {
     fn id(&self) -> WindowViewId;
     fn view<'a>(
         &'a self,
+        window: window::Id,
         runtime: Arc<Services>,
     ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer>;
     fn update(
@@ -53,9 +58,8 @@ pub trait ErasedWindowView: Send + Sync + 'static {
         message: Box<dyn Any + Send + Sync>,
         runtime: Arc<Services>,
     ) -> Task<Box<dyn Any + Send + Sync>>;
-    fn subscription(&self) -> Subscription<(window::Id, Box<dyn Any + Send + Sync>)> {
-        Subscription::none()
-    }
+    fn subscription(&self) -> Subscription<(window::Id, Box<dyn Any + Send + Sync>)>;
+    fn sub_windows(&self) -> HashSet<window::Id>;
 }
 
 impl<T> ErasedWindowView for T
@@ -68,9 +72,10 @@ where
 
     fn view<'a>(
         &'a self,
+        window: window::Id,
         runtime: Arc<Services>,
     ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer> {
-        <T as WindowView>::view(self, runtime)
+        <T as WindowView>::view(self, window, runtime)
             .into()
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
@@ -92,6 +97,10 @@ where
         <T as WindowView>::subscription(self)
             .map(|msg| (msg.0, Box::new(msg.1) as Box<dyn Any + Send + Sync>))
     }
+
+    fn sub_windows(&self) -> HashSet<window::Id> {
+        <T as WindowView>::sub_windows(self)
+    }
 }
 
 #[derive(Debug)]
@@ -106,9 +115,9 @@ pub enum WindowManagerMessage {
 }
 
 #[derive(Default, Clone, Deref, DerefMut)]
-pub struct OpenedViewMap(HashMap<WindowViewId, window::Id>);
+pub struct OpenedViewRootWindowMap(HashMap<WindowViewId, window::Id>);
 
-impl Hash for OpenedViewMap {
+impl Hash for OpenedViewRootWindowMap {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         for key in self.0.keys() {
             key.hash(state);
@@ -120,7 +129,7 @@ impl Hash for OpenedViewMap {
 pub struct WindowViewManager {
     windows: HashMap<window::Id, WindowViewId>,
     views: HashMap<WindowViewId, Box<dyn ErasedWindowView>>,
-    opened_views: OpenedViewMap,
+    opened_view_root_windows: OpenedViewRootWindowMap,
     root_view: Option<WindowViewId>,
 }
 
@@ -146,13 +155,13 @@ where
         &'a self,
         id: window::Id,
         runtime: Arc<Services>,
-    ) -> Element<'a, ErasedWindowMessage, Theme, iced_wgpu::Renderer> {
-        let window = self.windows.get(&id).expect("Window not found").clone();
+    ) -> Option<Element<'a, ErasedWindowMessage, Theme, iced_wgpu::Renderer>> {
+        let window = self.windows.get(&id).cloned()?;
         let view = self.views.get(&window).expect("Window view not found");
-        view.view(runtime).map(move |msg| ErasedWindowMessage {
+        Some(view.view(id, runtime).map(move |msg| ErasedWindowMessage {
             window,
             message: msg,
-        })
+        }))
     }
 
     pub fn update(
@@ -160,10 +169,10 @@ where
         message: ErasedWindowMessage,
         runtime: Arc<Services>,
     ) -> Task<ErasedWindowMessage> {
-        let view = self
-            .views
-            .get_mut(&message.window)
-            .expect("Window view not found");
+        let Some(view) = self.views.get_mut(&message.window) else {
+            return Task::none();
+        };
+
         view.update(message.message, runtime)
             .map(move |msg| ErasedWindowMessage {
                 window: message.window.clone(),
@@ -174,7 +183,7 @@ where
     pub fn subscription(&self) -> Subscription<ErasedWindowMessage> {
         let subscriptions = self.views.iter().map(|(id, view)| {
             view.subscription()
-                .with((id.clone(), self.opened_views.clone()))
+                .with((id.clone(), self.opened_view_root_windows.clone()))
                 .filter_map(|((view_id, opened_windows), (window_id, msg))| {
                     if Some(&window_id) == opened_windows.get(&view_id) {
                         Some(ErasedWindowMessage {
@@ -190,33 +199,52 @@ where
         Subscription::batch(subscriptions)
     }
 
-    pub fn open_window(&mut self, view_id: WindowViewId) -> Task<()> {
-        let (window_id, task) = iced_runtime::window::open(Default::default());
+    pub fn open_window_view(&mut self, view_id: WindowViewId) -> Task<()> {
+        let (window_id, task) = iced_runtime::window::open(window::Settings {
+            exit_on_close_request: false,
+            ..Default::default()
+        });
         self.windows.insert(window_id, view_id.clone());
-        self.opened_views.insert(view_id, window_id);
+        self.opened_view_root_windows.insert(view_id, window_id);
         task.discard()
     }
 
-    pub fn close_window(&mut self, view_id: WindowViewId) -> Task<()> {
+    pub fn close_window_view(&mut self, view_id: WindowViewId) -> Task<()> {
         if Some(view_id) == self.root_view {
             iced_runtime::exit()
-        } else if let Some(window_id) = self.opened_views.remove(&view_id) {
-            self.windows.remove(&window_id);
-            iced_runtime::window::close::<()>(window_id).discard()
+        } else if let Some(root_window) = self.opened_view_root_windows.remove(&view_id) {
+            self.windows.remove(&root_window);
+
+            let sub_windows = self
+                .views
+                .get(&view_id)
+                .expect("Window view not found")
+                .sub_windows();
+            for sub_window in &sub_windows {
+                self.windows.remove(sub_window);
+            }
+
+            Task::batch(
+                std::iter::once(iced_runtime::window::close(root_window))
+                    .chain(sub_windows.into_iter().map(iced_runtime::window::close)),
+            )
         } else {
             Task::none()
         }
     }
 
-    pub fn window_closed(&mut self, window_id: window::Id) -> Task<()> {
-        if let Some(view_id) = self.windows.remove(&window_id) {
-            self.opened_views.remove(&view_id);
-            if Some(view_id) == self.root_view {
-                return iced_runtime::exit();
+    pub fn close_window(&mut self, window: window::Id) -> Task<()> {
+        if let Some(view_id) = self.windows.remove(&window) {
+            let mut maybe_root_window = self.opened_view_root_windows.get_mut(&view_id).copied();
+            if maybe_root_window == Some(window) {
+                maybe_root_window.take();
+                self.close_window_view(view_id.clone())
+            } else {
+                iced_runtime::window::close(window)
             }
+        } else {
+            Task::none()
         }
-
-        Task::none()
     }
 }
 
@@ -261,7 +289,7 @@ impl WindowCommand for OpenWindowCommand {
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
     ) -> Option<Task<()>> {
-        Some(wm.open_window(self.view_id))
+        Some(wm.open_window_view(self.view_id))
     }
 }
 
@@ -281,7 +309,7 @@ impl WindowCommand for CloseWindowCommand {
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
     ) -> Option<Task<()>> {
-        Some(wm.close_window(self.view_id))
+        Some(wm.close_window_view(self.view_id))
     }
 }
 
@@ -301,10 +329,10 @@ impl WindowCommand for ToggleWindowCommand {
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
     ) -> Option<Task<()>> {
-        if wm.opened_views.contains_key(&self.view_id) {
-            Some(wm.close_window(self.view_id))
+        if wm.opened_view_root_windows.contains_key(&self.view_id) {
+            Some(wm.close_window_view(self.view_id))
         } else {
-            Some(wm.open_window(self.view_id))
+            Some(wm.open_window_view(self.view_id))
         }
     }
 }

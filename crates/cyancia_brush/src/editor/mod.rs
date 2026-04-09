@@ -266,6 +266,7 @@ impl WindowView for BrushEditorView {
 
     fn view<'a>(
         &'a self,
+        window: window::Id,
         runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>> {
         let assets = runtime.service::<AssetRegistry>();
