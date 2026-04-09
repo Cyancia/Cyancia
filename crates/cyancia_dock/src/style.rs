@@ -3,8 +3,8 @@
 //! Uses the Catalog pattern from iced for themable styling of tab bars,
 //! dividers, and drop indicators.
 
-use iced_core::{Background, Border, Color};
 use iced_core::Padding;
+use iced_core::{Background, Border, Color};
 
 /// The catalog trait for dock system styling.
 pub trait DockCatalog {

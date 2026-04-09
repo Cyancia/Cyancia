@@ -1,13 +1,14 @@
-use crate::{dock::{DockId, TabEvent}, group::DockGroupData, style::DockCatalog};
+use crate::{
+    dock::{DockId, TabEvent},
+    group::DockGroupData,
+    style::DockCatalog,
+};
 use iced_core::{
-    Element, Event, Font, Layout, Length, Point, Rectangle, Shell, Size,
-    alignment,
+    Element, Event, Font, Layout, Length, Point, Rectangle, Shell, Size, alignment,
     clipboard::Clipboard,
-    layout,
-    mouse,
-    renderer,
+    layout, mouse, renderer,
     text::{self, LineHeight, Shaping},
-    widget::{tree, Tree},
+    widget::{Tree, tree},
 };
 
 pub const TAB_WIDTH: f32 = 120.0;
@@ -22,8 +23,14 @@ const DRAG_DEADBAND: f32 = 5.0;
 enum TabAction {
     #[default]
     Idle,
-    Pressing { index: usize, origin: Point, is_close: bool },
-    Dragging { index: usize },
+    Pressing {
+        index: usize,
+        origin: Point,
+        is_close: bool,
+    },
+    Dragging {
+        index: usize,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -56,7 +63,12 @@ fn hit_test(group_data: &DockGroupData, bounds: Rectangle, cursor: Point) -> Tab
     }
     let close_x = bounds.x + (tab_i as f32 + 1.0) * TAB_WIDTH - TAB_PAD - CLOSE_SIZE;
     let close_y = bounds.y + (TAB_HEIGHT - CLOSE_SIZE) / 2.0;
-    let close_rect = Rectangle { x: close_x, y: close_y, width: CLOSE_SIZE, height: CLOSE_SIZE };
+    let close_rect = Rectangle {
+        x: close_x,
+        y: close_y,
+        width: CLOSE_SIZE,
+        height: CLOSE_SIZE,
+    };
     if close_rect.contains(cursor) {
         TabHit::Close(tab_i)
     } else {
@@ -72,22 +84,14 @@ fn drag_target_index(group_data: &DockGroupData, bounds: Rectangle, cursor: Poin
 
 // ── Widget ────────────────────────────────────────────────────────────────────
 
-pub struct TabRowWidget<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
-where
-    Renderer: iced_core::text::Renderer,
-{
+pub struct TabRowWidget<'a, Message> {
     group_data: &'a DockGroupData,
     on_action: Box<dyn Fn(TabEvent) -> Message + 'a>,
     on_title_drag: Option<Box<dyn Fn() -> Message + 'a>>,
     title_of: Box<dyn Fn(DockId) -> String + 'a>,
-    _theme: std::marker::PhantomData<Theme>,
-    _renderer: std::marker::PhantomData<Renderer>,
 }
 
-impl<'a, Message, Theme, Renderer> TabRowWidget<'a, Message, Theme, Renderer>
-where
-    Renderer: iced_core::text::Renderer,
-{
+impl<'a, Message> TabRowWidget<'a, Message> {
     pub fn new(
         group_data: &'a DockGroupData,
         on_action: impl Fn(TabEvent) -> Message + 'a,
@@ -97,8 +101,6 @@ where
             on_action: Box::new(on_action),
             on_title_drag: None,
             title_of: Box::new(|id| id.to_string()),
-            _theme: std::marker::PhantomData,
-            _renderer: std::marker::PhantomData,
         }
     }
 
@@ -116,11 +118,11 @@ where
 // ── Widget impl ───────────────────────────────────────────────────────────────
 
 impl<'a, Message, Theme, Renderer> iced_core::Widget<Message, Theme, Renderer>
-    for TabRowWidget<'a, Message, Theme, Renderer>
+    for TabRowWidget<'a, Message>
 where
     Message: Clone + 'a,
     Theme: DockCatalog,
-    Renderer: iced_core::Renderer + iced_core::text::Renderer<Font = Font>,
+    Renderer: iced_core::Renderer + iced_core::text::Renderer,
 {
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<TabRowState>()
@@ -170,19 +172,29 @@ where
     ) {
         let state = tree.state.downcast_ref::<TabRowState>();
         let bounds = layout.bounds();
-        let dock_style = theme.style(&<Theme as DockCatalog>::default(), crate::style::DockStatus::Active);
+        let dock_style = theme.style(
+            &<Theme as DockCatalog>::default(),
+            crate::style::DockStatus::Active,
+        );
         let ts = &dock_style.tab_bar;
 
         let active = self.group_data.active();
         let drag_target = if let TabAction::Dragging { index: _ } = state.action {
-            cursor.position().map(|p| drag_target_index(self.group_data, bounds, p))
+            cursor
+                .position()
+                .map(|p| drag_target_index(self.group_data, bounds, p))
         } else {
             None
         };
 
         for (i, &dock_id) in self.group_data.iter().enumerate() {
             let x = bounds.x + i as f32 * TAB_WIDTH;
-            let tab_rect = Rectangle { x, y: bounds.y, width: TAB_WIDTH, height: TAB_HEIGHT };
+            let tab_rect = Rectangle {
+                x,
+                y: bounds.y,
+                width: TAB_WIDTH,
+                height: TAB_HEIGHT,
+            };
 
             let is_active = active == Some(dock_id);
             let is_hovered = state.hovered == Some(i);
@@ -195,7 +207,11 @@ where
             };
 
             renderer.fill_quad(
-                renderer::Quad { bounds: tab_rect, border: tab_style.border, ..Default::default() },
+                renderer::Quad {
+                    bounds: tab_rect,
+                    border: tab_style.border,
+                    ..Default::default()
+                },
                 tab_style.background,
             );
 
@@ -207,7 +223,7 @@ where
                 text::Text {
                     content: title,
                     size: iced_core::Pixels(14.0),
-                    font: Font::default(),
+                    font: renderer.default_font(),
                     bounds: Size::new(text_w, TAB_HEIGHT),
                     align_x: text::Alignment::Left,
                     align_y: alignment::Vertical::Center,
@@ -223,8 +239,12 @@ where
             // Close button
             let close_x = x + TAB_WIDTH - TAB_PAD - CLOSE_SIZE;
             let close_y = bounds.y + (TAB_HEIGHT - CLOSE_SIZE) / 2.0;
-            let close_rect =
-                Rectangle { x: close_x, y: close_y, width: CLOSE_SIZE, height: CLOSE_SIZE };
+            let close_rect = Rectangle {
+                x: close_x,
+                y: close_y,
+                width: CLOSE_SIZE,
+                height: CLOSE_SIZE,
+            };
             let close_color = if state.hovered == Some(i) {
                 ts.close_button_hover_color
             } else {
@@ -234,7 +254,7 @@ where
                 text::Text {
                     content: "×".to_string(),
                     size: iced_core::Pixels(CLOSE_SIZE),
-                    font: Font::default(),
+                    font: renderer.default_font(),
                     bounds: Size::new(CLOSE_SIZE, CLOSE_SIZE),
                     align_x: text::Alignment::Center,
                     align_y: alignment::Vertical::Center,
@@ -251,9 +271,17 @@ where
         // Drop indicator during tab drag
         if let Some(target) = drag_target {
             let x = bounds.x + target as f32 * TAB_WIDTH;
-            let indicator = Rectangle { x: x - 1.5, y: bounds.y, width: 3.0, height: TAB_HEIGHT };
+            let indicator = Rectangle {
+                x: x - 1.5,
+                y: bounds.y,
+                width: 3.0,
+                height: TAB_HEIGHT,
+            };
             renderer.fill_quad(
-                renderer::Quad { bounds: indicator, ..Default::default() },
+                renderer::Quad {
+                    bounds: indicator,
+                    ..Default::default()
+                },
                 iced_core::Background::Color(iced_core::Color::from_rgb(0.3, 0.6, 1.0)),
             );
         }
@@ -282,7 +310,12 @@ where
                 };
 
                 // Track drag
-                if let TabAction::Pressing { origin, index, is_close: false } = state.action {
+                if let TabAction::Pressing {
+                    origin,
+                    index,
+                    is_close: false,
+                } = state.action
+                {
                     let dx = position.x - origin.x;
                     let dy = position.y - origin.y;
                     if (dx * dx + dy * dy).sqrt() >= DRAG_DEADBAND {
@@ -299,13 +332,19 @@ where
                 if let Some(pos) = cursor.position() {
                     match hit_test(self.group_data, bounds, pos) {
                         TabHit::Tab(i) => {
-                            state.action =
-                                TabAction::Pressing { index: i, origin: pos, is_close: false };
+                            state.action = TabAction::Pressing {
+                                index: i,
+                                origin: pos,
+                                is_close: false,
+                            };
                             shell.capture_event();
                         }
                         TabHit::Close(i) => {
-                            state.action =
-                                TabAction::Pressing { index: i, origin: pos, is_close: true };
+                            state.action = TabAction::Pressing {
+                                index: i,
+                                origin: pos,
+                                is_close: true,
+                            };
                             shell.capture_event();
                         }
                         TabHit::Miss => {
@@ -324,13 +363,21 @@ where
 
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 match state.action {
-                    TabAction::Pressing { index: i, is_close: false, .. } => {
+                    TabAction::Pressing {
+                        index: i,
+                        is_close: false,
+                        ..
+                    } => {
                         if let Some(dock_id) = self.group_data.iter().nth(i).copied() {
                             shell.publish((self.on_action)(TabEvent::Select(dock_id)));
                         }
                         state.action = TabAction::Idle;
                     }
-                    TabAction::Pressing { index: i, is_close: true, .. } => {
+                    TabAction::Pressing {
+                        index: i,
+                        is_close: true,
+                        ..
+                    } => {
                         if let Some(dock_id) = self.group_data.iter().nth(i).copied() {
                             shell.publish((self.on_action)(TabEvent::Close(dock_id)));
                         }
@@ -385,14 +432,14 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<TabRowWidget<'a, Message, Theme, Renderer>>
+impl<'a, Message, Theme, Renderer> From<TabRowWidget<'a, Message>>
     for Element<'a, Message, Theme, Renderer>
 where
     Message: Clone + 'a,
     Theme: DockCatalog + 'a,
-    Renderer: iced_core::Renderer + iced_core::text::Renderer<Font = Font> + 'a,
+    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
 {
-    fn from(w: TabRowWidget<'a, Message, Theme, Renderer>) -> Self {
+    fn from(w: TabRowWidget<'a, Message>) -> Self {
         Element::new(w)
     }
 }

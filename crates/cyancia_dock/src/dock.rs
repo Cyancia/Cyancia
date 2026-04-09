@@ -20,7 +20,11 @@ pub enum DockAction {
     // ── Tab-level ──
     TabSelect(pane_grid::Pane, DockId),
     TabClose(pane_grid::Pane, DockId),
-    TabReorder { pane: pane_grid::Pane, from: usize, to: usize },
+    TabReorder {
+        pane: pane_grid::Pane,
+        from: usize,
+        to: usize,
+    },
 }
 
 /// Low-level tab events emitted by `TabRowWidget` (no pane coupling).
