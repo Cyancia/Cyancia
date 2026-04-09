@@ -76,10 +76,22 @@ fn hit_test(group_data: &DockGroupData, bounds: Rectangle, cursor: Point) -> Tab
     }
 }
 
-fn drag_target_index(group_data: &DockGroupData, bounds: Rectangle, cursor: Point) -> usize {
+const DETACH_DEADBAND_FACTOR: f32 = 0.5;
+
+fn drag_target_index(
+    group_data: &DockGroupData,
+    bounds: Rectangle,
+    cursor: Point,
+) -> Option<usize> {
+    let detach_min = bounds.y - bounds.height * DETACH_DEADBAND_FACTOR;
+    let detach_max = bounds.y + bounds.height * (1.0 + DETACH_DEADBAND_FACTOR);
+    if cursor.y < detach_min || cursor.y > detach_max {
+        return None;
+    }
+
     let rel_x = (cursor.x - bounds.x).max(0.0);
     let n = group_data.len();
-    ((rel_x / TAB_WIDTH).round() as usize).min(n)
+    Some(((rel_x / TAB_WIDTH).round() as usize).min(n))
 }
 
 // ── Widget ────────────────────────────────────────────────────────────────────
@@ -182,7 +194,7 @@ where
         let drag_target = if let TabAction::Dragging { index: _ } = state.action {
             cursor
                 .position()
-                .map(|p| drag_target_index(self.group_data, bounds, p))
+                .and_then(|p| drag_target_index(self.group_data, bounds, p))
         } else {
             None
         };
@@ -322,9 +334,15 @@ where
                         state.action = TabAction::Dragging { index };
                         shell.capture_event();
                     }
-                } else if let TabAction::Dragging { .. } = state.action {
+                } else if let TabAction::Dragging { index } = state.action {
                     shell.request_redraw();
                     shell.capture_event();
+
+                    if drag_target_index(self.group_data, bounds, *position).is_none() {
+                        let id = self.group_data.iter().nth(index).copied().unwrap();
+                        shell.publish((self.on_action)(TabEvent::Detach(id)));
+                        state.action = TabAction::Idle;
+                    }
                 }
             }
 
@@ -384,13 +402,15 @@ where
                         state.action = TabAction::Idle;
                     }
                     TabAction::Dragging { index: from } => {
-                        if let Some(pos) = cursor.position() {
-                            let to = drag_target_index(self.group_data, bounds, pos);
+                        if let Some(pos) = cursor.position()
+                            && let Some(to) = drag_target_index(self.group_data, bounds, pos)
+                        {
                             let to = if to > from { to - 1 } else { to };
                             if to != from {
                                 shell.publish((self.on_action)(TabEvent::Reorder { from, to }));
                             }
                         }
+
                         state.action = TabAction::Idle;
                     }
                     TabAction::Idle => {}

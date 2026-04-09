@@ -48,7 +48,7 @@ impl DockManager {
         }
     }
 
-    pub fn on_dock_action(&mut self, action: DockAction) {
+    pub fn on_dock_action(&mut self, action: DockAction) -> Task<()> {
         match action {
             DockAction::Pane(event) => self.dock_state.update(event, self.cursor_pos),
             DockAction::Tab(pane, tab_event) => {
@@ -75,10 +75,23 @@ impl DockManager {
                             }
                         }
                     }
-                    TabEvent::Detach(dock_id) => todo!(),
+                    TabEvent::Detach(dock_id) => {
+                        if let Some(group) = pane_state.get_mut(pane) {
+                            group.remove_dock(dock_id);
+                            if group.is_empty() {
+                                pane_state.close(pane);
+                            }
+
+                            let mut new_group = DockGroupData::new();
+                            new_group.add_dock(dock_id);
+                            return self.detach_group(new_group).1.discard();
+                        }
+                    }
                 }
             }
         }
+
+        Task::none()
     }
 
     pub fn on_main_window_cursor_moved(&mut self, pos: Point) -> Task<()> {
