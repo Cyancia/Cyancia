@@ -226,6 +226,9 @@ impl DockManager {
                 info.is_dragging = true;
                 return iced_runtime::window::drag(id);
             }
+            FloatAction::StartResize(dir) => {
+                return iced_runtime::window::drag_resize(id, dir);
+            }
         }
 
         Task::none()
