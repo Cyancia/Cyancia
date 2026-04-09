@@ -100,7 +100,7 @@ pub struct TabRowWidget<'a, Message> {
     group_data: &'a DockGroupData,
     on_action: Box<dyn Fn(TabEvent) -> Message + 'a>,
     on_title_drag: Option<Box<dyn Fn() -> Message + 'a>>,
-    title_of: Box<dyn Fn(DockId) -> String + 'a>,
+    title_of: Box<dyn Fn(&DockId) -> String + 'a>,
 }
 
 impl<'a, Message> TabRowWidget<'a, Message> {
@@ -121,7 +121,7 @@ impl<'a, Message> TabRowWidget<'a, Message> {
         self
     }
 
-    pub fn title_of(mut self, f: impl Fn(DockId) -> String + 'a) -> Self {
+    pub fn title_of(mut self, f: impl Fn(&DockId) -> String + 'a) -> Self {
         self.title_of = Box::new(f);
         self
     }
@@ -199,7 +199,7 @@ where
             None
         };
 
-        for (i, &dock_id) in self.group_data.iter().enumerate() {
+        for (i, dock_id) in self.group_data.iter().enumerate() {
             let x = bounds.x + i as f32 * TAB_WIDTH;
             let tab_rect = Rectangle {
                 x,
@@ -339,8 +339,8 @@ where
                     shell.capture_event();
 
                     if drag_target_index(self.group_data, bounds, *position).is_none() {
-                        let id = self.group_data.iter().nth(index).copied().unwrap();
-                        shell.publish((self.on_action)(TabEvent::Detach(id)));
+                        let id = self.group_data.iter().nth(index).unwrap();
+                        shell.publish((self.on_action)(TabEvent::Detach(id.clone())));
                         state.action = TabAction::Idle;
                     }
                 }
@@ -386,8 +386,8 @@ where
                         is_close: false,
                         ..
                     } => {
-                        if let Some(dock_id) = self.group_data.iter().nth(i).copied() {
-                            shell.publish((self.on_action)(TabEvent::Select(dock_id)));
+                        if let Some(dock_id) = self.group_data.iter().nth(i) {
+                            shell.publish((self.on_action)(TabEvent::Select(dock_id.clone())));
                         }
                         state.action = TabAction::Idle;
                     }
@@ -396,8 +396,8 @@ where
                         is_close: true,
                         ..
                     } => {
-                        if let Some(dock_id) = self.group_data.iter().nth(i).copied() {
-                            shell.publish((self.on_action)(TabEvent::Close(dock_id)));
+                        if let Some(dock_id) = self.group_data.iter().nth(i) {
+                            shell.publish((self.on_action)(TabEvent::Close(dock_id.clone())));
                         }
                         state.action = TabAction::Idle;
                     }

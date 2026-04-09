@@ -1,12 +1,14 @@
+use std::sync::Arc;
+
 use cyancia_utils::wrapper;
 use iced_widget::pane_grid;
 use parse_display::Display;
 use serde::Serialize;
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, Serialize)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, Serialize)]
     #[display("{0}")]
-    pub DockId : &'static str
+    pub DockId : Arc<str>
 }
 
 /// Events the docking system can emit.

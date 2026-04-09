@@ -61,7 +61,7 @@ impl DockManager {
                     }
                     TabEvent::Close(dock_id) => {
                         if let Some(group) = pane_state.get_mut(pane) {
-                            group.remove_dock(dock_id);
+                            group.remove_dock(&dock_id);
                             if group.is_empty() {
                                 pane_state.close(pane);
                             }
@@ -69,7 +69,7 @@ impl DockManager {
                     }
                     TabEvent::Reorder { from, to } => {
                         if let Some(group) = pane_state.get_mut(pane) {
-                            let dock_id = group.iter().nth(from).copied();
+                            let dock_id = group.iter().nth(from).cloned();
                             if let Some(dock_id) = dock_id {
                                 group.reorder(dock_id, to);
                             }
@@ -77,7 +77,7 @@ impl DockManager {
                     }
                     TabEvent::Detach(dock_id) => {
                         if let Some(group) = pane_state.get_mut(pane) {
-                            group.remove_dock(dock_id);
+                            group.remove_dock(&dock_id);
                             if group.is_empty() {
                                 pane_state.close(pane);
                             }
@@ -184,16 +184,16 @@ impl DockManager {
                     info.group.set_active(dock_id);
                 }
                 TabEvent::Close(dock_id) => {
-                    info.group.remove_dock(dock_id);
+                    info.group.remove_dock(&dock_id);
                     if info.group.is_empty() {
                         self.detached.remove(&id);
                         return iced_runtime::window::close(id);
                     }
                 }
                 TabEvent::Reorder { from, to } => {
-                    let dock_id = info.group.iter().nth(from).copied();
+                    let dock_id = info.group.iter().nth(from);
                     if let Some(d) = dock_id {
-                        info.group.reorder(d, to);
+                        info.group.reorder(d.clone(), to);
                     }
                 }
                 TabEvent::Detach(dock_id) => {
@@ -227,7 +227,7 @@ impl DockManager {
             AttachInfo::Merge { pane } => {
                 if let Some(group) = self.dock_state.panes_state_mut().get_mut(pane) {
                     for dock in info.group.iter() {
-                        group.add_dock(*dock);
+                        group.add_dock(dock.clone());
                     }
                 }
             }
@@ -486,7 +486,7 @@ where
             pane_grid::PaneGrid::new(state.panes_state(), move |pane, group_data, _maximized| {
                 let body = group_data
                     .active()
-                    .and_then(|id| content.as_ref().map(|c| c(pane, id)))
+                    .and_then(|id| content.as_ref().map(|c| c(pane, id.clone())))
                     .unwrap_or_else(|| Element::new(space()));
 
                 let a = Rc::clone(&a_content);
@@ -587,7 +587,7 @@ where
 
         let body = group_data
             .active()
-            .and_then(|id| content.map(|c| c(id)))
+            .and_then(|id| content.map(|c| c(id.clone())))
             .unwrap_or_else(|| Element::new(space()));
 
         iced_widget::column![Element::from(tab_row), body,]

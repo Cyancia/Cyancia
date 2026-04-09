@@ -2,7 +2,7 @@ pub mod tab_row;
 
 pub use tab_row::TabRowWidget;
 
-use crate::dock::DockId;
+use crate::dock::{self, DockId};
 use indexmap::IndexSet;
 use serde::Serialize;
 
@@ -35,25 +35,26 @@ impl DockGroupData {
     }
 
     pub fn add_dock(&mut self, dock_id: DockId) {
-        self.docks.insert(dock_id);
+        self.docks.insert(dock_id.clone());
         if self.active.is_none() {
             self.active = Some(dock_id);
         }
     }
 
-    pub fn remove_dock(&mut self, dock_id: DockId) {
-        if self.active == Some(dock_id) {
-            let mut prev = None;
-            for &id in self.docks.iter() {
-                if id == dock_id {
-                    break;
-                }
-                prev = Some(id);
+    pub fn remove_dock(&mut self, dock_id: &DockId) {
+        if self.active.as_ref().is_some_and(|active| active == dock_id) {
+            let (index, _) = self.docks.shift_remove_full(dock_id).unwrap();
+            if self.docks.is_empty() {
+                self.active = None;
+                return;
             }
-            self.docks.shift_remove(&dock_id);
-            self.active = prev.or_else(|| self.docks.first().copied());
+
+            self.active = self
+                .docks
+                .get_index(index.checked_sub(1).unwrap_or_default())
+                .cloned();
         } else {
-            self.docks.shift_remove(&dock_id);
+            self.docks.shift_remove(dock_id);
         }
     }
 
@@ -64,19 +65,11 @@ impl DockGroupData {
     }
 
     pub fn reorder(&mut self, dock_id: DockId, index: usize) {
-        if !self.docks.contains(&dock_id) {
-            return;
-        }
-        let mut vec: Vec<_> = self.docks.iter().copied().collect();
-        if let Some(pos) = vec.iter().position(|&id| id == dock_id) {
-            vec.remove(pos);
-            vec.insert(index.min(vec.len()), dock_id);
-            self.docks = vec.into_iter().collect();
-        }
+        self.docks.shift_insert(index, dock_id);
     }
 
-    pub fn active(&self) -> Option<DockId> {
-        self.active
+    pub fn active(&self) -> Option<&DockId> {
+        self.active.as_ref()
     }
 
     pub fn is_empty(&self) -> bool {

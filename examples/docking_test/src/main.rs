@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use iced::{Element, Subscription, Task};
@@ -8,8 +9,8 @@ use iced_runtime::window as win;
 use iced_widget::pane_grid;
 
 use cyancia_dock::{
-    DockAction, DockGroupData, DockId, DockManager, DockState, DockWidget, FloatAction,
-    FloatingDockWidget, AttachInfo, TabEvent,
+    AttachInfo, DockAction, DockGroupData, DockId, DockManager, DockState, DockWidget, FloatAction,
+    FloatingDockWidget, TabEvent,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ fn app_theme(_: &App, _: WindowId) -> iced::Theme {
 }
 
 fn dock(s: &'static str) -> DockId {
-    DockId::from(s)
+    DockId::new(s.into())
 }
 
 struct App {
