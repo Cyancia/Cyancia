@@ -5,12 +5,12 @@ use std::time::{Duration, Instant};
 use cyancia_dock::dock::{DockAction, DockId, DockWidget, FloatAction, FloatingDockWidget};
 use cyancia_dock::group::DockGroupData;
 use cyancia_dock::state::DockState;
-use cyancia_dock::{AttachOrMergeInfo, DockManager};
+use cyancia_dock::{AttachOrMergeInfo, DockManager, DockMessage};
 use iced::{Element, Subscription, Task};
 use iced_core::window::{self, Id as WindowId, Position};
 use iced_core::{Point, Size};
 use iced_runtime::window as win;
-use iced_widget::pane_grid;
+use iced_widget::{pane_grid, space, text};
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -35,8 +35,7 @@ struct App {
 
 #[derive(Debug, Clone)]
 enum Message {
-    Dock(DockAction),
-    Float { id: WindowId, action: FloatAction },
+    Dock(DockMessage),
     WinEvent(WindowId, window::Event),
     CursorMoved(window::Id, Point),
     CursorReleased,
@@ -64,8 +63,7 @@ impl App {
 
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
-            Message::Dock(dock_action) => self.manager.on_dock_action(dock_action).discard(),
-            Message::Float { id, action } => self.manager.on_float_action(id, action).discard(),
+            Message::Dock(msg) => self.manager.update(msg).discard(),
             Message::WinEvent(id, event) => self.manager.on_window_event(id, event).discard(),
             Message::CursorMoved(window, position) => {
                 self.manager.on_cursor_moved(window, position).discard()
@@ -92,34 +90,9 @@ impl App {
     }
 
     fn view(&self, window_id: WindowId) -> Element<'_, Message> {
-        if window_id == self.manager.main_window().id {
-            let dock_w =
-                DockWidget::new(self.manager.dock_state(), Message::Dock).content(|_pane, id| {
-                    iced::widget::center(iced::widget::text(id.to_string()).size(20)).into()
-                });
-
-            if let Some(AttachOrMergeInfo::Attach(attach)) =
-                self.manager.current_attach_or_merge_info()
-            {
-                dock_w.attach_info(attach).into()
-            } else {
-                dock_w.into()
-            }
-        } else if let Some(info) = self.manager.detached_window(window_id) {
-            FloatingDockWidget::new(&info.group, move |action| Message::Float {
-                id: window_id,
-                action,
-            })
-            .content(|dock_id| {
-                iced::widget::center(iced::widget::text(dock_id.to_string()).size(20)).into()
-            })
-            .is_merging(match self.manager.current_attach_or_merge_info() {
-                Some(AttachOrMergeInfo::Merge { dst }) => dst == window_id,
-                _ => false,
-            })
-            .into()
-        } else {
-            iced::widget::text("").into()
-        }
+        self.manager
+            .view(window_id, |dock_id| text!("{}", dock_id).into())
+            .unwrap_or_else(|| Element::new(space()))
+            .map(Message::Dock)
     }
 }

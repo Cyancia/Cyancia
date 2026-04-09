@@ -19,7 +19,7 @@ use style::{DockCatalog, DockStatus, DockStyle, TabBarStyle, TabStyle};
 
 use iced_widget::{pane_grid, space};
 
-use crate::dock::PaneEvent;
+use crate::dock::{DockWidget, FloatingDockWidget, PaneEvent};
 
 const ATTACH_DWELL: Duration = Duration::from_millis(200);
 const MERGE_DISTANCE: f32 = 30.0;
@@ -456,6 +456,49 @@ impl DockManager {
             Some(AttachOrMergeInfo::Merge { dst: dst_id })
         }
     }
+
+    pub fn view<'a, Theme, Renderer>(
+        &'a self,
+        window_id: window::Id,
+        content: impl Fn(DockId) -> Element<'a, DockMessage, Theme, Renderer> + 'a,
+    ) -> Option<Element<'a, DockMessage, Theme, Renderer>>
+    where
+        Theme: DockCatalog + iced_widget::pane_grid::Catalog + 'a,
+        Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
+    {
+        if window_id == self.main_window.id {
+            let dock_w = DockWidget::new(&self.dock_state, DockMessage::Main)
+                .content(move |_, dock| content(dock));
+
+            if let Some(AttachOrMergeInfo::Attach(attach)) = self.current_attach_or_merge_info() {
+                Some(dock_w.attach_info(attach).into())
+            } else {
+                Some(dock_w.into())
+            }
+        } else if let Some(info) = self.detached_window(window_id) {
+            Some(
+                FloatingDockWidget::new(&info.group, move |action| DockMessage::Float {
+                    id: window_id,
+                    action,
+                })
+                .content(content)
+                .is_merging(match self.current_attach_or_merge_info() {
+                    Some(AttachOrMergeInfo::Merge { dst }) => dst == window_id,
+                    _ => false,
+                })
+                .into(),
+            )
+        } else {
+            None
+        }
+    }
+
+    pub fn update(&mut self, action: DockMessage) -> Task<()> {
+        match action {
+            DockMessage::Main(dock_action) => self.on_dock_action(dock_action).discard(),
+            DockMessage::Float { id, action } => self.on_float_action(id, action).discard(),
+        }
+    }
 }
 
 fn overlaps(pos_a: Point, size_a: Size, pos_b: Point, size_b: Size) -> bool {
@@ -463,6 +506,12 @@ fn overlaps(pos_a: Point, size_a: Size, pos_b: Point, size_b: Size) -> bool {
         && pos_a.x + size_a.width > pos_b.x
         && pos_a.y < pos_b.y + size_b.height
         && pos_a.y + size_a.height > pos_b.y
+}
+
+#[derive(Debug, Clone)]
+pub enum DockMessage {
+    Main(DockAction),
+    Float { id: window::Id, action: FloatAction },
 }
 
 #[derive(Debug, Clone)]
