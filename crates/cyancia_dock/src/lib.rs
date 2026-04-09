@@ -321,7 +321,7 @@ impl DockManager {
             level: window::Level::AlwaysOnTop,
             platform_specific: window::settings::PlatformSpecific {
                 skip_taskbar: true,
-                undecorated_shadow: true,
+                corner_preference: window::settings::platform::CornerPreference::DoNotRound,
                 ..Default::default()
             },
             ..Default::default()
