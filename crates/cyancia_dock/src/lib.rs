@@ -326,12 +326,20 @@ where
 
     pub fn detach(&mut self, pane: pane_grid::Pane) -> Task<()> {
         let Some(group) = self.dock_state.close(pane) else {
+            log::error!(
+                "Failed to detach pane, the pane cannot be found: {:?}",
+                pane
+            );
             return Task::none();
         };
 
         if let Some((_, task)) = self.detach_group(group) {
             task.discard()
         } else {
+            log::error!(
+                "Failed to detach pane, the window cannot be spawned: {:?}",
+                pane
+            );
             Task::none()
         }
     }

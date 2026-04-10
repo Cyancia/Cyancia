@@ -123,8 +123,9 @@ impl WindowView for MainView {
 
             MainViewMessage::KeyboardEvent(window, event) => {
                 if let Some(action) = self.actions_matcher.lock().on_keyboard_event(event)
-                    && let Some(action_func) =
-                        runtime.service_mut::<ActionFunctionRegistry>().get(action.clone())
+                    && let Some(action_func) = runtime
+                        .service_mut::<ActionFunctionRegistry>()
+                        .get(action.clone())
                 {
                     log::info!("Triggering action: {}", action);
                     action_func.trigger(runtime.clone()).discard()
@@ -156,17 +157,11 @@ impl WindowView for MainView {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        iced::event::listen_with(|event, status, window| {
-            if status == iced_core::event::Status::Captured {
-                return None;
-            }
-
-            match event {
-                iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
-                iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
-                iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
-                _ => None,
-            }
+        iced::event::listen_with(|event, status, window| match event {
+            iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
+            iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
+            iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
+            _ => None,
         })
     }
 

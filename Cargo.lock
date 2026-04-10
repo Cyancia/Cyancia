@@ -1365,6 +1365,7 @@ dependencies = [
  "iced_runtime",
  "iced_widget",
  "indexmap",
+ "log",
  "parse-display",
  "serde",
  "thiserror 2.0.18",
