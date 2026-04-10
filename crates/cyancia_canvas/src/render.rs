@@ -518,7 +518,7 @@ impl CanvasPresentPipeline {
                     depth_slice: None,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color::TRANSPARENT),
+                        load: LoadOp::Load,
                         store: StoreOp::Store,
                     },
                 })],
