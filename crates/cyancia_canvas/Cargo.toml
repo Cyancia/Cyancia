@@ -24,6 +24,9 @@ serde.workspace = true
 bevy_math.workspace = true
 cyancia_tools.workspace = true
 cyancia_input.workspace = true
+cyancia_dock.workspace = true
+iced_runtime.workspace = true
+parse-display.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

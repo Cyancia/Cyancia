@@ -408,12 +408,24 @@ where
         self.detached.get(&id)
     }
 
+    pub fn window_infos(&self) -> impl Iterator<Item = &GroupWindowInfo> {
+        std::iter::once(&self.main_window).chain(self.detached.values())
+    }
+
     pub fn window_info(&self, id: window::Id) -> Option<&GroupWindowInfo> {
         if id == self.main_window.id {
             Some(&self.main_window)
         } else {
             self.detached.get(&id)
         }
+    }
+
+    pub fn close(self) -> Task<()> {
+        let mut task = Task::none();
+        for id in self.detached.keys() {
+            task = task.chain(iced_runtime::window::close(*id));
+        }
+        task.chain(iced_runtime::window::close(self.main_window.id))
     }
 
     pub fn dock_state(&self) -> &DockState {

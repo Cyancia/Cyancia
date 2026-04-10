@@ -17,7 +17,7 @@ use parking_lot::RwLock;
 use crate::{
     plugin::Plugin,
     service::{FromRuntime, RenderContext, Service, ServiceMut, ServiceRef},
-    windows::{ErasedWindowMessage, WindowCommandBuffer, WindowViewId, WindowViewManager},
+    windows::{ErasedWindowViewMessage, WindowCommandBuffer, WindowManagerMessage, WindowViewId, WindowViewManager},
 };
 
 pub mod plugin;
@@ -123,11 +123,8 @@ impl Program for Application {
 
     fn boot(&self) -> (Self::State, Task<Self::Message>) {
         let mut rt = std::mem::take::<Runtime>(&mut self.runtime.borrow_mut());
-        let Some(root_view) = rt.window_manager().root_view() else {
-            panic!("Root view needs to be set.")
-        };
 
-        let window_task = rt.wm.open_window_view(root_view);
+        let window_task = rt.wm.boot(rt.services.clone());
         let deadlock_detect_task = Task::future(async {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -154,7 +151,6 @@ impl Program for Application {
                 .wm
                 .update(m, state.services.clone())
                 .map(ApplicationMessage::Window),
-            ApplicationMessage::RequestWindowClose(id) => state.wm.close_window(id).discard(),
         };
 
         task = task.chain(
@@ -212,15 +208,8 @@ impl Program for Application {
 
     fn subscription(&self, state: &Self::State) -> Subscription<Self::Message> {
         let windows = state.wm.subscription().map(ApplicationMessage::Window);
-        let closed = iced_futures::event::listen_with(|e, _, window| {
-            if let iced_core::Event::Window(window::Event::CloseRequested) = e {
-                Some(ApplicationMessage::RequestWindowClose(window))
-            } else {
-                None
-            }
-        });
 
-        Subscription::batch([windows, closed])
+        windows
     }
 
     fn compositor_context(&self, state: &Self::State) -> Option<WgpuContext> {
@@ -270,8 +259,7 @@ impl Runtime {
 }
 
 pub enum ApplicationMessage {
-    Window(ErasedWindowMessage),
-    RequestWindowClose(window::Id),
+    Window(WindowManagerMessage),
 }
 
 #[derive(Default)]

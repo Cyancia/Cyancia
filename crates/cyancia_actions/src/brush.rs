@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cyancia_input::action::{Action, ActionId};
 use cyancia_runtime::{
     Services,
-    windows::{OpenWindowCommand, WindowCommandBuffer, WindowViewId},
+    windows::{OpenWindowViewCommand, WindowCommandBuffer, WindowViewId},
 };
 use iced_runtime::Task;
 
@@ -20,7 +20,7 @@ impl ActionFunction for OpenBrushEditorAction {
     fn trigger(&self, services: Arc<Services>) -> Task<()> {
         services
             .service_mut::<WindowCommandBuffer>()
-            .push(OpenWindowCommand::new(WindowViewId::new("brush_editor")));
+            .push(OpenWindowViewCommand::new(WindowViewId::new("brush_editor")));
         Task::none()
     }
 }

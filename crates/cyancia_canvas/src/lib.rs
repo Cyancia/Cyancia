@@ -5,6 +5,7 @@ use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::S
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_utils::wrapper;
 use parking_lot::RwLock;
+use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -21,7 +22,8 @@ pub mod tools;
 pub mod widget;
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+    #[display("{0}")]
     pub CanvasId : Uuid
 }
 
@@ -57,6 +59,10 @@ impl CanvasManager {
     pub fn add_canvas(&mut self, canvas: CCanvas) {
         self.current_canvas = Some(self.canvases.len());
         self.canvases.push(Arc::new(canvas));
+    }
+
+    pub fn get(&self, id: &CanvasId) -> Option<Arc<CCanvas>> {
+        self.canvases.iter().find(|c| c.id == *id).cloned()
     }
 
     pub fn current(&self) -> Option<Arc<CCanvas>> {

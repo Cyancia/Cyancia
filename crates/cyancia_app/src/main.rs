@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::main_view::MainView;
 
+mod dock;
 mod main_view;
 
 use cyancia_actions::ActionPlugin;
@@ -18,7 +19,7 @@ use cyancia_render::RenderPlugin;
 use cyancia_runtime::{
     Application, Runtime, Services,
     service::{FromRuntime, RenderContext},
-    windows::{WindowCommandBuffer, WindowViewManager, WindowView},
+    windows::{WindowCommandBuffer, WindowView, WindowViewManager},
 };
 use cyancia_shader_graph::ShaderGraphPlugin;
 use cyancia_tools::ToolsPlugin;
@@ -73,11 +74,9 @@ fn main() {
     {
         let mut rt = app.runtime_mut();
 
-        let main_view = MainView::new(rt.services().clone());
-        let brush_editor_view = BrushEditorView::from_runtime(rt.services());
-        rt.window_manager_mut().set_root_view(main_view.id());
-        rt.window_manager_mut().register_view(main_view);
-        rt.window_manager_mut().register_view(brush_editor_view);
+        rt.window_manager_mut().set_root_view::<MainView>();
+        rt.window_manager_mut().register_view::<MainView>();
+        rt.window_manager_mut().register_view::<BrushEditorView>();
     }
 
     app.run().unwrap();
