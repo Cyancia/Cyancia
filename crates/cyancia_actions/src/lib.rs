@@ -19,7 +19,7 @@ use crate::{
 pub mod brush;
 pub mod canvas_control;
 pub mod file;
-pub mod input_manager;
+pub mod actions_matcher;
 
 pub struct ActionPlugin;
 

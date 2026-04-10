@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use cyancia_actions::input_manager::InputManager;
+use cyancia_actions::actions_matcher::ActionsMatcher;
 use cyancia_assets::{
     asset::{AssetHandle, AssetId},
     bundle::BundleId,
@@ -80,7 +80,7 @@ const FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock:
 pub struct BrushEditorView {
     main_window: window::Id,
 
-    input_manager: InputManager,
+    input_manager: ActionsMatcher,
     texture_storage: Arc<GraphTextureStorage>,
     function_storage: Arc<GraphFunctionStorage>,
 
@@ -252,7 +252,7 @@ impl WindowView for BrushEditorView {
         (
             Self {
                 main_window,
-                input_manager: InputManager::new(actions),
+                input_manager: ActionsMatcher::new(actions),
 
                 selected: None,
                 texture_storage,
@@ -542,10 +542,10 @@ impl WindowView for BrushEditorView {
                     _ => {}
                 }
 
-                return self
-                    .input_manager
-                    .on_keyboard_event(event, runtime)
-                    .discard();
+                // return self
+                //     .input_manager
+                //     .on_keyboard_event(event, runtime)
+                //     .discard();
             }
             BrushEditorMessage::MouseEvent(event) => {
                 // self.input_manager.on_mouse_event(event, &runtime);

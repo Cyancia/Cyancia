@@ -21,13 +21,15 @@ use crate::{
     render::{CanvasPrimitive, CanvasRenderer},
 };
 
-pub struct CanvasWidget {
+pub struct CanvasWidget<Message> {
     pub canvas: Arc<CCanvas>,
     pub renderer: Arc<Mutex<CanvasRenderer>>,
     pub tile_storage: GpuTileStorage,
+    pub on_mouse_event: Box<dyn Fn(mouse::Event) -> Message>,
+    pub on_keyboard_event: Box<dyn Fn(keyboard::Event) -> Message>,
 }
 
-impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidget {
+impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidget<Message> {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fill, Length::Fill)
     }
@@ -54,6 +56,18 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
     ) {
         self.canvas.transform.write().widget_size =
             Vec2::new(layout.bounds().width, layout.bounds().height);
+
+        match event {
+            Event::Keyboard(event) => {
+                shell.publish((self.on_keyboard_event)(event.clone()));
+                shell.capture_event();
+            }
+            Event::Mouse(event) => {
+                shell.publish((self.on_mouse_event)(event.clone()));
+                shell.capture_event();
+            }
+            _ => {}
+        }
     }
 
     fn draw(
@@ -77,8 +91,12 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
     }
 }
 
-impl<'a, Message, Theme> From<CanvasWidget> for Element<'a, Message, Theme, iced_wgpu::Renderer> {
-    fn from(canvas: CanvasWidget) -> Self {
+impl<'a, Message, Theme> From<CanvasWidget<Message>>
+    for Element<'a, Message, Theme, iced_wgpu::Renderer>
+where
+    Message: 'a,
+{
+    fn from(canvas: CanvasWidget<Message>) -> Self {
         Element::new(canvas)
     }
 }

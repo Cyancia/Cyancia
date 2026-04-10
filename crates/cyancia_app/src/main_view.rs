@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use cyancia_actions::input_manager::InputManager;
+use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
     render::{CanvasRenderer, CanvasRenderers},
@@ -30,13 +30,14 @@ use iced::{
     mouse, window,
 };
 use iced_wgpu::Renderer;
+use parking_lot::Mutex;
 use uuid::Uuid;
 
 use crate::dock::CanvasDock;
 
 pub struct MainView {
     dock_manager: DockManager<Theme, Renderer>,
-    input_manager: InputManager,
+    actions_matcher: Arc<Mutex<ActionsMatcher>>,
 }
 
 pub enum MainViewMessage {
@@ -57,7 +58,7 @@ impl WindowView for MainView {
         let actions = runtime
             .service::<ActionManifestCollection>()
             .subset_for_view("main_view");
-        let input_manager = InputManager::new(actions);
+        let actions_matcher = Arc::new(Mutex::new(ActionsMatcher::new(actions)));
 
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
@@ -78,7 +79,7 @@ impl WindowView for MainView {
 
         let (main_window, task) = window::open(Default::default());
         let mut dock_manager = DockManager::new(main_window);
-        let canvas_dock = CanvasDock::new(canvas.id, runtime.clone());
+        let canvas_dock = CanvasDock::new(canvas.id, runtime.clone(), actions_matcher.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         dock_manager.register_dock(canvas_dock);
         dock_manager.open_dock(canvas_dock_id);
@@ -95,7 +96,7 @@ impl WindowView for MainView {
         (
             Self {
                 dock_manager,
-                input_manager,
+                actions_matcher,
             },
             task.discard(),
         )
@@ -120,13 +121,18 @@ impl WindowView for MainView {
                 self.dock_manager.on_window_event(id, event).discard()
             }
 
-            MainViewMessage::KeyboardEvent(window, event) => self
-                .input_manager
-                .on_keyboard_event(event, runtime.clone())
-                .discard(),
+            MainViewMessage::KeyboardEvent(window, event) => {
+                if let Some(action) = self.actions_matcher.lock().on_keyboard_event(event)
+                    && let Some(action_func) =
+                        runtime.service_mut::<ActionFunctionRegistry>().get(action.clone())
+                {
+                    log::info!("Triggering action: {}", action);
+                    action_func.trigger(runtime.clone()).discard()
+                } else {
+                    Task::none()
+                }
+            }
             MainViewMessage::MouseEvent(window, event) => {
-                self.input_manager.on_mouse_event(event, &runtime);
-
                 match event {
                     mouse::Event::CursorMoved { position } => {
                         return self
@@ -150,11 +156,17 @@ impl WindowView for MainView {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        iced::event::listen_with(|event, _status, window| match event {
-            iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
-            iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
-            iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
-            _ => None,
+        iced::event::listen_with(|event, status, window| {
+            if status == iced_core::event::Status::Captured {
+                return None;
+            }
+
+            match event {
+                iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
+                iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
+                iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
+                _ => None,
+            }
         })
     }
 
