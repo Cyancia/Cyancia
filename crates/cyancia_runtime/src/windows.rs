@@ -325,6 +325,11 @@ where
         view_id: WindowViewId,
         runtime: Arc<Services>,
     ) -> Task<WindowViewManagerMessage> {
+        if self.opened_views.contains_key(&view_id) {
+            log::warn!("Window view already opened: {}", view_id.0);
+            return Task::none();
+        }
+
         let Some(boot) = self.registered_views.get(&view_id) else {
             log::error!(
                 "Unable to open a window view that is not registered: {}",
