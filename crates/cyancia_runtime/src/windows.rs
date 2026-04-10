@@ -2,6 +2,7 @@ use std::{
     any::Any,
     collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
     hash::Hash,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -9,7 +10,12 @@ use std::{
 };
 
 use cyancia_utils::{Deref, DerefMut, wrapper};
+use futures::{SinkExt, StreamExt, channel::mpsc};
 use iced_core::{Element, Theme, window};
+use iced_futures::{
+    MaybeSend,
+    subscription::{Recipe, Tracker},
+};
 use iced_runtime::{Task, futures::Subscription};
 use parking_lot::Mutex;
 
@@ -38,9 +44,7 @@ pub trait WindowView: Send + Sync + 'static + Sized {
         runtime: Arc<Services>,
     ) -> impl Into<Task<Self::Message>>;
     fn close(self, runtime: Arc<Services>) -> Task<()>;
-    // TODO: Iced subscriptions are global, and we need the implementation to provide the window id.
-    //       Is it possible to distinguish between windows without the id?
-    fn subscription(&self) -> Subscription<(window::Id, Self::Message)> {
+    fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::none()
     }
     fn windows(&self) -> Vec<window::Id>;
@@ -59,7 +63,7 @@ pub trait ErasedWindowView: Send + Sync + 'static {
         runtime: Arc<Services>,
     ) -> Task<Box<dyn Any + Send + Sync>>;
     fn close(self: Box<Self>, runtime: Arc<Services>) -> Task<()>;
-    fn subscription(&self) -> Subscription<(window::Id, Box<dyn Any + Send + Sync>)>;
+    fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>>;
     fn windows(&self) -> Vec<window::Id>;
 }
 
@@ -98,9 +102,8 @@ where
         <T as WindowView>::close(*self, runtime)
     }
 
-    fn subscription(&self) -> Subscription<(window::Id, Box<dyn Any + Send + Sync>)> {
-        <T as WindowView>::subscription(self)
-            .map(|msg| (msg.0, Box::new(msg.1) as Box<dyn Any + Send + Sync>))
+    fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>> {
+        <T as WindowView>::subscription(self).map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
     fn windows(&self) -> Vec<window::Id> {
@@ -114,16 +117,9 @@ pub struct ErasedWindowViewMessage {
     message: Box<dyn Any + Send + Sync>,
 }
 
-#[derive(Debug)]
-pub struct ErasedSubscriptionWindowMessage {
-    view: WindowViewId,
-    window: window::Id,
-    message: Box<dyn Any + Send + Sync>,
-}
-
-pub enum WindowManagerMessage {
+pub enum WindowViewManagerMessage {
     ViewUpdate(ErasedWindowViewMessage),
-    Subscription(ErasedSubscriptionWindowMessage),
+    Event(iced_futures::subscription::Event),
 }
 
 type WindowViewBootFn = Box<
@@ -133,13 +129,44 @@ type WindowViewBootFn = Box<
         + 'static,
 >;
 
-#[derive(Default)]
+struct OpenedView {
+    windows: Vec<window::Id>,
+    state: Box<dyn ErasedWindowView>,
+    tracker: Tracker,
+}
+
+impl OpenedView {
+    fn new(state: Box<dyn ErasedWindowView>) -> Self {
+        Self {
+            windows: Vec::new(),
+            state,
+            tracker: Tracker::new(),
+        }
+    }
+}
+
 pub struct WindowViewManager {
-    view_windows: HashMap<WindowViewId, Vec<window::Id>>,
-    windows: HashMap<window::Id, WindowViewId>,
+    window_to_view: HashMap<window::Id, WindowViewId>,
     registered_views: HashMap<WindowViewId, WindowViewBootFn>,
-    opened_views: HashMap<WindowViewId, Box<dyn ErasedWindowView>>,
+    opened_views: HashMap<WindowViewId, OpenedView>,
     root_view: Option<WindowViewId>,
+
+    event_sender: mpsc::Sender<ErasedWindowViewMessage>,
+    event_receiver: Arc<Mutex<Option<mpsc::Receiver<ErasedWindowViewMessage>>>>,
+}
+
+impl Default for WindowViewManager {
+    fn default() -> Self {
+        let (event_sender, event_receiver) = mpsc::channel(100);
+        Self {
+            window_to_view: HashMap::new(),
+            registered_views: HashMap::new(),
+            opened_views: HashMap::new(),
+            root_view: None,
+            event_sender,
+            event_receiver: Arc::new(Mutex::new(Some(event_receiver))),
+        }
+    }
 }
 
 impl Service for WindowViewManager {}
@@ -172,7 +199,7 @@ where
         self.root_view
     }
 
-    pub fn boot(&mut self, runtime: Arc<Services>) -> Task<WindowManagerMessage> {
+    pub fn boot(&mut self, runtime: Arc<Services>) -> Task<WindowViewManagerMessage> {
         self.open_window_view(self.root_view.expect("No root view specified."), runtime)
     }
 
@@ -180,11 +207,18 @@ where
         &'a self,
         id: window::Id,
         runtime: Arc<Services>,
-    ) -> Option<Element<'a, WindowManagerMessage, Theme, iced_wgpu::Renderer>> {
-        let window = self.windows.get(&id).cloned()?;
-        let view = self.opened_views.get(&window)?;
-        Some(view.view(id, runtime).map(move |msg| {
-            WindowManagerMessage::ViewUpdate(ErasedWindowViewMessage {
+    ) -> Option<Element<'a, WindowViewManagerMessage, Theme, iced_wgpu::Renderer>> {
+        let Some(window) = self.window_to_view.get(&id).cloned() else {
+            log::error!(
+                "Unable to view a window that doesn't have corresponding view: {}",
+                id
+            );
+            return None;
+        };
+
+        let view = self.opened_views.get(&window).unwrap();
+        Some(view.state.view(id, runtime).map(move |msg| {
+            WindowViewManagerMessage::ViewUpdate(ErasedWindowViewMessage {
                 view: window,
                 message: msg,
             })
@@ -193,71 +227,104 @@ where
 
     pub fn update(
         &mut self,
-        message: WindowManagerMessage,
+        message: WindowViewManagerMessage,
         runtime: Arc<Services>,
-    ) -> Task<WindowManagerMessage> {
+    ) -> Task<WindowViewManagerMessage> {
         match message {
-            WindowManagerMessage::ViewUpdate(message) => {
+            WindowViewManagerMessage::ViewUpdate(message) => 'a: {
                 let Some(view) = self.opened_views.get_mut(&message.view) else {
-                    return Task::none();
+                    break 'a Task::none();
                 };
 
-                let task = view.update(message.message, runtime).map(move |msg| {
-                    WindowManagerMessage::ViewUpdate(ErasedWindowViewMessage {
+                let task = view.state.update(message.message, runtime).map(move |msg| {
+                    WindowViewManagerMessage::ViewUpdate(ErasedWindowViewMessage {
                         view: message.view,
                         message: msg,
                     })
                 });
 
-                let windows = view.windows();
-                self.update_view_windows(message.view, windows);
+                update_view_windows(message.view, view, &mut self.window_to_view);
+                let update_subs =
+                    update_subscriptions(message.view, view, self.event_sender.clone());
 
-                task
+                Task::batch([task, update_subs])
             }
-            WindowManagerMessage::Subscription(message) => {
-                if self.windows.get(&message.window) != Some(&message.view) {
-                    return Task::none();
+            WindowViewManagerMessage::Event(event) => {
+                let mut tasks = Vec::new();
+                for (view_id, view) in &mut self.opened_views {
+                    view.tracker.broadcast(event.clone());
+
+                    tasks.push(update_subscriptions(
+                        *view_id,
+                        view,
+                        self.event_sender.clone(),
+                    ));
                 }
 
-                let Some(view) = self.opened_views.get_mut(&message.view) else {
-                    return Task::none();
-                };
-
-                let task = view.update(message.message, runtime).map(move |msg| {
-                    WindowManagerMessage::ViewUpdate(ErasedWindowViewMessage {
-                        view: message.view,
-                        message: msg,
-                    })
-                });
-
-                task
+                Task::batch(tasks)
             }
         }
     }
 
-    pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
-        let subscriptions = self.opened_views.iter().map(|(id, view)| {
-            view.subscription()
-                .with(*id)
-                .filter_map(|(view, (window, message))| {
-                    Some(WindowManagerMessage::Subscription(
-                        ErasedSubscriptionWindowMessage {
-                            view,
-                            window,
-                            message,
-                        },
-                    ))
-                })
-        });
+    pub fn subscription(&self) -> Subscription<WindowViewManagerMessage> {
+        #[derive(Hash, PartialEq, Eq)]
+        struct ForwardAll;
 
-        Subscription::batch(subscriptions)
+        impl Recipe for ForwardAll {
+            type Output = WindowViewManagerMessage;
+
+            fn hash(&self, state: &mut iced_futures::subscription::Hasher) {
+                <Self as Hash>::hash(self, state);
+            }
+
+            fn stream(
+                self: Box<Self>,
+                input: iced_futures::subscription::EventStream,
+            ) -> iced_futures::BoxStream<Self::Output> {
+                iced_futures::boxed_stream(input.map(WindowViewManagerMessage::Event))
+            }
+        }
+
+        struct ViewUpdateReceiverRecipe {
+            receiver: Arc<Mutex<Option<mpsc::Receiver<ErasedWindowViewMessage>>>>,
+        }
+
+        impl Recipe for ViewUpdateReceiverRecipe {
+            type Output = WindowViewManagerMessage;
+
+            fn hash(&self, state: &mut iced_futures::subscription::Hasher) {
+                use std::hash::Hash;
+                std::any::TypeId::of::<Self>().hash(state);
+            }
+
+            fn stream(
+                self: Box<Self>,
+                _input: iced_futures::subscription::EventStream,
+            ) -> iced_futures::BoxStream<Self::Output> {
+                // TODO: This actually works, since the hash of this recipe never changes.
+                //       But this looks ugly.
+                let receiver = self
+                    .receiver
+                    .lock()
+                    .take()
+                    .expect("ViewUpdateReceiverRecipe::stream called twice");
+                iced_futures::boxed_stream(receiver.map(WindowViewManagerMessage::ViewUpdate))
+            }
+        }
+
+        Subscription::batch([
+            iced_futures::subscription::from_recipe(ForwardAll),
+            iced_futures::subscription::from_recipe(ViewUpdateReceiverRecipe {
+                receiver: Arc::clone(&self.event_receiver),
+            }),
+        ])
     }
 
     pub fn open_window_view(
         &mut self,
         view_id: WindowViewId,
         runtime: Arc<Services>,
-    ) -> Task<WindowManagerMessage> {
+    ) -> Task<WindowViewManagerMessage> {
         let Some(boot) = self.registered_views.get(&view_id) else {
             log::error!(
                 "Unable to open a window view that is not registered: {}",
@@ -266,10 +333,12 @@ where
             return Task::none();
         };
 
-        let (view, task) = boot(runtime);
-        self.update_view_windows(view_id, view.windows());
+        let (view_state, task) = boot(runtime);
+        let mut view = OpenedView::new(view_state);
+        update_view_windows(view_id, &mut view, &mut self.window_to_view);
         self.opened_views.insert(view_id, view);
-        task.map(WindowManagerMessage::ViewUpdate)
+
+        task.map(WindowViewManagerMessage::ViewUpdate)
     }
 
     pub fn close_window_view(&mut self, view_id: WindowViewId, runtime: Arc<Services>) -> Task<()> {
@@ -277,32 +346,48 @@ where
             return Task::none();
         };
 
-        view.close(runtime)
+        view.state.close(runtime)
+    }
+}
+
+fn update_view_windows(
+    view_id: WindowViewId,
+    view: &mut OpenedView,
+    window_to_view: &mut HashMap<window::Id, WindowViewId>,
+) {
+    let new_windows = view.state.windows();
+    if view.windows == new_windows {
+        return;
     }
 
-    fn update_view_windows(&mut self, view_id: WindowViewId, windows: Vec<window::Id>) {
-        match self.view_windows.entry(view_id) {
-            Entry::Occupied(mut e) => 'a: {
-                if e.get() == &windows {
-                    break 'a;
-                }
-
-                for window in e.get() {
-                    self.windows.remove(window);
-                }
-                for window in &windows {
-                    self.windows.insert(*window, view_id);
-                }
-
-                e.insert(windows);
-            }
-            Entry::Vacant(e) => {
-                self.windows
-                    .extend(windows.iter().map(|window| (*window, view_id)));
-                e.insert(windows);
-            }
-        }
+    for window in &view.windows {
+        window_to_view.remove(window);
     }
+    view.windows = new_windows;
+    for window in &view.windows {
+        window_to_view.insert(*window, view_id);
+    }
+}
+
+fn update_subscriptions<T: MaybeSend + 'static>(
+    view_id: WindowViewId,
+    view: &mut OpenedView,
+    sender: mpsc::Sender<ErasedWindowViewMessage>,
+) -> Task<T> {
+    let subs = iced_futures::subscription::into_recipes(
+        view.state
+            .subscription()
+            .with(view_id)
+            .map(|(view, message)| ErasedWindowViewMessage { view, message }),
+    );
+
+    Task::batch(
+        view.tracker
+            .update(subs.into_iter(), sender)
+            .into_iter()
+            .map(Task::future),
+    )
+    .discard()
 }
 
 pub trait WindowCommand: Send + Sync + 'static {
@@ -310,7 +395,7 @@ pub trait WindowCommand: Send + Sync + 'static {
         self: Box<Self>,
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
-    ) -> Option<Task<WindowManagerMessage>>;
+    ) -> Option<Task<WindowViewManagerMessage>>;
 }
 
 #[derive(Default)]
@@ -329,7 +414,7 @@ impl WindowCommandBuffer {
         &mut self,
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
-    ) -> Task<WindowManagerMessage> {
+    ) -> Task<WindowViewManagerMessage> {
         let mut tasks = Vec::new();
         for command in self.commands.drain(..) {
             if let Some(task) = command.execute(wm, runtime.clone()) {
@@ -349,7 +434,7 @@ impl WindowCommand for OpenWindowViewCommand {
         self: Box<Self>,
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
-    ) -> Option<Task<WindowManagerMessage>> {
+    ) -> Option<Task<WindowViewManagerMessage>> {
         Some(wm.open_window_view(self.view_id, runtime))
     }
 }
@@ -369,7 +454,7 @@ impl WindowCommand for CloseWindowViewCommand {
         self: Box<Self>,
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
-    ) -> Option<Task<WindowManagerMessage>> {
+    ) -> Option<Task<WindowViewManagerMessage>> {
         Some(wm.close_window_view(self.view_id, runtime).discard())
     }
 }
@@ -389,7 +474,7 @@ impl WindowCommand for ToggleWindowViewCommand {
         self: Box<Self>,
         wm: &mut WindowViewManager,
         runtime: Arc<Services>,
-    ) -> Option<Task<WindowManagerMessage>> {
+    ) -> Option<Task<WindowViewManagerMessage>> {
         if wm.opened_views.contains_key(&self.view_id) {
             Some(wm.close_window_view(self.view_id, runtime).discard())
         } else {
@@ -420,8 +505,8 @@ impl WindowCommand for SubWindowOpenedCommand {
         self: Box<Self>,
         wm: &mut WindowViewManager,
         _runtime: Arc<Services>,
-    ) -> Option<Task<WindowManagerMessage>> {
-        wm.windows.insert(self.window, self.view_id);
+    ) -> Option<Task<WindowViewManagerMessage>> {
+        wm.window_to_view.insert(self.window, self.view_id);
         None
     }
 }

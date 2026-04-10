@@ -11,15 +11,13 @@ use iced_runtime::Task;
 
 pub struct CanvasDock {
     canvas: CanvasId,
-    input_manager: InputManager,
     runtime: Arc<Services>,
 }
 
 impl CanvasDock {
-    pub fn new(canvas: CanvasId, actions: ActionCollection, runtime: Arc<Services>) -> Self {
+    pub fn new(canvas: CanvasId, runtime: Arc<Services>) -> Self {
         Self {
             canvas,
-            input_manager: InputManager::new(actions),
             runtime,
         }
     }
@@ -56,17 +54,6 @@ where
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
-        match message {
-            CanvasDockMessage::KeyboardEvent(event) => {
-                return self
-                    .input_manager
-                    .on_keyboard_event(event, self.runtime.clone())
-                    .discard();
-            }
-            CanvasDockMessage::MouseEvent(event) => {
-                self.input_manager.on_mouse_event(event, &self.runtime);
-            }
-        }
 
         Task::none()
     }

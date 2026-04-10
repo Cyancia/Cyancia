@@ -17,7 +17,7 @@ use parking_lot::RwLock;
 use crate::{
     plugin::Plugin,
     service::{FromRuntime, RenderContext, Service, ServiceMut, ServiceRef},
-    windows::{ErasedWindowViewMessage, WindowCommandBuffer, WindowManagerMessage, WindowViewId, WindowViewManager},
+    windows::{ErasedWindowViewMessage, WindowCommandBuffer, WindowViewManagerMessage, WindowViewId, WindowViewManager},
 };
 
 pub mod plugin;
@@ -259,7 +259,7 @@ impl Runtime {
 }
 
 pub enum ApplicationMessage {
-    Window(WindowManagerMessage),
+    Window(WindowViewManagerMessage),
 }
 
 #[derive(Default)]

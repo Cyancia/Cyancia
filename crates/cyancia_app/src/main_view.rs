@@ -32,14 +32,15 @@ use uuid::Uuid;
 use crate::dock::CanvasDock;
 
 pub struct MainView {
-    pub dock_manager: DockManager<Theme, Renderer>,
+    dock_manager: DockManager<Theme, Renderer>,
+    input_manager: InputManager,
 }
 
 pub enum MainViewMessage {
     Dock(DockMessage),
     WindowEvent(window::Id, window::Event),
-    CursorMoved(window::Id, Point),
-    CursorReleased,
+    KeyboardEvent(window::Id, keyboard::Event),
+    MouseEvent(window::Id, mouse::Event),
 }
 
 impl WindowView for MainView {
@@ -53,6 +54,7 @@ impl WindowView for MainView {
         let actions = runtime
             .service::<ActionManifestCollection>()
             .subset_for_view("main_view");
+        let input_manager = InputManager::new(actions);
 
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
@@ -73,14 +75,20 @@ impl WindowView for MainView {
 
         let (main_window, task) = window::open(Default::default());
         let mut dock_manager = DockManager::new(main_window);
-        let canvas_dock = CanvasDock::new(canvas.id, actions, runtime.clone());
+        let canvas_dock = CanvasDock::new(canvas.id, runtime.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         dock_manager.register_dock(canvas_dock);
         dock_manager.open_dock(canvas_dock_id);
 
         runtime.service_mut::<CanvasManager>().add_canvas(canvas);
 
-        (Self { dock_manager }, task.discard())
+        (
+            Self {
+                dock_manager,
+                input_manager,
+            },
+            task.discard(),
+        )
     }
 
     fn view<'a>(
@@ -101,12 +109,28 @@ impl WindowView for MainView {
             MainViewMessage::WindowEvent(id, event) => {
                 self.dock_manager.on_window_event(id, event).discard()
             }
-            MainViewMessage::CursorMoved(window, position) => self
-                .dock_manager
-                .on_cursor_moved(window, position)
+
+            MainViewMessage::KeyboardEvent(window, event) => self
+                .input_manager
+                .on_keyboard_event(event, runtime.clone())
                 .discard(),
-            MainViewMessage::CursorReleased => {
-                self.dock_manager.on_float_window_drag_end().discard()
+            MainViewMessage::MouseEvent(window, event) => {
+                self.input_manager.on_mouse_event(event, &runtime);
+
+                match event {
+                    mouse::Event::CursorMoved { position } => {
+                        return self
+                            .dock_manager
+                            .on_cursor_moved(window, position)
+                            .discard();
+                    }
+                    mouse::Event::ButtonReleased(mouse::Button::Left) => {
+                        return self.dock_manager.on_float_window_drag_end().discard();
+                    }
+                    _ => {}
+                }
+
+                Task::none()
             }
         }
     }
@@ -115,18 +139,11 @@ impl WindowView for MainView {
         iced::exit()
     }
 
-    fn subscription(&self) -> Subscription<(window::Id, Self::Message)> {
+    fn subscription(&self) -> Subscription<Self::Message> {
         iced::event::listen_with(|event, _status, window| match event {
-            iced::Event::Window(e) => Some((window, MainViewMessage::WindowEvent(window, e))),
-            iced::Event::Mouse(e) => match e {
-                iced::mouse::Event::CursorMoved { position } => {
-                    Some((window, MainViewMessage::CursorMoved(window, position)))
-                }
-                iced::mouse::Event::ButtonReleased(_) => {
-                    Some((window, MainViewMessage::CursorReleased))
-                }
-                _ => None,
-            },
+            iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
+            iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
+            iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
             _ => None,
         })
     }

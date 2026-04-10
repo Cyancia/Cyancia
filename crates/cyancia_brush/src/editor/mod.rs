@@ -757,12 +757,10 @@ impl WindowView for BrushEditorView {
         Task::none()
     }
 
-    fn subscription(&self) -> Subscription<(window::Id, Self::Message)> {
-        iced_futures::event::listen_with(|event, _, window| match event {
-            iced_core::Event::Keyboard(event) => {
-                Some((window, BrushEditorMessage::KeyboardEvent(event)))
-            }
-            iced_core::Event::Mouse(event) => Some((window, BrushEditorMessage::MouseEvent(event))),
+    fn subscription(&self) -> Subscription<Self::Message> {
+        iced_futures::event::listen_with(|event, _, _| match event {
+            iced_core::Event::Keyboard(event) => Some(BrushEditorMessage::KeyboardEvent(event)),
+            iced_core::Event::Mouse(event) => Some(BrushEditorMessage::MouseEvent(event)),
             _ => None,
         })
     }
