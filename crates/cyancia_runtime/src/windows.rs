@@ -48,6 +48,9 @@ pub trait WindowView: Send + Sync + 'static + Sized {
         Subscription::none()
     }
     fn windows(&self) -> Vec<window::Id>;
+    fn root_window(&self) -> Option<window::Id> {
+        None
+    }
 }
 
 pub trait ErasedWindowView: Send + Sync + 'static {
@@ -65,6 +68,7 @@ pub trait ErasedWindowView: Send + Sync + 'static {
     fn close(self: Box<Self>, runtime: Arc<Services>) -> Task<()>;
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>>;
     fn windows(&self) -> Vec<window::Id>;
+    fn root_window(&self) -> Option<window::Id>;
 }
 
 impl<T> ErasedWindowView for T
@@ -108,6 +112,10 @@ where
 
     fn windows(&self) -> Vec<window::Id> {
         <T as WindowView>::windows(self)
+    }
+
+    fn root_window(&self) -> Option<window::Id> {
+        <T as WindowView>::root_window(self)
     }
 }
 
@@ -352,6 +360,27 @@ where
         };
 
         view.state.close(runtime)
+    }
+
+    pub fn on_window_closed(&mut self, window: window::Id, runtime: Arc<Services>) -> Task<()> {
+        let Some(view_id) = self.window_to_view.remove(&window) else {
+            return Task::none();
+        };
+
+        if let Some(view) = self.opened_views.get_mut(&view_id) {
+            view.windows = view.state.windows();
+
+            if view.state.root_window() == Some(window) {
+                for window in &view.windows {
+                    self.window_to_view.remove(window);
+                }
+
+                let view = self.opened_views.remove(&view_id).unwrap();
+                return view.state.close(runtime);
+            }
+        }
+
+        Task::none()
     }
 }
 

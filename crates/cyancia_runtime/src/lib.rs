@@ -9,7 +9,7 @@ use std::{
 use iced_core::{Element, window};
 use iced_core::{Length, Theme, Widget};
 use iced_futures::{Subscription, backend::native};
-use iced_runtime::Task;
+use iced_runtime::{Task, window::close_events};
 use iced_wgpu::window::compositor::WgpuContext;
 use iced_winit::program::Program;
 use parking_lot::RwLock;
@@ -17,7 +17,10 @@ use parking_lot::RwLock;
 use crate::{
     plugin::Plugin,
     service::{FromRuntime, RenderContext, Service, ServiceMut, ServiceRef},
-    windows::{ErasedWindowViewMessage, WindowCommandBuffer, WindowViewManagerMessage, WindowViewId, WindowViewManager},
+    windows::{
+        ErasedWindowViewMessage, WindowCommandBuffer, WindowViewId, WindowViewManager,
+        WindowViewManagerMessage,
+    },
 };
 
 pub mod plugin;
@@ -151,6 +154,10 @@ impl Program for Application {
                 .wm
                 .update(m, state.services.clone())
                 .map(ApplicationMessage::Window),
+            ApplicationMessage::WindowClosed(id) => state
+                .wm
+                .on_window_closed(id, state.services.clone())
+                .discard(),
         };
 
         task = task.chain(
@@ -208,8 +215,9 @@ impl Program for Application {
 
     fn subscription(&self, state: &Self::State) -> Subscription<Self::Message> {
         let windows = state.wm.subscription().map(ApplicationMessage::Window);
+        let window_closed = close_events().map(ApplicationMessage::WindowClosed);
 
-        windows
+        Subscription::batch([windows, window_closed])
     }
 
     fn compositor_context(&self, state: &Self::State) -> Option<WgpuContext> {
@@ -260,6 +268,7 @@ impl Runtime {
 
 pub enum ApplicationMessage {
     Window(WindowViewManagerMessage),
+    WindowClosed(window::Id),
 }
 
 #[derive(Default)]

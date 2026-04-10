@@ -168,4 +168,8 @@ impl WindowView for MainView {
     fn windows(&self) -> Vec<window::Id> {
         self.dock_manager.window_infos().map(|i| i.id).collect()
     }
+
+    fn root_window(&self) -> Option<iced_core::window::Id> {
+        Some(self.dock_manager.main_window().id)
+    }
 }

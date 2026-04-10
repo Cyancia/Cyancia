@@ -772,6 +772,10 @@ impl WindowView for BrushEditorView {
     fn windows(&self) -> Vec<window::Id> {
         vec![self.main_window]
     }
+
+    fn root_window(&self) -> Option<window::Id> {
+        Some(self.main_window)
+    }
 }
 
 impl BrushEditorView {
