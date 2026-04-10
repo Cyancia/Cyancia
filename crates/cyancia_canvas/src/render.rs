@@ -527,11 +527,13 @@ impl CanvasPresentPipeline {
 
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            pass.set_scissor_rect(
-                clip_bounds.x,
-                clip_bounds.y,
-                clip_bounds.width,
-                clip_bounds.height,
+            pass.set_viewport(
+                clip_bounds.x as f32,
+                clip_bounds.y as f32,
+                clip_bounds.width as f32,
+                clip_bounds.height as f32,
+                0.0,
+                1.0,
             );
             pass.draw(0..3, 0..1);
         }

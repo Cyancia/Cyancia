@@ -88,7 +88,6 @@ impl WindowView for MainView {
         window: window::Id,
         runtime: Arc<Services>,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>> {
-        dbg!();
         Some(self.dock_manager.view(window)?.map(MainViewMessage::Dock))
     }
 

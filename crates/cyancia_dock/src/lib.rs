@@ -136,7 +136,10 @@ where
             return self.detach(pane);
         }
 
-        let cursor_pos = self.screen_cursor_pos().unwrap();
+        let Some(cursor_pos) = self.screen_cursor_pos() else {
+            return Task::none();
+        };
+
         for window in self.detached.values() {
             let Some(p) = window.dragging_cursor_relative else {
                 continue;
