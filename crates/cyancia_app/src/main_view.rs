@@ -6,7 +6,10 @@ use cyancia_canvas::{
     render::{CanvasRenderer, CanvasRenderers},
     widget::CanvasWidget,
 };
-use cyancia_dock::{DockManager, DockMessage, dock::Dock};
+use cyancia_dock::{
+    DockManager, DockMessage,
+    dock::{Dock, DockId},
+};
 use cyancia_image::{
     CImage,
     texel::TexelType,
@@ -79,6 +82,13 @@ impl WindowView for MainView {
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         dock_manager.register_dock(canvas_dock);
         dock_manager.open_dock(canvas_dock_id);
+
+        dock_manager.register_dock(crate::dock::LayerDock);
+        dock_manager.register_dock(crate::dock::ToolDock);
+        dock_manager.register_dock(crate::dock::HistoryDock);
+        dock_manager.open_dock(DockId::new(crate::dock::LAYER_DOCK_ID.into()));
+        dock_manager.open_dock(DockId::new(crate::dock::TOOL_DOCK_ID.into()));
+        dock_manager.open_dock(DockId::new(crate::dock::HISTORY_DOCK_ID.into()));
 
         runtime.service_mut::<CanvasManager>().add_canvas(canvas);
 

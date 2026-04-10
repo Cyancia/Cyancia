@@ -281,7 +281,13 @@ where
                 self: Box<Self>,
                 input: iced_futures::subscription::EventStream,
             ) -> iced_futures::BoxStream<Self::Output> {
-                iced_futures::boxed_stream(input.map(WindowViewManagerMessage::Event))
+                iced_futures::boxed_stream(input.filter_map(async |e| match &e {
+                    iced_futures::subscription::Event::Interaction {
+                        status: iced_core::event::Status::Captured,
+                        ..
+                    } => None,
+                    _ => Some(WindowViewManagerMessage::Event(e)),
+                }))
             }
         }
 

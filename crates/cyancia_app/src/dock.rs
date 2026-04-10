@@ -6,8 +6,39 @@ use cyancia_dock::dock::{Dock, DockId};
 use cyancia_image::tile::GpuTileStorage;
 use cyancia_input::action::ActionCollection;
 use cyancia_runtime::Services;
-use iced_core::{keyboard, mouse};
+use iced::Theme;
+use iced::widget::text;
+use iced_core::{Element, keyboard, mouse};
 use iced_runtime::Task;
+use iced_wgpu::Renderer;
+
+macro_rules! test_dummy_dock {
+    ($name:ident, $id:ident, $text:expr) => {
+        pub struct $name;
+
+        impl Dock<Theme, Renderer> for $name {
+            type Message = ();
+
+            fn id(&self) -> DockId {
+                DockId::new($text.into())
+            }
+
+            fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
+                text($text).into()
+            }
+
+            fn update(&mut self, _message: ()) -> Task<()> {
+                Task::none()
+            }
+        }
+
+        pub const $id: &'static str = $text;
+    };
+}
+
+test_dummy_dock!(LayerDock, LAYER_DOCK_ID, "Layers");
+test_dummy_dock!(ToolDock, TOOL_DOCK_ID, "Tools");
+test_dummy_dock!(HistoryDock, HISTORY_DOCK_ID, "History");
 
 pub struct CanvasDock {
     canvas: CanvasId,
@@ -16,10 +47,7 @@ pub struct CanvasDock {
 
 impl CanvasDock {
     pub fn new(canvas: CanvasId, runtime: Arc<Services>) -> Self {
-        Self {
-            canvas,
-            runtime,
-        }
+        Self { canvas, runtime }
     }
 }
 
@@ -54,7 +82,6 @@ where
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
-
         Task::none()
     }
 }
