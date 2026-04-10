@@ -32,14 +32,15 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let params = RawPenInput {
-            position: canvas
-                .transform
-                .read()
-                .pixel_to_widget
-                .inverse()
-                .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
+        let Some(position) = canvas
+            .transform
+            .read()
+            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
+        else {
+            return;
         };
+
+        let params = RawPenInput { position };
 
         let tiles = services.service::<GpuTileStorage>();
         let assets = services.service::<AssetRegistry>();
@@ -55,14 +56,14 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let params = RawPenInput {
-            position: canvas
-                .transform
-                .read()
-                .pixel_to_widget
-                .inverse()
-                .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
+        let Some(position) = canvas
+            .transform
+            .read()
+            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
+        else {
+            return;
         };
+        let params = RawPenInput { position };
 
         let now = std::time::Instant::now();
         brush.update_stroke(params);
@@ -78,15 +79,15 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let tiles = services.service::<GpuTileStorage>();
-        let final_input = RawPenInput {
-            position: canvas
-                .transform
-                .read()
-                .pixel_to_widget
-                .inverse()
-                .transform_point2(Vec2::new(mouse.position.x, mouse.position.y)),
+        let Some(position) = canvas
+            .transform
+            .read()
+            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
+        else {
+            return;
         };
+        let tiles = services.service::<GpuTileStorage>();
+        let final_input = RawPenInput { position };
         brush.end_stroke(final_input, &tiles, canvas.image.root().id);
     }
 }

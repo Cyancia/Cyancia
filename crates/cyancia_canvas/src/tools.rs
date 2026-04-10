@@ -56,7 +56,7 @@ impl ToolFunction for RotateTool {
         get_canvas_or_return!(canvas, services);
 
         let transform = canvas.transform.read();
-        self.center = transform.widget_size * 0.5;
+        self.center = transform.widget_bounds.size() * 0.5;
         let t = self.center - Vec2::new(mouse.position.x, mouse.position.y);
         self.initial_angle = t.y.atan2(t.x);
         self.original_transform = transform.clone();
@@ -96,7 +96,7 @@ impl ToolFunction for ZoomTool {
         get_canvas_or_return!(canvas, services);
 
         let d = mouse.position.y - self.start_pos.y;
-        let f = d / self.original_transform.widget_size.y + 1.0;
+        let f = d / self.original_transform.widget_bounds.size().y + 1.0;
         *canvas.transform.write() = self
             .original_transform
             .clone()

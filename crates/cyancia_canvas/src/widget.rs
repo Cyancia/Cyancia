@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bevy_math::Rect;
 use cyancia_assets::store::AssetRegistry;
 use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner};
 use cyancia_render::resources::{FullscreenVertex, GlobalSamplers};
@@ -54,8 +55,11 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        self.canvas.transform.write().widget_size =
-            Vec2::new(layout.bounds().width, layout.bounds().height);
+        let bounds = layout.bounds();
+        self.canvas.transform.write().widget_bounds = Rect {
+            min: Vec2::new(bounds.x, bounds.y),
+            max: Vec2::new(bounds.x + bounds.width, bounds.y + bounds.height),
+        };
 
         match event {
             Event::Keyboard(event) => {
