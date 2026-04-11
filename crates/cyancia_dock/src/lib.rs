@@ -265,6 +265,16 @@ where
                 }
                 TabEvent::Detach(dock_id) => {
                     if info.group.len() == 1 {
+                        // Equivalent to dragging the window
+                        let Some(cursor_pos) = self.screen_cursor_pos() else {
+                            return Task::none();
+                        };
+
+                        let info = self.detached.get_mut(&id).unwrap();
+                        info.dragging_cursor_relative = Some(Vector::new(
+                            cursor_pos.x - info.position.x,
+                            cursor_pos.y - info.position.y,
+                        ));
                         return iced_runtime::window::drag(id);
                     } else {
                         info.group.remove_dock(&dock_id);
