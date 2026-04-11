@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
 use cyancia_utils::wrapper;
+use iced::Subscription;
 use iced_core::{
     Element, Event, Layout, Length, Point, Rectangle, Size, layout, mouse, renderer, widget, window,
 };
@@ -24,15 +25,16 @@ where
     fn id(&self) -> DockId;
     fn view<'a>(&'a self) -> Element<'a, Self::Message, Theme, Renderer>;
     fn update(&mut self, message: Self::Message) -> Task<Self::Message>;
+    fn subscription(&self) -> Subscription<Self::Message> {
+        Subscription::none()
+    }
 }
 
 pub trait ErasedDock<Theme, Renderer>: Send + Sync + 'static {
     fn id(&self) -> DockId;
-    fn view<'a>(&'a self) -> Element<'a, Box<dyn std::any::Any + Send + Sync>, Theme, Renderer>;
-    fn update(
-        &mut self,
-        message: Box<dyn std::any::Any + Send + Sync>,
-    ) -> Task<Box<dyn std::any::Any + Send + Sync>>;
+    fn view<'a>(&'a self) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer>;
+    fn update(&mut self, message: Box<dyn Any + Send + Sync>) -> Task<Box<dyn Any + Send + Sync>>;
+    fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>>;
 }
 
 impl<T, Theme, Renderer> ErasedDock<Theme, Renderer> for T
@@ -45,20 +47,22 @@ where
         self.id()
     }
 
-    fn view<'a>(&'a self) -> Element<'a, Box<dyn std::any::Any + Send + Sync>, Theme, Renderer> {
+    fn view<'a>(&'a self) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer> {
         self.view()
-            .map(|m| Box::new(m) as Box<dyn std::any::Any + Send + Sync>)
+            .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
     }
 
-    fn update(
-        &mut self,
-        message: Box<dyn std::any::Any + Send + Sync>,
-    ) -> Task<Box<dyn std::any::Any + Send + Sync>> {
+    fn update(&mut self, message: Box<dyn Any + Send + Sync>) -> Task<Box<dyn Any + Send + Sync>> {
         let msg = *message
             .downcast::<T::Message>()
             .expect("invalid message type");
         self.update(msg)
-            .map(|m| Box::new(m) as Box<dyn std::any::Any + Send + Sync>)
+            .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>> {
+        self.subscription()
+            .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
     }
 }
 

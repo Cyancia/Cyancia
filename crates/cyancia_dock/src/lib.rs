@@ -12,6 +12,7 @@ use std::{
 use cyancia_utils::cloneable_any::ClonableAnySync;
 use dock::{DockAction, DockId, FloatAction, TabEvent};
 use group::{DockGroupData, TabRowWidget};
+use iced::Subscription;
 use iced_core::{
     Element, Layout, Length, Point, Rectangle, Size, Vector, layout, mouse, renderer, widget,
     window,
@@ -616,6 +617,26 @@ where
             }
         }
     }
+
+    pub fn on_dock_message(&mut self, message: ErasedDockMessage) -> Task<ErasedDockMessage> {
+        let Some(dock) = self.docks.get_mut(&message.dock) else {
+            return Task::none();
+        };
+
+        dock.update(message.message)
+            .map(move |m| ErasedDockMessage {
+                dock: message.dock.clone(),
+                message: m,
+            })
+    }
+
+    pub fn subscription(&self) -> Subscription<ErasedDockMessage> {
+        Subscription::batch(self.docks.iter().map(|(id, dock)| {
+            dock.subscription()
+                .with(id.clone())
+                .map(|(dock, message)| ErasedDockMessage { dock, message })
+        }))
+    }
 }
 
 fn overlaps(pos_a: Point, size_a: Size, pos_b: Point, size_b: Size) -> bool {
@@ -721,4 +742,9 @@ impl AttachInfo {
             AttachInfo::Merge { pane } => *pane,
         }
     }
+}
+
+pub struct ErasedDockMessage {
+    pub dock: DockId,
+    pub message: Box<dyn Any + Send + Sync>,
 }

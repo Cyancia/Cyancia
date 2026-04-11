@@ -7,7 +7,7 @@ use cyancia_canvas::{
     widget::CanvasWidget,
 };
 use cyancia_dock::{
-    DockManager, DockMessage,
+    DockManager, DockMessage, ErasedDockMessage,
     dock::{Dock, DockId},
 };
 use cyancia_image::{
@@ -42,6 +42,7 @@ pub struct MainView {
 
 pub enum MainViewMessage {
     Dock(DockMessage),
+    DockUpdate(ErasedDockMessage),
     WindowEvent(window::Id, window::Event),
     KeyboardEvent(window::Id, keyboard::Event),
     MouseEvent(window::Id, mouse::Event),
@@ -117,6 +118,7 @@ impl WindowView for MainView {
     ) -> impl Into<Task<Self::Message>> {
         match message {
             MainViewMessage::Dock(m) => self.dock_manager.update(m).discard(),
+            MainViewMessage::DockUpdate(m) => self.dock_manager.on_dock_message(m).discard(),
             MainViewMessage::WindowEvent(id, event) => {
                 self.dock_manager.on_window_event(id, event).discard()
             }
@@ -157,7 +159,7 @@ impl WindowView for MainView {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        iced::event::listen_with(|event, status, window| {
+        let external = iced::event::listen_with(|event, status, window| {
             if status == iced_core::event::Status::Captured {
                 return None;
             }
@@ -168,7 +170,14 @@ impl WindowView for MainView {
                 iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
                 _ => None,
             }
-        })
+        });
+
+        let dock = self
+            .dock_manager
+            .subscription()
+            .map(MainViewMessage::DockUpdate);
+
+        Subscription::batch([external, dock])
     }
 
     fn windows(&self) -> Vec<window::Id> {

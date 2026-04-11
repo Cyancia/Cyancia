@@ -173,4 +173,19 @@ where
 
         Task::none()
     }
+
+    // fn subscription(&self) -> iced::Subscription<Self::Message> {
+    //     iced::event::listen().filter_map(|e| {
+    //         match e {
+    //             iced::Event::Keyboard(event) => {
+    //                 dbg!(event);
+    //             }
+    //             iced::Event::Mouse(event) => {}
+    //             iced::Event::Window(event) => {}
+    //             iced::Event::Touch(event) => {}
+    //             iced::Event::InputMethod(event) => {}
+    //         };
+    //         None
+    //     })
+    // }
 }
