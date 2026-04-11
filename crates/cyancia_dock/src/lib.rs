@@ -264,13 +264,17 @@ where
                     }
                 }
                 TabEvent::Detach(dock_id) => {
-                    info.group.remove_dock(&dock_id);
-                    let mut new_group = DockGroupData::new();
-                    new_group.add_dock(dock_id);
-                    return match self.detach_group(new_group) {
-                        Some((_, task)) => task.discard(),
-                        None => Task::none(),
-                    };
+                    if info.group.len() == 1 {
+                        return iced_runtime::window::drag(id);
+                    } else {
+                        info.group.remove_dock(&dock_id);
+                        let mut new_group = DockGroupData::new();
+                        new_group.add_dock(dock_id);
+                        return match self.detach_group(new_group) {
+                            Some((_, task)) => task.discard(),
+                            None => Task::none(),
+                        };
+                    }
                 }
             },
             FloatAction::StartWindowDrag => {
