@@ -88,8 +88,8 @@ fn drag_target_index(
         y: bounds.y - bounds.height * DETACH_DEADBAND_FACTOR,
     };
     let detach_max = Point {
-        x: bounds.x + bounds.height * (1.0 + DETACH_DEADBAND_FACTOR),
-        y: bounds.y + bounds.height * (1.0 + DETACH_DEADBAND_FACTOR),
+        x: bounds.x + bounds.width + bounds.height * (1.0 + DETACH_DEADBAND_FACTOR),
+        y: bounds.y + bounds.height + bounds.height * (1.0 + DETACH_DEADBAND_FACTOR),
     };
     if cursor.x < detach_min.x
         || cursor.x > detach_max.x
