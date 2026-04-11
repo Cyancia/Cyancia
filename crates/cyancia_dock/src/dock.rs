@@ -513,6 +513,14 @@ where
         Size::new(Length::Fill, Length::Fill)
     }
 
+    fn tag(&self) -> widget::tree::Tag {
+        widget::tree::Tag::of::<ResizeHandleOverlayState>()
+    }
+
+    fn state(&self) -> widget::tree::State {
+        widget::tree::State::new(ResizeHandleOverlayState { is_resizing: false })
+    }
+
     fn layout(
         &mut self,
         _tree: &mut widget::Tree,
@@ -536,7 +544,7 @@ where
 
     fn update(
         &mut self,
-        _tree: &mut widget::Tree,
+        tree: &mut widget::Tree,
         event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -545,13 +553,25 @@ where
         shell: &mut iced_core::Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
-        if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
-            if let Some(pos) = cursor.position() {
-                if let Some(dir) = resize_direction(layout.bounds(), pos) {
+        let state = tree.state.downcast_mut::<ResizeHandleOverlayState>();
+
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if let Some(pos) = cursor.position()
+                    && let Some(dir) = resize_direction(layout.bounds(), pos)
+                {
                     shell.publish((self.on_resize)(dir));
+                    state.is_resizing = true;
                     shell.capture_event();
                 }
             }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                if state.is_resizing {
+                    state.is_resizing = false;
+                    shell.capture_event();
+                }
+            }
+            _ => {}
         }
     }
 
@@ -563,10 +583,18 @@ where
         _viewport: &Rectangle,
         _renderer: &Renderer,
     ) -> mouse::Interaction {
+        // TODO Iced is not updating the position of cursor during window resize.
+        //      So the cursor icon can be incorrect.
+        //      This is also the reason why we are using a state but not using the cursor position
+        //      directly to determine whether we are resizing on left button release.
         cursor
             .position()
             .and_then(|pos| resize_direction(layout.bounds(), pos))
             .map(direction_cursor)
             .unwrap_or(mouse::Interaction::None)
     }
+}
+
+struct ResizeHandleOverlayState {
+    is_resizing: bool,
 }
