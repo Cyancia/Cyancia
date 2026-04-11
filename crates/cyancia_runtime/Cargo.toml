@@ -8,7 +8,7 @@ downcast-rs.workspace = true
 winit.workspace = true
 iced_runtime.workspace = true
 iced_core.workspace = true
-iced_futures = { workspace = true, features = ["tokio"] }
+iced_futures.workspace = true
 iced_winit.workspace = true
 iced_wgpu.workspace = true
 wgpu.workspace = true
@@ -18,4 +18,4 @@ iced_graphics.workspace = true
 rustc-hash.workspace = true
 parking_lot.workspace = true
 futures.workspace = true
-tokio.workspace = true
+smol.workspace = true

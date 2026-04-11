@@ -110,7 +110,7 @@ impl Program for Application {
 
     type Renderer = iced_wgpu::Renderer;
 
-    type Executor = native::tokio::Executor;
+    type Executor = native::smol::Executor;
 
     fn name() -> &'static str {
         "Cyancia Runtime"
@@ -130,7 +130,7 @@ impl Program for Application {
         let window_task = rt.wm.boot(rt.services.clone());
         let deadlock_detect_task = Task::future(async {
             loop {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
                 let deadlocks = parking_lot::deadlock::check_deadlock();
                 for (i_dl, threads) in deadlocks.into_iter().enumerate() {
                     log::error!("#{} Deadlock detected", i_dl);

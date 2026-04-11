@@ -43,13 +43,13 @@ iced = { version = "0.14", features = [
     "debug",
     "canvas",
     "selector",
-    "tokio",
+    "smol",
 ] }
 iced_beacon = { version = "0.14" }
 iced_core = { version = "0.14" }
 iced_debug = { version = "0.14" }
 iced_devtools = { version = "0.14" }
-iced_futures = { version = "0.14", features = ["tokio"] }
+iced_futures = { version = "0.14", features = ["smol"] }
 iced_graphics = { version = "0.14", features = ["geometry"] }
 iced_highlighter = { version = "0.14" }
 iced_program = { version = "0.14" }
@@ -92,7 +92,6 @@ anyhow = "1"
 dyn-clone = "1"
 chrono = { version = "0.4", features = ["serde"] }
 atomicow = "1"
-tokio = { version = "1", default-features = false }
 md5 = "0.8"
 zip = "8"
 taffy = { path = "D:/taffy", features = ["detailed_layout_info"] }
@@ -111,6 +110,7 @@ bevy_math = { version = "0.18", git = "https://github.com/443eb9/bevy.git", bran
 ] }
 ringbuffer = "0.16"
 fs_extra = "1"
+smol = "2"
 
 # iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }
 # iced_beacon = { path = "D:/iced_fork/beacon" }
