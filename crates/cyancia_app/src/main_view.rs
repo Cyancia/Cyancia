@@ -123,6 +123,13 @@ impl WindowView for MainView {
             MainViewMessage::Dock(m) => self.dock_manager.update(m).discard(),
             MainViewMessage::DockUpdate(m) => self.dock_manager.on_dock_message(m).discard(),
             MainViewMessage::WindowEvent(id, event) => {
+                match event {
+                    window::Event::Focused => {
+                        self.actions_matcher.lock().reset_keyboard_state();
+                    }
+                    _ => {}
+                }
+
                 self.dock_manager.on_window_event(id, event).discard()
             }
 
@@ -155,7 +162,6 @@ impl WindowView for MainView {
                 Task::none()
             }
             MainViewMessage::CanvasCreated(e) => {
-                dbg!();
                 let dock = CanvasDock::new(e.id, runtime, self.actions_matcher.clone());
                 let id = <CanvasDock as Dock<Theme, Renderer>>::id(&dock);
                 self.dock_manager.register_dock(dock);
