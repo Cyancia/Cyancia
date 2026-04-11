@@ -61,6 +61,10 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
             max: Vec2::new(bounds.x + bounds.width, bounds.y + bounds.height),
         };
 
+        if !cursor.is_over(bounds) {
+            return;
+        }
+
         match event {
             Event::Keyboard(event) => {
                 shell.publish((self.on_keyboard_event)(event.clone()));

@@ -157,11 +157,17 @@ impl WindowView for MainView {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        iced::event::listen_with(|event, status, window| match event {
-            iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
-            iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
-            iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
-            _ => None,
+        iced::event::listen_with(|event, status, window| {
+            if status == iced_core::event::Status::Captured {
+                return None;
+            }
+
+            match event {
+                iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
+                iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
+                iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
+                _ => None,
+            }
         })
     }
 

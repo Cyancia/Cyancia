@@ -136,26 +136,34 @@ where
             return self.detach(pane);
         }
 
-        let Some(cursor_pos) = self.screen_cursor_pos() else {
-            return Task::none();
-        };
+        // TODO Implement window snapping if possible
+        //      Currently, if we are using manually implemented dragging, it may cause problem
+        //      when the cursor is moving too fast and it goes into inner widget, then the event is
+        //      captured by that widget, and stuck.
+        //      Also, the drop target window won't update and show indicator.
+        //      So although snapping will work if you uncomment the code below and remove the
+        //      returned `drag` action in FloatAction::StartWindowDrag, it may cause bad user experience.
 
-        for window in self.detached.values() {
-            let Some(p) = window.dragging_cursor_relative else {
-                continue;
-            };
+        // let Some(cursor_pos) = self.screen_cursor_pos() else {
+        //     return Task::none();
+        // };
 
-            let mut pos = cursor_pos - p;
-            for another in self.detached.values() {
-                if another.id == window.id {
-                    continue;
-                }
+        // for window in self.detached.values() {
+        //     let Some(p) = window.dragging_cursor_relative else {
+        //         continue;
+        //     };
 
-                pos = snap(pos, window.size, another.position, another.size);
-            }
+        //     let mut pos = cursor_pos - p;
+        //     for another in self.detached.values() {
+        //         if another.id == window.id {
+        //             continue;
+        //         }
 
-            return iced_runtime::window::move_to(window.id, pos);
-        }
+        //         pos = snap(pos, window.size, another.position, another.size);
+        //     }
+
+        //     return iced_runtime::window::move_to(window.id, pos);
+        // }
 
         Task::none()
     }
@@ -275,6 +283,7 @@ where
                     cursor_pos.x - info.position.x,
                     cursor_pos.y - info.position.y,
                 ));
+                return iced_runtime::window::drag(id);
             }
             FloatAction::StartResize(dir) => {
                 return iced_runtime::window::drag_resize(id, dir);
