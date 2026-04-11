@@ -27,7 +27,6 @@ pub struct CanvasWidget<Message> {
     pub renderer: Arc<Mutex<CanvasRenderer>>,
     pub tile_storage: GpuTileStorage,
     pub on_mouse_event: Box<dyn Fn(mouse::Event) -> Message>,
-    pub on_keyboard_event: Box<dyn Fn(keyboard::Event) -> Message>,
 }
 
 impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidget<Message> {
@@ -66,10 +65,6 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
         }
 
         match event {
-            Event::Keyboard(event) => {
-                shell.publish((self.on_keyboard_event)(event.clone()));
-                shell.capture_event();
-            }
             Event::Mouse(event) => {
                 shell.publish((self.on_mouse_event)(event.clone()));
                 shell.capture_event();

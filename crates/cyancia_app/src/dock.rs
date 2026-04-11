@@ -73,7 +73,6 @@ impl CanvasDock {
 
 #[derive(Debug)]
 pub enum CanvasDockMessage {
-    KeyboardEvent(keyboard::Event),
     MouseEvent(mouse::Event),
 }
 
@@ -97,7 +96,6 @@ where
             canvas,
             renderer,
             tile_storage: self.runtime.service::<GpuTileStorage>().clone(),
-            on_keyboard_event: Box::new(CanvasDockMessage::KeyboardEvent),
             on_mouse_event: Box::new(CanvasDockMessage::MouseEvent),
         }
         .into()
@@ -107,46 +105,6 @@ where
         let mut actions_matcher = self.actions_matcher.lock();
 
         match message {
-            CanvasDockMessage::KeyboardEvent(event) => {
-                // TODO: It's a bad idea to handle keyboard events inside both canvas dock and inside main view.
-                let task = if let Some(action) = actions_matcher.on_keyboard_event(event.clone())
-                    && let Some(action_func) = self
-                        .runtime
-                        .service_mut::<ActionFunctionRegistry>()
-                        .get(action.clone())
-                {
-                    log::info!("Triggering action: {}", action);
-                    action_func.trigger(self.runtime.clone()).discard()
-                } else {
-                    Task::none()
-                };
-
-                // Don't borrow any service to avoid deadlock with trigger function.
-                let mut tool_proxies = self.runtime.service_mut::<ToolProxies>();
-                let canvas_manager = self.runtime.service::<CanvasManager>();
-                let Some(canvas) = canvas_manager.current() else {
-                    return Task::none();
-                };
-                let canvas = canvas.as_ref();
-                let tool_proxy = tool_proxies.get_mut(&canvas.tool_proxy_id);
-                if self.is_pressed {
-                    tool_proxy.mouse_moved_pressing(
-                        actions_matcher.keyboard_state(),
-                        &PressedMouseState {
-                            position: self.cursor_position,
-                        },
-                    );
-                } else {
-                    tool_proxy.mouse_moved_hovering(
-                        actions_matcher.keyboard_state(),
-                        &HoverMouseState {
-                            position: self.cursor_position,
-                        },
-                    );
-                }
-
-                return task;
-            }
             CanvasDockMessage::MouseEvent(event) => {
                 let mut tool_proxies = self.runtime.service_mut::<ToolProxies>();
                 let canvas_manager = self.runtime.service::<CanvasManager>();
