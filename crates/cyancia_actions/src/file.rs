@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
+    event::CanvasCreated,
     render::{CanvasRenderer, CanvasRenderers},
 };
 use cyancia_image::{
@@ -11,7 +12,7 @@ use cyancia_image::{
     tile::{GpuLayerInfo, GpuTileStorage},
 };
 use cyancia_input::action::ActionId;
-use cyancia_runtime::{Services, service::FromRuntime};
+use cyancia_runtime::{Services, event::Event, service::FromRuntime};
 use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
 use glam::UVec2;
 use iced_runtime::Task;
@@ -68,7 +69,10 @@ impl ActionFunction for OpenFileAction {
                     texel_type: TexelType::RGBA8,
                 },
             );
+            let id = canvas.id;
             services.service_mut::<CanvasManager>().add_canvas(canvas);
+
+            CanvasCreated::broadcast(CanvasCreated { id });
 
             initial_tool_task
         });

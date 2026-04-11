@@ -3,6 +3,7 @@ use std::{fmt::Debug, sync::Arc};
 use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
+    event::CanvasCreated,
     render::{CanvasRenderer, CanvasRenderers},
     widget::CanvasWidget,
 };
@@ -18,6 +19,7 @@ use cyancia_image::{
 use cyancia_input::action::ActionManifestCollection;
 use cyancia_runtime::{
     Services,
+    event::Event,
     service::FromRuntime,
     windows::{WindowCommandBuffer, WindowView, WindowViewId},
 };
@@ -46,6 +48,7 @@ pub enum MainViewMessage {
     WindowEvent(window::Id, window::Event),
     KeyboardEvent(window::Id, keyboard::Event),
     MouseEvent(window::Id, mouse::Event),
+    CanvasCreated(CanvasCreated),
 }
 
 impl WindowView for MainView {
@@ -151,6 +154,15 @@ impl WindowView for MainView {
 
                 Task::none()
             }
+            MainViewMessage::CanvasCreated(e) => {
+                dbg!();
+                let dock = CanvasDock::new(e.id, runtime, self.actions_matcher.clone());
+                let id = <CanvasDock as Dock<Theme, Renderer>>::id(&dock);
+                self.dock_manager.register_dock(dock);
+                self.dock_manager.open_dock(id);
+
+                Task::none()
+            }
         }
     }
 
@@ -176,8 +188,9 @@ impl WindowView for MainView {
             .dock_manager
             .subscription()
             .map(MainViewMessage::DockUpdate);
+        let canvas_create = CanvasCreated::listen_to().map(MainViewMessage::CanvasCreated);
 
-        Subscription::batch([external, dock])
+        Subscription::batch([external, dock, canvas_create])
     }
 
     fn windows(&self) -> Vec<window::Id> {

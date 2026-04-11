@@ -23,6 +23,9 @@ use crate::{
     },
 };
 
+pub mod event;
+#[doc(hidden)]
+pub use event::__private;
 pub mod plugin;
 pub mod service;
 pub mod windows;

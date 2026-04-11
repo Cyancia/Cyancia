@@ -16,6 +16,7 @@ use crate::{
 };
 
 pub mod control;
+pub mod event;
 pub mod render;
 pub mod resource;
 pub mod tools;

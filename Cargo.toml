@@ -4,6 +4,7 @@ members = [
     "crates/cyancia_app",
     "crates/cyancia_assets",
     "crates/cyancia_runtime",
+    "crates/cyancia_runtime_derive",
     "crates/cyancia_canvas",
     "crates/cyancia_graph",
     "crates/cyancia_image",
@@ -23,6 +24,7 @@ resolver = "2"
 
 [workspace.dependencies]
 cyancia_graph = { version = "0.1.0", path = "crates/cyancia_graph" }
+cyancia_runtime_derive = { version = "0.1.0", path = "crates/cyancia_runtime_derive" }
 cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
 cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
 cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }

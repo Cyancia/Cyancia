@@ -1462,6 +1462,7 @@ dependencies = [
 name = "cyancia_runtime"
 version = "0.1.0"
 dependencies = [
+ "cyancia_runtime_derive",
  "cyancia_utils",
  "downcast-rs 2.0.2",
  "futures",
@@ -1477,6 +1478,15 @@ dependencies = [
  "smol",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "cyancia_runtime_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
