@@ -7,7 +7,7 @@ use cyancia_render::resources::{FullscreenVertex, GlobalSamplers};
 use cyancia_runtime::Services;
 use glam::{UVec2, Vec2};
 use iced_core::{
-    Clipboard, Element, Event, Layout, Length, Rectangle, Shell, Size, Widget,
+    Clipboard, Element, Event, Layout, Length, Point, Rectangle, Shell, Size, Widget,
     keyboard::{self, key},
     layout::{self, Limits},
     mouse, renderer,
@@ -23,9 +23,11 @@ use crate::{
 };
 
 pub struct CanvasWidget<Message> {
+    pub is_focusing: bool,
     pub canvas: Arc<CCanvas>,
     pub renderer: Arc<Mutex<CanvasRenderer>>,
     pub tile_storage: GpuTileStorage,
+    pub on_focus: Box<dyn Fn(Point) -> Message>,
     pub on_mouse_event: Box<dyn Fn(mouse::Event) -> Message>,
 }
 
@@ -60,14 +62,18 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
             max: Vec2::new(bounds.x + bounds.width, bounds.y + bounds.height),
         };
 
-        if !cursor.is_over(bounds) {
-            return;
-        }
-
         match event {
             Event::Mouse(event) => {
-                shell.publish((self.on_mouse_event)(event.clone()));
-                shell.capture_event();
+                if self.is_focusing {
+                    shell.publish((self.on_mouse_event)(event.clone()));
+                    shell.capture_event();
+                } else if let mouse::Event::ButtonPressed(mouse::Button::Left) = event
+                    && let Some(cursor_pos) = cursor.position_over(bounds)
+                {
+                    shell.publish((self.on_focus)(cursor_pos));
+                    shell.publish((self.on_mouse_event)(event.clone()));
+                    shell.capture_event();
+                }
             }
             _ => {}
         }

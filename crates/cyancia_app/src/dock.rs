@@ -79,6 +79,7 @@ impl CanvasDock {
 
 #[derive(Debug)]
 pub enum CanvasDockMessage {
+    CanvasFocus(Point),
     MouseEvent(mouse::Event),
 }
 
@@ -99,25 +100,31 @@ where
         let renderer = renderers.get(&self.canvas).unwrap();
 
         CanvasWidget {
+            is_focusing: canvas_manager.current_id() == Some(self.canvas),
             canvas,
             renderer,
             tile_storage: self.runtime.service::<GpuTileStorage>().clone(),
+            on_focus: Box::new(CanvasDockMessage::CanvasFocus),
             on_mouse_event: Box::new(CanvasDockMessage::MouseEvent),
         }
         .into()
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
-        let mut actions_matcher = self.actions_matcher.lock();
+        let actions_matcher = self.actions_matcher.lock();
 
         match message {
             CanvasDockMessage::MouseEvent(event) => {
-                let mut tool_proxies = self.runtime.service_mut::<ToolProxies>();
-                let canvas_manager = self.runtime.service::<CanvasManager>();
+                let canvas_manager = self.runtime.service_mut::<CanvasManager>();
+                if canvas_manager.current_id() != Some(self.canvas) {
+                    return Task::none();
+                }
+
                 let Some(canvas) = canvas_manager.current() else {
                     return Task::none();
                 };
-                let canvas = canvas.as_ref();
+
+                let mut tool_proxies = self.runtime.service_mut::<ToolProxies>();
                 let tool_proxy = tool_proxies.get_mut(&canvas.tool_proxy_id);
 
                 match event {
@@ -166,14 +173,13 @@ where
                             );
                         }
                     }
-                    mouse::Event::CursorLeft => {
-                        // FIXME
-                        // This is a workaround. When we pressed ctrl+o to open a file dialog,
-                        // the release event failed to be captured, causing the keyboard state to be stuck.
-                        actions_matcher.reset_keyboard_state();
-                    }
                     _ => {}
                 }
+            }
+            CanvasDockMessage::CanvasFocus(cursor_pos) => {
+                self.cursor_position = cursor_pos;
+                let mut canvas_manager = self.runtime.service_mut::<CanvasManager>();
+                canvas_manager.set_current(self.canvas);
             }
         }
 
