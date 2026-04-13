@@ -20,3 +20,4 @@ rustc-hash.workspace = true
 parking_lot.workspace = true
 futures.workspace = true
 smol.workspace = true
+parse-display.workspace = true

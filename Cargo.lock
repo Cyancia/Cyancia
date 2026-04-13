@@ -1483,6 +1483,7 @@ dependencies = [
  "iced_winit",
  "log",
  "parking_lot",
+ "parse-display",
  "rustc-hash 1.1.0",
  "smol",
  "wgpu",

@@ -17,11 +17,13 @@ use iced_futures::{
     subscription::{Recipe, Tracker},
 };
 use iced_runtime::{Task, futures::Subscription};
+use parse_display::Display;
 
 use crate::{Services, service::Service};
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+    #[display("{0}")]
     pub WindowViewId : &'static str
 }
 
@@ -214,7 +216,11 @@ where
             return None;
         };
 
-        let view = self.opened_views.get(&window).unwrap();
+        let Some(view) = self.opened_views.get(&window) else {
+            log::error!("Unable to view a window whose view is not opened: {}", id);
+            return None;
+        };
+
         Some(view.state.view(id, runtime).map(move |msg| {
             WindowViewManagerMessage::ViewUpdate(ErasedWindowViewMessage {
                 view: window,
