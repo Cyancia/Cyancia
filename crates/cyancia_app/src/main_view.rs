@@ -82,7 +82,7 @@ impl WindowView for MainView {
         );
 
         let (main_window, task) = window::open(Default::default());
-        let mut dock_manager = DockManager::new(main_window);
+        let (mut dock_manager, dock_manager_task) = DockManager::new(main_window);
         let canvas_dock = CanvasDock::new(canvas.id, runtime.clone(), actions_matcher.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         dock_manager.register_dock(canvas_dock);
@@ -105,7 +105,11 @@ impl WindowView for MainView {
                 dock_manager,
                 actions_matcher,
             },
-            Task::batch([task.discard(), dock_tasks]),
+            Task::batch([
+                task.discard(),
+                dock_manager_task.map(|t| dbg!(t)).map(MainViewMessage::Dock),
+                dock_tasks,
+            ]),
         )
     }
 
@@ -153,7 +157,7 @@ impl WindowView for MainView {
                         return self
                             .dock_manager
                             .on_cursor_moved(window, position)
-                            .discard();
+                            .map(MainViewMessage::Dock);
                     }
                     mouse::Event::ButtonReleased(mouse::Button::Left) => {
                         return self.dock_manager.on_float_window_drag_end().discard();
@@ -185,13 +189,11 @@ impl WindowView for MainView {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        let external = iced::event::listen_with(|event, status, window| {
-            match event {
-                iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
-                iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
-                iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
-                _ => None,
-            }
+        let external = iced::event::listen_with(|event, status, window| match event {
+            iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
+            iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
+            iced::Event::Mouse(e) => Some(MainViewMessage::MouseEvent(window, e)),
+            _ => None,
         });
 
         let dock = self.dock_manager.subscription().map(MainViewMessage::Dock);

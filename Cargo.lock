@@ -1358,6 +1358,7 @@ dependencies = [
 name = "cyancia_dock"
 version = "0.1.0"
 dependencies = [
+ "cyancia_platform",
  "cyancia_utils",
  "iced",
  "iced_core",
@@ -1437,6 +1438,14 @@ dependencies = [
  "bevy_math",
  "glam 0.30.10",
  "iced_core",
+]
+
+[[package]]
+name = "cyancia_platform"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "windows 0.62.2",
 ]
 
 [[package]]

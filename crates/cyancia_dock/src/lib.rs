@@ -41,10 +41,11 @@ where
     Theme: DockCatalog + iced_widget::pane_grid::Catalog + 'static,
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
 {
-    pub fn new(main_window: window::Id) -> Self {
-        Self {
+    pub fn new(main_window: window::Id) -> (Self, Task<DockMessage>) {
+        let this = Self {
             main_window: GroupWindowInfo {
                 id: main_window,
+                raw_id: None,
                 position: Point::ORIGIN,
                 size: Size::ZERO,
                 group: DockGroupData::new(),
@@ -55,7 +56,12 @@ where
             docks: HashMap::new(),
             detached: HashMap::new(),
             cursor_pos: None,
-        }
+        };
+
+        let task = iced_runtime::window::raw_id::<()>(main_window)
+            .map(move |raw| DockMessage::RawWindowGet(main_window, raw));
+
+        (this, task)
     }
 
     pub fn register_dock<T: Dock<Theme, Renderer>>(&mut self, dock: T) {
@@ -112,7 +118,9 @@ where
                         }
 
                         if let Some(dock) = self.docks.get_mut(&dock_id) {
-                            return dock.on_close().map(move |m| DockMessage::Dock(dock_id.clone(), m));
+                            return dock
+                                .on_close()
+                                .map(move |m| DockMessage::Dock(dock_id.clone(), m));
                         }
                     }
                     TabEvent::Reorder { from, to } => {
@@ -133,7 +141,9 @@ where
                             let mut new_group = DockGroupData::new();
                             new_group.add_dock(dock_id);
                             return match self.detach_group(new_group) {
-                                Some((_, task)) => task.discard(),
+                                Some((_, task)) => {
+                                    task.map(|m| DockMessage::RawWindowGet(m.0, m.1))
+                                }
                                 None => Task::none(),
                             };
                         }
@@ -145,7 +155,7 @@ where
         Task::none()
     }
 
-    pub fn on_cursor_moved(&mut self, window: window::Id, pos: Point) -> Task<()> {
+    pub fn on_cursor_moved(&mut self, window: window::Id, pos: Point) -> Task<DockMessage> {
         self.cursor_pos = Some((window, pos));
 
         if let Some(pane) = self.dock_state.try_detach(pos) {
@@ -256,7 +266,7 @@ where
         Task::none()
     }
 
-    pub fn on_float_action(&mut self, id: window::Id, action: FloatAction) -> Task<()> {
+    pub fn on_float_action(&mut self, id: window::Id, action: FloatAction) -> Task<DockMessage> {
         let Some(info) = self.detached.get_mut(&id) else {
             return Task::none();
         };
@@ -297,7 +307,7 @@ where
                         let mut new_group = DockGroupData::new();
                         new_group.add_dock(dock_id);
                         return match self.detach_group(new_group) {
-                            Some((_, task)) => task.discard(),
+                            Some((_, task)) => task.map(|m| DockMessage::RawWindowGet(m.0, m.1)),
                             None => Task::none(),
                         };
                     }
@@ -363,7 +373,7 @@ where
         iced_runtime::window::close(src)
     }
 
-    pub fn detach(&mut self, pane: pane_grid::Pane) -> Task<()> {
+    pub fn detach(&mut self, pane: pane_grid::Pane) -> Task<DockMessage> {
         let Some(group) = self.dock_state.close(pane) else {
             log::error!(
                 "Failed to detach pane, the pane cannot be found: {:?}",
@@ -373,7 +383,7 @@ where
         };
 
         if let Some((_, task)) = self.detach_group(group) {
-            task.discard()
+            task.map(|m| DockMessage::RawWindowGet(m.0, m.1))
         } else {
             log::error!(
                 "Failed to detach pane, the window cannot be spawned: {:?}",
@@ -383,13 +393,15 @@ where
         }
     }
 
-    fn detach_group(&mut self, group: DockGroupData) -> Option<(window::Id, Task<window::Id>)> {
+    fn detach_group(
+        &mut self,
+        group: DockGroupData,
+    ) -> Option<(window::Id, Task<(window::Id, u64)>)> {
         let window_size = Size::new(400.0, 350.0);
         let (window_id, open_task) = iced_runtime::window::open(window::Settings {
             decorations: false,
             position: window::Position::Specific(self.screen_cursor_pos()?),
             size: window_size,
-            level: window::Level::AlwaysOnTop,
             platform_specific: window::settings::PlatformSpecific {
                 skip_taskbar: true,
                 corner_preference: window::settings::platform::CornerPreference::DoNotRound,
@@ -401,6 +413,7 @@ where
             window_id,
             GroupWindowInfo {
                 id: window_id,
+                raw_id: None,
                 group,
                 position: self.screen_cursor_pos()?,
                 size: window_size,
@@ -411,7 +424,12 @@ where
 
         Some((
             window_id,
-            open_task.then(|id| iced_runtime::window::drag(id)),
+            open_task.then(move |id| {
+                Task::batch([
+                    iced_runtime::window::drag::<()>(id).discard(),
+                    iced_runtime::window::raw_id::<()>(id).map(move |raw| (id, raw)),
+                ])
+            }),
         ))
     }
 
@@ -620,7 +638,7 @@ where
     pub fn update(&mut self, action: DockMessage) -> Task<DockMessage> {
         match action {
             DockMessage::Main(dock_action) => self.on_dock_action(dock_action),
-            DockMessage::Float { id, action } => self.on_float_action(id, action).discard(),
+            DockMessage::Float { id, action } => self.on_float_action(id, action),
             DockMessage::Dock(dock_id, msg) => {
                 if let Some(dock) = self.docks.get_mut(&dock_id) {
                     dock.update(msg)
@@ -628,6 +646,21 @@ where
                 } else {
                     Task::none()
                 }
+            }
+            DockMessage::RawWindowGet(id, raw_id) => {
+                if id == self.main_window.id {
+                    self.main_window.raw_id = Some(raw_id);
+                } else if let Some(info) = self.detached.get_mut(&id) {
+                    info.raw_id = Some(raw_id);
+
+                    let Some(main_raw_id) = self.main_window.raw_id else {
+                        log::error!("Main window raw ID is not available. This should not happen.");
+                        return Task::none();
+                    };
+                    cyancia_platform::window::set_window_parent(main_raw_id, raw_id);
+                }
+
+                Task::none()
             }
         }
     }
@@ -694,6 +727,7 @@ pub enum DockMessage {
     Main(DockAction),
     Float { id: window::Id, action: FloatAction },
     Dock(DockId, Box<dyn Any + Send + Sync + 'static>),
+    RawWindowGet(window::Id, u64),
 }
 
 impl std::fmt::Debug for DockMessage {
@@ -706,6 +740,11 @@ impl std::fmt::Debug for DockMessage {
                 .field("action", action)
                 .finish(),
             Self::Dock(arg0, arg1) => f.debug_tuple("Dock").field(arg0).finish(),
+            Self::RawWindowGet(id, raw_id) => f
+                .debug_struct("RawWindowGet")
+                .field("id", id)
+                .field("raw_id", raw_id)
+                .finish(),
         }
     }
 }
@@ -713,6 +752,7 @@ impl std::fmt::Debug for DockMessage {
 #[derive(Debug, Clone)]
 pub struct GroupWindowInfo {
     pub id: window::Id,
+    pub raw_id: Option<u64>,
     pub position: Point,
     pub size: Size,
     pub group: DockGroupData,

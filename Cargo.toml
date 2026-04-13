@@ -18,6 +18,7 @@ members = [
     "crates/cyancia_widgets",
     "crates/cyancia_dock",
     "examples/docking_test",
+    "crates/cyancia_platform",
     # "examples/*",
 ]
 resolver = "2"
@@ -40,6 +41,7 @@ cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph"
 cyancia_runtime = { version = "0.1.0", path = "crates/cyancia_runtime" }
 cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
 cyancia_dock = { version = "0.1.0", path = "crates/cyancia_dock" }
+cyancia_platform = { version = "0.1.0", path = "crates/cyancia_platform" }
 
 iced = { version = "0.14", features = [
     "debug",
@@ -113,6 +115,7 @@ bevy_math = { version = "0.18", git = "https://github.com/443eb9/bevy.git", bran
 ringbuffer = "0.16"
 fs_extra = "1"
 smol = "2"
+windows = "0.62"
 
 [patch.crates-io]
 naga = { git = "https://github.com/gfx-rs/wgpu", rev = "7a2afeb014cb30a976059717c4ae7c85f01d858e", package = "naga" }
