@@ -194,7 +194,7 @@ where
         Task::none()
     }
 
-    pub fn on_float_window_drag_end(&mut self) -> Task<()> {
+    pub fn on_float_window_drag_end(&mut self) -> Task<DockMessage> {
         let mut try_attach_or_merge = None;
         for (id, info) in &mut self.detached {
             if !info.dragging_cursor_relative.is_some() {
@@ -207,14 +207,16 @@ where
 
         let Some((src_window, Some((overlap_dst_window, overlap_since, _)))) = try_attach_or_merge
         else {
-            return Task::none();
+            return Task::done(DockMessage::RedrawRequested);
         };
 
         if overlap_since.elapsed() > ATTACH_DWELL {
             if overlap_dst_window == self.main_window.id {
-                return self.attach_to_main(src_window);
+                return self.attach_to_main(src_window).discard();
             } else {
-                return self.merge_floating(src_window, overlap_dst_window);
+                return self
+                    .merge_floating(src_window, overlap_dst_window)
+                    .discard();
             }
         }
 
@@ -662,6 +664,7 @@ where
 
                 Task::none()
             }
+            DockMessage::RedrawRequested => Task::none(),
         }
     }
 
@@ -728,6 +731,7 @@ pub enum DockMessage {
     Float { id: window::Id, action: FloatAction },
     Dock(DockId, Box<dyn Any + Send + Sync + 'static>),
     RawWindowGet(window::Id, u64),
+    RedrawRequested,
 }
 
 impl std::fmt::Debug for DockMessage {
@@ -745,6 +749,7 @@ impl std::fmt::Debug for DockMessage {
                 .field("id", id)
                 .field("raw_id", raw_id)
                 .finish(),
+            Self::RedrawRequested => f.debug_tuple("RedrawRequested").finish(),
         }
     }
 }

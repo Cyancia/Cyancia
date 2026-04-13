@@ -107,9 +107,7 @@ impl WindowView for MainView {
             },
             Task::batch([
                 task.discard(),
-                dock_manager_task
-                    .map(|t| dbg!(t))
-                    .map(MainViewMessage::Dock),
+                dock_manager_task.map(MainViewMessage::Dock),
                 dock_tasks,
             ]),
         )
@@ -162,7 +160,10 @@ impl WindowView for MainView {
                             .map(MainViewMessage::Dock);
                     }
                     mouse::Event::ButtonReleased(mouse::Button::Left) => {
-                        return self.dock_manager.on_float_window_drag_end().discard();
+                        return self
+                            .dock_manager
+                            .on_float_window_drag_end()
+                            .map(MainViewMessage::Dock);
                     }
                     _ => {}
                 }
