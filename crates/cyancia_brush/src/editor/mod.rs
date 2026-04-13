@@ -758,10 +758,21 @@ impl WindowView for BrushEditorView {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        iced_futures::event::listen_with(|event, _, _| match event {
-            iced_core::Event::Keyboard(event) => Some(BrushEditorMessage::KeyboardEvent(event)),
-            iced_core::Event::Mouse(event) => Some(BrushEditorMessage::MouseEvent(event)),
-            _ => None,
+        iced_futures::event::listen_with(|event, _, window| {
+            match event {
+                iced_core::Event::Keyboard(event) => Some(BrushEditorMessage::KeyboardEvent(event)),
+                iced_core::Event::Mouse(event) => Some(BrushEditorMessage::MouseEvent(event)),
+                _ => None,
+            }
+            .map(|msg| (msg, window))
+        })
+        .with(self.main_window)
+        .filter_map(|(main_window_id, (msg, window))| {
+            if window == main_window_id {
+                Some(msg)
+            } else {
+                None
+            }
         })
     }
 

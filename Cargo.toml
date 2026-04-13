@@ -17,9 +17,7 @@ members = [
     "crates/cyancia_utils_derive",
     "crates/cyancia_widgets",
     "crates/cyancia_dock",
-    "examples/docking_test",
     "crates/cyancia_platform",
-    # "examples/*",
 ]
 resolver = "2"
 
