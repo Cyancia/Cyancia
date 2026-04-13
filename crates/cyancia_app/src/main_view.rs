@@ -107,7 +107,9 @@ impl WindowView for MainView {
             },
             Task::batch([
                 task.discard(),
-                dock_manager_task.map(|t| dbg!(t)).map(MainViewMessage::Dock),
+                dock_manager_task
+                    .map(|t| dbg!(t))
+                    .map(MainViewMessage::Dock),
                 dock_tasks,
             ]),
         )
@@ -203,8 +205,12 @@ impl WindowView for MainView {
         Subscription::batch([external, dock, canvas_create, canvas_remove])
     }
 
-    fn windows(&self) -> Vec<window::Id> {
-        self.dock_manager.window_infos().map(|i| i.id).collect()
+    fn windows(&self) -> Arc<[iced_core::window::Id]> {
+        self.dock_manager
+            .window_infos()
+            .map(|i| i.id)
+            .collect::<Vec<_>>()
+            .into()
     }
 
     fn root_window(&self) -> Option<iced_core::window::Id> {

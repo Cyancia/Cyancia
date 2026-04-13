@@ -78,6 +78,7 @@ const FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock:
 });
 
 pub struct BrushEditorView {
+    windows: Arc<[window::Id]>,
     main_window: window::Id,
 
     input_manager: ActionsMatcher,
@@ -251,6 +252,7 @@ impl WindowView for BrushEditorView {
 
         (
             Self {
+                windows: [main_window].into(),
                 main_window,
                 input_manager: ActionsMatcher::new(actions),
 
@@ -780,8 +782,8 @@ impl WindowView for BrushEditorView {
         iced_runtime::window::close(self.main_window)
     }
 
-    fn windows(&self) -> Vec<window::Id> {
-        vec![self.main_window]
+    fn windows(&self) -> Arc<[window::Id]> {
+        self.windows.clone()
     }
 
     fn root_window(&self) -> Option<window::Id> {

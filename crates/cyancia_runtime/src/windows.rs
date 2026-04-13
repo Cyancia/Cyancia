@@ -46,7 +46,7 @@ pub trait WindowView: Send + Sync + 'static + Sized {
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::none()
     }
-    fn windows(&self) -> Vec<window::Id>;
+    fn windows(&self) -> Arc<[window::Id]>;
     fn root_window(&self) -> Option<window::Id> {
         None
     }
@@ -66,7 +66,7 @@ pub trait ErasedWindowView: Send + Sync + 'static {
     ) -> Task<Box<dyn Any + Send + Sync>>;
     fn close(self: Box<Self>, runtime: Arc<Services>) -> Task<()>;
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>>;
-    fn windows(&self) -> Vec<window::Id>;
+    fn windows(&self) -> Arc<[window::Id]>;
     fn root_window(&self) -> Option<window::Id>;
 }
 
@@ -109,7 +109,7 @@ where
         <T as WindowView>::subscription(self).map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
-    fn windows(&self) -> Vec<window::Id> {
+    fn windows(&self) -> Arc<[window::Id]> {
         <T as WindowView>::windows(self)
     }
 
@@ -136,14 +136,14 @@ type WindowViewBootFn = Box<
 >;
 
 struct OpenedView {
-    windows: Vec<window::Id>,
+    windows: Arc<[window::Id]>,
     state: Box<dyn ErasedWindowView>,
 }
 
 impl OpenedView {
     fn new(state: Box<dyn ErasedWindowView>) -> Self {
         Self {
-            windows: Vec::new(),
+            windows: Default::default(),
             state,
         }
     }
@@ -327,11 +327,11 @@ fn update_view_windows(
         return;
     }
 
-    for window in &view.windows {
+    for window in view.windows.iter() {
         window_to_view.remove(window);
     }
     view.windows = new_windows;
-    for window in &view.windows {
+    for window in view.windows.iter() {
         window_to_view.insert(*window, view_id);
     }
 }
