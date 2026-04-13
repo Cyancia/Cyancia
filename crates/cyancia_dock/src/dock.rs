@@ -28,6 +28,12 @@ where
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::none()
     }
+    fn on_open(&mut self) -> Task<Self::Message> {
+        Task::none()
+    }
+    fn on_close(&mut self) -> Task<Self::Message> {
+        Task::none()
+    }
 }
 
 pub trait ErasedDock<Theme, Renderer>: Send + Sync + 'static {
@@ -35,6 +41,8 @@ pub trait ErasedDock<Theme, Renderer>: Send + Sync + 'static {
     fn view<'a>(&'a self) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer>;
     fn update(&mut self, message: Box<dyn Any + Send + Sync>) -> Task<Box<dyn Any + Send + Sync>>;
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>>;
+    fn on_open(&mut self) -> Task<Box<dyn Any + Send + Sync>>;
+    fn on_close(&mut self) -> Task<Box<dyn Any + Send + Sync>>;
 }
 
 impl<T, Theme, Renderer> ErasedDock<Theme, Renderer> for T
@@ -62,6 +70,16 @@ where
 
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>> {
         self.subscription()
+            .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn on_open(&mut self) -> Task<Box<dyn Any + Send + Sync>> {
+        self.on_open()
+            .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn on_close(&mut self) -> Task<Box<dyn Any + Send + Sync>> {
+        self.on_close()
             .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
     }
 }

@@ -66,12 +66,23 @@ where
         self.docks.insert(dock.id(), dock);
     }
 
-    pub fn open_dock(&mut self, dock_id: DockId) {
-        let (_, group) = self.dock_state.panes_state_mut().iter_mut().next().unwrap();
-        group.add_dock(dock_id);
+    pub fn unregister_dock(&mut self, dock_id: &DockId) {
+        self.docks.remove(dock_id);
     }
 
-    pub fn on_dock_action(&mut self, action: DockAction) -> Task<()> {
+    pub fn open_dock(&mut self, dock_id: DockId) -> Task<DockMessage> {
+        let (_, group) = self.dock_state.panes_state_mut().iter_mut().next().unwrap();
+        group.add_dock(dock_id.clone());
+
+        if let Some(dock) = self.docks.get_mut(&dock_id) {
+            dock.on_open()
+                .map(move |m| DockMessage::Dock(dock_id.clone(), m))
+        } else {
+            Task::none()
+        }
+    }
+
+    pub fn on_dock_action(&mut self, action: DockAction) -> Task<DockMessage> {
         match action {
             DockAction::Pane(event) => {
                 if let Some(cursor_pos) = self.screen_cursor_pos() {
@@ -98,6 +109,10 @@ where
                             if group.is_empty() {
                                 pane_state.close(pane);
                             }
+                        }
+
+                        if let Some(dock) = self.docks.get_mut(&dock_id) {
+                            return dock.on_close().map(move |m| DockMessage::Dock(dock_id.clone(), m));
                         }
                     }
                     TabEvent::Reorder { from, to } => {
@@ -602,15 +617,14 @@ where
         }
     }
 
-    pub fn update(&mut self, action: DockMessage) -> Task<()> {
+    pub fn update(&mut self, action: DockMessage) -> Task<DockMessage> {
         match action {
-            DockMessage::Main(dock_action) => self.on_dock_action(dock_action).discard(),
+            DockMessage::Main(dock_action) => self.on_dock_action(dock_action),
             DockMessage::Float { id, action } => self.on_float_action(id, action).discard(),
             DockMessage::Dock(dock_id, msg) => {
                 if let Some(dock) = self.docks.get_mut(&dock_id) {
                     dock.update(msg)
                         .map(move |m| DockMessage::Dock(dock_id.clone(), m))
-                        .discard()
                 } else {
                     Task::none()
                 }
@@ -618,23 +632,11 @@ where
         }
     }
 
-    pub fn on_dock_message(&mut self, message: ErasedDockMessage) -> Task<ErasedDockMessage> {
-        let Some(dock) = self.docks.get_mut(&message.dock) else {
-            return Task::none();
-        };
-
-        dock.update(message.message)
-            .map(move |m| ErasedDockMessage {
-                dock: message.dock.clone(),
-                message: m,
-            })
-    }
-
-    pub fn subscription(&self) -> Subscription<ErasedDockMessage> {
+    pub fn subscription(&self) -> Subscription<DockMessage> {
         Subscription::batch(self.docks.iter().map(|(id, dock)| {
             dock.subscription()
                 .with(id.clone())
-                .map(|(dock, message)| ErasedDockMessage { dock, message })
+                .map(|(dock, message)| DockMessage::Dock(dock, message))
         }))
     }
 }
@@ -742,9 +744,4 @@ impl AttachInfo {
             AttachInfo::Merge { pane } => *pane,
         }
     }
-}
-
-pub struct ErasedDockMessage {
-    pub dock: DockId,
-    pub message: Box<dyn Any + Send + Sync>,
 }

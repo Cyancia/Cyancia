@@ -3,12 +3,12 @@ use std::{fmt::Debug, sync::Arc};
 use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
-    event::CanvasCreated,
+    event::{CanvasCreated, CanvasRemoved},
     render::{CanvasRenderer, CanvasRenderers},
     widget::CanvasWidget,
 };
 use cyancia_dock::{
-    DockManager, DockMessage, ErasedDockMessage,
+    DockManager, DockMessage,
     dock::{Dock, DockId},
 };
 use cyancia_image::{
@@ -35,7 +35,7 @@ use iced_wgpu::Renderer;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use crate::dock::CanvasDock;
+use crate::dock::{CanvasDock, construct_canvas_dock_id};
 
 pub struct MainView {
     dock_manager: DockManager<Theme, Renderer>,
@@ -44,11 +44,11 @@ pub struct MainView {
 
 pub enum MainViewMessage {
     Dock(DockMessage),
-    DockUpdate(ErasedDockMessage),
     WindowEvent(window::Id, window::Event),
     KeyboardEvent(window::Id, keyboard::Event),
     MouseEvent(window::Id, mouse::Event),
     CanvasCreated(CanvasCreated),
+    CanvasRemoved(CanvasRemoved),
 }
 
 impl WindowView for MainView {
@@ -86,14 +86,17 @@ impl WindowView for MainView {
         let canvas_dock = CanvasDock::new(canvas.id, runtime.clone(), actions_matcher.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         dock_manager.register_dock(canvas_dock);
-        dock_manager.open_dock(canvas_dock_id);
-
         dock_manager.register_dock(crate::dock::LayerDock);
         dock_manager.register_dock(crate::dock::ToolDock);
         dock_manager.register_dock(crate::dock::HistoryDock);
-        dock_manager.open_dock(DockId::new(crate::dock::LAYER_DOCK_ID.into()));
-        dock_manager.open_dock(DockId::new(crate::dock::TOOL_DOCK_ID.into()));
-        dock_manager.open_dock(DockId::new(crate::dock::HISTORY_DOCK_ID.into()));
+
+        let dock_tasks = Task::batch([
+            dock_manager.open_dock(canvas_dock_id),
+            dock_manager.open_dock(DockId::new(crate::dock::LAYER_DOCK_ID.into())),
+            dock_manager.open_dock(DockId::new(crate::dock::TOOL_DOCK_ID.into())),
+            dock_manager.open_dock(DockId::new(crate::dock::HISTORY_DOCK_ID.into())),
+        ])
+        .map(MainViewMessage::Dock);
 
         runtime.service_mut::<CanvasManager>().add_canvas(canvas);
 
@@ -102,7 +105,7 @@ impl WindowView for MainView {
                 dock_manager,
                 actions_matcher,
             },
-            task.discard(),
+            Task::batch([task.discard(), dock_tasks]),
         )
     }
 
@@ -120,8 +123,7 @@ impl WindowView for MainView {
         runtime: Arc<Services>,
     ) -> impl Into<Task<Self::Message>> {
         match message {
-            MainViewMessage::Dock(m) => self.dock_manager.update(m).discard(),
-            MainViewMessage::DockUpdate(m) => self.dock_manager.on_dock_message(m).discard(),
+            MainViewMessage::Dock(m) => self.dock_manager.update(m).map(MainViewMessage::Dock),
             MainViewMessage::WindowEvent(id, event) => {
                 match event {
                     window::Event::Focused => {
@@ -162,10 +164,16 @@ impl WindowView for MainView {
                 Task::none()
             }
             MainViewMessage::CanvasCreated(e) => {
+                log::info!("Canvas created: {}", e.id);
                 let dock = CanvasDock::new(e.id, runtime, self.actions_matcher.clone());
                 let id = <CanvasDock as Dock<Theme, Renderer>>::id(&dock);
                 self.dock_manager.register_dock(dock);
-                self.dock_manager.open_dock(id);
+                self.dock_manager.open_dock(id).map(MainViewMessage::Dock)
+            }
+            MainViewMessage::CanvasRemoved(e) => {
+                log::info!("Canvas removed: {}", e.id);
+                let id = DockId::new(construct_canvas_dock_id(e.id).into());
+                self.dock_manager.unregister_dock(&id);
 
                 Task::none()
             }
@@ -190,13 +198,11 @@ impl WindowView for MainView {
             }
         });
 
-        let dock = self
-            .dock_manager
-            .subscription()
-            .map(MainViewMessage::DockUpdate);
+        let dock = self.dock_manager.subscription().map(MainViewMessage::Dock);
         let canvas_create = CanvasCreated::listen_to().map(MainViewMessage::CanvasCreated);
+        let canvas_remove = CanvasRemoved::listen_to().map(MainViewMessage::CanvasRemoved);
 
-        Subscription::batch([external, dock, canvas_create])
+        Subscription::batch([external, dock, canvas_create, canvas_remove])
     }
 
     fn windows(&self) -> Vec<window::Id> {

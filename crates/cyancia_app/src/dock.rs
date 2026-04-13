@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
-use cyancia_canvas::{CanvasId, CanvasManager, render::CanvasRenderers, widget::CanvasWidget};
+use cyancia_canvas::{
+    CanvasId, CanvasManager, event::CanvasRemoved, render::CanvasRenderers, widget::CanvasWidget,
+};
 use cyancia_dock::dock::{Dock, DockId};
 use cyancia_image::tile::GpuTileStorage;
 use cyancia_input::{
@@ -9,7 +11,7 @@ use cyancia_input::{
     key::KeyboardState,
     mouse::{HoverMouseState, PressedMouseState},
 };
-use cyancia_runtime::Services;
+use cyancia_runtime::{Services, event::Event};
 use cyancia_tools::ToolProxies;
 use iced::Theme;
 use iced::widget::text;
@@ -45,6 +47,10 @@ macro_rules! test_dummy_dock {
 test_dummy_dock!(LayerDock, LAYER_DOCK_ID, "Layers");
 test_dummy_dock!(ToolDock, TOOL_DOCK_ID, "Tools");
 test_dummy_dock!(HistoryDock, HISTORY_DOCK_ID, "History");
+
+pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
+    format!("canvas_dock_{}", canvas)
+}
 
 pub struct CanvasDock {
     canvas: CanvasId,
@@ -83,7 +89,7 @@ where
     type Message = CanvasDockMessage;
 
     fn id(&self) -> cyancia_dock::dock::DockId {
-        DockId::new(format!("canvas_dock_{}", self.canvas).into())
+        DockId::new(construct_canvas_dock_id(self.canvas).into())
     }
 
     fn view<'a>(&'a self) -> iced_core::Element<'a, Self::Message, Theme, iced_wgpu::Renderer> {
@@ -170,6 +176,12 @@ where
                 }
             }
         }
+
+        Task::none()
+    }
+
+    fn on_close(&mut self) -> Task<Self::Message> {
+        CanvasRemoved::broadcast(CanvasRemoved { id: self.canvas });
 
         Task::none()
     }

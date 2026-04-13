@@ -114,22 +114,6 @@ ringbuffer = "0.16"
 fs_extra = "1"
 smol = "2"
 
-# iced = { path = "D:/iced_fork", features = ["debug", "canvas"] }
-# iced_beacon = { path = "D:/iced_fork/beacon" }
-# iced_core = { path = "D:/iced_fork/core" }
-# iced_debug = { path = "D:/iced_fork/debug" }
-# iced_devtools = { path = "D:/iced_fork/devtools" }
-# iced_futures = { path = "D:/iced_fork/futures" }
-# iced_graphics = { path = "D:/iced_fork/graphics", features = ["geometry"] }
-# iced_highlighter = { path = "D:/iced_fork/highlighter" }
-# iced_program = { path = "D:/iced_fork/program" }
-# iced_renderer = { path = "D:/iced_fork/renderer" }
-# iced_runtime = { path = "D:/iced_fork/runtime" }
-# iced_selector = { path = "D:/iced_fork/selector" }
-# iced_wgpu = { path = "D:/iced_fork/wgpu", features = ["geometry"] }
-# iced_widget = { path = "D:/iced_fork/widget", features = ["wgpu"] }
-# iced_winit = { path = "D:/iced_fork/winit" }
-
 [patch.crates-io]
 naga = { git = "https://github.com/gfx-rs/wgpu", rev = "7a2afeb014cb30a976059717c4ae7c85f01d858e", package = "naga" }
 iced = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
@@ -147,3 +131,19 @@ iced_selector = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_wgpu = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_widget = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
 iced_winit = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
+
+# iced = { path = "D:/iced_fork" }
+# iced_beacon = { path = "D:/iced_fork/beacon" }
+# iced_core = { path = "D:/iced_fork/core" }
+# iced_debug = { path = "D:/iced_fork/debug" }
+# iced_devtools = { path = "D:/iced_fork/devtools" }
+# iced_futures = { path = "D:/iced_fork/futures" }
+# iced_graphics = { path = "D:/iced_fork/graphics" }
+# iced_highlighter = { path = "D:/iced_fork/highlighter" }
+# iced_program = { path = "D:/iced_fork/program" }
+# iced_renderer = { path = "D:/iced_fork/renderer" }
+# iced_runtime = { path = "D:/iced_fork/runtime" }
+# iced_selector = { path = "D:/iced_fork/selector" }
+# iced_wgpu = { path = "D:/iced_fork/wgpu" }
+# iced_widget = { path = "D:/iced_fork/widget" }
+# iced_winit = { path = "D:/iced_fork/winit" }
