@@ -66,4 +66,8 @@ impl DockGroupData {
     pub fn len(&self) -> usize {
         self.docks.len()
     }
+
+    pub fn extend(&mut self, other: DockGroupData) {
+        self.docks.extend(other.docks);
+    }
 }

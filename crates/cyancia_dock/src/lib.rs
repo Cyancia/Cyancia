@@ -57,7 +57,7 @@ where
                 dragging_cursor_relative: None,
                 last_overlap: None,
             },
-            dock_state: DockState::new(DockGroupData::new()).0,
+            dock_state: DockState::default(),
             docks: HashMap::new(),
             detached: HashMap::new(),
             cursor_pos: None,
@@ -82,8 +82,7 @@ where
     }
 
     pub fn open_dock(&mut self, dock_id: DockId) -> Task<DockMessage> {
-        let (_, group) = self.dock_state.panes_state_mut().iter_mut().next().unwrap();
-        group.add_dock(dock_id.clone());
+        self.dock_state.open(dock_id.clone());
 
         if let Some(dock) = self.docks.get_mut(&dock_id) {
             dock.on_open()
@@ -97,7 +96,10 @@ where
         match action {
             DockAction::Pane(event) => self.dock_state.update(event),
             DockAction::Tab(pane, tab_event) => {
-                let pane_state = self.dock_state.panes_state_mut();
+                let Some(pane_state) = self.dock_state.panes_state_mut() else {
+                    return Task::none();
+                };
+
                 match tab_event {
                     TabEvent::Select(dock_id) => {
                         if let Some(group) = pane_state.get_mut(pane) {
@@ -370,11 +372,18 @@ where
                 self.dock_state.split(pane, result_edge, info.group);
             }
             AttachInfo::Merge { pane } => {
-                if let Some(group) = self.dock_state.panes_state_mut().get_mut(pane) {
+                if let Some(group) = self
+                    .dock_state
+                    .panes_state_mut()
+                    .and_then(|st| st.get_mut(pane))
+                {
                     for dock in info.group.iter() {
                         group.add_dock(dock.clone());
                     }
                 }
+            }
+            AttachInfo::Initialize => {
+                self.dock_state.open_group(info.group);
             }
         }
 
@@ -399,7 +408,7 @@ where
     fn detach(&mut self, pane: pane_grid::Pane) -> Task<DockMessage> {
         let Some(group) = self.dock_state.close(pane) else {
             log::error!(
-                "Failed to detach pane, the pane cannot be found or it's the last pane: {:?}",
+                "Failed to detach pane, the pane cannot be found: {:?}",
                 pane
             );
             return Task::none();
@@ -525,15 +534,26 @@ where
 
     pub fn main_attach_info(&self, window: window::Id) -> Option<AttachInfo> {
         const SPACING: f32 = 2.0;
-        let info = self.detached_window(window)?;
-        let node = self.dock_state.panes_state().layout();
-        let regions = node.pane_regions(SPACING, 0.0, self.main_window.size);
 
+        let info = self.detached.get(&window)?;
         let relative_window_pos = Point::new(
             info.position.x + info.size.width / 2.0 - self.main_window.position.x,
             info.position.y + info.size.height / 2.0 - self.main_window.position.y,
         );
-        let half_window_size = Size::new(info.size.width / 2.0, info.size.height / 2.0);
+
+        let Some(node) = self.dock_state.panes_state().map(|st| st.layout()) else {
+            let rel_cx = self.main_window.size.width / 2.0;
+            let rel_cy = self.main_window.size.height / 2.0;
+
+            if (relative_window_pos.x - rel_cx).abs() < self.main_window.size.width / 4.0
+                && (relative_window_pos.y - rel_cy).abs() < self.main_window.size.height / 4.0
+            {
+                return Some(AttachInfo::Initialize);
+            } else {
+                return None;
+            }
+        };
+        let regions = node.pane_regions(SPACING, 0.0, self.main_window.size);
 
         let target = regions
             .iter()
@@ -542,8 +562,8 @@ where
                 let cx = r.x + r.width / 2.0;
                 let cy = r.y + r.height / 2.0;
 
-                if (relative_window_pos.x - cx).abs() < half_window_size.width
-                    && (relative_window_pos.y - cy).abs() < half_window_size.height
+                if (relative_window_pos.x - cx).abs() < r.width / 4.0
+                    && (relative_window_pos.y - cy).abs() < r.height / 4.0
                 {
                     AttachInfo::Merge { pane }
                 } else {
@@ -801,13 +821,5 @@ pub enum AttachInfo {
     Merge {
         pane: pane_grid::Pane,
     },
-}
-
-impl AttachInfo {
-    pub fn target_pane(&self) -> pane_grid::Pane {
-        match self {
-            AttachInfo::Split { pane, .. } => *pane,
-            AttachInfo::Merge { pane } => *pane,
-        }
-    }
+    Initialize,
 }

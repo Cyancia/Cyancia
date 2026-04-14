@@ -187,8 +187,8 @@ where
         let a_resize = Rc::clone(&on_action);
         let a_titlebar = Rc::clone(&on_action);
 
-        let grid =
-            pane_grid::PaneGrid::new(state.panes_state(), move |pane, group_data, _maximized| {
+        let grid = if let Some(panes_state) = state.panes_state().as_ref() {
+            pane_grid::PaneGrid::new(panes_state, move |pane, group_data, _maximized| {
                 let body = group_data
                     .active()
                     .and_then(|id| content.as_ref().map(|c| c(pane, id.clone())))
@@ -221,7 +221,10 @@ where
             .width(Length::Fill)
             .height(Length::Fill)
             .spacing(spacing)
-            .into();
+            .into()
+        } else {
+            space().into()
+        };
 
         if let Some(split_info) = drag_hint {
             let overlay = PaneHintOverlay {
@@ -370,49 +373,67 @@ where
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
-        let regions =
-            self.state
-                .panes_state()
-                .layout()
-                .pane_regions(self.spacing, 0.0, bounds.size());
-
-        let Some(region) = regions.get(&self.attach_info.target_pane()) else {
-            return;
-        };
 
         let highlight = match self.attach_info {
-            AttachInfo::Split { result_edge, .. } => match result_edge {
-                pane_grid::Edge::Left => iced_core::Rectangle {
-                    x: bounds.x + region.x,
-                    y: bounds.y + region.y,
-                    width: region.width / 2.0,
-                    height: region.height,
-                },
-                pane_grid::Edge::Right => iced_core::Rectangle {
-                    x: bounds.x + region.x + region.width / 2.0,
-                    y: bounds.y + region.y,
-                    width: region.width / 2.0,
-                    height: region.height,
-                },
-                pane_grid::Edge::Top => iced_core::Rectangle {
+            AttachInfo::Split { result_edge, pane } => {
+                let Some(pane_states) = self.state.panes_state() else {
+                    return;
+                };
+
+                let regions = pane_states
+                    .layout()
+                    .pane_regions(self.spacing, 0.0, bounds.size());
+                let Some(region) = regions.get(&pane) else {
+                    return;
+                };
+
+                match result_edge {
+                    pane_grid::Edge::Left => iced_core::Rectangle {
+                        x: bounds.x + region.x,
+                        y: bounds.y + region.y,
+                        width: region.width / 2.0,
+                        height: region.height,
+                    },
+                    pane_grid::Edge::Right => iced_core::Rectangle {
+                        x: bounds.x + region.x + region.width / 2.0,
+                        y: bounds.y + region.y,
+                        width: region.width / 2.0,
+                        height: region.height,
+                    },
+                    pane_grid::Edge::Top => iced_core::Rectangle {
+                        x: bounds.x + region.x,
+                        y: bounds.y + region.y,
+                        width: region.width,
+                        height: region.height / 2.0,
+                    },
+                    pane_grid::Edge::Bottom => iced_core::Rectangle {
+                        x: bounds.x + region.x,
+                        y: bounds.y + region.y + region.height / 2.0,
+                        width: region.width,
+                        height: region.height / 2.0,
+                    },
+                }
+            }
+            AttachInfo::Merge { pane } => {
+                let Some(pane_states) = self.state.panes_state() else {
+                    return;
+                };
+
+                let regions = pane_states
+                    .layout()
+                    .pane_regions(self.spacing, 0.0, bounds.size());
+                let Some(region) = regions.get(&pane) else {
+                    return;
+                };
+
+                iced_core::Rectangle {
                     x: bounds.x + region.x,
                     y: bounds.y + region.y,
                     width: region.width,
-                    height: region.height / 2.0,
-                },
-                pane_grid::Edge::Bottom => iced_core::Rectangle {
-                    x: bounds.x + region.x,
-                    y: bounds.y + region.y + region.height / 2.0,
-                    width: region.width,
-                    height: region.height / 2.0,
-                },
-            },
-            AttachInfo::Merge { .. } => iced_core::Rectangle {
-                x: bounds.x + region.x,
-                y: bounds.y + region.y,
-                width: region.width,
-                height: region.height,
-            },
+                    height: region.height,
+                }
+            }
+            AttachInfo::Initialize => bounds,
         };
 
         renderer.fill_quad(

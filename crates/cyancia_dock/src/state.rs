@@ -1,51 +1,52 @@
 use crate::{
     AttachInfo,
-    dock::{DockAction, PaneEvent},
+    dock::{DockAction, DockId, PaneEvent},
     group::DockGroupData,
 };
 use iced::Point;
 use iced_runtime::Task;
 use iced_widget::pane_grid;
 
-// This should not be larger than DRAG_DEADBAND_DISTANCE inside iced.
-// Or the pane will be dragged inside main window for a while before it detaches.
-const DRAG_DEADBAND_DISTANCE: f32 = 10.0;
-
-/// Root state for the docking system.
-///
-/// Wraps `pane_grid::State<DockGroupData>` — all layout is handled by pane_grid.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DockState {
-    panes: pane_grid::State<DockGroupData>,
+    panes: Option<pane_grid::State<DockGroupData>>,
 }
 
 impl DockState {
-    /// Create a new state with one initial group.
-    pub fn new(initial: DockGroupData) -> (Self, pane_grid::Pane) {
-        let (panes, pane) = pane_grid::State::new(initial);
-        (
-            Self {
-                panes,
-            },
-            pane,
-        )
-    }
-
-    /// Create from a declarative `pane_grid::Configuration`.
-    pub fn from_config(config: impl Into<pane_grid::Configuration<DockGroupData>>) -> Self {
-        Self {
-            panes: pane_grid::State::with_configuration(config),
+    pub fn open(&mut self, dock: DockId) -> pane_grid::Pane {
+        if let Some(state) = self.panes.as_mut() {
+            let (pane, group) = state.iter_mut().next().unwrap();
+            group.add_dock(dock.clone());
+            *pane
+        } else {
+            let mut group = DockGroupData::new();
+            group.add_dock(dock.clone());
+            let (state, pane) = pane_grid::State::new(group);
+            self.panes = Some(state);
+            pane
         }
     }
 
-    /// Split a pane along the given axis.
+    pub fn open_group(&mut self, group: DockGroupData) -> pane_grid::Pane {
+        if let Some(state) = self.panes.as_mut() {
+            let (pane, target) = state.iter_mut().next().unwrap();
+            target.extend(group);
+            *pane
+        } else {
+            let (state, pane) = pane_grid::State::new(group);
+            self.panes = Some(state);
+            pane
+        }
+    }
+
     pub fn split(
         &mut self,
         pane: pane_grid::Pane,
         result_edge: pane_grid::Edge,
         new_group: DockGroupData,
     ) -> Option<pane_grid::Pane> {
-        let (new_pane, _) = self.panes.split(
+        let panes = self.panes.as_mut()?;
+        let (new_pane, _) = panes.split(
             match result_edge {
                 pane_grid::Edge::Top => pane_grid::Axis::Horizontal,
                 pane_grid::Edge::Bottom => pane_grid::Axis::Horizontal,
@@ -58,7 +59,7 @@ impl DockState {
 
         match result_edge {
             pane_grid::Edge::Top | pane_grid::Edge::Left => {
-                self.panes.swap(pane, new_pane);
+                panes.swap(pane, new_pane);
             }
             pane_grid::Edge::Bottom | pane_grid::Edge::Right => {}
         };
@@ -67,24 +68,42 @@ impl DockState {
     }
 
     pub fn close(&mut self, pane: pane_grid::Pane) -> Option<DockGroupData> {
-        self.panes.close(pane).map(|(data, _adjacent)| data)
+        let panes = self.panes.as_mut()?;
+        if let Some((state, _)) = panes.close(pane) {
+            Some(state)
+        } else if panes.len() == 1 {
+            let state = panes.panes.remove(&pane);
+            self.panes = None;
+            state
+        } else {
+            None
+        }
     }
 
-    /// Apply a `DockAction` and return any resulting `Task`.
+    pub fn len(&self) -> usize {
+        self.panes.as_ref().map(|panes| panes.len()).unwrap_or(0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.panes.is_none()
+    }
+
     pub fn update(&mut self, action: PaneEvent) {
         match action {
             PaneEvent::Clicked(_) => {}
             PaneEvent::Resized(event) => {
-                self.panes.resize(event.split, event.ratio);
+                if let Some(panes) = self.panes.as_mut() {
+                    panes.resize(event.split, event.ratio);
+                }
             }
         }
     }
 
-    pub fn panes_state(&self) -> &pane_grid::State<DockGroupData> {
-        &self.panes
+    pub fn panes_state(&self) -> Option<&pane_grid::State<DockGroupData>> {
+        self.panes.as_ref()
     }
 
-    pub fn panes_state_mut(&mut self) -> &mut pane_grid::State<DockGroupData> {
-        &mut self.panes
+    pub fn panes_state_mut(&mut self) -> Option<&mut pane_grid::State<DockGroupData>> {
+        self.panes.as_mut()
     }
 }
