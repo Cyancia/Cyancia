@@ -90,7 +90,6 @@ wrapper! {
     pub DockId : Arc<str>
 }
 
-/// Events the docking system can emit.
 #[derive(Debug, Clone)]
 pub enum DockAction {
     Pane(PaneEvent),
@@ -100,35 +99,24 @@ pub enum DockAction {
 #[derive(Debug, Clone)]
 pub enum PaneEvent {
     Clicked(pane_grid::Pane),
-    Dragged(pane_grid::DragEvent),
     Resized(pane_grid::ResizeEvent),
 }
 
-/// Low-level tab events emitted by `TabRowWidget` (no pane coupling).
-///
-/// `DockWidget` maps these back to `DockAction` variants. `FloatingDockWidget` wraps them
-/// inside `FloatAction::Tab`.
 #[derive(Debug, Clone)]
 pub enum TabEvent {
     Select(DockId),
     Close(DockId),
     Reorder { from: usize, to: usize },
     Detach(DockId),
+    TitleBarDrag,
 }
 
-/// Actions emitted by `FloatingDockWidget`.
 #[derive(Debug, Clone)]
 pub enum FloatAction {
     Tab(TabEvent),
-    /// User pressed the non-tab title area — the app should call `window::drag(id)`.
-    StartWindowDrag,
-    /// User pressed a resize handle edge/corner — the app should call `window::drag_resize(id, dir)`.
     StartResize(window::Direction),
 }
 
-// ── DockWidget ────────────────────────────────────────────────────────────────
-
-/// Top-level widget that renders the docking system backed by `PaneGrid`.
 pub struct DockWidget<'a, Message, Theme, Renderer> {
     state: &'a DockState,
     content:
@@ -176,7 +164,7 @@ where
         + iced_widget::pane_grid::Catalog
         + crate::style::DockCatalog
         + 'a,
-    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
+    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
 {
     fn from(w: DockWidget<'a, Message, Theme, Renderer>) -> Self {
         use std::rc::Rc;
@@ -202,17 +190,18 @@ where
                     .and_then(|id| content.as_ref().map(|c| c(pane, id.clone())))
                     .unwrap_or_else(|| Element::new(space()));
 
-                let a = Rc::clone(&a_content);
+                let a_content = Rc::clone(&a_content);
+                let a_drag = Rc::clone(&a_drag);
                 let tabs = TabRowWidget::new(group_data, move |ev| {
-                    (a.as_ref())(DockAction::Tab(pane, ev))
-                });
+                    (a_content.as_ref())(DockAction::Tab(pane, ev))
+                })
+                .title_drag_deadband(10.0);
                 // No on_title_drag set — non-tab area is pane_grid's drag pick area.
 
                 pane_grid::Content::new(body)
                     .title_bar(pane_grid::TitleBar::new(Element::new(tabs)))
             })
             .on_click(move |p| (a_click.as_ref())(DockAction::Pane(PaneEvent::Clicked(p))))
-            .on_drag(move |e| (a_drag.as_ref())(DockAction::Pane(PaneEvent::Dragged(e))))
             .on_resize(5.0, move |e| {
                 (a_resize.as_ref())(DockAction::Pane(PaneEvent::Resized(e)))
             })
@@ -237,13 +226,6 @@ where
     }
 }
 
-// ── FloatingDockWidget ────────────────────────────────────────────────────────
-
-/// Widget for a detached (floating, borderless) dock group window.
-///
-/// Renders a tab row at the top and the active dock's content below.
-/// Pressing the non-tab title area emits `FloatAction::StartWindowDrag` so the
-/// caller can initiate an OS-native window drag via `iced_runtime::window::drag`.
 pub struct FloatingDockWidget<'a, Message, Theme, Renderer> {
     group_data: &'a DockGroupData,
     content: Option<Box<dyn Fn(DockId) -> Element<'a, Message, Theme, Renderer> + 'a>>,
@@ -286,7 +268,7 @@ impl<'a, Message, Theme, Renderer> From<FloatingDockWidget<'a, Message, Theme, R
 where
     Message: 'a,
     Theme: crate::style::DockCatalog + 'a,
-    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
+    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
 {
     fn from(w: FloatingDockWidget<'a, Message, Theme, Renderer>) -> Self {
         use std::rc::Rc;
@@ -300,12 +282,10 @@ where
 
         let on_action: Rc<dyn Fn(FloatAction) -> Message + 'a> = Rc::from(on_action);
         let a_tab = Rc::clone(&on_action);
-        let a_title_drag = Rc::clone(&on_action);
         let a_resize = Rc::clone(&on_action);
 
         let tab_row =
-            TabRowWidget::new(group_data, move |ev| (a_tab.as_ref())(FloatAction::Tab(ev)))
-                .on_title_drag(move || (a_title_drag.as_ref())(FloatAction::StartWindowDrag));
+            TabRowWidget::new(group_data, move |ev| (a_tab.as_ref())(FloatAction::Tab(ev)));
 
         let body = group_data
             .active()

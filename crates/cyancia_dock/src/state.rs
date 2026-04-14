@@ -17,7 +17,6 @@ const DRAG_DEADBAND_DISTANCE: f32 = 10.0;
 #[derive(Debug)]
 pub struct DockState {
     panes: pane_grid::State<DockGroupData>,
-    pending_detach: Option<(pane_grid::Pane, Point)>,
 }
 
 impl DockState {
@@ -27,7 +26,6 @@ impl DockState {
         (
             Self {
                 panes,
-                pending_detach: None,
             },
             pane,
         )
@@ -37,7 +35,6 @@ impl DockState {
     pub fn from_config(config: impl Into<pane_grid::Configuration<DockGroupData>>) -> Self {
         Self {
             panes: pane_grid::State::with_configuration(config),
-            pending_detach: None,
         }
     }
 
@@ -74,38 +71,13 @@ impl DockState {
     }
 
     /// Apply a `DockAction` and return any resulting `Task`.
-    pub fn update(&mut self, action: PaneEvent, cursor_pos: Point) {
+    pub fn update(&mut self, action: PaneEvent) {
         match action {
             PaneEvent::Clicked(_) => {}
-
-            PaneEvent::Dragged(event) => match event {
-                pane_grid::DragEvent::Picked { pane } => {
-                    self.pending_detach = Some((pane, cursor_pos));
-                }
-                pane_grid::DragEvent::Dropped { pane, target } => {
-                    self.panes.drop(pane, target);
-                }
-                pane_grid::DragEvent::Canceled { .. } => {
-                    self.pending_detach = None;
-                }
-            },
-
             PaneEvent::Resized(event) => {
                 self.panes.resize(event.split, event.ratio);
             }
         }
-    }
-
-    pub fn try_detach(&mut self, cursor_pos: Point) -> Option<pane_grid::Pane> {
-        if let Some((pane, point)) = self.pending_detach.take() {
-            if point.distance(cursor_pos) > DRAG_DEADBAND_DISTANCE {
-                return Some(pane);
-            } else {
-                self.pending_detach = Some((pane, point));
-            }
-        }
-
-        None
     }
 
     pub fn panes_state(&self) -> &pane_grid::State<DockGroupData> {

@@ -4,20 +4,14 @@ use crate::{
     style::DockCatalog,
 };
 use iced_core::{
-    Element, Event, Font, Layout, Length, Point, Rectangle, Shell, Size, alignment,
+    Element, Event, Font, Layout, Length, Pixels, Point, Rectangle, Shell, Size, alignment,
     clipboard::Clipboard,
     layout, mouse, renderer,
-    text::{self, LineHeight, Shaping},
+    text::{self, LineHeight, Shaping, paragraph},
     widget::{Tree, tree},
 };
 
-pub const TAB_WIDTH: f32 = 120.0;
-pub const TAB_HEIGHT: f32 = 36.0;
 const CLOSE_SIZE: f32 = 16.0;
-const TAB_PAD: f32 = 8.0;
-const DRAG_DEADBAND: f32 = 5.0;
-
-// ── Tree state ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Default, Clone, Copy)]
 enum TabAction {
@@ -25,64 +19,47 @@ enum TabAction {
     Idle,
     Pressing {
         index: usize,
-        origin: Point,
-        is_close: bool,
     },
     Dragging {
         index: usize,
     },
+    TitleDragging {
+        origin: Point,
+    },
 }
 
-#[derive(Debug, Default)]
-struct TabRowState {
+#[derive(Debug)]
+struct TabRowState<Renderer: iced_core::text::Renderer> {
     action: TabAction,
     hovered: Option<usize>,
+    labels: Vec<paragraph::Plain<Renderer::Paragraph>>,
+    bounds: Vec<Rectangle>,
 }
 
-// ── Hit-testing ───────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy)]
-enum TabHit {
-    Tab(usize),
-    Close(usize),
-    Miss,
+impl<Renderer: iced_core::text::Renderer> Default for TabRowState<Renderer> {
+    fn default() -> Self {
+        Self {
+            action: Default::default(),
+            hovered: Default::default(),
+            labels: Vec::new(),
+            bounds: Vec::new(),
+        }
+    }
 }
 
-fn hit_test(group_data: &DockGroupData, bounds: Rectangle, cursor: Point) -> TabHit {
-    if !bounds.contains(cursor) {
-        return TabHit::Miss;
+fn hit_test(bounds: &[Rectangle], cursor_rel: Point) -> Option<usize> {
+    for (i, bounds) in bounds.iter().enumerate() {
+        if bounds.contains(cursor_rel) {
+            return Some(i);
+        }
     }
-    let rel_x = cursor.x - bounds.x;
-    let n = group_data.len();
-    if rel_x < 0.0 || n == 0 {
-        return TabHit::Miss;
-    }
-    let tab_i = (rel_x / TAB_WIDTH) as usize;
-    if tab_i >= n {
-        return TabHit::Miss;
-    }
-    let close_x = bounds.x + (tab_i as f32 + 1.0) * TAB_WIDTH - TAB_PAD - CLOSE_SIZE;
-    let close_y = bounds.y + (TAB_HEIGHT - CLOSE_SIZE) / 2.0;
-    let close_rect = Rectangle {
-        x: close_x,
-        y: close_y,
-        width: CLOSE_SIZE,
-        height: CLOSE_SIZE,
-    };
-    if close_rect.contains(cursor) {
-        TabHit::Close(tab_i)
-    } else {
-        TabHit::Tab(tab_i)
-    }
+
+    None
 }
 
 const DETACH_DEADBAND_FACTOR: f32 = 0.5;
 
-fn drag_target_index(
-    group_data: &DockGroupData,
-    bounds: Rectangle,
-    cursor: Point,
-) -> Option<usize> {
+fn drag_target_index(bounds: Rectangle, tab_bounds: &[Rectangle], cursor: Point) -> Option<usize> {
     let detach_min = Point {
         x: bounds.x - bounds.height * DETACH_DEADBAND_FACTOR,
         y: bounds.y - bounds.height * DETACH_DEADBAND_FACTOR,
@@ -99,17 +76,22 @@ fn drag_target_index(
         return None;
     }
 
-    let rel_x = (cursor.x - bounds.x).max(0.0);
-    let n = group_data.len();
-    Some(((rel_x / TAB_WIDTH).round() as usize).min(n))
-}
+    let rel_x = cursor.x - bounds.x;
+    for (i, label_bounds) in tab_bounds.iter().enumerate() {
+        if rel_x < label_bounds.center_x() {
+            return Some(i);
+        }
+    }
 
-// ── Widget ────────────────────────────────────────────────────────────────────
+    Some(tab_bounds.len())
+}
 
 pub struct TabRowWidget<'a, Message> {
     group_data: &'a DockGroupData,
+    font_size: Pixels,
+    padding: f32,
     on_action: Box<dyn Fn(TabEvent) -> Message + 'a>,
-    on_title_drag: Option<Box<dyn Fn() -> Message + 'a>>,
+    title_drag_deadband: f32,
     title_of: Box<dyn Fn(&DockId) -> String + 'a>,
 }
 
@@ -120,14 +102,16 @@ impl<'a, Message> TabRowWidget<'a, Message> {
     ) -> Self {
         Self {
             group_data,
+            font_size: Pixels(14.0),
+            padding: 8.0,
             on_action: Box::new(on_action),
-            on_title_drag: None,
+            title_drag_deadband: 0.0,
             title_of: Box::new(|id| id.to_string()),
         }
     }
 
-    pub fn on_title_drag(mut self, f: impl Fn() -> Message + 'a) -> Self {
-        self.on_title_drag = Some(Box::new(f));
+    pub fn title_drag_deadband(mut self, factor: f32) -> Self {
+        self.title_drag_deadband = factor;
         self
     }
 
@@ -135,23 +119,31 @@ impl<'a, Message> TabRowWidget<'a, Message> {
         self.title_of = Box::new(f);
         self
     }
-}
 
-// ── Widget impl ───────────────────────────────────────────────────────────────
+    pub fn padding(mut self, padding: f32) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    pub fn font_size(mut self, font_size: Pixels) -> Self {
+        self.font_size = font_size;
+        self
+    }
+}
 
 impl<'a, Message, Theme, Renderer> iced_core::Widget<Message, Theme, Renderer>
     for TabRowWidget<'a, Message>
 where
     Message: 'a,
     Theme: DockCatalog,
-    Renderer: iced_core::Renderer + iced_core::text::Renderer,
+    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
 {
     fn tag(&self) -> tree::Tag {
-        tree::Tag::of::<TabRowState>()
+        tree::Tag::of::<TabRowState<Renderer>>()
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(TabRowState::default())
+        tree::State::new(TabRowState::<Renderer>::default())
     }
 
     fn children(&self) -> Vec<Tree> {
@@ -159,27 +151,49 @@ where
     }
 
     fn size(&self) -> Size<Length> {
-        let width = if self.on_title_drag.is_some() {
-            Length::Fill
-        } else {
-            Length::Shrink
-        };
-        Size::new(width, Length::Fixed(TAB_HEIGHT))
+        Size::new(
+            Length::Fill,
+            Length::Fixed(self.font_size.0 + self.padding * 2.0),
+        )
     }
 
     fn layout(
         &mut self,
-        _tree: &mut Tree,
-        _renderer: &Renderer,
+        tree: &mut Tree,
+        renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        let n = self.group_data.len().max(1) as f32;
-        let intrinsic = Size::new(n * TAB_WIDTH, TAB_HEIGHT);
-        if self.on_title_drag.is_some() {
-            layout::Node::new(limits.resolve(Length::Fill, Length::Fixed(TAB_HEIGHT), intrinsic))
-        } else {
-            layout::Node::new(intrinsic)
+        let state = tree.state.downcast_mut::<TabRowState<Renderer>>();
+        state.labels.clear();
+        state.bounds.clear();
+        let mut x = 0.0;
+        for dock in &self.group_data.docks {
+            let p = paragraph::Plain::new(iced_core::text::Text {
+                content: (self.title_of)(dock),
+                bounds: limits.max(),
+                size: self.font_size,
+                line_height: LineHeight::Relative(1.0),
+                font: renderer.default_font(),
+                align_x: text::Alignment::Center,
+                align_y: alignment::Vertical::Center,
+                shaping: Shaping::Auto,
+                wrapping: text::Wrapping::None,
+            });
+            let width = p.min_width() + self.padding * 2.0;
+            state.bounds.push(Rectangle {
+                x,
+                y: 0.0,
+                width,
+                height: self.font_size.0 + self.padding * 2.0,
+            });
+            state.labels.push(p);
+            x += width;
         }
+        layout::Node::new(limits.resolve(
+            Length::Fill,
+            Length::Fixed(self.font_size.0 + self.padding * 2.0),
+            limits.max(),
+        ))
     }
 
     fn draw(
@@ -192,7 +206,7 @@ where
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
-        let state = tree.state.downcast_ref::<TabRowState>();
+        let state = tree.state.downcast_ref::<TabRowState<Renderer>>();
         let bounds = layout.bounds();
         let dock_style = theme.style(
             &<Theme as DockCatalog>::default(),
@@ -204,18 +218,17 @@ where
         let drag_target = if let TabAction::Dragging { index: _ } = state.action {
             cursor
                 .position()
-                .and_then(|p| drag_target_index(self.group_data, bounds, p))
+                .and_then(|p| drag_target_index(bounds, &state.bounds, p))
         } else {
             None
         };
 
         for (i, dock_id) in self.group_data.iter().enumerate() {
-            let x = bounds.x + i as f32 * TAB_WIDTH;
+            let tab_rect_rel = state.bounds[i];
             let tab_rect = Rectangle {
-                x,
-                y: bounds.y,
-                width: TAB_WIDTH,
-                height: TAB_HEIGHT,
+                x: tab_rect_rel.x + bounds.x,
+                y: tab_rect_rel.y + bounds.y,
+                ..tab_rect_rel
             };
 
             let is_active = active == Some(dock_id);
@@ -238,66 +251,31 @@ where
             );
 
             // Title text
-            let title = (self.title_of)(dock_id);
-            let text_x = x + TAB_PAD;
-            let text_w = TAB_WIDTH - TAB_PAD * 2.0 - CLOSE_SIZE - TAB_PAD;
             renderer.fill_text(
-                text::Text {
-                    content: title,
-                    size: iced_core::Pixels(14.0),
-                    font: renderer.default_font(),
-                    bounds: Size::new(text_w, TAB_HEIGHT),
-                    align_x: text::Alignment::Left,
-                    align_y: alignment::Vertical::Center,
-                    line_height: LineHeight::default(),
-                    shaping: Shaping::Basic,
-                    wrapping: text::Wrapping::None,
-                },
-                Point::new(text_x, bounds.y + TAB_HEIGHT / 2.0),
+                state.labels[i]
+                    .as_text()
+                    .with_content(state.labels[i].content().to_string()),
+                tab_rect.center(),
                 tab_style.text_color,
                 tab_rect,
-            );
-
-            // Close button
-            let close_x = x + TAB_WIDTH - TAB_PAD - CLOSE_SIZE;
-            let close_y = bounds.y + (TAB_HEIGHT - CLOSE_SIZE) / 2.0;
-            let close_rect = Rectangle {
-                x: close_x,
-                y: close_y,
-                width: CLOSE_SIZE,
-                height: CLOSE_SIZE,
-            };
-            let close_color = if state.hovered == Some(i) {
-                ts.close_button_hover_color
-            } else {
-                ts.close_button_color
-            };
-            renderer.fill_text(
-                text::Text {
-                    content: "×".to_string(),
-                    size: iced_core::Pixels(CLOSE_SIZE),
-                    font: renderer.default_font(),
-                    bounds: Size::new(CLOSE_SIZE, CLOSE_SIZE),
-                    align_x: text::Alignment::Center,
-                    align_y: alignment::Vertical::Center,
-                    line_height: LineHeight::default(),
-                    shaping: Shaping::Basic,
-                    wrapping: text::Wrapping::None,
-                },
-                close_rect.center(),
-                close_color,
-                close_rect,
             );
         }
 
         // Drop indicator during tab drag
         if let Some(target) = drag_target {
-            let x = bounds.x + target as f32 * TAB_WIDTH;
+            let rel_x = if let Some(bounds) = state.bounds.get(target) {
+                bounds.x
+            } else {
+                let last = state.bounds.last().unwrap();
+                last.x + last.width
+            };
+            let x = bounds.x + rel_x;
+
             let indicator = Rectangle {
                 x: x - 1.5,
                 y: bounds.y,
                 width: 3.0,
-                height: TAB_HEIGHT,
+                height: self.font_size.0 + self.padding * 2.0,
             };
             renderer.fill_quad(
                 renderer::Quad {
@@ -321,99 +299,75 @@ where
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
-        let state = tree.state.downcast_mut::<TabRowState>();
+        let state = tree.state.downcast_mut::<TabRowState<Renderer>>();
 
         match event {
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 // Update hover
-                state.hovered = match hit_test(self.group_data, bounds, *position) {
-                    TabHit::Tab(i) | TabHit::Close(i) => Some(i),
-                    TabHit::Miss => None,
-                };
+                state.hovered = cursor
+                    .position_in(bounds)
+                    .and_then(|pos| hit_test(&state.bounds, pos));
 
-                // Track drag
-                if let TabAction::Pressing {
-                    origin,
-                    index,
-                    is_close: false,
-                } = state.action
-                {
-                    let dx = position.x - origin.x;
-                    let dy = position.y - origin.y;
-                    if (dx * dx + dy * dy).sqrt() >= DRAG_DEADBAND {
+                match state.action {
+                    TabAction::Idle => {}
+                    TabAction::Pressing { index } => {
                         state.action = TabAction::Dragging { index };
                         shell.capture_event();
                     }
-                } else if let TabAction::Dragging { index } = state.action {
-                    shell.request_redraw();
-                    shell.capture_event();
+                    TabAction::Dragging { index } => {
+                        shell.request_redraw();
+                        shell.capture_event();
 
-                    if drag_target_index(self.group_data, bounds, *position).is_none() {
-                        let id = self.group_data.iter().nth(index).unwrap();
-                        shell.publish((self.on_action)(TabEvent::Detach(id.clone())));
-                        state.action = TabAction::Idle;
+                        if drag_target_index(bounds, &state.bounds, *position).is_none() {
+                            let id = self.group_data.iter().nth(index).unwrap();
+                            shell.publish((self.on_action)(TabEvent::Detach(id.clone())));
+                            state.action = TabAction::Idle;
+                        }
+                    }
+                    TabAction::TitleDragging { origin } => {
+                        if let Some(pos) = cursor.position()
+                            && pos.distance(origin) > self.title_drag_deadband
+                        {
+                            shell.publish((self.on_action)(TabEvent::TitleBarDrag));
+                            state.action = TabAction::Idle;
+                        }
+
+                        shell.capture_event();
                     }
                 }
             }
 
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(pos) = cursor.position() {
-                    match hit_test(self.group_data, bounds, pos) {
-                        TabHit::Tab(i) => {
-                            state.action = TabAction::Pressing {
-                                index: i,
-                                origin: pos,
-                                is_close: false,
-                            };
-                            shell.capture_event();
-                        }
-                        TabHit::Close(i) => {
-                            state.action = TabAction::Pressing {
-                                index: i,
-                                origin: pos,
-                                is_close: true,
-                            };
-                            shell.capture_event();
-                        }
-                        TabHit::Miss => {
-                            // Non-tab title bar area: forward to on_title_drag if set.
-                            // If not set, do not capture → pane_grid handles it as a drag pick.
-                            if bounds.contains(pos) {
-                                if let Some(f) = &self.on_title_drag {
-                                    shell.publish(f());
-                                    shell.capture_event();
-                                }
-                            }
-                        }
+                if !cursor.is_over(layout.bounds()) {
+                    return;
+                }
+
+                match hit_test(&state.bounds, cursor.position_in(layout.bounds()).unwrap()) {
+                    Some(i) => {
+                        state.action = TabAction::Pressing { index: i };
+                        shell.capture_event();
+                    }
+                    None => {
+                        state.action = TabAction::TitleDragging {
+                            origin: cursor.position().unwrap(),
+                        };
+                        shell.capture_event();
                     }
                 }
             }
 
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 match state.action {
-                    TabAction::Pressing {
-                        index: i,
-                        is_close: false,
-                        ..
-                    } => {
+                    TabAction::Pressing { index: i } => {
                         if let Some(dock_id) = self.group_data.iter().nth(i) {
                             shell.publish((self.on_action)(TabEvent::Select(dock_id.clone())));
                         }
                         state.action = TabAction::Idle;
-                    }
-                    TabAction::Pressing {
-                        index: i,
-                        is_close: true,
-                        ..
-                    } => {
-                        if let Some(dock_id) = self.group_data.iter().nth(i) {
-                            shell.publish((self.on_action)(TabEvent::Close(dock_id.clone())));
-                        }
-                        state.action = TabAction::Idle;
+                        shell.capture_event();
                     }
                     TabAction::Dragging { index: from } => {
                         if let Some(pos) = cursor.position()
-                            && let Some(to) = drag_target_index(self.group_data, bounds, pos)
+                            && let Some(to) = drag_target_index(bounds, &state.bounds, pos)
                         {
                             let to = if to > from { to - 1 } else { to };
                             if to != from {
@@ -422,6 +376,11 @@ where
                         }
 
                         state.action = TabAction::Idle;
+                        shell.capture_event();
+                    }
+                    TabAction::TitleDragging { .. } => {
+                        state.action = TabAction::Idle;
+                        shell.capture_event();
                     }
                     TabAction::Idle => {}
                 }
@@ -441,23 +400,16 @@ where
         _viewport: &Rectangle,
         _renderer: &Renderer,
     ) -> mouse::Interaction {
-        let state = tree.state.downcast_ref::<TabRowState>();
+        let state = tree.state.downcast_ref::<TabRowState<Renderer>>();
         if let TabAction::Dragging { .. } = state.action {
             return mouse::Interaction::Grabbing;
         }
-        if let Some(pos) = cursor.position() {
-            match hit_test(self.group_data, layout.bounds(), pos) {
-                TabHit::Tab(_) | TabHit::Close(_) => mouse::Interaction::Pointer,
-                TabHit::Miss => {
-                    if self.on_title_drag.is_some() && layout.bounds().contains(pos) {
-                        mouse::Interaction::Grab
-                    } else {
-                        mouse::Interaction::default()
-                    }
-                }
-            }
-        } else {
-            mouse::Interaction::default()
+        match cursor.position_in(layout.bounds()) {
+            Some(pos) => match hit_test(&state.bounds, pos) {
+                Some(_) => mouse::Interaction::Pointer,
+                None => mouse::Interaction::Grab,
+            },
+            None => mouse::Interaction::default(),
         }
     }
 }
@@ -467,7 +419,7 @@ impl<'a, Message, Theme, Renderer> From<TabRowWidget<'a, Message>>
 where
     Message: 'a,
     Theme: DockCatalog + 'a,
-    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'a,
+    Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
 {
     fn from(w: TabRowWidget<'a, Message>) -> Self {
         Element::new(w)

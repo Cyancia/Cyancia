@@ -90,17 +90,7 @@ where
 
     pub fn on_dock_action(&mut self, action: DockAction) -> Task<DockMessage> {
         match action {
-            DockAction::Pane(event) => {
-                if let Some(cursor_pos) = self.screen_cursor_pos() {
-                    self.dock_state.update(
-                        event,
-                        Point::new(
-                            cursor_pos.x - self.main_window.position.x,
-                            cursor_pos.y - self.main_window.position.y,
-                        ),
-                    )
-                }
-            }
+            DockAction::Pane(event) => self.dock_state.update(event),
             DockAction::Tab(pane, tab_event) => {
                 let pane_state = self.dock_state.panes_state_mut();
                 match tab_event {
@@ -148,6 +138,9 @@ where
                             };
                         }
                     }
+                    TabEvent::TitleBarDrag => {
+                        return self.detach(pane);
+                    }
                 }
             }
         }
@@ -157,10 +150,6 @@ where
 
     pub fn on_cursor_moved(&mut self, window: window::Id, pos: Point) -> Task<DockMessage> {
         self.cursor_pos = Some((window, pos));
-
-        if let Some(pane) = self.dock_state.try_detach(pos) {
-            return self.detach(pane);
-        }
 
         // TODO Implement window snapping if possible
         //      Currently, if we are using manually implemented dragging, it may cause problem
@@ -314,19 +303,19 @@ where
                         };
                     }
                 }
-            },
-            FloatAction::StartWindowDrag => {
-                let Some(cursor_pos) = self.screen_cursor_pos() else {
-                    return Task::none();
-                };
+                TabEvent::TitleBarDrag => {
+                    let Some(cursor_pos) = self.screen_cursor_pos() else {
+                        return Task::none();
+                    };
 
-                let info = self.detached.get_mut(&id).unwrap();
-                info.dragging_cursor_relative = Some(Vector::new(
-                    cursor_pos.x - info.position.x,
-                    cursor_pos.y - info.position.y,
-                ));
-                return iced_runtime::window::drag(id);
-            }
+                    let info = self.detached.get_mut(&id).unwrap();
+                    info.dragging_cursor_relative = Some(Vector::new(
+                        cursor_pos.x - info.position.x,
+                        cursor_pos.y - info.position.y,
+                    ));
+                    return iced_runtime::window::drag(id);
+                }
+            },
             FloatAction::StartResize(dir) => {
                 return iced_runtime::window::drag_resize(id, dir);
             }
@@ -375,10 +364,10 @@ where
         iced_runtime::window::close(src)
     }
 
-    pub fn detach(&mut self, pane: pane_grid::Pane) -> Task<DockMessage> {
+    fn detach(&mut self, pane: pane_grid::Pane) -> Task<DockMessage> {
         let Some(group) = self.dock_state.close(pane) else {
             log::error!(
-                "Failed to detach pane, the pane cannot be found: {:?}",
+                "Failed to detach pane, the pane cannot be found or it's the last pane: {:?}",
                 pane
             );
             return Task::none();
