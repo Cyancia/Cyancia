@@ -6,9 +6,6 @@ use crate::dock::{self, DockId};
 use indexmap::IndexSet;
 use serde::Serialize;
 
-/// Data belonging to a dock group (not widget state).
-///
-/// Stored in `pane_grid::State<DockGroupData>`.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct DockGroupData {
     docks: IndexSet<DockId>,
@@ -18,20 +15,6 @@ pub struct DockGroupData {
 impl DockGroupData {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn with_dock(dock_id: DockId) -> Self {
-        let mut g = Self::new();
-        g.add_dock(dock_id);
-        g
-    }
-
-    pub fn with_docks(docks: impl IntoIterator<Item = DockId>) -> Self {
-        let mut g = Self::new();
-        for id in docks {
-            g.add_dock(id);
-        }
-        g
     }
 
     pub fn add_dock(&mut self, dock_id: DockId) {

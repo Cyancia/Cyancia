@@ -1,24 +1,14 @@
-//! Styling for the docking system components.
-//!
-//! Uses the Catalog pattern from iced for themable styling of tab bars,
-//! dividers, and drop indicators.
-
 use iced_core::Padding;
 use iced_core::{Background, Border, Color};
 
-/// The catalog trait for dock system styling.
 pub trait DockCatalog {
-    /// The style class type for this catalog.
     type Class<'a>;
 
-    /// The default style class.
     fn default<'a>() -> Self::Class<'a>;
 
-    /// Get the style for a given class and status.
     fn style(&self, class: &Self::Class<'_>, status: DockStatus) -> DockStyle;
 }
 
-/// The status of a dock component for styling purposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DockStatus {
     Active,
@@ -27,7 +17,6 @@ pub enum DockStatus {
     Dragging,
 }
 
-/// Complete style for the docking system.
 #[derive(Debug, Clone)]
 pub struct DockStyle {
     pub tab_bar: TabBarStyle,
@@ -35,7 +24,6 @@ pub struct DockStyle {
     pub drop_indicator: DropIndicatorStyle,
 }
 
-/// Style for the tab bar area.
 #[derive(Debug, Clone)]
 pub struct TabBarStyle {
     pub background: Background,
@@ -50,7 +38,6 @@ pub struct TabBarStyle {
     pub close_button_hover_color: Color,
 }
 
-/// Style for individual tabs.
 #[derive(Debug, Clone)]
 pub struct TabStyle {
     pub background: Background,
@@ -58,7 +45,6 @@ pub struct TabStyle {
     pub border: Border,
 }
 
-/// Style for dividers between groups.
 #[derive(Debug, Clone)]
 pub struct DividerStyle {
     pub width: f32,
@@ -66,7 +52,6 @@ pub struct DividerStyle {
     pub hover_color: Color,
 }
 
-/// Style for drop indicators during drag-and-drop.
 #[derive(Debug, Clone)]
 pub struct DropIndicatorStyle {
     pub edge_color: Color,
@@ -74,7 +59,6 @@ pub struct DropIndicatorStyle {
     pub merge_overlay_color: Color,
 }
 
-/// Default implementation for iced's Theme.
 impl DockCatalog for iced::Theme {
     type Class<'a> = Box<dyn Fn(&Self) -> DockStyle + 'a>;
 
@@ -87,7 +71,6 @@ impl DockCatalog for iced::Theme {
     }
 }
 
-/// Default style function for the dock system.
 pub fn default_style(theme: &iced::Theme) -> DockStyle {
     let palette = theme.extended_palette();
 
