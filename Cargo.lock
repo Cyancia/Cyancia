@@ -1361,6 +1361,7 @@ dependencies = [
  "cyancia_platform",
  "cyancia_utils",
  "iced",
+ "iced_aw",
  "iced_core",
  "iced_runtime",
  "iced_widget",

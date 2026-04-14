@@ -2,11 +2,12 @@ use std::{any::Any, sync::Arc};
 
 use cyancia_utils::wrapper;
 use iced::Subscription;
+use iced_aw::ContextMenu;
 use iced_core::{
     Element, Event, Layout, Length, Point, Rectangle, Size, layout, mouse, renderer, widget, window,
 };
 use iced_runtime::Task;
-use iced_widget::{pane_grid, space, stack};
+use iced_widget::{button, column, pane_grid, space, stack, text};
 use parse_display::Display;
 use serde::Serialize;
 
@@ -106,6 +107,7 @@ pub enum PaneEvent {
 pub enum TabEvent {
     Select(DockId),
     Close(DockId),
+    CloseGroup,
     Reorder { from: usize, to: usize },
     Detach(DockId),
     TitleBarDrag,
@@ -163,6 +165,9 @@ where
     Theme: iced_widget::container::Catalog
         + iced_widget::pane_grid::Catalog
         + crate::style::DockCatalog
+        + iced_widget::button::Catalog
+        + iced_aw::context_menu::Catalog
+        + iced_widget::text::Catalog
         + 'a,
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
 {
@@ -178,10 +183,9 @@ where
         } = w;
 
         let on_action = Rc::<dyn Fn(DockAction) -> Message>::from(on_action);
-        let a_content = Rc::clone(&on_action);
         let a_click = Rc::clone(&on_action);
-        let a_drag = Rc::clone(&on_action);
         let a_resize = Rc::clone(&on_action);
+        let a_titlebar = Rc::clone(&on_action);
 
         let grid =
             pane_grid::PaneGrid::new(state.panes_state(), move |pane, group_data, _maximized| {
@@ -190,16 +194,25 @@ where
                     .and_then(|id| content.as_ref().map(|c| c(pane, id.clone())))
                     .unwrap_or_else(|| Element::new(space()));
 
-                let a_content = Rc::clone(&a_content);
-                let a_drag = Rc::clone(&a_drag);
-                let tabs = TabRowWidget::new(group_data, move |ev| {
-                    (a_content.as_ref())(DockAction::Tab(pane, ev))
-                })
-                .title_drag_deadband(10.0);
-                // No on_title_drag set — non-tab area is pane_grid's drag pick area.
+                let tabs =
+                    TabRowWidget::new(group_data, std::convert::identity).title_drag_deadband(10.0);
 
-                pane_grid::Content::new(body)
-                    .title_bar(pane_grid::TitleBar::new(Element::new(tabs)))
+                let Some(active) = group_data.active() else {
+                    return space().into();
+                };
+                let ctx_menu = ContextMenu::new(Element::new(tabs), move || {
+                    column![
+                        button(text!("Close Active"))
+                            .on_press_with(|| TabEvent::Close(active.clone())),
+                        button(text!("Close Group")).on_press_with(|| TabEvent::CloseGroup),
+                    ]
+                    .into()
+                });
+                let a_titlebar = Rc::clone(&a_titlebar);
+                pane_grid::Content::new(body).title_bar(pane_grid::TitleBar::new(
+                    Element::new(ctx_menu)
+                        .map(move |msg| (a_titlebar.as_ref())(DockAction::Tab(pane, msg))),
+                ))
             })
             .on_click(move |p| (a_click.as_ref())(DockAction::Pane(PaneEvent::Clicked(p))))
             .on_resize(5.0, move |e| {

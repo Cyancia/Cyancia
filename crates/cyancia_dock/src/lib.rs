@@ -38,7 +38,12 @@ pub struct DockManager<Theme, Renderer> {
 
 impl<Theme, Renderer> DockManager<Theme, Renderer>
 where
-    Theme: DockCatalog + iced_widget::pane_grid::Catalog + 'static,
+    Theme: DockCatalog
+        + iced_widget::pane_grid::Catalog
+        + 'static
+        + iced_widget::button::Catalog
+        + iced_aw::context_menu::Catalog
+        + iced_widget::text::Catalog,
     Renderer: iced_core::Renderer + iced_core::text::Renderer + 'static,
 {
     pub fn new(main_window: window::Id) -> (Self, Task<DockMessage>) {
@@ -140,6 +145,29 @@ where
                     }
                     TabEvent::TitleBarDrag => {
                         return self.detach(pane);
+                    }
+                    TabEvent::CloseGroup => {
+                        let Some((group, _)) = pane_state.close(pane) else {
+                            log::error!(
+                                "Failed to close pane, the pane cannot be found or it's the last pane: {:?}",
+                                pane
+                            );
+                            return Task::none();
+                        };
+                        let mut tasks = Vec::with_capacity(group.len());
+                        for dock_id in group.iter() {
+                            let dock_id = dock_id.clone();
+                            let Some(dock) = self.docks.get_mut(&dock_id) else {
+                                continue;
+                            };
+
+                            let task = dock
+                                .on_close()
+                                .map(move |m| DockMessage::Dock(dock_id.clone(), m));
+                            tasks.push(task);
+                        }
+
+                        return Task::batch(tasks);
                     }
                 }
             }
@@ -314,6 +342,10 @@ where
                         cursor_pos.y - info.position.y,
                     ));
                     return iced_runtime::window::drag(id);
+                }
+                TabEvent::CloseGroup => {
+                    self.detached.remove(&id);
+                    return iced_runtime::window::close(id);
                 }
             },
             FloatAction::StartResize(dir) => {
