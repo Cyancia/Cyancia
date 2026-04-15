@@ -1394,6 +1394,7 @@ dependencies = [
  "bytemuck",
  "cyancia_render",
  "cyancia_runtime",
+ "cyancia_shader_graph",
  "cyancia_utils",
  "dashmap",
  "encase",

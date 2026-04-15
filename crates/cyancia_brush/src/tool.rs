@@ -44,7 +44,7 @@ impl ToolFunction for BrushTool {
 
         let tiles = services.service::<GpuTileStorage>();
         let assets = services.service::<AssetRegistry>();
-        brush.begin_stroke(params, &tiles, &assets, canvas.image.root().id);
+        brush.begin_stroke(params, &tiles, &assets, canvas.image.root());
     }
 
     fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
@@ -88,7 +88,7 @@ impl ToolFunction for BrushTool {
         };
         let tiles = services.service::<GpuTileStorage>();
         let final_input = RawPenInput { position };
-        brush.end_stroke(final_input, &tiles, canvas.image.root().id);
+        brush.end_stroke(final_input, &tiles, canvas.image.root());
     }
 }
 

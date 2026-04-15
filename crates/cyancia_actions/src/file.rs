@@ -47,7 +47,11 @@ impl ActionFunction for OpenFileAction {
 
             let width = img.width();
             let height = img.height();
-            let layer = Layer::from_image(img, services.service::<GpuTileStorage>().as_ref());
+            let layer = Layer::from_image(
+                "Background".to_string(),
+                img,
+                services.service::<GpuTileStorage>().as_ref(),
+            );
             let mut tool_proxy = ToolProxy::new();
             let initial_tool_task =
                 tool_proxy.switch_tool(ToolId::new("pan_tool".into()), services.clone());
@@ -64,7 +68,7 @@ impl ActionFunction for OpenFileAction {
                 .insert(canvas.id, CanvasRenderer::from_runtime(&services));
             // TODO this should not be done here
             services.service::<GpuTileStorage>().declare_layer(
-                canvas.image.root().id(),
+                canvas.image.root(),
                 GpuLayerInfo {
                     texel_type: TexelType::RGBA8,
                 },

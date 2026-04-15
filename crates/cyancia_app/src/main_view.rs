@@ -75,7 +75,7 @@ impl WindowView for MainView {
             .insert(canvas.id, CanvasRenderer::from_runtime(&runtime));
         // TODO this should not be done here
         runtime.service::<GpuTileStorage>().declare_layer(
-            canvas.image.root().id(),
+            canvas.image.root(),
             GpuLayerInfo {
                 texel_type: TexelType::RGBA8,
             },

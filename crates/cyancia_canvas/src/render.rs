@@ -141,7 +141,7 @@ impl CanvasRenderer {
             encoder,
             tile_storage,
             buffer,
-            canvas.image.root().id(),
+            canvas.image.root(),
         );
         self.present_pipeline
             .present(&self.device, encoder, buffer, &target, clip_bounds);
@@ -203,7 +203,7 @@ impl shader::Primitive for CanvasPrimitive {
                 device,
                 self.canvas.image.size(),
                 self.tile_storage
-                    .get_layer_info(self.canvas.image.root().id())
+                    .get_layer_info(self.canvas.image.root())
                     .unwrap()
                     .texel_type,
             );
