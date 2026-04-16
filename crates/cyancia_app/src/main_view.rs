@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{any::Any, fmt::Debug, sync::Arc};
 
 use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
 use cyancia_canvas::{
@@ -16,7 +16,7 @@ use cyancia_image::{
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_input::action::ActionManifestCollection;
+use cyancia_input::action::{ActionId, ActionManifestCollection};
 use cyancia_runtime::{
     Services,
     event::Event,
@@ -49,6 +49,7 @@ pub enum MainViewMessage {
     MouseEvent(window::Id, mouse::Event),
     CanvasCreated(CanvasCreated),
     CanvasRemoved(CanvasRemoved),
+    ActionMessage(ActionId, Box<dyn Any + Send + Sync>),
 }
 
 impl WindowView for MainView {
@@ -150,7 +151,9 @@ impl WindowView for MainView {
                         .get(action.clone())
                 {
                     log::info!("Triggering action: {}", action);
-                    action_func.trigger(services).discard()
+                    action_func
+                        .trigger(services)
+                        .map(move |message| MainViewMessage::ActionMessage(action.clone(), message))
                 } else {
                     Task::none()
                 }
@@ -187,6 +190,20 @@ impl WindowView for MainView {
                 self.dock_manager.unregister_dock(&id);
 
                 Task::none()
+            }
+            MainViewMessage::ActionMessage(action_id, message) => {
+                if let Some(action_func) = services
+                    .service_mut::<ActionFunctionRegistry>()
+                    .get(action_id.clone())
+                {
+                    action_func
+                        .handle_message(message, services)
+                        .map(move |message| {
+                            MainViewMessage::ActionMessage(action_id.clone(), message)
+                        })
+                } else {
+                    Task::none()
+                }
             }
         }
     }

@@ -63,7 +63,7 @@ impl ActionFunction for OpenFileAction {
     }
 
     fn handle_message(
-        &mut self,
+        &self,
         message: Self::Message,
         services: &mut Services,
     ) -> Task<Self::Message> {
