@@ -11,7 +11,7 @@ use cyancia_assets::{
 };
 use cyancia_runtime::{
     Services,
-    service::{FromRuntime, Service},
+    service::{FromServices, Service},
 };
 use cyancia_utils::wrapper;
 use futures::executor::block_on;
@@ -128,9 +128,9 @@ pub struct ActionManifestCollection {
 
 impl Service for ActionManifestCollection {}
 
-impl FromRuntime for ActionManifestCollection {
-    fn from_runtime(runtime: &Services) -> Self {
-        let assets = runtime.service::<AssetRegistry>();
+impl FromServices for ActionManifestCollection {
+    fn from_services(services: &Services) -> Self {
+        let assets = services.service::<AssetRegistry>();
         let handles = assets.all_handles_of::<ActionManifest>().unwrap();
         let manifests = handles
             .into_iter()

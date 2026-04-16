@@ -18,7 +18,7 @@ use cyancia_input::InputPlugin;
 use cyancia_render::RenderPlugin;
 use cyancia_runtime::{
     Application, Runtime, Services,
-    service::{FromRuntime, RenderContext},
+    service::{FromServices, RenderContext},
     windows::{WindowCommandBuffer, WindowView, WindowViewManager},
 };
 use cyancia_shader_graph::ShaderGraphPlugin;

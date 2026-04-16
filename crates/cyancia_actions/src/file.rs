@@ -10,7 +10,7 @@ use cyancia_image::{
     tile::{GpuLayerInfo, GpuTileStorage},
 };
 use cyancia_input::action::ActionId;
-use cyancia_runtime::{Services, event::Event, service::FromRuntime};
+use cyancia_runtime::{Services, event::Event, service::FromServices};
 use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
 use glam::UVec2;
 use iced_runtime::Task;

@@ -13,7 +13,7 @@ use cyancia_render::{
 };
 use cyancia_runtime::{
     Services,
-    service::{FromRuntime, RenderContext, Service},
+    service::{FromServices, RenderContext, Service},
 };
 use cyancia_utils::include_shader;
 use encase::ShaderType;

@@ -16,12 +16,12 @@ pub trait Service: DowncastSync {}
 
 downcast_rs::impl_downcast!(sync Service);
 
-pub trait FromRuntime {
-    fn from_runtime(runtime: &Services) -> Self;
+pub trait FromServices {
+    fn from_services(services: &Services) -> Self;
 }
 
-impl<T: Default> FromRuntime for T {
-    fn from_runtime(_runtime: &Services) -> Self {
+impl<T: Default> FromServices for T {
+    fn from_services(_services: &Services) -> Self {
         Self::default()
     }
 }

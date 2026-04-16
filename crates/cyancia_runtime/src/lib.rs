@@ -16,7 +16,7 @@ use parking_lot::RwLock;
 
 use crate::{
     plugin::Plugin,
-    service::{FromRuntime, RenderContext, Service},
+    service::{FromServices, RenderContext, Service},
     windows::{
         ErasedWindowViewMessage, WindowCommandBuffer, WindowViewId, WindowViewManager,
         WindowViewManagerMessage,
@@ -53,7 +53,7 @@ impl Application {
         self
     }
 
-    pub fn add_service<T: Service + FromRuntime>(&mut self) -> &mut Self {
+    pub fn add_service<T: Service + FromServices>(&mut self) -> &mut Self {
         self.runtime.borrow_mut().add_service::<T>();
         self
     }
@@ -236,8 +236,8 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub fn add_service<T: Service + FromRuntime>(&mut self) -> &mut Self {
-        let instance = T::from_runtime(&self.services);
+    pub fn add_service<T: Service + FromServices>(&mut self) -> &mut Self {
+        let instance = T::from_services(&self.services);
         self.add_service_instance(instance);
         self
     }
