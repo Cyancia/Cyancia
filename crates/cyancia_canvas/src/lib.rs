@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     control::CanvasTransform,
-    render::{CanvasRenderer, CanvasRenderers},
+    render::CanvasRenderer,
     tools::{PanTool, RotateTool, ZoomTool},
 };
 
@@ -32,16 +32,15 @@ wrapper! {
 pub struct CCanvas {
     pub id: CanvasId,
     pub tool_proxy_id: ToolProxyId,
-    pub image: Arc<CImage>,
-    pub transform: RwLock<CanvasTransform>,
+    pub image: CImage,
+    pub transform: CanvasTransform,
 }
 
 pub struct CanvasPlugin;
 
 impl Plugin for CanvasPlugin {
     fn build(&self, app: &mut Application) {
-        app.add_service::<CanvasRenderers>()
-            .add_service::<CanvasManager>()
+        app.add_service::<CanvasManager>()
             .add_tool_function::<PanTool>()
             .add_tool_function::<RotateTool>()
             .add_tool_function::<ZoomTool>();
@@ -50,7 +49,7 @@ impl Plugin for CanvasPlugin {
 
 #[derive(Default)]
 pub struct CanvasManager {
-    canvases: Vec<Arc<CCanvas>>,
+    canvases: Vec<CCanvas>,
     current_canvas: Option<usize>,
 }
 
@@ -59,16 +58,25 @@ impl Service for CanvasManager {}
 impl CanvasManager {
     pub fn add_canvas(&mut self, canvas: CCanvas) {
         self.current_canvas = Some(self.canvases.len());
-        self.canvases.push(Arc::new(canvas));
+        self.canvases.push(canvas);
     }
 
-    pub fn get(&self, id: &CanvasId) -> Option<Arc<CCanvas>> {
-        self.canvases.iter().find(|c| c.id == *id).cloned()
+    pub fn get(&self, id: &CanvasId) -> Option<&CCanvas> {
+        self.canvases.iter().find(|c| c.id == *id)
     }
 
-    pub fn current(&self) -> Option<Arc<CCanvas>> {
-        let current_id = self.current_canvas?;
-        self.canvases.get(current_id).cloned()
+    pub fn get_mut(&mut self, id: &CanvasId) -> Option<&mut CCanvas> {
+        self.canvases.iter_mut().find(|c| c.id == *id)
+    }
+
+    pub fn current(&self) -> Option<&CCanvas> {
+        let cur = self.current_canvas?;
+        self.canvases.get(cur)
+    }
+
+    pub fn current_mut(&mut self) -> Option<&mut CCanvas> {
+        let cur = self.current_canvas?;
+        self.canvases.get_mut(cur)
     }
 
     pub fn current_id(&self) -> Option<CanvasId> {

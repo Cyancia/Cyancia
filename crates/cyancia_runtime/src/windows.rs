@@ -33,18 +33,18 @@ pub trait WindowView: Send + Sync + 'static + Sized {
     type Message: Send + Sync + 'static;
 
     fn id() -> WindowViewId;
-    fn boot(runtime: Arc<Services>) -> (Self, Task<Self::Message>);
+    fn boot(runtime: &mut Services) -> (Self, Task<Self::Message>);
     fn view<'a>(
         &'a self,
         window: window::Id,
-        runtime: Arc<Services>,
+        runtime: &'a Services,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>>;
     fn update(
         &mut self,
         message: Self::Message,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> impl Into<Task<Self::Message>>;
-    fn close(self, runtime: Arc<Services>) -> Task<()>;
+    fn close(self, runtime: &mut Services) -> Task<()>;
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::none()
     }
@@ -59,14 +59,14 @@ pub trait ErasedWindowView: Send + Sync + 'static {
     fn view<'a>(
         &'a self,
         window: window::Id,
-        runtime: Arc<Services>,
+        runtime: &'a Services,
     ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer>;
     fn update(
         &mut self,
         message: Box<dyn Any + Send + Sync>,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Task<Box<dyn Any + Send + Sync>>;
-    fn close(self: Box<Self>, runtime: Arc<Services>) -> Task<()>;
+    fn close(self: Box<Self>, runtime: &mut Services) -> Task<()>;
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>>;
     fn windows(&self) -> Arc<[window::Id]>;
     fn root_window(&self) -> Option<window::Id>;
@@ -83,7 +83,7 @@ where
     fn view<'a>(
         &'a self,
         window: window::Id,
-        runtime: Arc<Services>,
+        runtime: &'a Services,
     ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, iced_wgpu::Renderer> {
         <T as WindowView>::view(self, window, runtime)
             .into()
@@ -93,7 +93,7 @@ where
     fn update(
         &mut self,
         message: Box<dyn Any + Send + Sync>,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Task<Box<dyn Any + Send + Sync>> {
         let msg = *message
             .downcast::<T::Message>()
@@ -103,7 +103,7 @@ where
             .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
     }
 
-    fn close(self: Box<Self>, runtime: Arc<Services>) -> Task<()> {
+    fn close(self: Box<Self>, runtime: &mut Services) -> Task<()> {
         <T as WindowView>::close(*self, runtime)
     }
 
@@ -131,7 +131,7 @@ pub enum WindowViewManagerMessage {
 }
 
 type WindowViewBootFn = Box<
-    dyn Fn(Arc<Services>) -> (Box<dyn ErasedWindowView>, Task<ErasedWindowViewMessage>)
+    dyn Fn(&mut Services) -> (Box<dyn ErasedWindowView>, Task<ErasedWindowViewMessage>)
         + Send
         + Sync
         + 'static,
@@ -199,14 +199,14 @@ where
         self.root_view
     }
 
-    pub fn boot(&mut self, runtime: Arc<Services>) -> Task<WindowViewManagerMessage> {
+    pub fn boot(&mut self, runtime: &mut Services) -> Task<WindowViewManagerMessage> {
         self.open_window_view(self.root_view.expect("No root view specified."), runtime)
     }
 
     pub fn view<'a>(
         &'a self,
         id: window::Id,
-        runtime: Arc<Services>,
+        runtime: &'a Services,
     ) -> Option<Element<'a, WindowViewManagerMessage, Theme, iced_wgpu::Renderer>> {
         let Some(window) = self.window_to_view.get(&id).cloned() else {
             log::error!(
@@ -232,7 +232,7 @@ where
     pub fn update(
         &mut self,
         message: WindowViewManagerMessage,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Task<WindowViewManagerMessage> {
         match message {
             WindowViewManagerMessage::ViewUpdate(message) => {
@@ -269,7 +269,7 @@ where
     pub fn open_window_view(
         &mut self,
         view_id: WindowViewId,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Task<WindowViewManagerMessage> {
         if self.opened_views.contains_key(&view_id) {
             log::warn!("Window view already opened: {}", view_id.0);
@@ -292,7 +292,7 @@ where
         task.map(WindowViewManagerMessage::ViewUpdate)
     }
 
-    pub fn close_window_view(&mut self, view_id: WindowViewId, runtime: Arc<Services>) -> Task<()> {
+    pub fn close_window_view(&mut self, view_id: WindowViewId, runtime: &mut Services) -> Task<()> {
         let Some(view) = self.opened_views.remove(&view_id) else {
             return Task::none();
         };
@@ -300,7 +300,7 @@ where
         view.state.close(runtime)
     }
 
-    pub fn on_window_closed(&mut self, window: window::Id, runtime: Arc<Services>) -> Task<()> {
+    pub fn on_window_closed(&mut self, window: window::Id, runtime: &mut Services) -> Task<()> {
         let Some(view_id) = self.window_to_view.remove(&window) else {
             log::error!(
                 "Unable to close a window that doesn't have corresponding view: {}",
@@ -346,7 +346,7 @@ pub trait WindowCommand: Send + Sync + 'static {
     fn execute(
         self: Box<Self>,
         wm: &mut WindowViewManager,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Option<Task<WindowViewManagerMessage>>;
 }
 
@@ -365,11 +365,11 @@ impl WindowCommandBuffer {
     pub fn execute(
         &mut self,
         wm: &mut WindowViewManager,
-        runtime: Arc<Services>,
+        services: &mut Services,
     ) -> Task<WindowViewManagerMessage> {
         let mut tasks = Vec::new();
         for command in self.commands.drain(..) {
-            if let Some(task) = command.execute(wm, runtime.clone()) {
+            if let Some(task) = command.execute(wm, services) {
                 tasks.push(task);
             }
         }
@@ -385,7 +385,7 @@ impl WindowCommand for OpenWindowViewCommand {
     fn execute(
         self: Box<Self>,
         wm: &mut WindowViewManager,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Option<Task<WindowViewManagerMessage>> {
         Some(wm.open_window_view(self.view_id, runtime))
     }
@@ -405,7 +405,7 @@ impl WindowCommand for CloseWindowViewCommand {
     fn execute(
         self: Box<Self>,
         wm: &mut WindowViewManager,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Option<Task<WindowViewManagerMessage>> {
         Some(wm.close_window_view(self.view_id, runtime).discard())
     }
@@ -425,7 +425,7 @@ impl WindowCommand for ToggleWindowViewCommand {
     fn execute(
         self: Box<Self>,
         wm: &mut WindowViewManager,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> Option<Task<WindowViewManagerMessage>> {
         if wm.opened_views.contains_key(&self.view_id) {
             Some(wm.close_window_view(self.view_id, runtime).discard())
@@ -456,7 +456,7 @@ impl WindowCommand for SubWindowOpenedCommand {
     fn execute(
         self: Box<Self>,
         wm: &mut WindowViewManager,
-        _runtime: Arc<Services>,
+        _runtime: &mut Services,
     ) -> Option<Task<WindowViewManagerMessage>> {
         wm.window_to_view.insert(self.window, self.view_id);
         None

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
+use bevy_math::Rect;
 use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
-use cyancia_canvas::{
-    CanvasId, CanvasManager, event::CanvasRemoved, render::CanvasRenderers, widget::CanvasWidget,
-};
+use cyancia_canvas::{CanvasId, CanvasManager, event::CanvasRemoved, widget::CanvasWidget};
 use cyancia_dock::dock::{Dock, DockId};
 use cyancia_image::tile::GpuTileStorage;
 use cyancia_input::{
@@ -13,8 +12,8 @@ use cyancia_input::{
 };
 use cyancia_runtime::{Services, event::Event};
 use cyancia_tools::ToolProxies;
-use iced::Theme;
 use iced::widget::text;
+use iced::{Theme, widget::space};
 use iced_core::{Element, Point, keyboard, mouse};
 use iced_runtime::Task;
 use iced_wgpu::Renderer;
@@ -31,11 +30,14 @@ macro_rules! test_dummy_dock {
                 DockId::new($text.into())
             }
 
-            fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
+            fn view<'a>(
+                &'a self,
+                services: &'a Services,
+            ) -> Element<'a, Self::Message, Theme, Renderer> {
                 text($text).into()
             }
 
-            fn update(&mut self, _message: ()) -> Task<()> {
+            fn update(&mut self, _message: (), services: &mut Services) -> Task<()> {
                 Task::none()
             }
         }
@@ -54,7 +56,6 @@ pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
 
 pub struct CanvasDock {
     canvas: CanvasId,
-    runtime: Arc<Services>,
 
     is_pressed: bool,
     cursor_position: Point,
@@ -62,14 +63,9 @@ pub struct CanvasDock {
 }
 
 impl CanvasDock {
-    pub fn new(
-        canvas: CanvasId,
-        runtime: Arc<Services>,
-        actions_matcher: Arc<Mutex<ActionsMatcher>>,
-    ) -> Self {
+    pub fn new(canvas: CanvasId, actions_matcher: Arc<Mutex<ActionsMatcher>>) -> Self {
         Self {
             canvas,
-            runtime,
             is_pressed: false,
             cursor_position: Point::default(),
             actions_matcher,
@@ -81,6 +77,7 @@ impl CanvasDock {
 pub enum CanvasDockMessage {
     CanvasFocus(Point),
     MouseEvent(mouse::Event),
+    WidgetRectChange(Rect),
 }
 
 impl<Theme> Dock<Theme, iced_wgpu::Renderer> for CanvasDock
@@ -93,29 +90,32 @@ where
         DockId::new(construct_canvas_dock_id(self.canvas).into())
     }
 
-    fn view<'a>(&'a self) -> iced_core::Element<'a, Self::Message, Theme, iced_wgpu::Renderer> {
-        let canvas_manager = self.runtime.service::<CanvasManager>();
-        let renderers = self.runtime.service::<CanvasRenderers>();
-        let canvas = canvas_manager.get(&self.canvas).unwrap();
-        let renderer = renderers.get(&self.canvas).unwrap();
+    fn view<'a>(
+        &'a self,
+        services: &'a Services,
+    ) -> iced_core::Element<'a, Self::Message, Theme, iced_wgpu::Renderer> {
+        let canvas_manager = services.service::<CanvasManager>();
+        let Some(canvas) = canvas_manager.get(&self.canvas) else {
+            return space().into();
+        };
 
         CanvasWidget {
             is_focusing: canvas_manager.current_id() == Some(self.canvas),
             canvas,
-            renderer,
-            tile_storage: self.runtime.service::<GpuTileStorage>().clone(),
+            tile_storage: services.service::<GpuTileStorage>().clone(),
             on_focus: Box::new(CanvasDockMessage::CanvasFocus),
             on_mouse_event: Box::new(CanvasDockMessage::MouseEvent),
+            on_widget_rect_change: Box::new(CanvasDockMessage::WidgetRectChange),
         }
         .into()
     }
 
-    fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
+    fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {
         let actions_matcher = self.actions_matcher.lock();
 
         match message {
             CanvasDockMessage::MouseEvent(event) => {
-                let canvas_manager = self.runtime.service_mut::<CanvasManager>();
+                let canvas_manager = services.service_mut::<CanvasManager>();
                 if canvas_manager.current_id() != Some(self.canvas) {
                     return Task::none();
                 }
@@ -123,63 +123,75 @@ where
                 let Some(canvas) = canvas_manager.current() else {
                     return Task::none();
                 };
+                let tool_proxy_id = canvas.tool_proxy_id;
 
-                let mut tool_proxies = self.runtime.service_mut::<ToolProxies>();
-                let tool_proxy = tool_proxies.get_mut(&canvas.tool_proxy_id);
+                services.service_scope::<ToolProxies>(|tool_proxies, services| {
+                    let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
 
-                match event {
-                    mouse::Event::ButtonPressed(button) => {
-                        if button != mouse::Button::Left {
-                            return Task::none();
-                        }
+                    match event {
+                        mouse::Event::ButtonPressed(button) => {
+                            if button != mouse::Button::Left {
+                                return;
+                            }
 
-                        self.is_pressed = true;
-                        tool_proxy.mouse_pressed(
-                            &actions_matcher.keyboard_state(),
-                            &PressedMouseState {
-                                position: self.cursor_position,
-                            },
-                        );
-                    }
-                    mouse::Event::ButtonReleased(button) => {
-                        if button != mouse::Button::Left {
-                            return Task::none();
-                        }
-
-                        self.is_pressed = false;
-                        tool_proxy.mouse_released(
-                            &actions_matcher.keyboard_state(),
-                            &PressedMouseState {
-                                position: self.cursor_position,
-                            },
-                        );
-                    }
-                    mouse::Event::CursorMoved { position } => {
-                        self.cursor_position = position;
-
-                        if self.is_pressed {
-                            tool_proxy.mouse_moved_pressing(
+                            self.is_pressed = true;
+                            tool_proxy.mouse_pressed(
                                 &actions_matcher.keyboard_state(),
                                 &PressedMouseState {
                                     position: self.cursor_position,
                                 },
-                            );
-                        } else {
-                            tool_proxy.mouse_moved_hovering(
-                                &actions_matcher.keyboard_state(),
-                                &HoverMouseState {
-                                    position: self.cursor_position,
-                                },
+                                services,
                             );
                         }
+                        mouse::Event::ButtonReleased(button) => {
+                            if button != mouse::Button::Left {
+                                return;
+                            }
+
+                            self.is_pressed = false;
+                            tool_proxy.mouse_released(
+                                &actions_matcher.keyboard_state(),
+                                &PressedMouseState {
+                                    position: self.cursor_position,
+                                },
+                                services,
+                            );
+                        }
+                        mouse::Event::CursorMoved { position } => {
+                            self.cursor_position = position;
+
+                            if self.is_pressed {
+                                tool_proxy.mouse_moved_pressing(
+                                    &actions_matcher.keyboard_state(),
+                                    &PressedMouseState {
+                                        position: self.cursor_position,
+                                    },
+                                    services,
+                                );
+                            } else {
+                                tool_proxy.mouse_moved_hovering(
+                                    &actions_matcher.keyboard_state(),
+                                    &HoverMouseState {
+                                        position: self.cursor_position,
+                                    },
+                                    services,
+                                );
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                }
+                });
             }
             CanvasDockMessage::CanvasFocus(cursor_pos) => {
                 self.cursor_position = cursor_pos;
-                let mut canvas_manager = self.runtime.service_mut::<CanvasManager>();
+                let canvas_manager = services.service_mut::<CanvasManager>();
                 canvas_manager.set_current(self.canvas);
+            }
+            CanvasDockMessage::WidgetRectChange(rect) => {
+                let canvas_manager = services.service_mut::<CanvasManager>();
+                if let Some(canvas) = canvas_manager.get_mut(&self.canvas) {
+                    canvas.transform.widget_bounds = rect;
+                }
             }
         }
 

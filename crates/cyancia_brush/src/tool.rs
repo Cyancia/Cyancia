@@ -23,72 +23,94 @@ impl ToolFunction for BrushTool {
         ToolId::new("brush_tool".into())
     }
 
-    fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
+    fn begin(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return;
-        };
-        let Some(mut brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
-            log::error!("No current brush preset operator found.");
             return;
         };
 
         let Some(position) = canvas
             .transform
-            .read()
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
         else {
             return;
         };
+        let root_layer = canvas.image.root().id();
 
-        let params = RawPenInput { position };
+        services.try_service_scope::<CurrentBrushPresetOperator>(
+            |brush, services| {
+                let params = RawPenInput { position };
 
-        let tiles = services.service::<GpuTileStorage>();
-        let assets = services.service::<AssetRegistry>();
-        brush.begin_stroke(params, &tiles, &assets, canvas.image.root().id);
+                let tiles = services.service::<GpuTileStorage>();
+                let assets = services.service::<AssetRegistry>();
+                brush.begin_stroke(params, &tiles, &assets, root_layer);
+            },
+            || {
+                log::error!("No current brush preset operator found.");
+            },
+        );
     }
 
-    fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
+    fn update(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
             return;
         };
-        let Some(mut brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
-            log::error!("No current brush preset operator found.");
-            return;
-        };
-
         let Some(position) = canvas
             .transform
-            .read()
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
         else {
             return;
         };
         let params = RawPenInput { position };
+
+        let Some(brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
+            log::error!("No current brush preset operator found.");
+            return;
+        };
 
         let now = std::time::Instant::now();
         brush.update_stroke(params);
         log::info!("Brush update took: {:?}", now.elapsed());
     }
 
-    fn end(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
+    fn end(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
             return;
         };
-        let Some(mut brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
-            log::error!("No current brush preset operator found.");
-            return;
-        };
-
         let Some(position) = canvas
             .transform
-            .read()
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
         else {
             return;
         };
-        let tiles = services.service::<GpuTileStorage>();
+        let root_layer = canvas.image.root().id();
         let final_input = RawPenInput { position };
-        brush.end_stroke(final_input, &tiles, canvas.image.root().id);
+
+        services.try_service_scope::<CurrentBrushPresetOperator>(
+            |brush, services| {
+                let params = RawPenInput { position };
+
+                let tiles = services.service::<GpuTileStorage>();
+                brush.end_stroke(final_input, &tiles, root_layer);
+            },
+            || {
+                log::error!("No current brush preset operator found.");
+            },
+        );
     }
 }
 

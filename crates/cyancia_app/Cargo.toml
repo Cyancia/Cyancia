@@ -29,6 +29,7 @@ iced_futures.workspace = true
 cyancia_brush.workspace = true
 cyancia_shader_graph.workspace = true
 cyancia_dock.workspace = true
+bevy_math.workspace = true
 
 [build-dependencies]
 fs_extra.workspace = true

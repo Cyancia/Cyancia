@@ -2,9 +2,9 @@ use std::{marker::PhantomData, sync::Arc, time::Instant};
 
 use cyancia_canvas::CanvasManager;
 use cyancia_input::action::{Action, ActionId};
-use iced_runtime::Task;
 use cyancia_runtime::Services;
 use cyancia_tools::{ToolId, ToolProxies};
+use iced_runtime::Task;
 
 use crate::ActionFunction;
 
@@ -47,11 +47,13 @@ impl<T: CanvasToolAction> Default for CanvasToolSwitch<T> {
 }
 
 impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
+    type Message = ();
+
     fn id(&self) -> ActionId {
         T::action()
     }
 
-    fn trigger(&self, services: Arc<Services>) -> Task<()> {
+    fn trigger(&self, services: &mut Services) -> Task<Self::Message> {
         let canvases = services.service::<CanvasManager>();
         let Some(canvas) = canvases.current() else {
             return Task::none();
@@ -60,8 +62,11 @@ impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
         // Drop the read guard before taking the write guard on ToolProxies.
         drop(canvases);
 
-        let mut tool_proxies = services.service_mut::<ToolProxies>();
+        let mut tool_proxies = services.remove_service::<ToolProxies>();
         let tool_proxy = tool_proxies.get_mut(&canvas_tool_proxy_id);
-        tool_proxy.switch_tool(T::tool(), services.clone())
+        tool_proxy.switch_tool(T::tool(), services);
+        services.insert_service(tool_proxies);
+
+        Task::none()
     }
 }

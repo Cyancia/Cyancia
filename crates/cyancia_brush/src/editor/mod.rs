@@ -204,7 +204,7 @@ impl WindowView for BrushEditorView {
         WindowViewId::new("brush_editor")
     }
 
-    fn boot(runtime: Arc<Services>) -> (Self, Task<Self::Message>) {
+    fn boot(runtime: &mut Services) -> (Self, Task<Self::Message>) {
         let function_assets = runtime
             .service::<AssetRegistry>()
             .all_handles_of::<SerializableGraphFunction>()
@@ -275,7 +275,7 @@ impl WindowView for BrushEditorView {
     fn view<'a>(
         &'a self,
         window: window::Id,
-        runtime: Arc<Services>,
+        runtime: &Services,
     ) -> impl Into<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>> {
         let assets = runtime.service::<AssetRegistry>();
 
@@ -429,7 +429,7 @@ impl WindowView for BrushEditorView {
     fn update(
         &mut self,
         message: Self::Message,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> impl Into<Task<Self::Message>> {
         match message {
             BrushEditorMessage::KeyboardEvent(event) => {
@@ -778,7 +778,7 @@ impl WindowView for BrushEditorView {
         })
     }
 
-    fn close(self, runtime: Arc<Services>) -> Task<()> {
+    fn close(self, runtime: &mut Services) -> Task<()> {
         iced_runtime::window::close(self.main_window)
     }
 

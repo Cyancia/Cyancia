@@ -1230,6 +1230,7 @@ dependencies = [
 name = "cyancia_app"
 version = "0.1.0"
 dependencies = [
+ "bevy_math",
  "cyancia_actions",
  "cyancia_assets",
  "cyancia_brush",
@@ -1359,6 +1360,7 @@ name = "cyancia_dock"
 version = "0.1.0"
 dependencies = [
  "cyancia_platform",
+ "cyancia_runtime",
  "cyancia_utils",
  "iced",
  "iced_aw",

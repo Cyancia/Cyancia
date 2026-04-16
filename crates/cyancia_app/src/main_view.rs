@@ -4,7 +4,7 @@ use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
-    render::{CanvasRenderer, CanvasRenderers},
+    render::CanvasRenderer,
     widget::CanvasWidget,
 };
 use cyancia_dock::{
@@ -58,7 +58,7 @@ impl WindowView for MainView {
         WindowViewId::new("main_view")
     }
 
-    fn boot(runtime: Arc<Services>) -> (Self, Task<Self::Message>) {
+    fn boot(runtime: &mut Services) -> (Self, Task<Self::Message>) {
         let actions = runtime
             .service::<ActionManifestCollection>()
             .subset_for_view("main_view");
@@ -67,12 +67,9 @@ impl WindowView for MainView {
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
             tool_proxy_id: runtime.service_mut::<ToolProxies>().add(ToolProxy::new()),
-            image: Arc::new(CImage::new(UVec2 { x: 1024, y: 768 })),
+            image: CImage::new(UVec2 { x: 1024, y: 768 }),
             transform: Default::default(),
         };
-        runtime
-            .service_mut::<CanvasRenderers>()
-            .insert(canvas.id, CanvasRenderer::from_runtime(&runtime));
         // TODO this should not be done here
         runtime.service::<GpuTileStorage>().declare_layer(
             canvas.image.root().id(),
@@ -83,7 +80,7 @@ impl WindowView for MainView {
 
         let (main_window, task) = window::open(Default::default());
         let (mut dock_manager, dock_manager_task) = DockManager::new(main_window);
-        let canvas_dock = CanvasDock::new(canvas.id, runtime.clone(), actions_matcher.clone());
+        let canvas_dock = CanvasDock::new(canvas.id, actions_matcher.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         dock_manager.register_dock(canvas_dock);
         dock_manager.register_dock(crate::dock::LayerDock);
@@ -116,18 +113,25 @@ impl WindowView for MainView {
     fn view<'a>(
         &'a self,
         window: window::Id,
-        runtime: Arc<Services>,
+        runtime: &'a Services,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>> {
-        Some(self.dock_manager.view(window)?.map(MainViewMessage::Dock))
+        Some(
+            self.dock_manager
+                .view(window, runtime)?
+                .map(MainViewMessage::Dock),
+        )
     }
 
     fn update(
         &mut self,
         message: Self::Message,
-        runtime: Arc<Services>,
+        runtime: &mut Services,
     ) -> impl Into<Task<Self::Message>> {
         match message {
-            MainViewMessage::Dock(m) => self.dock_manager.update(m).map(MainViewMessage::Dock),
+            MainViewMessage::Dock(m) => self
+                .dock_manager
+                .update(m, runtime)
+                .map(MainViewMessage::Dock),
             MainViewMessage::WindowEvent(id, event) => {
                 match event {
                     window::Event::Focused => {
@@ -146,7 +150,7 @@ impl WindowView for MainView {
                         .get(action.clone())
                 {
                     log::info!("Triggering action: {}", action);
-                    action_func.trigger(runtime.clone()).discard()
+                    action_func.trigger(runtime).discard()
                 } else {
                     Task::none()
                 }
@@ -172,7 +176,7 @@ impl WindowView for MainView {
             }
             MainViewMessage::CanvasCreated(e) => {
                 log::info!("Canvas created: {}", e.id);
-                let dock = CanvasDock::new(e.id, runtime, self.actions_matcher.clone());
+                let dock = CanvasDock::new(e.id, self.actions_matcher.clone());
                 let id = <CanvasDock as Dock<Theme, Renderer>>::id(&dock);
                 self.dock_manager.register_dock(dock);
                 self.dock_manager.open_dock(id).map(MainViewMessage::Dock)
@@ -187,7 +191,7 @@ impl WindowView for MainView {
         }
     }
 
-    fn close(self, runtime: Arc<Services>) -> Task<()> {
+    fn close(self, runtime: &mut Services) -> Task<()> {
         iced::exit()
     }
 

@@ -43,6 +43,12 @@ pub struct GpuTileStorage {
     inner: Arc<GpuTileStorageInner>,
 }
 
+impl std::fmt::Debug for GpuTileStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GpuTileStorage").finish()
+    }
+}
+
 impl Service for GpuTileStorage {}
 
 impl FromRuntime for GpuTileStorage {

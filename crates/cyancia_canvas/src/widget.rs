@@ -22,16 +22,16 @@ use crate::{
     render::{CanvasPrimitive, CanvasRenderer},
 };
 
-pub struct CanvasWidget<Message> {
+pub struct CanvasWidget<'a, Message> {
     pub is_focusing: bool,
-    pub canvas: Arc<CCanvas>,
-    pub renderer: Arc<Mutex<CanvasRenderer>>,
+    pub canvas: &'a CCanvas,
     pub tile_storage: GpuTileStorage,
     pub on_focus: Box<dyn Fn(Point) -> Message>,
     pub on_mouse_event: Box<dyn Fn(mouse::Event) -> Message>,
+    pub on_widget_rect_change: Box<dyn Fn(Rect) -> Message>,
 }
 
-impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidget<Message> {
+impl<'a, Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidget<'a, Message> {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fill, Length::Fill)
     }
@@ -57,10 +57,13 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
         viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
-        self.canvas.transform.write().widget_bounds = Rect {
+        let widget_rect = Rect {
             min: Vec2::new(bounds.x, bounds.y),
             max: Vec2::new(bounds.x + bounds.width, bounds.y + bounds.height),
         };
+        if widget_rect != self.canvas.transform.widget_bounds {
+            shell.publish((self.on_widget_rect_change)(widget_rect));
+        }
 
         match event {
             Event::Mouse(event) => {
@@ -92,20 +95,21 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
         renderer.draw_primitive(
             layout.bounds(),
             CanvasPrimitive {
-                canvas: self.canvas.clone(),
-                renderer: self.renderer.clone(),
+                image_size: self.canvas.image.size(),
+                root_layer: self.canvas.image.root().id(),
+                transform: self.canvas.transform.clone(),
                 tile_storage: self.tile_storage.clone(),
             },
         );
     }
 }
 
-impl<'a, Message, Theme> From<CanvasWidget<Message>>
+impl<'a, Message, Theme> From<CanvasWidget<'a, Message>>
     for Element<'a, Message, Theme, iced_wgpu::Renderer>
 where
     Message: 'a,
 {
-    fn from(canvas: CanvasWidget<Message>) -> Self {
+    fn from(canvas: CanvasWidget<'a, Message>) -> Self {
         Element::new(canvas)
     }
 }

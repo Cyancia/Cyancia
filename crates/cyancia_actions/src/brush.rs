@@ -13,14 +13,18 @@ use crate::ActionFunction;
 pub struct OpenBrushEditorAction {}
 
 impl ActionFunction for OpenBrushEditorAction {
+    type Message = ();
+
     fn id(&self) -> ActionId {
         ActionId::new("open_brush_editor_action".into())
     }
 
-    fn trigger(&self, services: Arc<Services>) -> Task<()> {
+    fn trigger(&self, services: &mut Services) -> Task<Self::Message> {
         services
             .service_mut::<WindowCommandBuffer>()
-            .push(OpenWindowViewCommand::new(WindowViewId::new("brush_editor")));
+            .push(OpenWindowViewCommand::new(WindowViewId::new(
+                "brush_editor",
+            )));
         Task::none()
     }
 }
