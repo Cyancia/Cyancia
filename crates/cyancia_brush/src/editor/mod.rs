@@ -15,7 +15,7 @@ use cyancia_assets::{
 use cyancia_input::action::ActionManifestCollection;
 use cyancia_runtime::{
     Services,
-    service::{FromRuntime, RenderContext},
+    service::{FromServices, RenderContext},
     windows::{WindowView, WindowViewId},
 };
 use cyancia_shader_graph::{
@@ -140,6 +140,8 @@ impl BrushPresetGraph {
 
 pub struct SelectedBrush {
     pub asset_id: Option<AssetId<BrushPreset>>,
+    // TODO Refactor and remove this lock. In the future, we are selecting current brush preset by
+    //      a preset dock, and editor can edit presets other than the current one.
     pub instance: Arc<RwLock<BrushPresetInstance>>,
     pub viewing_graph: BrushPresetGraph,
 }
@@ -204,8 +206,8 @@ impl WindowView for BrushEditorView {
         WindowViewId::new("brush_editor")
     }
 
-    fn boot(runtime: Arc<Services>) -> (Self, Task<Self::Message>) {
-        let function_assets = runtime
+    fn boot(services: &mut Services) -> (Self, Task<Self::Message>) {
+        let function_assets = services
             .service::<AssetRegistry>()
             .all_handles_of::<SerializableGraphFunction>()
             .unwrap();
@@ -232,7 +234,7 @@ impl WindowView for BrushEditorView {
             .collect();
 
         // TODO: Update this storage when asset changes.
-        let textures = runtime
+        let textures = services
             .service::<AssetRegistry>()
             .all_handles_of::<Image>()
             .unwrap()
@@ -244,7 +246,7 @@ impl WindowView for BrushEditorView {
             .collect();
         let texture_storage = Arc::new(GraphTextureStorage::new(textures));
 
-        let actions = runtime
+        let actions = services
             .service::<ActionManifestCollection>()
             .subset_for_view("brush_editor");
 
@@ -275,9 +277,9 @@ impl WindowView for BrushEditorView {
     fn view<'a>(
         &'a self,
         window: window::Id,
-        runtime: Arc<Services>,
+        services: &Services,
     ) -> impl Into<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>> {
-        let assets = runtime.service::<AssetRegistry>();
+        let assets = services.service::<AssetRegistry>();
 
         let Ok(presets) = assets.all_handles_of::<BrushPreset>() else {
             return None;
@@ -429,7 +431,7 @@ impl WindowView for BrushEditorView {
     fn update(
         &mut self,
         message: Self::Message,
-        runtime: Arc<Services>,
+        services: &mut Services,
     ) -> impl Into<Task<Self::Message>> {
         match message {
             BrushEditorMessage::KeyboardEvent(event) => {
@@ -472,7 +474,7 @@ impl WindowView for BrushEditorView {
                                 Selected::Brush(brush) => {
                                     let instance = brush.instance.read();
                                     self.saved_runtime_revision = instance.runtime_revision();
-                                    let assets = runtime.service_mut::<AssetRegistry>();
+                                    let assets = services.service_mut::<AssetRegistry>();
                                     let preset = instance.as_asset().unwrap();
                                     if let Some(asset_id) = brush.asset_id {
                                         let handle = assets.handle(asset_id).unwrap();
@@ -495,8 +497,8 @@ impl WindowView for BrushEditorView {
                                         brush.asset_id = Some(new_id);
                                     }
 
-                                    let ctx = runtime.service::<RenderContext>();
-                                    runtime.insert_service(CurrentBrushPresetOperator::new(
+                                    let ctx = services.service::<RenderContext>();
+                                    services.insert_service(CurrentBrushPresetOperator::new(
                                         BrushPresetOperator::new(
                                             brush.instance.clone(),
                                             ctx.device.deref().clone(),
@@ -506,7 +508,7 @@ impl WindowView for BrushEditorView {
                                     ));
                                 }
                                 Selected::Function(func) => {
-                                    let assets = runtime.service_mut::<AssetRegistry>();
+                                    let assets = services.service_mut::<AssetRegistry>();
                                     let ser_func = SerializableGraphFunction::serialize_func(
                                         func.instance.graph_function(),
                                     )
@@ -579,7 +581,7 @@ impl WindowView for BrushEditorView {
                 // dbg!(self.texture_storage.used_textures());
             }
             BrushEditorMessage::BrushSelected(brush_id) => {
-                let assets = runtime.service::<AssetRegistry>();
+                let assets = services.service::<AssetRegistry>();
                 let Ok(brush) = assets.handle(brush_id) else {
                     return Task::none();
                 };
@@ -597,8 +599,8 @@ impl WindowView for BrushEditorView {
                         viewing_graph: BrushPresetGraph::Main,
                     }));
 
-                    let ctx = runtime.service::<RenderContext>();
-                    runtime.insert_service(CurrentBrushPresetOperator::new(
+                    let ctx = services.service::<RenderContext>();
+                    services.insert_service(CurrentBrushPresetOperator::new(
                         BrushPresetOperator::new(
                             instance,
                             ctx.device.deref().clone(),
@@ -671,7 +673,7 @@ impl WindowView for BrushEditorView {
                     external_vars: Vec::new(),
                 };
                 let new_brush = Arc::new(new_brush);
-                let assets = runtime.service_mut::<AssetRegistry>();
+                let assets = services.service_mut::<AssetRegistry>();
                 let id = assets
                     .add_asset(
                         // TODO
@@ -778,7 +780,7 @@ impl WindowView for BrushEditorView {
         })
     }
 
-    fn close(self, runtime: Arc<Services>) -> Task<()> {
+    fn close(self, services: &mut Services) -> Task<()> {
         iced_runtime::window::close(self.main_window)
     }
 

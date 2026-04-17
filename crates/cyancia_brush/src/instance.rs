@@ -460,6 +460,9 @@ fn compile_template(
     Ok(compiled_shader)
 }
 
+// TODO Graph validation. Some functions are not allowed to use during estimation stage. For example
+//      It is not allowed to use a pixel color sampled from previous input to determine the bounds.
+
 fn compile_template_main(
     graph: &Graph,
     texture_usage: &mut GraphTextureUsageRecorder,
@@ -488,6 +491,7 @@ fn compile_template_stroke_postprocess(
     let len = compiled_graphs.len();
     for (i, (_, g)) in compiled_graphs.into_iter().enumerate() {
         concated_graphs_size_estimation.extend(g.chars().chain(['\n']));
+        // TODO: Don't hardcode these code.
         concated_graphs_main.extend(
             format!(
                 "

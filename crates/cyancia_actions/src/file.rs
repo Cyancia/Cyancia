@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use cyancia_canvas::{
-    CCanvas, CanvasId, CanvasManager,
-    event::CanvasCreated,
-    render::{CanvasRenderer, CanvasRenderers},
+    CCanvas, CanvasId, CanvasManager, event::CanvasCreated, render::CanvasRenderer,
 };
 use cyancia_image::{
     CImage,
@@ -12,7 +10,7 @@ use cyancia_image::{
     tile::{GpuLayerInfo, GpuTileStorage},
 };
 use cyancia_input::action::ActionId;
-use cyancia_runtime::{Services, event::Event, service::FromRuntime};
+use cyancia_runtime::{Services, event::Event, service::FromServices};
 use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
 use glam::UVec2;
 use iced_runtime::Task;
@@ -24,63 +22,78 @@ use crate::ActionFunction;
 #[derive(Default)]
 pub struct OpenFileAction {}
 
+pub enum OpenFileMessage {
+    ImageCreated(CImage),
+    Noop,
+}
+
+async fn open_file(tiles: GpuTileStorage) -> OpenFileMessage {
+    let Some(file) = AsyncFileDialog::new().pick_file().await else {
+        log::error!("Unable to get selected file path.");
+        return OpenFileMessage::Noop;
+    };
+
+    let img = match image::load_from_memory(&file.read().await) {
+        Ok(i) => i,
+        Err(e) => {
+            log::error!("Unable to open image from file {:?}: {}", file, e);
+            return OpenFileMessage::Noop;
+        }
+    };
+    log::info!("Opened image from file {:?}.", file);
+
+    let width = img.width();
+    let height = img.height();
+    let layer = Layer::from_image("Background".into(), img, &tiles);
+
+    OpenFileMessage::ImageCreated(CImage::from_layer(UVec2::new(width, height), layer))
+}
+
 impl ActionFunction for OpenFileAction {
+    type Message = OpenFileMessage;
+
     fn id(&self) -> ActionId {
         ActionId::new("open_file_action".into())
     }
 
-    fn trigger(&self, services: Arc<Services>) -> Task<()> {
-        let task = Task::future(async move {
-            let Some(file) = AsyncFileDialog::new().pick_file().await else {
-                log::error!("Unable to get selected file path.");
-                return Task::none();
-            };
+    fn trigger(&self, services: &mut Services) -> Task<Self::Message> {
+        let tiles = services.service::<GpuTileStorage>().clone();
 
-            let img = match image::load_from_memory(&file.read().await) {
-                Ok(i) => i,
-                Err(e) => {
-                    log::error!("Unable to open image from file {:?}: {}", file, e);
-                    return Task::none();
-                }
-            };
-            log::info!("Opened image from file {:?}.", file);
+        Task::future(open_file(tiles))
+    }
 
-            let width = img.width();
-            let height = img.height();
-            let layer = Layer::from_image(
-                "Background".to_string(),
-                img,
-                services.service::<GpuTileStorage>().as_ref(),
-            );
-            let mut tool_proxy = ToolProxy::new();
-            let initial_tool_task =
-                tool_proxy.switch_tool(ToolId::new("pan_tool".into()), services.clone());
-            let tool_proxy_id = services.service_mut::<ToolProxies>().add(tool_proxy);
-            let canvas = CCanvas {
-                id: CanvasId::new(Uuid::new_v4()),
-                tool_proxy_id,
-                image: Arc::new(CImage::from_layer(UVec2::new(width, height), layer)),
-                transform: Default::default(),
-            };
+    fn handle_message(
+        &self,
+        message: Self::Message,
+        services: &mut Services,
+    ) -> Task<Self::Message> {
+        match message {
+            OpenFileMessage::ImageCreated(image) => {
+                let mut tool_proxy = ToolProxy::new();
+                tool_proxy.switch_tool(ToolId::new("pan_tool".into()), services);
+                let tool_proxy_id = services.service_mut::<ToolProxies>().add(tool_proxy);
+                let canvas = CCanvas {
+                    id: CanvasId::new(Uuid::new_v4()),
+                    tool_proxy_id,
+                    image,
+                    transform: Default::default(),
+                };
 
-            services
-                .service_mut::<CanvasRenderers>()
-                .insert(canvas.id, CanvasRenderer::from_runtime(&services));
-            // TODO this should not be done here
-            services.service::<GpuTileStorage>().declare_layer(
-                canvas.image.root(),
-                GpuLayerInfo {
-                    texel_type: TexelType::RGBA8,
-                },
-            );
-            let id = canvas.id;
-            services.service_mut::<CanvasManager>().add_canvas(canvas);
+                // TODO this should not be done here
+                services.service::<GpuTileStorage>().declare_layer(
+                    canvas.image.root(),
+                    GpuLayerInfo {
+                        texel_type: TexelType::RGBA8,
+                    },
+                );
+                let id = canvas.id;
+                services.service_mut::<CanvasManager>().add_canvas(canvas);
 
-            CanvasCreated::broadcast(CanvasCreated { id });
+                CanvasCreated::broadcast(CanvasCreated { id });
 
-            initial_tool_task
-        });
-
-        task.then(|t| t)
+                Task::none()
+            }
+            OpenFileMessage::Noop => Task::none(),
+        }
     }
 }

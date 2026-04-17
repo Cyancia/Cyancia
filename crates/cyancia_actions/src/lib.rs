@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use cyancia_input::{
     action::{Action, ActionId, ActionManifestCollection},
@@ -16,10 +16,10 @@ use crate::{
     file::OpenFileAction,
 };
 
+pub mod actions_matcher;
 pub mod brush;
 pub mod canvas_control;
 pub mod file;
-pub mod actions_matcher;
 
 pub struct ActionPlugin;
 
@@ -41,8 +41,8 @@ pub trait ActionAppExt {
 
 impl ActionAppExt for Application {
     fn add_action_function<A: ActionFunction + Default>(&mut self) -> &mut Self {
-        self.runtime()
-            .services()
+        self.runtime_mut()
+            .services_mut()
             .service_mut::<ActionFunctionRegistry>()
             .register::<A>();
         self
@@ -50,13 +50,57 @@ impl ActionAppExt for Application {
 }
 
 pub trait ActionFunction: Send + Sync + 'static {
+    type Message: Send + Sync + 'static;
+
     fn id(&self) -> ActionId;
-    fn trigger(&self, services: Arc<Services>) -> Task<()>;
+    fn trigger(&self, services: &mut Services) -> Task<Self::Message>;
+    fn handle_message(
+        &self,
+        message: Self::Message,
+        services: &mut Services,
+    ) -> Task<Self::Message> {
+        Task::none()
+    }
+}
+
+pub trait ErasedActionFunction: Send + Sync + 'static {
+    fn id(&self) -> ActionId;
+    fn trigger(&self, services: &mut Services) -> Task<Box<dyn Any + Send + Sync>>;
+    fn handle_message(
+        &self,
+        message: Box<dyn Any + Send + Sync>,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
+        Task::none()
+    }
+}
+
+impl<T: ActionFunction> ErasedActionFunction for T {
+    fn id(&self) -> ActionId {
+        self.id()
+    }
+
+    fn trigger(&self, services: &mut Services) -> Task<Box<dyn Any + Send + Sync>> {
+        self.trigger(services)
+            .map(|message| Box::new(message) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn handle_message(
+        &self,
+        message: Box<dyn Any + Send + Sync>,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
+        let message = message
+            .downcast::<T::Message>()
+            .expect("Invalid message type");
+        self.handle_message(*message, services)
+            .map(|message| Box::new(message) as Box<dyn Any + Send + Sync>)
+    }
 }
 
 #[derive(Default)]
 pub struct ActionFunctionRegistry {
-    functions: HashMap<ActionId, Arc<dyn ActionFunction>>,
+    functions: HashMap<ActionId, Arc<dyn ErasedActionFunction>>,
 }
 
 impl Service for ActionFunctionRegistry {}
@@ -67,7 +111,7 @@ impl ActionFunctionRegistry {
         self.functions.insert(action.id(), Arc::new(action));
     }
 
-    pub fn get(&self, action_id: ActionId) -> Option<Arc<dyn ActionFunction>> {
+    pub fn get(&self, action_id: ActionId) -> Option<Arc<dyn ErasedActionFunction>> {
         self.functions.get(&action_id).cloned()
     }
 }

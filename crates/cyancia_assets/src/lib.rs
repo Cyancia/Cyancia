@@ -28,17 +28,16 @@ impl Plugin for AssetsPlugin {
     }
 
     fn finish(&self, app: &mut Application) {
-        let mut builder = app
-            .runtime()
-            .services()
+        let mut rt = app.runtime_mut();
+        let builder = rt
+            .services_mut()
             .service_mut::<AssetSerializerRegistryBuilder>();
         let serializers = builder.consume_and_build();
-        drop(builder);
         let mut registry = AssetRegistry::new(&self.asset_root, serializers.into()).unwrap();
         for bundle in self.bundles.clone() {
             registry.add_erased_bundle(bundle).unwrap();
         }
-        app.add_service_instance(registry);
+        rt.add_service_instance(registry);
     }
 }
 
@@ -48,8 +47,8 @@ pub trait AssetAppExt {
 
 impl AssetAppExt for Application {
     fn add_asset_serializer<A: AssetSerializer + Default>(&mut self) -> &mut Self {
-        self.runtime()
-            .services()
+        self.runtime_mut()
+            .services_mut()
             .service_mut::<AssetSerializerRegistryBuilder>()
             .add_serializer::<A>();
         self

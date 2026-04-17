@@ -363,6 +363,7 @@ ORDER BY l.relative_path ASC;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    // TODO Don't add new revision if the asset is already in memory
     pub fn update_asset(&self, id: &UntypedAssetId) -> AssetResult<u32> {
         let conn = self.conn.lock();
         let revision = conn.query_one(
@@ -397,6 +398,7 @@ RETURNING revision;
         Ok(revision)
     }
 
+    // TODO Don't add new record, just modify in place.
     pub fn write_asset(
         &self,
         id: &UntypedAssetId,

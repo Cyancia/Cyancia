@@ -17,3 +17,4 @@ thiserror.workspace = true
 log.workspace = true
 cyancia_platform.workspace = true
 iced_aw.workspace = true
+cyancia_runtime.workspace = true

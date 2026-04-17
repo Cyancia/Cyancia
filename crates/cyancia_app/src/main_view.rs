@@ -1,10 +1,10 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{any::Any, fmt::Debug, sync::Arc};
 
 use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
-    render::{CanvasRenderer, CanvasRenderers},
+    render::CanvasRenderer,
     widget::CanvasWidget,
 };
 use cyancia_dock::{
@@ -16,11 +16,11 @@ use cyancia_image::{
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_input::action::ActionManifestCollection;
+use cyancia_input::action::{ActionId, ActionManifestCollection};
 use cyancia_runtime::{
     Services,
     event::Event,
-    service::FromRuntime,
+    service::FromServices,
     windows::{WindowCommandBuffer, WindowView, WindowViewId},
 };
 use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
@@ -49,6 +49,7 @@ pub enum MainViewMessage {
     MouseEvent(window::Id, mouse::Event),
     CanvasCreated(CanvasCreated),
     CanvasRemoved(CanvasRemoved),
+    ActionMessage(ActionId, Box<dyn Any + Send + Sync>),
 }
 
 impl WindowView for MainView {
@@ -58,23 +59,20 @@ impl WindowView for MainView {
         WindowViewId::new("main_view")
     }
 
-    fn boot(runtime: Arc<Services>) -> (Self, Task<Self::Message>) {
-        let actions = runtime
+    fn boot(services: &mut Services) -> (Self, Task<Self::Message>) {
+        let actions = services
             .service::<ActionManifestCollection>()
             .subset_for_view("main_view");
         let actions_matcher = Arc::new(Mutex::new(ActionsMatcher::new(actions)));
 
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
-            tool_proxy_id: runtime.service_mut::<ToolProxies>().add(ToolProxy::new()),
-            image: Arc::new(CImage::new(UVec2 { x: 1024, y: 768 })),
+            tool_proxy_id: services.service_mut::<ToolProxies>().add(ToolProxy::new()),
+            image: CImage::new(UVec2 { x: 1024, y: 768 }),
             transform: Default::default(),
         };
-        runtime
-            .service_mut::<CanvasRenderers>()
-            .insert(canvas.id, CanvasRenderer::from_runtime(&runtime));
         // TODO this should not be done here
-        runtime.service::<GpuTileStorage>().declare_layer(
+        services.service::<GpuTileStorage>().declare_layer(
             canvas.image.root(),
             GpuLayerInfo {
                 texel_type: TexelType::RGBA8,
@@ -83,7 +81,7 @@ impl WindowView for MainView {
 
         let (main_window, task) = window::open(Default::default());
         let (mut dock_manager, dock_manager_task) = DockManager::new(main_window);
-        let canvas_dock = CanvasDock::new(canvas.id, runtime.clone(), actions_matcher.clone());
+        let canvas_dock = CanvasDock::new(canvas.id, actions_matcher.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         dock_manager.register_dock(canvas_dock);
         dock_manager.register_dock(crate::dock::LayerDock);
@@ -98,7 +96,7 @@ impl WindowView for MainView {
         ])
         .map(MainViewMessage::Dock);
 
-        runtime.service_mut::<CanvasManager>().add_canvas(canvas);
+        services.service_mut::<CanvasManager>().add_canvas(canvas);
 
         (
             Self {
@@ -116,18 +114,25 @@ impl WindowView for MainView {
     fn view<'a>(
         &'a self,
         window: window::Id,
-        runtime: Arc<Services>,
+        services: &'a Services,
     ) -> impl Into<Element<'a, Self::Message, Theme, iced_wgpu::Renderer>> {
-        Some(self.dock_manager.view(window)?.map(MainViewMessage::Dock))
+        Some(
+            self.dock_manager
+                .view(window, services)?
+                .map(MainViewMessage::Dock),
+        )
     }
 
     fn update(
         &mut self,
         message: Self::Message,
-        runtime: Arc<Services>,
+        services: &mut Services,
     ) -> impl Into<Task<Self::Message>> {
         match message {
-            MainViewMessage::Dock(m) => self.dock_manager.update(m).map(MainViewMessage::Dock),
+            MainViewMessage::Dock(m) => self
+                .dock_manager
+                .update(m, services)
+                .map(MainViewMessage::Dock),
             MainViewMessage::WindowEvent(id, event) => {
                 match event {
                     window::Event::Focused => {
@@ -141,12 +146,14 @@ impl WindowView for MainView {
 
             MainViewMessage::KeyboardEvent(window, event) => {
                 if let Some(action) = self.actions_matcher.lock().on_keyboard_event(event)
-                    && let Some(action_func) = runtime
+                    && let Some(action_func) = services
                         .service_mut::<ActionFunctionRegistry>()
                         .get(action.clone())
                 {
                     log::info!("Triggering action: {}", action);
-                    action_func.trigger(runtime.clone()).discard()
+                    action_func
+                        .trigger(services)
+                        .map(move |message| MainViewMessage::ActionMessage(action.clone(), message))
                 } else {
                     Task::none()
                 }
@@ -172,7 +179,7 @@ impl WindowView for MainView {
             }
             MainViewMessage::CanvasCreated(e) => {
                 log::info!("Canvas created: {}", e.id);
-                let dock = CanvasDock::new(e.id, runtime, self.actions_matcher.clone());
+                let dock = CanvasDock::new(e.id, self.actions_matcher.clone());
                 let id = <CanvasDock as Dock<Theme, Renderer>>::id(&dock);
                 self.dock_manager.register_dock(dock);
                 self.dock_manager.open_dock(id).map(MainViewMessage::Dock)
@@ -184,10 +191,24 @@ impl WindowView for MainView {
 
                 Task::none()
             }
+            MainViewMessage::ActionMessage(action_id, message) => {
+                if let Some(action_func) = services
+                    .service_mut::<ActionFunctionRegistry>()
+                    .get(action_id.clone())
+                {
+                    action_func
+                        .handle_message(message, services)
+                        .map(move |message| {
+                            MainViewMessage::ActionMessage(action_id.clone(), message)
+                        })
+                } else {
+                    Task::none()
+                }
+            }
         }
     }
 
-    fn close(self, runtime: Arc<Services>) -> Task<()> {
+    fn close(self, services: &mut Services) -> Task<()> {
         iced::exit()
     }
 

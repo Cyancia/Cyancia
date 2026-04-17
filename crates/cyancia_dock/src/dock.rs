@@ -1,5 +1,6 @@
 use std::{any::Any, sync::Arc};
 
+use cyancia_runtime::Services;
 use cyancia_utils::wrapper;
 use iced::Subscription;
 use iced_aw::ContextMenu;
@@ -24,8 +25,8 @@ where
     type Message: Send + Sync + 'static;
 
     fn id(&self) -> DockId;
-    fn view<'a>(&'a self) -> Element<'a, Self::Message, Theme, Renderer>;
-    fn update(&mut self, message: Self::Message) -> Task<Self::Message>;
+    fn view<'a>(&'a self, services: &'a Services) -> Element<'a, Self::Message, Theme, Renderer>;
+    fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message>;
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::none()
     }
@@ -39,8 +40,15 @@ where
 
 pub trait ErasedDock<Theme, Renderer>: Send + Sync + 'static {
     fn id(&self) -> DockId;
-    fn view<'a>(&'a self) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer>;
-    fn update(&mut self, message: Box<dyn Any + Send + Sync>) -> Task<Box<dyn Any + Send + Sync>>;
+    fn view<'a>(
+        &'a self,
+        services: &'a Services,
+    ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer>;
+    fn update(
+        &mut self,
+        message: Box<dyn Any + Send + Sync>,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>>;
     fn subscription(&self) -> Subscription<Box<dyn Any + Send + Sync>>;
     fn on_open(&mut self) -> Task<Box<dyn Any + Send + Sync>>;
     fn on_close(&mut self) -> Task<Box<dyn Any + Send + Sync>>;
@@ -56,16 +64,23 @@ where
         self.id()
     }
 
-    fn view<'a>(&'a self) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer> {
-        self.view()
+    fn view<'a>(
+        &'a self,
+        services: &'a Services,
+    ) -> Element<'a, Box<dyn Any + Send + Sync>, Theme, Renderer> {
+        self.view(services)
             .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
     }
 
-    fn update(&mut self, message: Box<dyn Any + Send + Sync>) -> Task<Box<dyn Any + Send + Sync>> {
+    fn update(
+        &mut self,
+        message: Box<dyn Any + Send + Sync>,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
         let msg = *message
             .downcast::<T::Message>()
             .expect("invalid message type");
-        self.update(msg)
+        self.update(msg, services)
             .map(|m| Box::new(m) as Box<dyn Any + Send + Sync>)
     }
 

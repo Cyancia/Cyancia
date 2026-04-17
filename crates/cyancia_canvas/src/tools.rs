@@ -6,14 +6,6 @@ use glam::Vec2;
 
 use crate::{CanvasManager, control::CanvasTransform};
 
-macro_rules! get_canvas_or_return {
-    ($canvas:ident, $services:expr) => {
-        let Some($canvas) = $services.service::<CanvasManager>().current() else {
-            return;
-        };
-    };
-}
-
 #[derive(Default)]
 pub struct PanTool {
     start_pos: Vec2,
@@ -25,18 +17,32 @@ impl ToolFunction for PanTool {
         ToolId::new("pan_tool".into())
     }
 
-    fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
-        get_canvas_or_return!(canvas, services);
+    fn begin(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
+        let Some(canvas) = services.service::<CanvasManager>().current() else {
+            return;
+        };
 
         self.start_pos = Vec2::new(mouse.position.x, mouse.position.y);
-        self.original_transform = canvas.transform.read().clone();
+        self.original_transform = canvas.transform.clone();
     }
 
-    fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
-        get_canvas_or_return!(canvas, services);
+    fn update(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
+        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
+            return;
+        };
 
         let delta = Vec2::new(mouse.position.x, mouse.position.y) - self.start_pos;
-        *canvas.transform.write() = self.original_transform.clone().translated(delta);
+        canvas.transform = self.original_transform.clone().translated(delta);
     }
 }
 
@@ -52,22 +58,35 @@ impl ToolFunction for RotateTool {
         ToolId::new("rotate_tool".into())
     }
 
-    fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
-        get_canvas_or_return!(canvas, services);
+    fn begin(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
+        let Some(canvas) = services.service::<CanvasManager>().current() else {
+            return;
+        };
 
-        let transform = canvas.transform.read();
-        self.center = transform.widget_bounds.size() * 0.5;
+        self.center = canvas.transform.widget_bounds.size() * 0.5;
         let t = self.center - Vec2::new(mouse.position.x, mouse.position.y);
         self.initial_angle = t.y.atan2(t.x);
-        self.original_transform = transform.clone();
+        self.original_transform = canvas.transform.clone();
     }
 
-    fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
-        get_canvas_or_return!(canvas, services);
+    fn update(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
+        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
+            return;
+        };
 
         let t = self.center - Vec2::new(mouse.position.x, mouse.position.y);
         let cur_angle = t.y.atan2(t.x);
-        *canvas.transform.write() = self
+        canvas.transform = self
             .original_transform
             .clone()
             .rotated_around(cur_angle.angle_difference(self.initial_angle), self.center);
@@ -85,19 +104,33 @@ impl ToolFunction for ZoomTool {
         ToolId::new("zoom_tool".into())
     }
 
-    fn begin(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
-        get_canvas_or_return!(canvas, services);
+    fn begin(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
+        let Some(canvas) = services.service::<CanvasManager>().current() else {
+            return;
+        };
 
         self.start_pos = Vec2::new(mouse.position.x, mouse.position.y);
-        self.original_transform = canvas.transform.read().clone();
+        self.original_transform = canvas.transform.clone();
     }
 
-    fn update(&mut self, keyboard: &KeyboardState, mouse: &PressedMouseState, services: &Services) {
-        get_canvas_or_return!(canvas, services);
+    fn update(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) {
+        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
+            return;
+        };
 
         let d = mouse.position.y - self.start_pos.y;
         let f = d / self.original_transform.widget_bounds.size().y + 1.0;
-        *canvas.transform.write() = self
+        canvas.transform = self
             .original_transform
             .clone()
             .scaled_around(f, self.start_pos);

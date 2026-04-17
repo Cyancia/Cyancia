@@ -16,7 +16,7 @@ use parking_lot::RwLock;
 
 use crate::{
     plugin::Plugin,
-    service::{FromRuntime, RenderContext, Service, ServiceMut, ServiceRef},
+    service::{FromServices, RenderContext, Service},
     windows::{
         ErasedWindowViewMessage, WindowCommandBuffer, WindowViewId, WindowViewManager,
         WindowViewManagerMessage,
@@ -53,7 +53,7 @@ impl Application {
         self
     }
 
-    pub fn add_service<T: Service + FromRuntime>(&mut self) -> &mut Self {
+    pub fn add_service<T: Service + FromServices>(&mut self) -> &mut Self {
         self.runtime.borrow_mut().add_service::<T>();
         self
     }
@@ -67,7 +67,7 @@ impl Application {
         self.runtime.borrow()
     }
 
-    pub fn runtime_mut(&self) -> RefMut<'_, Runtime> {
+    pub fn runtime_mut(&mut self) -> RefMut<'_, Runtime> {
         self.runtime.borrow_mut()
     }
 
@@ -130,10 +130,7 @@ impl Program for Application {
     fn boot(&self) -> (Self::State, Task<Self::Message>) {
         let mut rt = std::mem::take::<Runtime>(&mut self.runtime.borrow_mut());
 
-        let window_task = rt
-            .wm
-            .boot(rt.services.clone())
-            .map(ApplicationMessage::Window);
+        let window_task = rt.wm.boot(&mut rt.services).map(ApplicationMessage::Window);
         let deadlock_detect_task = Task::future(async {
             loop {
                 smol::Timer::after(std::time::Duration::from_secs(5)).await;
@@ -158,21 +155,15 @@ impl Program for Application {
         let mut task = match message {
             ApplicationMessage::Window(m) => state
                 .wm
-                .update(m, state.services.clone())
+                .update(m, &mut state.services)
                 .map(ApplicationMessage::Window),
-            ApplicationMessage::WindowClosed(id) => state
-                .wm
-                .on_window_closed(id, state.services.clone())
-                .discard(),
+            ApplicationMessage::WindowClosed(id) => {
+                state.wm.on_window_closed(id, &mut state.services).discard()
+            }
         };
 
-        task = task.chain(
-            state
-                .services
-                .service_mut::<WindowCommandBuffer>()
-                .execute(&mut state.wm, state.services.clone())
-                .discard(),
-        );
+        let mut cmd = std::mem::take(state.services.service_mut::<WindowCommandBuffer>());
+        task = task.chain(cmd.execute(&mut state.wm, &mut state.services).discard());
 
         task
     }
@@ -214,7 +205,7 @@ impl Program for Application {
 
         state
             .wm
-            .view(window, state.services.clone())
+            .view(window, &state.services)
             .unwrap_or_else(|| Element::new(DummyWidget))
             .map(ApplicationMessage::Window)
     }
@@ -240,13 +231,13 @@ impl Program for Application {
 
 #[derive(Default)]
 pub struct Runtime {
-    services: Arc<Services>,
+    services: Services,
     wm: WindowViewManager,
 }
 
 impl Runtime {
-    pub fn add_service<T: Service + FromRuntime>(&mut self) -> &mut Self {
-        let instance = T::from_runtime(&self.services);
+    pub fn add_service<T: Service + FromServices>(&mut self) -> &mut Self {
+        let instance = T::from_services(&self.services);
         self.add_service_instance(instance);
         self
     }
@@ -254,13 +245,16 @@ impl Runtime {
     pub fn add_service_instance<T: Service>(&mut self, service: T) -> &mut Self {
         self.services
             .services
-            .write()
-            .insert(TypeId::of::<T>(), Arc::new(RwLock::new(service)));
+            .insert(TypeId::of::<T>(), Box::new(service));
         self
     }
 
-    pub fn services(&self) -> &Arc<Services> {
+    pub fn services(&self) -> &Services {
         &self.services
+    }
+
+    pub fn services_mut(&mut self) -> &mut Services {
+        &mut self.services
     }
 
     pub fn window_manager(&self) -> &WindowViewManager {
@@ -279,53 +273,101 @@ pub enum ApplicationMessage {
 
 #[derive(Default)]
 pub struct Services {
-    services: RwLock<HashMap<TypeId, Arc<RwLock<dyn Service>>>>,
+    services: HashMap<TypeId, Box<dyn Service>>,
 }
 
 impl Services {
-    pub fn service<T: Service>(&self) -> ServiceRef<T> {
-        let arc = self
-            .services
-            .read()
+    pub fn service<T: Service>(&self) -> &T {
+        self.services
             .get(&TypeId::of::<T>())
             .expect(&format!(
                 "Service of type {} not found",
                 std::any::type_name::<T>()
             ))
-            .clone();
-        ServiceRef::from_arc(arc)
+            .downcast_ref()
+            .expect(&format!(
+                "Service of type {} has wrong type. This should not happen.",
+                std::any::type_name::<T>()
+            ))
     }
 
-    pub fn service_mut<T: Service>(&self) -> ServiceMut<T> {
-        let arc = self
-            .services
-            .read()
-            .get(&TypeId::of::<T>())
+    pub fn service_mut<T: Service>(&mut self) -> &mut T {
+        self.services
+            .get_mut(&TypeId::of::<T>())
             .expect(&format!(
                 "Service of type {} not found",
                 std::any::type_name::<T>()
             ))
-            .clone();
-        ServiceMut::from_arc(arc)
+            .downcast_mut()
+            .expect(&format!(
+                "Service of type {} has wrong type. This should not happen.",
+                std::any::type_name::<T>()
+            ))
     }
 
-    pub fn get_service<T: Service>(&self) -> Option<ServiceRef<T>> {
+    pub fn get_service<T: Service>(&self) -> Option<&T> {
         self.services
-            .read()
             .get(&TypeId::of::<T>())
-            .map(|arc| ServiceRef::from_arc(arc.clone()))
+            .and_then(|service| service.downcast_ref())
     }
 
-    pub fn get_service_mut<T: Service>(&self) -> Option<ServiceMut<T>> {
+    pub fn get_service_mut<T: Service>(&mut self) -> Option<&mut T> {
         self.services
-            .read()
-            .get(&TypeId::of::<T>())
-            .map(|arc| ServiceMut::from_arc(arc.clone()))
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|service| service.downcast_mut())
     }
 
-    pub fn insert_service<T: Service>(&self, service: T) {
-        self.services
-            .write()
-            .insert(TypeId::of::<T>(), Arc::new(RwLock::new(service)));
+    pub fn remove_service<T: Service>(&mut self) -> T {
+        let s = self.services.remove(&TypeId::of::<T>()).expect(&format!(
+            "Service of type {} not found",
+            std::any::type_name::<T>()
+        ));
+
+        match s.downcast() {
+            Ok(s) => *s,
+            Err(_) => {
+                panic!(
+                    "Service of type {} has wrong type. This should not happen.",
+                    std::any::type_name::<T>()
+                )
+            }
+        }
+    }
+
+    pub fn try_remove_service<T: Service>(&mut self) -> Option<T> {
+        let s = self.services.remove(&TypeId::of::<T>())?;
+
+        match s.downcast() {
+            Ok(s) => Some(*s),
+            Err(_) => {
+                panic!(
+                    "Service of type {} has wrong type. This should not happen.",
+                    std::any::type_name::<T>()
+                )
+            }
+        }
+    }
+
+    pub fn insert_service<T: Service>(&mut self, service: T) {
+        self.services.insert(TypeId::of::<T>(), Box::new(service));
+    }
+
+    pub fn service_scope<T: Service>(&mut self, f: impl FnOnce(&mut T, &mut Self)) {
+        let mut s = self.remove_service::<T>();
+        f(&mut s, self);
+        self.insert_service(s);
+    }
+
+    pub fn try_service_scope<T: Service>(
+        &mut self,
+        f: impl FnOnce(&mut T, &mut Self),
+        fail: impl Fn(),
+    ) {
+        if let Some(mut s) = self.try_remove_service::<T>() {
+            f(&mut s, self);
+            self.insert_service(s);
+        } else {
+            fail();
+        }
     }
 }

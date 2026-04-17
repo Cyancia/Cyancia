@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use cyancia_runtime::Services;
 use cyancia_utils::cloneable_any::ClonableAnySync;
 use dock::{DockAction, DockId, FloatAction, TabEvent};
 use group::{DockGroupData, TabRowWidget};
@@ -636,6 +637,7 @@ where
     pub fn view<'a>(
         &'a self,
         window_id: window::Id,
+        services: &'a Services,
     ) -> Option<Element<'a, DockMessage, Theme, Renderer>> {
         if window_id == self.main_window.id {
             let dock_w =
@@ -644,7 +646,7 @@ where
                         .docks
                         .get(&dock_id)
                         .expect(&format!("Dock not found: {}", dock_id));
-                    dock.view()
+                    dock.view(services)
                         .map(move |m| DockMessage::Dock(dock_id.clone(), m))
                 });
 
@@ -664,7 +666,7 @@ where
                         .docks
                         .get(&dock_id)
                         .expect(&format!("Dock not found: {}", dock_id));
-                    dock.view()
+                    dock.view(services)
                         .map(move |m| DockMessage::Dock(dock_id.clone(), m))
                 })
                 .is_merging(match self.current_attach_or_merge_info() {
@@ -678,13 +680,13 @@ where
         }
     }
 
-    pub fn update(&mut self, action: DockMessage) -> Task<DockMessage> {
+    pub fn update(&mut self, action: DockMessage, services: &mut Services) -> Task<DockMessage> {
         match action {
             DockMessage::Main(dock_action) => self.on_dock_action(dock_action),
             DockMessage::Float { id, action } => self.on_float_action(id, action),
             DockMessage::Dock(dock_id, msg) => {
                 if let Some(dock) = self.docks.get_mut(&dock_id) {
-                    dock.update(msg)
+                    dock.update(msg, services)
                         .map(move |m| DockMessage::Dock(dock_id.clone(), m))
                 } else {
                     Task::none()

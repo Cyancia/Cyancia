@@ -9,7 +9,7 @@ use bevy_math::IRect;
 use cyancia_render::buffer::BufferVec;
 use cyancia_runtime::{
     Services,
-    service::{FromRuntime, RenderContext, Service},
+    service::{FromServices, RenderContext, Service},
 };
 use dashmap::{DashMap, DashSet, Entry};
 use encase::ShaderType;
@@ -43,12 +43,18 @@ pub struct GpuTileStorage {
     inner: Arc<GpuTileStorageInner>,
 }
 
+impl std::fmt::Debug for GpuTileStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GpuTileStorage").finish()
+    }
+}
+
 impl Service for GpuTileStorage {}
 
-impl FromRuntime for GpuTileStorage {
-    fn from_runtime(runtime: &Services) -> Self {
+impl FromServices for GpuTileStorage {
+    fn from_services(services: &Services) -> Self {
         Self {
-            inner: Arc::new(GpuTileStorageInner::from_runtime(runtime)),
+            inner: Arc::new(GpuTileStorageInner::from_services(services)),
         }
     }
 }
@@ -112,9 +118,9 @@ pub struct GpuTileStorageInner {
 
 // impl Service for GpuTileStorageInner {}
 
-impl FromRuntime for GpuTileStorageInner {
-    fn from_runtime(runtime: &Services) -> Self {
-        let render_context = runtime.service::<RenderContext>();
+impl FromServices for GpuTileStorageInner {
+    fn from_services(services: &Services) -> Self {
+        let render_context = services.service::<RenderContext>();
         Self::new(render_context.device.clone(), render_context.queue.clone())
     }
 }
