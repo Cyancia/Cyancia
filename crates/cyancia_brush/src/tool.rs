@@ -40,11 +40,10 @@ impl ToolFunction for BrushTool {
             return;
         };
         let root_layer = canvas.image.root().id();
+        let params = RawPenInput { position };
 
         services.try_service_scope::<CurrentBrushPresetOperator>(
             |brush, services| {
-                let params = RawPenInput { position };
-
                 let tiles = services.service::<GpuTileStorage>();
                 let assets = services.service::<AssetRegistry>();
                 brush.begin_stroke(params, &tiles, &assets, root_layer);
@@ -102,8 +101,6 @@ impl ToolFunction for BrushTool {
 
         services.try_service_scope::<CurrentBrushPresetOperator>(
             |brush, services| {
-                let params = RawPenInput { position };
-
                 let tiles = services.service::<GpuTileStorage>();
                 brush.end_stroke(final_input, &tiles, root_layer);
             },

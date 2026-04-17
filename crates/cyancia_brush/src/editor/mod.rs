@@ -140,6 +140,8 @@ impl BrushPresetGraph {
 
 pub struct SelectedBrush {
     pub asset_id: Option<AssetId<BrushPreset>>,
+    // TODO Refactor and remove this lock. In the future, we are selecting current brush preset by
+    //      a preset dock, and editor can edit presets other than the current one.
     pub instance: Arc<RwLock<BrushPresetInstance>>,
     pub viewing_graph: BrushPresetGraph,
 }
