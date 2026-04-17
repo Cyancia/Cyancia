@@ -4,7 +4,10 @@ use std::{
 };
 
 use bevy_math::URect;
-use cyancia_image::tile::{GpuTileInfo, GpuTileStorageInner};
+use cyancia_image::{
+    dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
+    tile::{GpuTileInfo, GpuTileStorageInner},
+};
 use cyancia_render::buffer::DynamicBuffer;
 use encase::ShaderType;
 use glam::UVec3;
@@ -20,7 +23,7 @@ use wgpu::{
 
 use crate::render::{
     DabInfos, EXTERNAL_VARIABLE_BASE_BINDING, OutputSamples, PassFence, PenInput, PenInputSampler,
-    StrokeInfo, StrokeResources, dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
+    StrokeInfo, StrokeResources,
 };
 
 pub struct BrushInputSamplingPipeline {

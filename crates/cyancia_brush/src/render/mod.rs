@@ -9,6 +9,7 @@ use bevy_math::IRect;
 use bytemuck::Contiguous;
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
+    dynamic_intermediate_buffer::{DynamicGpuTileInfoBuffer, DynamicIntermediateBuffer},
     layer::LayerId,
     texel::{TexelDepth, TexelFormat, TexelType},
     tile::{
@@ -47,16 +48,12 @@ use crate::{
     asset::{BrushPreset, GpuImage},
     input_processing::{InputProcessor, RawPenInput},
     instance::{BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset},
-    render::{
-        dynamic_intermediate_buffer::{DynamicGpuTileInfoBuffer, DynamicIntermediateBuffer},
-        pipelines::{
-            BrushEstimatePipeline, BrushInputSamplingPipeline, BrushMainPipeline,
-            BrushTileAllocationPipeline,
-        },
+    render::pipelines::{
+        BrushEstimatePipeline, BrushInputSamplingPipeline, BrushMainPipeline,
+        BrushTileAllocationPipeline,
     },
 };
 
-pub mod dynamic_intermediate_buffer;
 pub mod graph;
 pub mod pipelines;
 

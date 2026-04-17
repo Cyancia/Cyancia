@@ -1,13 +1,14 @@
-use cyancia_image::{
-    texel::TexelType,
-    tile::{GpuTileInfo, GpuTileStorageInner},
-};
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use encase::ShaderType;
 use glam::IVec2;
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension,
     TextureFormat, TextureUsages, TextureView,
+};
+
+use crate::{
+    texel::TexelType,
+    tile::{GpuTileInfo, GpuTileStorageInner},
 };
 
 #[derive(ShaderType)]
@@ -81,17 +82,7 @@ impl DynamicIntermediateBuffer {
     }
 
     pub fn clear(&mut self) {
-        // Clear the intermediate textures so stale pixel data from the previous
-        // stroke cannot bleed into the next stroke via current_input_color().
-        // New GPU textures are zero-initialised, but on reuse the ping-pong
-        // buffers still hold whatever was written during the last stroke.
-        // Without this clear the first dab of every subsequent stroke reads the
-        // old texture content at the same array-layer index, causing the
-        // previous stroke's tile pixels to be composited into the wrong canvas
-        // position (e.g. tile (1,1) visually "flying" to position (1,3)).
-        let mut ec = self
-            .device
-            .create_command_encoder(&Default::default());
+        let mut ec = self.device.create_command_encoder(&Default::default());
         for texture in &self.textures_inner {
             ec.clear_texture(texture, &Default::default());
         }

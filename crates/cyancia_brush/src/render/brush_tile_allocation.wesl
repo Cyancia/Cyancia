@@ -1,5 +1,5 @@
-import package::image::image_tiling::{TileInfo, TILE_SIZE};
-import package::brush::brush_types::{DabInfos, DynamicTileInfo, StrokeInfo};
+import package::image::image_tiling::{TileInfo, TILE_SIZE, DynamicTileInfo};
+import package::brush::brush_types::{DabInfos, StrokeInfo};
 
 @group(0) @binding(0) var<storage> dab_infos: DabInfos;
 @group(0) @binding(1) var<storage, read_write> tile_info: DynamicTileInfo;

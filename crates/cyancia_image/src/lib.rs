@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub mod blend_modes;
+pub mod dynamic_intermediate_buffer;
 pub mod layer;
 pub mod texel;
 pub mod tile;

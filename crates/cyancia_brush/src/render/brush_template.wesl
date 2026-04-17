@@ -1,6 +1,6 @@
-import package::image::image_tiling::{TileInfo, TILE_SIZE};
+import package::image::image_tiling::{TileInfo, TILE_SIZE, DynamicTileInfo};
 import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
-import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfos, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
+import package::brush::brush_types::{StrokeInfo, OutputSamples, DabInfos, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
 @group(0) @binding(0) var<storage> samples: OutputSamples;
 @group(0) @binding(1) var<storage, read_write> stroke_info: StrokeInfo;
