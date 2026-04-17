@@ -35,7 +35,7 @@ use iced_wgpu::Renderer;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use crate::dock::{CanvasDock, construct_canvas_dock_id};
+use crate::dock::{CanvasDock, CurrentCanvasLayersDock, construct_canvas_dock_id};
 
 pub struct MainView {
     dock_manager: DockManager<Theme, Renderer>,
@@ -65,6 +65,8 @@ impl WindowView for MainView {
             .subset_for_view("main_view");
         let actions_matcher = Arc::new(Mutex::new(ActionsMatcher::new(actions)));
 
+        let img = CImage::new(UVec2 { x: 1024, y: 768 });
+        let root_layer = img.root_id();
         let canvas = CCanvas {
             id: CanvasId::new(Uuid::new_v4()),
             tool_proxy_id: services.service_mut::<ToolProxies>().add(ToolProxy::new()),
@@ -73,7 +75,7 @@ impl WindowView for MainView {
         };
         // TODO this should not be done here
         services.service::<GpuTileStorage>().declare_layer(
-            canvas.image.root(),
+            canvas.image.root_id(),
             GpuLayerInfo {
                 texel_type: TexelType::RGBA8,
             },
@@ -83,13 +85,18 @@ impl WindowView for MainView {
         let (mut dock_manager, dock_manager_task) = DockManager::new(main_window);
         let canvas_dock = CanvasDock::new(canvas.id, actions_matcher.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
+        let current_canvas_layers_dock = CurrentCanvasLayersDock::new();
+        let current_canvas_layers_dock_id =
+            <CurrentCanvasLayersDock as Dock<Theme, Renderer>>::id(&current_canvas_layers_dock);
         dock_manager.register_dock(canvas_dock);
+        dock_manager.register_dock(current_canvas_layers_dock);
         dock_manager.register_dock(crate::dock::LayerDock);
         dock_manager.register_dock(crate::dock::ToolDock);
         dock_manager.register_dock(crate::dock::HistoryDock);
 
         let dock_tasks = Task::batch([
             dock_manager.open_dock(canvas_dock_id),
+            dock_manager.open_dock(current_canvas_layers_dock_id),
             dock_manager.open_dock(DockId::new(crate::dock::LAYER_DOCK_ID.into())),
             dock_manager.open_dock(DockId::new(crate::dock::TOOL_DOCK_ID.into())),
             dock_manager.open_dock(DockId::new(crate::dock::HISTORY_DOCK_ID.into())),

@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use bevy_math::Rect;
 use cyancia_actions::{ActionFunctionRegistry, actions_matcher::ActionsMatcher};
-use cyancia_canvas::{CanvasId, CanvasManager, event::CanvasRemoved, widget::CanvasWidget};
+use cyancia_canvas::{
+    CCanvas, CanvasId, CanvasManager, event::CanvasRemoved, widget::CanvasWidget,
+};
 use cyancia_dock::dock::{Dock, DockId};
-use cyancia_image::tile::GpuTileStorage;
+use cyancia_image::{tile::GpuTileStorage, widget::LayerNodeWidget};
 use cyancia_input::{
     action::ActionCollection,
     key::KeyboardState,
@@ -12,6 +14,7 @@ use cyancia_input::{
 };
 use cyancia_runtime::{Services, event::Event};
 use cyancia_tools::ToolProxies;
+use cyancia_widgets::drag_drop_column::DragDropColumn;
 use iced::widget::text;
 use iced::{Theme, widget::space};
 use iced_core::{Element, Point, keyboard, mouse};
@@ -184,8 +187,9 @@ where
             }
             CanvasDockMessage::CanvasFocus(cursor_pos) => {
                 self.cursor_position = cursor_pos;
-                let canvas_manager = services.service_mut::<CanvasManager>();
-                canvas_manager.set_current(self.canvas);
+                services
+                    .service_mut::<CanvasManager>()
+                    .set_current(self.canvas);
             }
             CanvasDockMessage::WidgetRectChange(rect) => {
                 let canvas_manager = services.service_mut::<CanvasManager>();
@@ -218,4 +222,43 @@ where
     //         None
     //     })
     // }
+}
+
+pub struct CurrentCanvasLayersDock {}
+
+impl CurrentCanvasLayersDock {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+#[derive(Debug)]
+pub enum CurrentCanvasLayersDockMessage {}
+
+impl Dock<Theme, Renderer> for CurrentCanvasLayersDock {
+    type Message = CurrentCanvasLayersDockMessage;
+
+    fn id(&self) -> DockId {
+        DockId::new("current_canvas_layers".into())
+    }
+
+    fn view<'a>(&'a self, services: &'a Services) -> Element<'a, Self::Message, Theme, Renderer> {
+        let Some(canvas) = services.service::<CanvasManager>().current() else {
+            return space().into();
+        };
+
+        DragDropColumn::with_children(
+            canvas
+                .image
+                .layer_stack()
+                .iter_layers_dfs_without_root()
+                .map(LayerNodeWidget::new)
+                .map(Into::into),
+        )
+        .into()
+    }
+
+    fn update(&mut self, _message: Self::Message, services: &mut Services) -> Task<Self::Message> {
+        Task::none()
+    }
 }

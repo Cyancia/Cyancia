@@ -96,7 +96,7 @@ impl<'a, Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasW
             layout.bounds(),
             CanvasPrimitive {
                 image_size: self.canvas.image.size(),
-                root_layer: self.canvas.image.root(),
+                root_layer: self.canvas.image.root_id(),
                 transform: self.canvas.transform.clone(),
                 tile_storage: self.tile_storage.clone(),
             },

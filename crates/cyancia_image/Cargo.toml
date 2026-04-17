@@ -26,6 +26,7 @@ cyancia_render.workspace = true
 encase.workspace = true
 indexmap.workspace = true
 cyancia_shader_graph.workspace = true
+cyancia_widgets.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

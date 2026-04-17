@@ -237,6 +237,10 @@ impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
 where
     Renderer: iced_core::Renderer,
 {
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<State>()
+    }
+
     fn children(&self) -> Vec<Tree> {
         self.children.iter().map(Tree::new).collect()
     }

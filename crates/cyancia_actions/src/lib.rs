@@ -14,12 +14,14 @@ use crate::{
         BrushToolAction, CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction,
     },
     file::OpenFileAction,
+    layer::CreateNewLayerAction,
 };
 
 pub mod actions_matcher;
 pub mod brush;
 pub mod canvas_control;
 pub mod file;
+pub mod layer;
 
 pub struct ActionPlugin;
 
@@ -31,6 +33,7 @@ impl Plugin for ActionPlugin {
             .add_action_function::<CanvasToolSwitch<ZoomToolAction>>()
             .add_action_function::<CanvasToolSwitch<BrushToolAction>>()
             .add_action_function::<OpenFileAction>()
+            .add_action_function::<CreateNewLayerAction>()
             .add_action_function::<OpenBrushEditorAction>();
     }
 }

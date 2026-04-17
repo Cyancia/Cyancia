@@ -39,7 +39,7 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
-        let root_layer = canvas.image.root();
+        let root_layer = canvas.image.root_id();
         let params = RawPenInput { position };
 
         services.try_service_scope::<CurrentBrushPresetOperator>(
@@ -96,7 +96,7 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
-        let root_layer = canvas.image.root();
+        let root_layer = canvas.image.root_id();
         let final_input = RawPenInput { position };
 
         services.try_service_scope::<CurrentBrushPresetOperator>(

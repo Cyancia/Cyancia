@@ -21,3 +21,7 @@ enabled_in = ["main_view"]
 [open_brush_editor_action]
 shortcut = [["F5"]]
 enabled_in = ["main_view"]
+
+[create_new_layer_action]
+shortcut = [["ControlLeft", "ShiftLeft", "KeyN"]]
+enabled_in = ["main_view"]

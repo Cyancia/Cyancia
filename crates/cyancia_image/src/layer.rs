@@ -26,7 +26,7 @@ wrapper! {
     pub LayerId : Uuid
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Layer {
     id: LayerId,
     name: String,
@@ -60,7 +60,7 @@ impl Layer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LayerStack {
     root: LayerStackNode,
     layers: HashMap<LayerId, Layer>,
@@ -69,21 +69,41 @@ pub struct LayerStack {
 impl LayerStack {
     pub fn new() -> Self {
         let root = Layer::new("Root".to_string());
+        let mut root_node = LayerStackNode::new(root.id, None);
+        let background = Layer::new("Background".to_string());
+        let background_node = LayerStackNode::new(background.id, Some(root.id));
+        root_node.insert_foreground_child(background_node);
 
         Self {
             root: LayerStackNode::new(root.id, None),
-            layers: HashMap::from([(root.id, root)]),
+            layers: HashMap::from([(root.id, root), (background.id, background)]),
         }
     }
 
-    pub fn root(&self) -> LayerId {
+    pub fn with_background_layer(background: Layer) -> Self {
+        let root = Layer::new("Root".to_string());
+        let mut root_node = LayerStackNode::new(root.id, None);
+        let background_node = LayerStackNode::new(background.id, Some(root.id));
+        root_node.insert_foreground_child(background_node);
+
+        Self {
+            root: root_node,
+            layers: HashMap::from([(root.id, root), (background.id, background)]),
+        }
+    }
+
+    pub fn root_id(&self) -> LayerId {
         self.root.id
+    }
+
+    pub fn root_node(&self) -> &LayerStackNode {
+        &self.root
     }
 
     pub fn add_layer(&mut self, parent_id: LayerId, layer: Layer) {
         let parent_node = self.find_node_mut(parent_id);
         if let Some(parent_node) = parent_node {
-            parent_node.add_child(LayerStackNode::new(layer.id, Some(parent_id)));
+            parent_node.insert_foreground_child(LayerStackNode::new(layer.id, Some(parent_id)));
             self.layers.insert(layer.id, layer);
         }
     }
@@ -114,6 +134,15 @@ impl LayerStack {
 
     pub fn get_layer_mut(&mut self, layer_id: LayerId) -> Option<&mut Layer> {
         self.layers.get_mut(&layer_id)
+    }
+
+    pub fn iter_layers_dfs_without_root(&self) -> impl Iterator<Item = &Layer> {
+        let mut stack = self.root.children().iter().collect::<Vec<_>>();
+        std::iter::from_fn(move || {
+            let node = stack.pop()?;
+            stack.extend(node.children().iter().rev());
+            self.layers.get(&node.id())
+        })
     }
 }
 
@@ -148,10 +177,16 @@ fn find_node_mut_recursive(
     None
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LayerStackNode {
     id: LayerId,
     parent: Option<LayerId>,
+    // - Parent
+    //   - Child 1
+    //   - Child 2
+    //   - Child 3
+    // When compositing, we render the Child 3 first, then 2, finally 1.
+    // In this vector, the order of nodes are in render order.
     children: Vec<LayerStackNode>,
 }
 
@@ -180,8 +215,16 @@ impl LayerStackNode {
         &mut self.children
     }
 
-    pub fn add_child(&mut self, child: LayerStackNode) {
+    pub fn insert_background_child(&mut self, child: LayerStackNode) {
+        self.children.insert(0, child);
+    }
+
+    pub fn insert_foreground_child(&mut self, child: LayerStackNode) {
         self.children.push(child);
+    }
+
+    pub fn insert_child(&mut self, index: usize, child: LayerStackNode) {
+        self.children.insert(index, child);
     }
 
     pub fn remove_child(&mut self, child_id: LayerId) {

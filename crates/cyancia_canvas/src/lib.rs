@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cyancia_image::CImage;
+use cyancia_image::{CImage, layer::LayerId};
 use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::Service};
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_utils::wrapper;

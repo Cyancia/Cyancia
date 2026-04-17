@@ -81,7 +81,7 @@ impl ActionFunction for OpenFileAction {
 
                 // TODO this should not be done here
                 services.service::<GpuTileStorage>().declare_layer(
-                    canvas.image.root(),
+                    canvas.image.root_id(),
                     GpuLayerInfo {
                         texel_type: TexelType::RGBA8,
                     },
