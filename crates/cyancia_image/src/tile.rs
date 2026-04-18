@@ -32,7 +32,7 @@ use wgpu::{
 };
 
 use crate::{
-    layer::{Layer, LayerId},
+    layer::{LayerData, LayerId},
     texel::{RGBA8_FORMAT, TexelDepth, TexelFormat, TexelType},
 };
 

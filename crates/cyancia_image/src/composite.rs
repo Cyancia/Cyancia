@@ -15,7 +15,7 @@ use wgpu::{
 use crate::{
     CImage,
     dynamic_intermediate_buffer::IntermediateBuffer,
-    layer::{Layer, LayerId, LayerStackNode},
+    layer::{LayerData, LayerId, LayerStackNode},
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
 };
@@ -33,7 +33,7 @@ pub struct BlendCache {
 
 impl BlendCache {
     pub fn new(
-        layer: &Layer,
+        layer: &LayerData,
         tiles: &GpuTileStorage,
         output_texel_type: TexelType,
         device: &Device,
@@ -325,7 +325,7 @@ impl ImageCompositor {
 }
 
 fn blend_onto(
-    src_layer: &Layer,
+    src_layer: &LayerData,
     dst_buffer: &TextureView,
     dst_tile_info: &Buffer,
     output_buffer: &TextureView,

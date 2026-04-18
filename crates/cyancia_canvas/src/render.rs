@@ -2,7 +2,7 @@ use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
 
 use bevy_math::IRect;
 use cyancia_image::{
-    layer::{Layer, LayerId},
+    layer::{LayerData, LayerId},
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
 };

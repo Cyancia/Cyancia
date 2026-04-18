@@ -9,7 +9,7 @@ extern crate image as imagers;
 
 use crate::{
     blend_modes::BlendMode,
-    layer::{Layer, LayerId, LayerNameGenerator, LayerStack},
+    layer::{LayerData, LayerId, LayerNameGenerator, LayerStack},
     tile::GpuTileStorage,
 };
 
@@ -55,7 +55,7 @@ impl CImage {
         }
     }
 
-    pub fn from_layer(size: UVec2, layer: Layer) -> Self {
+    pub fn from_layer(size: UVec2, layer: LayerData) -> Self {
         let layers = LayerStack::with_background_layer(layer);
         let active_layer = layers
             .root_node()
@@ -84,16 +84,16 @@ impl CImage {
 
     pub fn from_image(img: imagers::DynamicImage, name: String, tiles: &GpuTileStorage) -> Self {
         let size = UVec2::new(img.width(), img.height());
-        let layer = Layer::from_image(name, img, tiles, Box::new(BlendMode::Normal));
+        let layer = LayerData::from_image(name, img, tiles, Box::new(BlendMode::Normal));
         Self::from_layer(size, layer)
     }
 
-    pub fn create_new_layer(&mut self, name_prefix: String, parent: LayerId) -> LayerId {
-        let name = self.name_generator.next_of(name_prefix);
-        let layer = Layer::new(name, Box::new(BlendMode::Normal));
-        let id = layer.id();
+    pub fn insert_new_layer(&mut self, parent: LayerId, layer: LayerData) {
         self.layers.add_layer(parent, layer);
-        id
+    }
+
+    pub fn next_name_of_layer(&mut self, base: String) -> String {
+        self.name_generator.next_of(base)
     }
 
     pub fn parent_of_active_layer(&self) -> Option<LayerId> {

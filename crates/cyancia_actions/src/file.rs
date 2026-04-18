@@ -6,7 +6,7 @@ use cyancia_canvas::{
 use cyancia_image::{
     CImage,
     blend_modes::BlendMode,
-    layer::Layer,
+    layer::LayerData,
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
 };
@@ -45,7 +45,7 @@ async fn open_file(tiles: GpuTileStorage) -> OpenFileMessage {
 
     let width = img.width();
     let height = img.height();
-    let layer = Layer::from_image(
+    let layer = LayerData::from_image(
         "Background".into(),
         img,
         &tiles,

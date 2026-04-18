@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cyancia_canvas::CanvasManager;
 use cyancia_image::{
-    layer::Layer,
+    layer::LayerData,
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
 };
@@ -33,10 +33,13 @@ impl ActionFunction for CreateNewLayerAction {
             return Task::none();
         };
 
-        let new_layer = canvas.image.create_new_layer("Layer".into(), parent);
+        let new_layer =
+            LayerData::new_normal_pixel(canvas.image.next_name_of_layer("Layer".into()));
+        let new_layer_id = new_layer.id();
+        canvas.image.insert_new_layer(parent, new_layer);
         let tiles = services.service::<GpuTileStorage>();
         tiles.declare_layer(
-            new_layer,
+            new_layer_id,
             GpuLayerInfo {
                 // TODO use image format
                 texel_type: TexelType::RGBA8,
@@ -44,7 +47,7 @@ impl ActionFunction for CreateNewLayerAction {
         );
         log::info!(
             "Created new layer with id {:?} under parent {:?}.",
-            new_layer,
+            new_layer_id,
             parent
         );
 

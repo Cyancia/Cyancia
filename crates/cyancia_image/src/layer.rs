@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use cyancia_utils::wrapper;
+use dyn_clone::DynClone;
 use glam::UVec2;
 use image::DynamicImage;
 use uuid::Uuid;
@@ -27,13 +28,14 @@ wrapper! {
 }
 
 #[derive(Clone)]
-pub struct Layer {
+pub struct LayerData {
     id: LayerId,
     pub name: String,
     pub blend_func: Box<dyn BlendFunction>,
+    data: Box<dyn Layer>,
 }
 
-impl std::fmt::Debug for Layer {
+impl std::fmt::Debug for LayerData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Layer")
             .field("id", &self.id)
@@ -43,13 +45,22 @@ impl std::fmt::Debug for Layer {
     }
 }
 
-impl Layer {
-    pub fn new(name: String, blend_func: Box<dyn BlendFunction>) -> Self {
+impl LayerData {
+    pub fn new(name: String, blend_func: Box<dyn BlendFunction>, data: Box<dyn Layer>) -> Self {
         Self {
             id: LayerId::new(Uuid::new_v4()),
             name,
             blend_func,
+            data,
         }
+    }
+
+    pub fn new_normal_pixel(name: String) -> Self {
+        Self::new(name, Box::new(BlendMode::Normal), Box::new(PixelLayer))
+    }
+
+    pub fn new_normal_group(name: String) -> Self {
+        Self::new(name, Box::new(BlendMode::Normal), Box::new(GroupLayer))
     }
 
     pub fn id(&self) -> LayerId {
@@ -69,24 +80,57 @@ impl Layer {
             id,
             name,
             blend_func,
+            data: Box::new(PixelLayer),
         }
+    }
+}
+
+pub trait Layer: Send + Sync + DynClone + 'static {
+    fn can_have_children(&self) -> bool;
+    fn can_contain_pixels(&self) -> bool;
+}
+dyn_clone::clone_trait_object!(Layer);
+
+#[derive(Debug, Clone)]
+pub struct PixelLayer;
+
+impl Layer for PixelLayer {
+    fn can_have_children(&self) -> bool {
+        false
+    }
+
+    fn can_contain_pixels(&self) -> bool {
+        true
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GroupLayer;
+
+impl Layer for GroupLayer {
+    fn can_have_children(&self) -> bool {
+        true
+    }
+
+    fn can_contain_pixels(&self) -> bool {
+        false
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct LayerStack {
     root: LayerStackNode,
-    layers: HashMap<LayerId, Layer>,
+    layers: HashMap<LayerId, LayerData>,
 }
 
 impl LayerStack {
     pub fn new() -> Self {
-        let background = Layer::new("Background".to_string(), Box::new(BlendMode::Normal));
+        let background = LayerData::new_normal_pixel("Background".to_string());
         Self::with_background_layer(background)
     }
 
-    pub fn with_background_layer(background: Layer) -> Self {
-        let root = Layer::new("Root".to_string(), Box::new(BlendMode::Normal));
+    pub fn with_background_layer(background: LayerData) -> Self {
+        let root = LayerData::new_normal_group("Root".to_string());
         let mut root_node = LayerStackNode::new(root.id, None);
         let background_node = LayerStackNode::new(background.id, Some(root.id));
         root_node.insert_foreground_child(background_node);
@@ -105,7 +149,7 @@ impl LayerStack {
         &self.root
     }
 
-    pub fn add_layer(&mut self, parent_id: LayerId, layer: Layer) {
+    pub fn add_layer(&mut self, parent_id: LayerId, layer: LayerData) {
         let parent_node = self.find_node_mut(parent_id);
         if let Some(parent_node) = parent_node {
             parent_node.insert_foreground_child(LayerStackNode::new(layer.id, Some(parent_id)));
@@ -113,7 +157,7 @@ impl LayerStack {
         }
     }
 
-    pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<Layer> {
+    pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<LayerData> {
         let node = self.find_node(layer_id)?;
         if let Some(parent) = node
             .parent()
@@ -133,15 +177,15 @@ impl LayerStack {
         find_node_mut_recursive(&mut self.root, layer_id)
     }
 
-    pub fn get_layer(&self, layer_id: LayerId) -> Option<&Layer> {
+    pub fn get_layer(&self, layer_id: LayerId) -> Option<&LayerData> {
         self.layers.get(&layer_id)
     }
 
-    pub fn get_layer_mut(&mut self, layer_id: LayerId) -> Option<&mut Layer> {
+    pub fn get_layer_mut(&mut self, layer_id: LayerId) -> Option<&mut LayerData> {
         self.layers.get_mut(&layer_id)
     }
 
-    pub fn iter_layers_dfs_without_root(&self) -> impl Iterator<Item = &Layer> {
+    pub fn iter_layers_dfs_without_root(&self) -> impl Iterator<Item = &LayerData> {
         let mut stack = self.root.children().iter().collect::<Vec<_>>();
         std::iter::from_fn(move || {
             let node = stack.pop()?;
@@ -150,7 +194,7 @@ impl LayerStack {
         })
     }
 
-    pub fn iter_layers(&self) -> impl Iterator<Item = &Layer> {
+    pub fn iter_layers(&self) -> impl Iterator<Item = &LayerData> {
         self.layers.values()
     }
 }

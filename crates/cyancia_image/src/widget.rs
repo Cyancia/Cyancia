@@ -8,13 +8,13 @@ use iced_core::{
     widget,
 };
 
-use crate::layer::{Layer, LayerStack};
+use crate::layer::{LayerData, LayerStack};
 
 pub struct LayerNodeWidget<'a, Theme>
 where
     Theme: Catalog,
 {
-    layer: &'a Layer,
+    layer: &'a LayerData,
     is_active: bool,
     height: f32,
     font_size: Pixels,
@@ -28,7 +28,7 @@ impl<'a, Theme> LayerNodeWidget<'a, Theme>
 where
     Theme: Catalog,
 {
-    pub fn new(layer: &'a Layer) -> LayerNodeWidget<'a, Theme> {
+    pub fn new(layer: &'a LayerData) -> LayerNodeWidget<'a, Theme> {
         LayerNodeWidget {
             layer,
             is_active: false,
