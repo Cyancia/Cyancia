@@ -32,7 +32,7 @@ impl Plugin for ImagePlugin {
 #[derive(Debug)]
 pub struct CImage {
     size: UVec2,
-    active_layer: LayerId,
+    pub active_layer: LayerId,
     layers: LayerStack,
     name_generator: LayerNameGenerator,
 }
@@ -94,10 +94,6 @@ impl CImage {
         let id = layer.id();
         self.layers.add_layer(parent, layer);
         id
-    }
-
-    pub fn active_layer(&self) -> LayerId {
-        self.active_layer
     }
 
     pub fn parent_of_active_layer(&self) -> Option<LayerId> {

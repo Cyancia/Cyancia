@@ -39,7 +39,7 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
-        let active_layer = canvas.image.active_layer();
+        let active_layer = canvas.image.active_layer;
         let params = RawPenInput { position };
 
         let success =
@@ -96,7 +96,7 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
-        let active_layer = canvas.image.active_layer();
+        let active_layer = canvas.image.active_layer;
         let final_input = RawPenInput { position };
 
         let success =

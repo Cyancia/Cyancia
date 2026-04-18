@@ -15,6 +15,7 @@ where
     Theme: Catalog,
 {
     layer: &'a Layer,
+    is_active: bool,
     height: f32,
     font_size: Pixels,
     class: Theme::Class<'a>,
@@ -30,6 +31,7 @@ where
     pub fn new(layer: &'a Layer) -> LayerNodeWidget<'a, Theme> {
         LayerNodeWidget {
             layer,
+            is_active: false,
             height: 40.0,
             font_size: Pixels(14.0),
             class: <Theme as Catalog>::default(),
@@ -66,6 +68,11 @@ where
 
     pub fn max_thumbnail_size(mut self, size: f32) -> Self {
         self.max_thumbnail_size = size;
+        self
+    }
+
+    pub fn is_active(mut self, active: bool) -> Self {
+        self.is_active = active;
         self
     }
 }
@@ -106,7 +113,11 @@ where
                 bounds: layout.bounds(),
                 ..renderer::Quad::default()
             },
-            style.background,
+            if self.is_active {
+                style.active_background
+            } else {
+                style.background
+            },
         );
         let indent = self.depth as f32 * 20.0;
         let bounds = Rectangle {
@@ -187,6 +198,7 @@ where
 #[derive(Debug, Clone, Copy)]
 pub struct Style {
     pub background: Background,
+    pub active_background: Background,
     pub text_color: Color,
 }
 
@@ -222,11 +234,13 @@ fn primary(theme: &iced_core::Theme, status: Status) -> Style {
     let palette = theme.extended_palette();
     match status {
         Status::Idle => Style {
-            background: Background::Color(palette.background.base.color),
+            background: palette.background.base.color.into(),
+            active_background: palette.primary.base.color.into(),
             text_color: palette.background.base.text,
         },
         Status::Selected => Style {
-            background: Background::Color(palette.primary.base.color),
+            background: palette.primary.base.color.into(),
+            active_background: palette.primary.base.color.into(),
             text_color: palette.primary.base.text,
         },
     }

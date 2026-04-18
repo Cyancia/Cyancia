@@ -49,6 +49,8 @@ pub struct DragDropColumn<'a, Message, Theme, Renderer> {
     align: Alignment,
     clip: bool,
     children: Vec<Element<'a, Message, Theme, Renderer>>,
+    on_click: Option<Box<dyn Fn(usize) -> Option<Message>>>,
+    grab_threshold: f32,
     on_grab: Option<Box<dyn Fn(DragDropContext) -> Option<Message>>>,
     on_drag_start: Option<Box<dyn Fn(DragDropContext) -> Option<Message>>>,
     on_drag_update: Option<Box<dyn Fn(DragDropContext) -> Option<Message>>>,
@@ -96,6 +98,8 @@ where
             align: Alignment::Start,
             clip: false,
             children,
+            on_click: None,
+            grab_threshold: 8.0,
             on_grab: None,
             on_drag_start: None,
             on_drag_update: None,
@@ -210,6 +214,19 @@ where
         F: 'static + Fn() -> Option<Message>,
     {
         self.on_drag_cancel = Some(Box::new(f));
+        self
+    }
+
+    pub fn grab_threshold(mut self, threshold: f32) -> Self {
+        self.grab_threshold = threshold;
+        self
+    }
+
+    pub fn on_click<F>(mut self, f: F) -> Self
+    where
+        F: 'static + Fn(usize) -> Option<Message>,
+    {
+        self.on_click = Some(Box::new(f));
         self
     }
 }
@@ -335,27 +352,53 @@ where
 
                 for (i, child) in layout.children().enumerate() {
                     if child.bounds().contains(cursor_pos) {
-                        *state = State::Grabbed {
+                        // *state = State::Grabbed {
+                        //     index: i,
+                        //     position: cursor_pos,
+                        // };
+                        // if let Some(on_grab) = &self.on_grab
+                        //     && let Some(m) = on_grab(DragDropContext {
+                        //         item_index: i,
+                        //         absolute_position: cursor_pos,
+                        //         gap_index: i,
+                        //         column_bounds: layout.bounds(),
+                        //     })
+                        // {
+                        //     shell.publish(m);
+                        // }
+                        // shell.capture_event();
+                        // break;
+                        *state = State::Clicked {
                             index: i,
                             position: cursor_pos,
                         };
-                        if let Some(on_grab) = &self.on_grab
-                            && let Some(m) = on_grab(DragDropContext {
-                                item_index: i,
-                                absolute_position: cursor_pos,
-                                gap_index: i,
+                    }
+                }
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position }) => match *state {
+                State::Idle => {}
+                State::Clicked {
+                    index,
+                    position: origin,
+                } => {
+                    if position.distance(origin) > self.grab_threshold {
+                        *state = State::Grabbed {
+                            index,
+                            position: origin,
+                        };
+                        if let Some(on_drag_start) = &self.on_drag_start
+                            && let Some(m) = on_drag_start(DragDropContext {
+                                item_index: index,
+                                absolute_position: *position,
+                                gap_index: find_nearest_gap_index(&layout, *position),
                                 column_bounds: layout.bounds(),
                             })
                         {
                             shell.publish(m);
                         }
                         shell.capture_event();
-                        break;
                     }
                 }
-            }
-            Event::Mouse(mouse::Event::CursorMoved { position }) => match *state {
-                State::Idle => {}
                 State::Grabbed {
                     index,
                     position: origin,
@@ -383,8 +426,25 @@ where
             },
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => match *state {
                 State::Idle => {}
+                State::Clicked { .. } => {
+                    if let Some(on_click) = &self.on_click {
+                        for (i, child) in layout.children().enumerate() {
+                            if let Some(cursor_pos) = cursor.position()
+                                && child.bounds().contains(cursor_pos)
+                            {
+                                if let Some(m) = on_click(i) {
+                                    shell.publish(m);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    *state = State::Idle;
+                    shell.capture_event();
+                }
                 State::Grabbed { .. } => {
                     *state = State::Idle;
+                    shell.capture_event();
                 }
                 State::Dragging { index, .. } => {
                     if let Some(on_drop) = &self.on_drop
@@ -443,7 +503,7 @@ where
         let state = tree.state.downcast_ref::<State>();
 
         match *state {
-            State::Idle => self
+            State::Idle | State::Clicked { .. } => self
                 .children
                 .iter()
                 .zip(&tree.children)
@@ -478,7 +538,9 @@ where
 
             let state = tree.state.downcast_ref::<State>();
             let (dragged_index, origin) = match state {
-                State::Idle | State::Grabbed { .. } => (usize::MAX, Point::ORIGIN),
+                State::Idle | State::Clicked { .. } | State::Grabbed { .. } => {
+                    (usize::MAX, Point::ORIGIN)
+                }
                 State::Dragging { index, origin } => (*index, *origin),
             };
 
@@ -542,6 +604,10 @@ where
 enum State {
     #[default]
     Idle,
+    Clicked {
+        index: usize,
+        position: Point,
+    },
     Grabbed {
         index: usize,
         position: Point,

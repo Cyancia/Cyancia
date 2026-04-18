@@ -249,7 +249,9 @@ impl CurrentCanvasLayersDock {
 }
 
 #[derive(Debug)]
-pub enum CurrentCanvasLayersDockMessage {}
+pub enum CurrentCanvasLayersDockMessage {
+    ActiveLayerChange(usize),
+}
 
 impl Dock<Theme, Renderer> for CurrentCanvasLayersDock {
     type Message = CurrentCanvasLayersDockMessage;
@@ -263,18 +265,38 @@ impl Dock<Theme, Renderer> for CurrentCanvasLayersDock {
             return space().into();
         };
 
+        let active_layer = canvas.image.active_layer;
         DragDropColumn::with_children(
             canvas
                 .image
                 .layer_stack()
                 .iter_layers_dfs_without_root()
-                .map(LayerNodeWidget::new)
+                .map(|layer| LayerNodeWidget::new(layer).is_active(active_layer == layer.id()))
                 .map(Into::into),
         )
+        .on_click(|index| Some(CurrentCanvasLayersDockMessage::ActiveLayerChange(index)))
         .into()
     }
 
-    fn update(&mut self, _message: Self::Message, services: &mut Services) -> Task<Self::Message> {
-        Task::none()
+    fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {
+        match message {
+            CurrentCanvasLayersDockMessage::ActiveLayerChange(layer_index) => {
+                let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
+                    return Task::none();
+                };
+                let Some(active_layer) = canvas
+                    .image
+                    .layer_stack()
+                    .iter_layers_dfs_without_root()
+                    .nth(layer_index)
+                else {
+                    return Task::none();
+                };
+
+                canvas.image.active_layer = active_layer.id();
+
+                Task::none()
+            }
+        }
     }
 }
