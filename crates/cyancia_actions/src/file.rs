@@ -5,6 +5,7 @@ use cyancia_canvas::{
 };
 use cyancia_image::{
     CImage,
+    blend_modes::BlendMode,
     layer::Layer,
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
@@ -44,7 +45,12 @@ async fn open_file(tiles: GpuTileStorage) -> OpenFileMessage {
 
     let width = img.width();
     let height = img.height();
-    let layer = Layer::from_image("Background".into(), img, &tiles);
+    let layer = Layer::from_image(
+        "Background".into(),
+        img,
+        &tiles,
+        Box::new(BlendMode::Normal),
+    );
 
     OpenFileMessage::ImageCreated(CImage::from_layer(UVec2::new(width, height), layer))
 }
@@ -80,12 +86,16 @@ impl ActionFunction for OpenFileAction {
                 };
 
                 // TODO this should not be done here
-                services.service::<GpuTileStorage>().declare_layer(
-                    canvas.image.root_id(),
-                    GpuLayerInfo {
-                        texel_type: TexelType::RGBA8,
-                    },
-                );
+                let tiles = services.service::<GpuTileStorage>();
+                for layer in canvas.image.layer_stack().iter_layers() {
+                    tiles.declare_layer(
+                        layer.id(),
+                        GpuLayerInfo {
+                            // TODO
+                            texel_type: TexelType::RGBA8,
+                        },
+                    );
+                }
                 let id = canvas.id;
                 services.service_mut::<CanvasManager>().add_canvas(canvas);
 

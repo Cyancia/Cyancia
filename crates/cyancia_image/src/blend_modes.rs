@@ -1,6 +1,8 @@
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 
+use crate::composite::BlendFunction;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
 #[display(style = "snake_case")]
 pub enum BlendMode {
@@ -28,5 +30,21 @@ impl BlendMode {
             BlendMode::Multiply => "blend_multiply",
             BlendMode::Divide => "blend_divide",
         }
+    }
+}
+
+impl BlendFunction for BlendMode {
+    fn name(&self) -> String {
+        self.to_string()
+    }
+
+    fn wgsl_function_call(&self, src_ident: &str, dst_ident: &str) -> String {
+        format!(
+            // FIXME: This isn't working if image module is added as a whole.
+            "return package::image::blend_modes::{}({}, {});",
+            self.shader_func(),
+            src_ident,
+            dst_ident
+        )
     }
 }

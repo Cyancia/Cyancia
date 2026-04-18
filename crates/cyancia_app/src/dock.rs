@@ -6,13 +6,13 @@ use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager, event::CanvasRemoved, widget::CanvasWidget,
 };
 use cyancia_dock::dock::{Dock, DockId};
-use cyancia_image::{tile::GpuTileStorage, widget::LayerNodeWidget};
+use cyancia_image::{composite::ImageCompositor, tile::GpuTileStorage, widget::LayerNodeWidget};
 use cyancia_input::{
     action::ActionCollection,
     key::KeyboardState,
     mouse::{HoverMouseState, PressedMouseState},
 };
-use cyancia_runtime::{Services, event::Event};
+use cyancia_runtime::{Services, event::Event, service::RenderContext};
 use cyancia_tools::ToolProxies;
 use cyancia_widgets::drag_drop_column::DragDropColumn;
 use iced::widget::text;
@@ -114,6 +114,22 @@ where
     }
 
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {
+        services.service_scope::<CanvasManager, ()>(|canvas_manager, services| {
+            let Some(canvas) = canvas_manager.get_mut(&self.canvas) else {
+                return;
+            };
+            let tiles = services.service::<GpuTileStorage>();
+            let render_context = services.service::<RenderContext>();
+            let mut comp = ImageCompositor::new();
+            comp.build_cache(&canvas.image, tiles, &render_context.device);
+            comp.composite(
+                &canvas.image,
+                tiles,
+                &render_context.device,
+                &render_context.queue,
+            );
+        });
+
         let actions_matcher = self.actions_matcher.lock();
 
         match message {
@@ -128,7 +144,7 @@ where
                 };
                 let tool_proxy_id = canvas.tool_proxy_id;
 
-                services.service_scope::<ToolProxies>(|tool_proxies, services| {
+                services.service_scope::<ToolProxies, ()>(|tool_proxies, services| {
                     let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
 
                     match event {

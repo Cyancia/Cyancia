@@ -352,22 +352,20 @@ impl Services {
         self.services.insert(TypeId::of::<T>(), Box::new(service));
     }
 
-    pub fn service_scope<T: Service>(&mut self, f: impl FnOnce(&mut T, &mut Self)) {
+    pub fn service_scope<T: Service, O>(&mut self, f: impl FnOnce(&mut T, &mut Self) -> O) -> O {
         let mut s = self.remove_service::<T>();
-        f(&mut s, self);
+        let result = f(&mut s, self);
         self.insert_service(s);
+        result
     }
 
-    pub fn try_service_scope<T: Service>(
+    pub fn try_service_scope<T: Service, O>(
         &mut self,
-        f: impl FnOnce(&mut T, &mut Self),
-        fail: impl Fn(),
-    ) {
-        if let Some(mut s) = self.try_remove_service::<T>() {
-            f(&mut s, self);
-            self.insert_service(s);
-        } else {
-            fail();
-        }
+        f: impl FnOnce(&mut T, &mut Self) -> O,
+    ) -> Option<O> {
+        let mut s = self.try_remove_service::<T>()?;
+        let result = f(&mut s, self);
+        self.insert_service(s);
+        Some(result)
     }
 }

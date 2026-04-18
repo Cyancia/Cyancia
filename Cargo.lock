@@ -1401,6 +1401,7 @@ dependencies = [
  "cyancia_utils",
  "cyancia_widgets",
  "dashmap",
+ "dyn-clone",
  "encase",
  "glam 0.30.10",
  "half",

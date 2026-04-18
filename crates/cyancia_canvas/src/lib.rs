@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bevy_math::IRect;
 use cyancia_image::{CImage, layer::LayerId};
 use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::Service};
 use cyancia_tools::{ToolProxyId, ToolsAppExt};

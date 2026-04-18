@@ -102,7 +102,7 @@ where
 
         renderer.fill_text(
             iced_core::Text {
-                content: self.layer.name().to_string(),
+                content: self.layer.name.clone(),
                 bounds: bounds.size(),
                 size: self.font_size,
                 line_height: LineHeight::Relative(1.0),

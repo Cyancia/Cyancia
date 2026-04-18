@@ -74,12 +74,16 @@ impl WindowView for MainView {
             transform: Default::default(),
         };
         // TODO this should not be done here
-        services.service::<GpuTileStorage>().declare_layer(
-            canvas.image.root_id(),
-            GpuLayerInfo {
-                texel_type: TexelType::RGBA8,
-            },
-        );
+        let tiles = services.service::<GpuTileStorage>();
+        for layer in canvas.image.layer_stack().iter_layers() {
+            tiles.declare_layer(
+                layer.id(),
+                GpuLayerInfo {
+                    // TODO
+                    texel_type: TexelType::RGBA8,
+                },
+            );
+        }
 
         let (main_window, task) = window::open(Default::default());
         let (mut dock_manager, dock_manager_task) = DockManager::new(main_window);

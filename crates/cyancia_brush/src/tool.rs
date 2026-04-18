@@ -39,19 +39,19 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
-        let root_layer = canvas.image.root_id();
+        let active_layer = canvas.image.active_layer();
         let params = RawPenInput { position };
 
-        services.try_service_scope::<CurrentBrushPresetOperator>(
-            |brush, services| {
+        let success =
+            services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
                 let assets = services.service::<AssetRegistry>();
-                brush.begin_stroke(params, &tiles, &assets, root_layer);
-            },
-            || {
-                log::error!("No current brush preset operator found.");
-            },
-        );
+                brush.begin_stroke(params, &tiles, &assets, active_layer);
+            });
+
+        if success.is_none() {
+            log::error!("No current brush preset operator found.");
+        }
     }
 
     fn update(
@@ -96,18 +96,18 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
-        let root_layer = canvas.image.root_id();
+        let active_layer = canvas.image.active_layer();
         let final_input = RawPenInput { position };
 
-        services.try_service_scope::<CurrentBrushPresetOperator>(
-            |brush, services| {
+        let success =
+            services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
-                brush.end_stroke(final_input, &tiles, root_layer);
-            },
-            || {
-                log::error!("No current brush preset operator found.");
-            },
-        );
+                brush.end_stroke(final_input, &tiles, active_layer);
+            });
+
+        if success.is_none() {
+            log::error!("No current brush preset operator found.");
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+use bevy_math::IRect;
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use encase::ShaderType;
 use glam::IVec2;
@@ -94,5 +95,87 @@ impl DynamicIntermediateBuffer {
             buf: vec![GpuTileInfo::NULL; self.tiles as usize],
         });
         self.tile_info.write_buffer(&self.device, &self.queue);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IntermediateBuffer {
+    textures: [TextureView; 2],
+    tile_info_buffer: Buffer,
+    tile_rect: IRect,
+    texel_type: TexelType,
+}
+
+impl IntermediateBuffer {
+    pub fn new(device: &Device, queue: &Queue, tile_rect: IRect, texel_type: TexelType) -> Self {
+        let tiles = tile_rect.size().element_product() as u32;
+        let desc = TextureDescriptor {
+            label: Some("intermediate buffer texture"),
+            size: Extent3d {
+                width: GpuTileStorageInner::TILE_SIZE,
+                height: GpuTileStorageInner::TILE_SIZE,
+                depth_or_array_layers: tiles,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: texel_type.wgpu_format(),
+            usage: TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        };
+
+        let texture_a = device
+            .create_texture(&desc)
+            .create_view(&Default::default());
+        let texture_b = device
+            .create_texture(&desc)
+            .create_view(&Default::default());
+
+        let mut tile_info_buffer = BufferVec::new(
+            Some("intermediate buffer tile info".into()),
+            BufferUsages::STORAGE,
+        );
+        for y in tile_rect.min.y..tile_rect.max.y {
+            for x in tile_rect.min.x..tile_rect.max.x {
+                tile_info_buffer.push(&GpuTileInfo {
+                    index: IVec2 { x, y },
+                    origin: IVec2 { x, y } * GpuTileStorageInner::TILE_SIZE as i32,
+                });
+            }
+        }
+        tile_info_buffer.write_buffer(device, queue);
+
+        Self {
+            textures: [texture_a, texture_b],
+            tile_rect,
+            tile_info_buffer: tile_info_buffer.into_inner_buffer().unwrap(),
+            texel_type,
+        }
+    }
+
+    pub fn coord_to_layer(&self, coord: IVec2) -> Option<u32> {
+        if self.tile_rect.contains(coord) {
+            Some((coord.y * self.tile_rect.width() + coord.x) as u32)
+        } else {
+            None
+        }
+    }
+
+    pub fn textures(&self) -> &[TextureView; 2] {
+        &self.textures
+    }
+
+    pub fn tile_info_buffer(&self) -> &Buffer {
+        &self.tile_info_buffer
+    }
+
+    pub fn clear(&self, device: &Device, queue: &Queue) {
+        let mut ec = device.create_command_encoder(&Default::default());
+        for texture in &self.textures {
+            ec.clear_texture(texture.texture(), &Default::default());
+        }
+        queue.submit([ec.finish()]);
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use cyancia_utils::wrapper;
 use glam::UVec2;
@@ -6,7 +6,7 @@ use image::DynamicImage;
 use uuid::Uuid;
 use wgpu::TextureFormat;
 
-use crate::tile::GpuTileStorage;
+use crate::{blend_modes::BlendMode, composite::BlendFunction, tile::GpuTileStorage};
 
 #[derive(Debug, Default)]
 pub struct LayerNameGenerator {
@@ -26,17 +26,29 @@ wrapper! {
     pub LayerId : Uuid
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Layer {
     id: LayerId,
-    name: String,
+    pub name: String,
+    pub blend_func: Box<dyn BlendFunction>,
+}
+
+impl std::fmt::Debug for Layer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Layer")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("blend_func", &self.blend_func.name())
+            .finish()
+    }
 }
 
 impl Layer {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, blend_func: Box<dyn BlendFunction>) -> Self {
         Self {
             id: LayerId::new(Uuid::new_v4()),
             name,
+            blend_func,
         }
     }
 
@@ -44,19 +56,20 @@ impl Layer {
         self.id
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
-    }
-
-    pub fn from_image(name: String, img: DynamicImage, tiles: &GpuTileStorage) -> Self {
+    pub fn from_image(
+        name: String,
+        img: DynamicImage,
+        tiles: &GpuTileStorage,
+        blend_func: Box<dyn BlendFunction>,
+    ) -> Self {
         let id = LayerId::new(Uuid::new_v4());
         tiles.upload_image(id, img);
 
-        Self { id, name }
+        Self {
+            id,
+            name,
+            blend_func,
+        }
     }
 }
 
@@ -68,20 +81,12 @@ pub struct LayerStack {
 
 impl LayerStack {
     pub fn new() -> Self {
-        let root = Layer::new("Root".to_string());
-        let mut root_node = LayerStackNode::new(root.id, None);
-        let background = Layer::new("Background".to_string());
-        let background_node = LayerStackNode::new(background.id, Some(root.id));
-        root_node.insert_foreground_child(background_node);
-
-        Self {
-            root: LayerStackNode::new(root.id, None),
-            layers: HashMap::from([(root.id, root), (background.id, background)]),
-        }
+        let background = Layer::new("Background".to_string(), Box::new(BlendMode::Normal));
+        Self::with_background_layer(background)
     }
 
     pub fn with_background_layer(background: Layer) -> Self {
-        let root = Layer::new("Root".to_string());
+        let root = Layer::new("Root".to_string(), Box::new(BlendMode::Normal));
         let mut root_node = LayerStackNode::new(root.id, None);
         let background_node = LayerStackNode::new(background.id, Some(root.id));
         root_node.insert_foreground_child(background_node);
@@ -143,6 +148,10 @@ impl LayerStack {
             stack.extend(node.children().iter().rev());
             self.layers.get(&node.id())
         })
+    }
+
+    pub fn iter_layers(&self) -> impl Iterator<Item = &Layer> {
+        self.layers.values()
     }
 }
 

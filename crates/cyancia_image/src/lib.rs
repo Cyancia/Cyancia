@@ -8,11 +8,13 @@ use glam::UVec2;
 extern crate image as imagers;
 
 use crate::{
+    blend_modes::BlendMode,
     layer::{Layer, LayerId, LayerNameGenerator, LayerStack},
     tile::GpuTileStorage,
 };
 
 pub mod blend_modes;
+pub mod composite;
 pub mod dynamic_intermediate_buffer;
 pub mod layer;
 pub mod texel;
@@ -37,8 +39,7 @@ pub struct CImage {
 
 impl CImage {
     pub fn new(size: UVec2) -> Self {
-        let mut layers = LayerStack::new();
-        layers.add_layer(layers.root_id(), Layer::new("Background".into()));
+        let layers = LayerStack::new();
         let active_layer = layers
             .root_node()
             .children()
@@ -83,13 +84,13 @@ impl CImage {
 
     pub fn from_image(img: imagers::DynamicImage, name: String, tiles: &GpuTileStorage) -> Self {
         let size = UVec2::new(img.width(), img.height());
-        let layer = Layer::from_image(name, img, tiles);
+        let layer = Layer::from_image(name, img, tiles, Box::new(BlendMode::Normal));
         Self::from_layer(size, layer)
     }
 
     pub fn create_new_layer(&mut self, name_prefix: String, parent: LayerId) -> LayerId {
         let name = self.name_generator.next_of(name_prefix);
-        let layer = Layer::new(name);
+        let layer = Layer::new(name, Box::new(BlendMode::Normal));
         let id = layer.id();
         self.layers.add_layer(parent, layer);
         id
