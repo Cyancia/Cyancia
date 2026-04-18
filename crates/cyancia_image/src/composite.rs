@@ -66,6 +66,7 @@ impl BlendCache {
         let compiled_shader = match compiler.compile(&"package::template".parse().unwrap()) {
             Ok(s) => s.to_string(),
             Err(e) => {
+                // TODO: Don't panic.
                 panic!("Failed to compile blend shader: {}", e);
             }
         };

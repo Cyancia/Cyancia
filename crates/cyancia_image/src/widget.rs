@@ -2,7 +2,8 @@ use cyancia_widgets::drag_drop_column::DragDropColumn;
 use iced_core::{
     Background, Color, Element, Layout, Length, Pixels, Point, Rectangle, Size, Widget,
     alignment::Vertical,
-    layout, mouse, renderer,
+    layout, mouse,
+    renderer::{self, Quad},
     text::{Alignment, LineHeight, Shaping, Wrapping},
     widget,
 };
@@ -18,6 +19,8 @@ where
     font_size: Pixels,
     class: Theme::Class<'a>,
     depth: u32,
+    padding: f32,
+    max_thumbnail_size: f32,
 }
 
 impl<'a, Theme> LayerNodeWidget<'a, Theme>
@@ -27,10 +30,12 @@ where
     pub fn new(layer: &'a Layer) -> LayerNodeWidget<'a, Theme> {
         LayerNodeWidget {
             layer,
-            height: 30.0,
-            font_size: Pixels(16.0),
+            height: 40.0,
+            font_size: Pixels(14.0),
             class: <Theme as Catalog>::default(),
             depth: 0,
+            padding: 4.0,
+            max_thumbnail_size: 100.0,
         }
     }
 
@@ -51,6 +56,16 @@ where
 
     pub fn depth(mut self, depth: u32) -> Self {
         self.depth = depth;
+        self
+    }
+
+    pub fn padding(mut self, padding: f32) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    pub fn max_thumbnail_size(mut self, size: f32) -> Self {
+        self.max_thumbnail_size = size;
         self
     }
 }
@@ -84,6 +99,7 @@ where
         viewport: &Rectangle,
     ) {
         let style = theme.style(&self.class, Status::Idle);
+        let thumbnail_size = (self.height - 2.0 * self.padding).min(self.max_thumbnail_size);
 
         renderer.fill_quad(
             renderer::Quad {
@@ -108,13 +124,50 @@ where
                 line_height: LineHeight::Relative(1.0),
                 font: renderer.default_font(),
                 align_x: Alignment::Left,
-                align_y: Vertical::Center,
+                align_y: Vertical::Top,
                 shaping: Shaping::Auto,
                 wrapping: Wrapping::None,
             },
-            Point::new(bounds.x + 10.0, bounds.center_y()),
+            Point::new(
+                bounds.x + self.padding + thumbnail_size,
+                bounds.y + self.padding,
+            ),
             style.text_color,
             bounds,
+        );
+
+        renderer.fill_text(
+            iced_core::Text {
+                content: self.layer.blend_func.name(),
+                bounds: bounds.size(),
+                size: self.font_size,
+                line_height: LineHeight::Relative(1.0),
+                font: renderer.default_font(),
+                align_x: Alignment::Left,
+                align_y: Vertical::Bottom,
+                shaping: Shaping::Auto,
+                wrapping: Wrapping::None,
+            },
+            Point::new(
+                bounds.x + self.padding + thumbnail_size,
+                bounds.y + bounds.height - self.padding,
+            ),
+            style.text_color,
+            bounds,
+        );
+
+        // TODO: Render actual thumbnail
+        renderer.fill_quad(
+            Quad {
+                bounds: Rectangle {
+                    x: bounds.x + self.padding,
+                    y: bounds.y + self.padding,
+                    width: thumbnail_size,
+                    height: thumbnail_size,
+                },
+                ..Default::default()
+            },
+            Color::from_rgb8(255, 0, 0),
         );
     }
 }
