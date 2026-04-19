@@ -1,13 +1,23 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use glam::UVec2;
 use image::DynamicImage;
 use uuid::Uuid;
-use wgpu::TextureFormat;
+use wgpu::{Buffer, ComputePass, Device, Queue, TextureFormat, TextureView};
 
-use crate::{blend_modes::BlendMode, composite::BlendFunction, tile::GpuTileStorage};
+use crate::{
+    CImage,
+    blend_modes::BlendMode,
+    composite::{BlendFunction, ImageCompositor},
+    layer::{group_layer::GroupLayer, pixel_layer::PixelLayer},
+    texel::TexelType,
+    tile::GpuTileStorage,
+};
+
+pub mod group_layer;
+pub mod pixel_layer;
 
 #[derive(Debug, Default)]
 pub struct LayerNameGenerator {
@@ -91,39 +101,100 @@ impl LayerData {
     pub fn can_contain_pixels(&self) -> bool {
         self.data.can_contain_pixels()
     }
+
+    pub fn create_blend_cache(
+        &self,
+        compositor: &mut ImageCompositor,
+        image: &CImage,
+        node: &LayerStackNode,
+        tiles: &GpuTileStorage,
+        device: &Device,
+        queue: &Queue,
+    ) {
+        self.data
+            .create_blend_cache(compositor, image, self, node, tiles, device, queue)
+    }
+
+    pub fn prepare_blend_cache(
+        &self,
+        compositor: &mut ImageCompositor,
+        image: &CImage,
+        node: &LayerStackNode,
+        tiles: &GpuTileStorage,
+        dst_buffer: &TextureView,
+        dst_tile_info: &Buffer,
+        output: &TextureView,
+        output_tile_info: &Buffer,
+        device: &Device,
+        queue: &Queue,
+    ) {
+        self.data.prepare_blend_cache(
+            compositor,
+            image,
+            self,
+            node,
+            tiles,
+            dst_buffer,
+            dst_tile_info,
+            output,
+            output_tile_info,
+            device,
+            queue,
+        )
+    }
+
+    pub fn dispatch_blend(
+        &self,
+        compositor: &ImageCompositor,
+        pass: &mut ComputePass,
+        image: &CImage,
+        node: &LayerStackNode,
+        tiles: &GpuTileStorage,
+    ) {
+        self.data
+            .dispatch_blend(compositor, pass, image, self, node, tiles)
+    }
 }
 
 pub trait Layer: Send + Sync + DynClone + 'static {
     fn can_have_children(&self) -> bool;
     fn can_contain_pixels(&self) -> bool;
+
+    fn create_blend_cache(
+        &self,
+        compositor: &mut ImageCompositor,
+        image: &CImage,
+        layer: &LayerData,
+        node: &LayerStackNode,
+        tiles: &GpuTileStorage,
+        device: &Device,
+        queue: &Queue,
+    );
+    fn prepare_blend_cache(
+        &self,
+        compositor: &mut ImageCompositor,
+        image: &CImage,
+        layer: &LayerData,
+        node: &LayerStackNode,
+        tiles: &GpuTileStorage,
+        dst_buffer: &TextureView,
+        dst_tile_info: &Buffer,
+        output: &TextureView,
+        output_tile_info: &Buffer,
+        device: &Device,
+        queue: &Queue,
+    );
+    fn dispatch_blend(
+        &self,
+        compositor: &ImageCompositor,
+        pass: &mut ComputePass,
+        image: &CImage,
+        layer: &LayerData,
+        node: &LayerStackNode,
+        tiles: &GpuTileStorage,
+    );
 }
 dyn_clone::clone_trait_object!(Layer);
-
-#[derive(Debug, Clone)]
-pub struct PixelLayer;
-
-impl Layer for PixelLayer {
-    fn can_have_children(&self) -> bool {
-        false
-    }
-
-    fn can_contain_pixels(&self) -> bool {
-        true
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct GroupLayer;
-
-impl Layer for GroupLayer {
-    fn can_have_children(&self) -> bool {
-        true
-    }
-
-    fn can_contain_pixels(&self) -> bool {
-        false
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct LayerStack {

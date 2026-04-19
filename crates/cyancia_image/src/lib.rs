@@ -10,6 +10,7 @@ extern crate image as imagers;
 use crate::{
     blend_modes::BlendMode,
     layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, LayerStackNode},
+    texel::TexelType,
     tile::GpuTileStorage,
 };
 
@@ -33,6 +34,7 @@ impl Plugin for ImagePlugin {
 pub struct CImage {
     size: UVec2,
     pub active_layer: LayerId,
+    texel_type: TexelType,
     layers: LayerStack,
     name_generator: LayerNameGenerator,
 }
@@ -50,6 +52,7 @@ impl CImage {
         Self {
             size,
             active_layer,
+            texel_type: TexelType::RGBA8,
             layers,
             name_generator: LayerNameGenerator::default(),
         }
@@ -67,6 +70,7 @@ impl CImage {
         Self {
             size,
             active_layer,
+            texel_type: TexelType::RGBA8,
             layers,
             name_generator: Default::default(),
         }
@@ -119,5 +123,9 @@ impl CImage {
 
     pub fn root_id(&self) -> LayerId {
         self.layers.root_id()
+    }
+
+    pub fn texel_type(&self) -> TexelType {
+        self.texel_type
     }
 }

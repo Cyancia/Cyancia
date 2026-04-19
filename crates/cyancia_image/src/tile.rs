@@ -208,6 +208,14 @@ impl GpuTileStorageInner {
         }))
     }
 
+    pub fn empty_layer_binding(&self, texel_type: TexelType) -> LayerBindingData {
+        self.dummy_layers
+            .get(&texel_type)
+            .unwrap()
+            .binding_data()
+            .unwrap()
+    }
+
     pub fn upload_image(&self, layer_id: LayerId, img: DynamicImage) {
         let width = img.width();
         let height = img.height();

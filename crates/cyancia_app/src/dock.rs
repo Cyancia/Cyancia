@@ -125,7 +125,12 @@ where
             let tiles = services.service::<GpuTileStorage>();
             let render_context = services.service::<RenderContext>();
             let mut comp = ImageCompositor::new();
-            comp.build_cache(&canvas.image, tiles, &render_context.device);
+            comp.build_cache(
+                &canvas.image,
+                tiles,
+                &render_context.device,
+                &render_context.queue,
+            );
             comp.composite(
                 &canvas.image,
                 tiles,
