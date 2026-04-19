@@ -43,13 +43,14 @@ impl ImageCompositor {
     }
 
     // TODO: incremental cache building and preparing
-    pub fn build_cache(
+    pub fn create_cache(
         &mut self,
         image: &CImage,
         tiles: &GpuTileStorage,
         device: &Device,
         queue: &Queue,
     ) {
+        let now = std::time::Instant::now();
         self.cache.clear();
         let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
         root_data.create_blend_cache(
@@ -60,6 +61,7 @@ impl ImageCompositor {
             device,
             queue,
         );
+        log::info!("Blend cache created in {:?}", now.elapsed());
     }
 
     pub fn composite(
@@ -84,6 +86,7 @@ impl ImageCompositor {
 
         let empty_layer_binding = tiles.empty_layer_binding(image.texel_type());
         let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
+        let now = std::time::Instant::now();
         root_data.prepare_blend_cache(
             self,
             image,
@@ -96,6 +99,9 @@ impl ImageCompositor {
             device,
             queue,
         );
+        log::info!("Blend cache prepared in {:?}", now.elapsed());
+
+        let now = std::time::Instant::now();
         root_data.dispatch_blend(
             self,
             &mut pass,
@@ -103,6 +109,7 @@ impl ImageCompositor {
             image.layer_stack().root_node(),
             tiles,
         );
+        log::info!("Blend dispatched in {:?}", now.elapsed());
 
         drop(pass);
 
