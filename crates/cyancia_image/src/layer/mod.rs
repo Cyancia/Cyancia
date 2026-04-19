@@ -1,4 +1,8 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    sync::Arc,
+};
 
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
@@ -94,8 +98,8 @@ impl LayerData {
         }
     }
 
-    pub fn can_have_children(&self) -> bool {
-        self.data.can_have_children()
+    pub fn can_have_children_of<T: Layer>(&self) -> bool {
+        self.data.can_have_children_of(std::any::TypeId::of::<T>())
     }
 
     pub fn can_contain_pixels(&self) -> bool {
@@ -157,7 +161,7 @@ impl LayerData {
 }
 
 pub trait Layer: Send + Sync + DynClone + 'static {
-    fn can_have_children(&self) -> bool;
+    fn can_have_children_of(&self, ty: TypeId) -> bool;
     fn can_contain_pixels(&self) -> bool;
 
     fn create_blend_cache(

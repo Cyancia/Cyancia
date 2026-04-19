@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use encase::ShaderType;
 use glam::{IVec2, UVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
@@ -21,7 +23,7 @@ use crate::{
 pub struct PixelLayer;
 
 impl Layer for PixelLayer {
-    fn can_have_children(&self) -> bool {
+    fn can_have_children_of(&self, ty: TypeId) -> bool {
         false
     }
 

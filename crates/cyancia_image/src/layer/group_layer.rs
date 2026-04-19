@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use bevy_math::IRect;
 use encase::ShaderType;
 use glam::{IVec2, UVec2, UVec3};
@@ -23,7 +25,7 @@ use crate::{
 pub struct GroupLayer;
 
 impl Layer for GroupLayer {
-    fn can_have_children(&self) -> bool {
+    fn can_have_children_of(&self, ty: TypeId) -> bool {
         true
     }
 
