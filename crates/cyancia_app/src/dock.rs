@@ -15,7 +15,11 @@ use cyancia_input::{
 use cyancia_runtime::{Services, event::Event, service::RenderContext};
 use cyancia_tools::ToolProxies;
 use cyancia_widgets::drag_drop_column::DragDropColumn;
-use iced::widget::text;
+use iced::{
+    Length,
+    overlay::menu::Menu,
+    widget::{column, text},
+};
 use iced::{Theme, widget::space};
 use iced_core::{Element, Point, keyboard, mouse};
 use iced_runtime::Task;
@@ -271,7 +275,11 @@ impl Dock<Theme, Renderer> for CurrentCanvasLayersDock {
                 .image
                 .layer_stack()
                 .iter_layers_dfs_without_root()
-                .map(|layer| LayerNodeWidget::new(layer).is_active(active_layer == layer.id()))
+                .map(|(layer, depth)| {
+                    LayerNodeWidget::new(layer)
+                        .depth(depth)
+                        .is_active(active_layer == layer.id())
+                })
                 .map(Into::into),
         )
         .on_click(|index| Some(CurrentCanvasLayersDockMessage::ActiveLayerChange(index)))
@@ -284,7 +292,7 @@ impl Dock<Theme, Renderer> for CurrentCanvasLayersDock {
                 let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
                     return Task::none();
                 };
-                let Some(active_layer) = canvas
+                let Some((active_layer, _)) = canvas
                     .image
                     .layer_stack()
                     .iter_layers_dfs_without_root()

@@ -156,18 +156,20 @@ impl WindowView for MainView {
             }
 
             MainViewMessage::KeyboardEvent(window, event) => {
-                if let Some(action) = self.actions_matcher.lock().on_keyboard_event(event)
-                    && let Some(action_func) = services
+                if let Some(action) = self.actions_matcher.lock().on_keyboard_event(event) {
+                    if let Some(action_func) = services
                         .service_mut::<ActionFunctionRegistry>()
                         .get(action.clone())
-                {
-                    log::info!("Triggering action: {}", action);
-                    action_func
-                        .trigger(services)
-                        .map(move |message| MainViewMessage::ActionMessage(action.clone(), message))
-                } else {
-                    Task::none()
+                    {
+                        log::info!("Triggering action: {}", action);
+                        return action_func.trigger(services).map(move |message| {
+                            MainViewMessage::ActionMessage(action.clone(), message)
+                        });
+                    } else {
+                        log::warn!("No action function found for action: {}", action);
+                    }
                 }
+                Task::none()
             }
             MainViewMessage::MouseEvent(window, event) => {
                 match event {

@@ -83,6 +83,14 @@ impl LayerData {
             data: Box::new(PixelLayer),
         }
     }
+
+    pub fn can_have_children(&self) -> bool {
+        self.data.can_have_children()
+    }
+
+    pub fn can_contain_pixels(&self) -> bool {
+        self.data.can_contain_pixels()
+    }
 }
 
 pub trait Layer: Send + Sync + DynClone + 'static {
@@ -157,16 +165,18 @@ impl LayerStack {
         }
     }
 
-    pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<LayerData> {
-        let node = self.find_node(layer_id)?;
-        if let Some(parent) = node
-            .parent()
-            .and_then(|parent_id| self.find_node_mut(parent_id))
-        {
-            parent.remove_child(layer_id);
-        }
+    pub fn insert_isolated_layer(&mut self, layer: LayerData) {
+        self.layers.insert(layer.id, layer);
+    }
 
-        self.layers.remove(&layer_id)
+    pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<(LayerData, LayerStackNode)> {
+        let node = self.find_node(layer_id)?;
+        let parent = self.find_node_mut(node.parent()?)?;
+        let removed_node = parent.remove_child(layer_id)?;
+
+        let layer_data = self.layers.remove(&layer_id)?;
+
+        Some((layer_data, removed_node))
     }
 
     pub fn find_node(&self, layer_id: LayerId) -> Option<&LayerStackNode> {
@@ -185,12 +195,20 @@ impl LayerStack {
         self.layers.get_mut(&layer_id)
     }
 
-    pub fn iter_layers_dfs_without_root(&self) -> impl Iterator<Item = &LayerData> {
-        let mut stack = self.root.children().iter().collect::<Vec<_>>();
+    pub fn iter_layers_dfs_without_root(&self) -> impl Iterator<Item = (&LayerData, u32)> {
+        let mut stack = self
+            .root_node()
+            .children()
+            .iter()
+            .map(|child| (child, 0))
+            .collect::<Vec<_>>();
         std::iter::from_fn(move || {
-            let node = stack.pop()?;
-            stack.extend(node.children().iter().rev());
-            self.layers.get(&node.id())
+            let (node, depth) = stack.pop()?;
+            stack.extend(
+                node.iter_children_display_order()
+                    .map(|child| (child, depth + 1)),
+            );
+            Some((self.layers.get(&node.id())?, depth))
         })
     }
 
@@ -234,12 +252,6 @@ fn find_node_mut_recursive(
 pub struct LayerStackNode {
     id: LayerId,
     parent: Option<LayerId>,
-    // - Parent
-    //   - Child 1
-    //   - Child 2
-    //   - Child 3
-    // When compositing, we render the Child 3 first, then 2, finally 1.
-    // In this vector, the order of nodes are in render order.
     children: Vec<LayerStackNode>,
 }
 
@@ -268,6 +280,28 @@ impl LayerStackNode {
         &mut self.children
     }
 
+    pub fn n_children(&self) -> usize {
+        self.children.len()
+    }
+
+    pub fn iter_children_composite_order(&self) -> impl Iterator<Item = &LayerStackNode> {
+        self.children.iter()
+    }
+
+    pub fn iter_children_composite_order_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut LayerStackNode> {
+        self.children.iter_mut()
+    }
+
+    pub fn iter_children_display_order(&self) -> impl Iterator<Item = &LayerStackNode> {
+        self.children.iter().rev()
+    }
+
+    pub fn iter_children_display_order_mut(&mut self) -> impl Iterator<Item = &mut LayerStackNode> {
+        self.children.iter_mut().rev()
+    }
+
     pub fn insert_background_child(&mut self, child: LayerStackNode) {
         self.children.insert(0, child);
     }
@@ -280,7 +314,19 @@ impl LayerStackNode {
         self.children.insert(index, child);
     }
 
-    pub fn remove_child(&mut self, child_id: LayerId) {
-        self.children.retain(|child| child.id() != child_id);
+    pub fn remove_child(&mut self, child_id: LayerId) -> Option<LayerStackNode> {
+        let index = self
+            .children
+            .iter()
+            .position(|child| child.id() == child_id)?;
+        Some(self.children.remove(index))
+    }
+
+    pub fn remove_child_at(&mut self, index: usize) -> Option<LayerStackNode> {
+        if index < self.children.len() {
+            Some(self.children.remove(index))
+        } else {
+            None
+        }
     }
 }

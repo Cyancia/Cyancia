@@ -9,7 +9,7 @@ extern crate image as imagers;
 
 use crate::{
     blend_modes::BlendMode,
-    layer::{LayerData, LayerId, LayerNameGenerator, LayerStack},
+    layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, LayerStackNode},
     tile::GpuTileStorage,
 };
 
@@ -96,9 +96,13 @@ impl CImage {
         self.name_generator.next_of(base)
     }
 
-    pub fn parent_of_active_layer(&self) -> Option<LayerId> {
-        let l = self.layers.find_node(self.active_layer)?;
+    pub fn parent_of_active_layer(&self) -> LayerId {
+        let l = self
+            .layers
+            .find_node(self.active_layer)
+            .expect("Active layer should always exist");
         l.parent()
+            .expect("Active layer should always have a parent")
     }
 
     pub fn layer_stack(&self) -> &LayerStack {

@@ -9,7 +9,11 @@ use encase::ShaderType;
 use glam::{IVec2, UVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, TextureView, TextureViewDimension
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TexelCopyTextureInfo, TextureView, TextureViewDimension,
 };
 
 use crate::{
@@ -237,7 +241,7 @@ impl ImageCompositor {
     // TODO: incremental cache building
     pub fn build_cache(&mut self, image: &CImage, tiles: &GpuTileStorage, device: &Device) {
         self.cache.clear();
-        for layer in image.layers.iter_layers_dfs_without_root() {
+        for (layer, _) in image.layers.iter_layers_dfs_without_root() {
             let cache = BlendCache::new(layer, tiles, TexelType::RGBA8, device);
             self.cache.insert(layer.id(), cache);
         }

@@ -25,3 +25,7 @@ enabled_in = ["main_view"]
 [create_new_layer_action]
 shortcut = [["ControlLeft", "ShiftLeft", "KeyN"]]
 enabled_in = ["main_view"]
+
+[group_active_layer_action]
+shortcut = [["ControlLeft", "KeyG"]]
+enabled_in = ["main_view"]
