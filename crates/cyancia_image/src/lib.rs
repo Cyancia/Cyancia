@@ -92,10 +92,6 @@ impl CImage {
         Self::from_layer(size, layer)
     }
 
-    pub fn insert_new_layer(&mut self, parent: LayerId, layer: LayerData) {
-        self.layers.add_layer(parent, layer);
-    }
-
     pub fn next_name_of_layer(&mut self, base: String) -> String {
         self.name_generator.next_of(base)
     }

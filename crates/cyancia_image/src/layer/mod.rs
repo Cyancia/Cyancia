@@ -392,6 +392,34 @@ impl LayerStackNode {
         self.children.insert(index, child);
     }
 
+    pub fn insert_child_above(&mut self, sibling_id: LayerId, mut child: LayerStackNode) -> bool {
+        if let Some(index) = self
+            .children
+            .iter()
+            .position(|child| child.id() == sibling_id)
+        {
+            child.parent = Some(self.id);
+            self.children.insert(index + 1, child);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn insert_child_below(&mut self, sibling_id: LayerId, mut child: LayerStackNode) -> bool {
+        if let Some(index) = self
+            .children
+            .iter()
+            .position(|child| child.id() == sibling_id)
+        {
+            child.parent = Some(self.id);
+            self.children.insert(index, child);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn remove_child(&mut self, child_id: LayerId) -> Option<LayerStackNode> {
         let index = self
             .children

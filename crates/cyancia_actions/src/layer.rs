@@ -30,12 +30,23 @@ impl ActionFunction for CreateNewLayerAction {
         // TODO: Check if this type of layer can be created under the current layer.
         //       If can't, check it's parent, until find one.
         let parent = canvas.image.parent_of_active_layer();
+        let active_layer_id = canvas.image.active_layer;
 
         let new_layer =
             LayerData::new_normal_pixel(canvas.image.next_name_of_layer("Layer".into()));
         let new_layer_id = new_layer.id();
-        canvas.image.insert_new_layer(parent, new_layer);
+        let parent_node = canvas
+            .image
+            .layer_stack_mut()
+            .find_node_mut(parent)
+            .expect("Parent of active layer should always exist");
+        parent_node.insert_child_above(active_layer_id, LayerStackNode::new(new_layer.id()));
+
         canvas.image.active_layer = new_layer_id;
+        canvas
+            .image
+            .layer_stack_mut()
+            .insert_isolated_layer(new_layer);
 
         let tiles = services.service::<GpuTileStorage>();
         tiles.declare_layer(
