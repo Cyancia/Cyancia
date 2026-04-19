@@ -128,4 +128,28 @@ impl CImage {
     pub fn texel_type(&self) -> TexelType {
         self.texel_type
     }
+
+    pub fn active_layer_node(&self) -> &LayerStackNode {
+        self.layers
+            .find_node(self.active_layer)
+            .expect("Active layer should always exist")
+    }
+
+    pub fn active_layer_node_mut(&mut self) -> &mut LayerStackNode {
+        self.layers
+            .find_node_mut(self.active_layer)
+            .expect("Active layer should always exist")
+    }
+
+    pub fn active_layer_data(&self) -> &LayerData {
+        self.layers
+            .get_layer(self.active_layer)
+            .expect("Active layer should always exist")
+    }
+
+    pub fn active_layer_data_mut(&mut self) -> &mut LayerData {
+        self.layers
+            .get_layer_mut(self.active_layer)
+            .expect("Active layer should always exist")
+    }
 }

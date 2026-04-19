@@ -40,13 +40,19 @@ impl ToolFunction for BrushTool {
             return;
         };
         let active_layer = canvas.image.active_layer;
+        if !canvas.image.active_layer_data().can_contain_pixels() {
+            log::warn!("Unable to paint to the active layer which cannot contain pixels.");
+            return;
+        }
         let params = RawPenInput { position };
 
         let success =
             services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
                 let assets = services.service::<AssetRegistry>();
-                brush.begin_stroke(params, &tiles, &assets, active_layer);
+                let target_layer_info = tiles.get_layer_info(active_layer).unwrap();
+                let target_layer_binding = tiles.get_layer_binding_or_empty(active_layer).unwrap();
+                brush.begin_stroke(params, &assets, target_layer_binding, target_layer_info);
             });
 
         if success.is_none() {

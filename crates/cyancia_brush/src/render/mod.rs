@@ -13,8 +13,8 @@ use cyancia_image::{
     layer::LayerId,
     texel::{TexelDepth, TexelFormat, TexelType},
     tile::{
-        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, Tile,
-        TileIndex,
+        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
+        LayerBindingData, Tile, TileIndex,
     },
 };
 use cyancia_input::mouse::PressedMouseState;
@@ -96,17 +96,15 @@ impl BrushPresetOperator {
     pub fn begin_stroke(
         &mut self,
         input: RawPenInput,
-        tiles: &GpuTileStorage,
         assets: &AssetRegistry,
-        target_layer: LayerId,
+        target_layer_binding: LayerBindingData,
+        target_layer_info: GpuLayerInfo,
     ) {
         let instance = self.instance.read();
 
         let session = BrushStrokeSessionInfo {
             brush_runtime_revision: instance.runtime_revision(),
-            target_layer_texture: tiles
-                .get_layer(target_layer)
-                .and_then(|l| l.texture().as_deref().cloned()),
+            target_layer_texture: Some((*target_layer_binding.texture).clone()),
         };
         match self.last_session.as_mut() {
             Some(last_session) => {
@@ -141,8 +139,8 @@ impl BrushPresetOperator {
                 &self.device,
                 &self.queue,
                 &compiled_brush,
-                tiles,
-                target_layer,
+                target_layer_binding,
+                target_layer_info,
                 assets,
             );
             log::info!("Brush preset renderer creation: {:?}", now.elapsed());
@@ -204,11 +202,18 @@ impl BrushPresetRenderer {
         device: &Device,
         queue: &Queue,
         brush: &CompiledBrushPreset,
-        tiles: &GpuTileStorage,
-        target_layer_id: LayerId,
+        target_layer_binding: LayerBindingData,
+        target_layer_info: GpuLayerInfo,
         assets: &AssetRegistry,
     ) -> Self {
-        let resources = StrokeResources::new(device, queue, &brush, target_layer_id, tiles, assets);
+        let resources = StrokeResources::new(
+            device,
+            queue,
+            &brush,
+            target_layer_binding,
+            target_layer_info,
+            assets,
+        );
 
         let input_sampling = BrushInputSamplingPipeline::new(
             device,
@@ -534,7 +539,6 @@ pub struct StrokeResources {
     pub referenced_textures: TextureAtlas,
 
     pub intermediate_buffers: DynamicIntermediateBuffer,
-    pub target_layer_id: LayerId,
     pub target_layer: TextureView,
     pub target_layer_tile_info: Buffer,
 
@@ -548,8 +552,8 @@ impl StrokeResources {
         device: &Device,
         queue: &Queue,
         brush: &CompiledBrushPreset,
-        target_layer_id: LayerId,
-        tiles: &GpuTileStorage,
+        target_layer_binding: LayerBindingData,
+        target_layer_info: GpuLayerInfo,
         assets: &AssetRegistry,
     ) -> Self {
         let mut pen_input = DynamicBuffer::new(Some("pen input buffer"), BufferUsages::STORAGE);
@@ -652,9 +656,6 @@ impl StrokeResources {
             .build(Some("referenced textures"), device, queue)
             .unwrap();
 
-        let target_layer_binding = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
-        let target_layer_info = tiles.get_layer_info(target_layer_id).unwrap();
-
         let intermediate_buffers = DynamicIntermediateBuffer::new(
             256,
             target_layer_info.texel_type,
@@ -698,7 +699,6 @@ impl StrokeResources {
             referenced_textures,
 
             intermediate_buffers,
-            target_layer_id,
             target_layer: target_layer_binding.texture.deref().clone(),
             target_layer_tile_info: target_layer_binding.tile_info_buffer,
 
