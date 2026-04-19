@@ -35,6 +35,8 @@ impl ActionFunction for CreateNewLayerAction {
             LayerData::new_normal_pixel(canvas.image.next_name_of_layer("Layer".into()));
         let new_layer_id = new_layer.id();
         canvas.image.insert_new_layer(parent, new_layer);
+        canvas.image.active_layer = new_layer_id;
+
         let tiles = services.service::<GpuTileStorage>();
         tiles.declare_layer(
             new_layer_id,
