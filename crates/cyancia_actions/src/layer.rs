@@ -88,7 +88,7 @@ impl ActionFunction for GroupActiveLayerAction {
             .expect("Active layer should always be a child of its parent");
 
         let group_layer = LayerData::new_normal_group(group_name);
-        let mut group_layer_node = LayerStackNode::new(group_layer.id(), Some(parent.id()));
+        let mut group_layer_node = LayerStackNode::new(group_layer.id());
         group_layer_node.insert_background_child(active_layer_node);
 
         parent.insert_child(active_layer_index, group_layer_node);

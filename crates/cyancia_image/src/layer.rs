@@ -139,8 +139,8 @@ impl LayerStack {
 
     pub fn with_background_layer(background: LayerData) -> Self {
         let root = LayerData::new_normal_group("Root".to_string());
-        let mut root_node = LayerStackNode::new(root.id, None);
-        let background_node = LayerStackNode::new(background.id, Some(root.id));
+        let mut root_node = LayerStackNode::new(root.id);
+        let background_node = LayerStackNode::new(background.id);
         root_node.insert_foreground_child(background_node);
 
         Self {
@@ -160,7 +160,7 @@ impl LayerStack {
     pub fn add_layer(&mut self, parent_id: LayerId, layer: LayerData) {
         let parent_node = self.find_node_mut(parent_id);
         if let Some(parent_node) = parent_node {
-            parent_node.insert_foreground_child(LayerStackNode::new(layer.id, Some(parent_id)));
+            parent_node.insert_foreground_child(LayerStackNode::new(layer.id));
             self.layers.insert(layer.id, layer);
         }
     }
@@ -256,10 +256,10 @@ pub struct LayerStackNode {
 }
 
 impl LayerStackNode {
-    pub fn new(id: LayerId, parent: Option<LayerId>) -> Self {
+    pub fn new(id: LayerId) -> Self {
         Self {
             id,
-            parent,
+            parent: None,
             children: Vec::new(),
         }
     }
@@ -302,15 +302,18 @@ impl LayerStackNode {
         self.children.iter_mut().rev()
     }
 
-    pub fn insert_background_child(&mut self, child: LayerStackNode) {
+    pub fn insert_background_child(&mut self, mut child: LayerStackNode) {
+        child.parent = Some(self.id);
         self.children.insert(0, child);
     }
 
-    pub fn insert_foreground_child(&mut self, child: LayerStackNode) {
+    pub fn insert_foreground_child(&mut self, mut child: LayerStackNode) {
+        child.parent = Some(self.id);
         self.children.push(child);
     }
 
-    pub fn insert_child(&mut self, index: usize, child: LayerStackNode) {
+    pub fn insert_child(&mut self, index: usize, mut child: LayerStackNode) {
+        child.parent = Some(self.id);
         self.children.insert(index, child);
     }
 
@@ -319,12 +322,14 @@ impl LayerStackNode {
             .children
             .iter()
             .position(|child| child.id() == child_id)?;
-        Some(self.children.remove(index))
+        self.remove_child_at(index)
     }
 
     pub fn remove_child_at(&mut self, index: usize) -> Option<LayerStackNode> {
         if index < self.children.len() {
-            Some(self.children.remove(index))
+            let mut child = self.children.remove(index);
+            child.parent = None;
+            Some(child)
         } else {
             None
         }
