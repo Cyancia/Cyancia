@@ -1,3 +1,5 @@
+use std::hash::{BuildHasher, DefaultHasher, Hash, Hasher, RandomState};
+
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 

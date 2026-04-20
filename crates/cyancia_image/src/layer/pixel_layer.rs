@@ -41,6 +41,17 @@ impl Layer for PixelLayer {
         device: &Device,
         queue: &Queue,
     ) {
+        let layer_info = tiles.get_layer_info(layer.id()).unwrap();
+
+        if let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer.id()) {
+            if cache.blend_func_name == layer.blend_func.name()
+                && cache.layer_texel_type == layer_info.texel_type
+                && cache.image_texel_type == image.texel_type()
+            {
+                return;
+            }
+        }
+
         let shader = include_str!("../shaders/blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &layer
@@ -79,7 +90,6 @@ impl Layer for PixelLayer {
             source: ShaderSource::Wgsl(compiled_shader.into()),
         });
 
-        let layer_info = tiles.get_layer_info(layer.id()).unwrap();
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: "layer blend bind group layout".into(),
             entries: &[
@@ -162,6 +172,9 @@ impl Layer for PixelLayer {
         });
 
         let cache = PixelBlendCache {
+            blend_func_name: layer.blend_func.name(),
+            layer_texel_type: layer_info.texel_type,
+            image_texel_type: image.texel_type(),
             layout,
             pipeline,
             dispatch: None,
@@ -252,6 +265,9 @@ impl Layer for PixelLayer {
 }
 
 pub struct PixelBlendCache {
+    blend_func_name: String,
+    layer_texel_type: TexelType,
+    image_texel_type: TexelType,
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
     dispatch: Option<(BindGroup, UVec3)>,

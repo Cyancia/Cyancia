@@ -163,6 +163,10 @@ impl IntermediateBuffer {
         }
     }
 
+    pub fn tile_rect(&self) -> IRect {
+        self.tile_rect
+    }
+
     pub fn textures(&self) -> &[TextureView; 2] {
         &self.textures
     }
@@ -177,5 +181,9 @@ impl IntermediateBuffer {
             ec.clear_texture(texture.texture(), &Default::default());
         }
         queue.submit([ec.finish()]);
+    }
+
+    pub fn texel_type(&self) -> TexelType {
+        self.texel_type
     }
 }

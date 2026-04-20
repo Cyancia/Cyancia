@@ -48,6 +48,20 @@ impl Layer for GroupLayer {
             child_layer.create_blend_cache(compositor, image, child_node, tiles, device, queue);
         }
 
+        let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(IRect {
+            min: IVec2::ZERO,
+            max: image.size().as_ivec2(),
+        });
+
+        if let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer.id()) {
+            if cache.blend_func_name == layer.blend_func.name()
+                && cache.intermediate.texel_type() == image.texel_type()
+                && cache.intermediate.tile_rect() == tile_rect
+            {
+                return;
+            }
+        }
+
         let shader = include_str!("../shaders/blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &layer
@@ -167,12 +181,8 @@ impl Layer for GroupLayer {
             cache: None,
         });
 
-        let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(IRect {
-            min: IVec2::ZERO,
-            max: image.size().as_ivec2(),
-        });
-
         let cache = GroupBlendCache {
+            blend_func_name: layer.blend_func.name(),
             intermediate: IntermediateBuffer::new(device, queue, tile_rect, image.texel_type()),
             layout,
             pipeline,
@@ -295,6 +305,7 @@ impl Layer for GroupLayer {
 }
 
 pub struct GroupBlendCache {
+    blend_func_name: String,
     intermediate: IntermediateBuffer,
     layout: BindGroupLayout,
     pipeline: ComputePipeline,

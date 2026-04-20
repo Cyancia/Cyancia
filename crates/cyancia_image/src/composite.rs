@@ -31,6 +31,7 @@ pub trait BlendFunction: Send + Sync + DynClone + 'static {
 }
 dyn_clone::clone_trait_object!(BlendFunction);
 
+#[derive(Default)]
 pub struct ImageCompositor {
     cache: HashMap<LayerId, Box<dyn Any + Send + Sync>>,
 }
@@ -51,7 +52,6 @@ impl ImageCompositor {
         queue: &Queue,
     ) {
         let now = std::time::Instant::now();
-        self.cache.clear();
         let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
         root_data.create_blend_cache(
             self,

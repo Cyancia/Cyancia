@@ -64,6 +64,7 @@ pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
 pub struct CanvasDock {
     canvas: CanvasId,
 
+    compositor: ImageCompositor,
     is_pressed: bool,
     cursor_position: Point,
     actions_matcher: Arc<Mutex<ActionsMatcher>>,
@@ -73,6 +74,7 @@ impl CanvasDock {
     pub fn new(canvas: CanvasId, actions_matcher: Arc<Mutex<ActionsMatcher>>) -> Self {
         Self {
             canvas,
+            compositor: ImageCompositor::default(),
             is_pressed: false,
             cursor_position: Point::default(),
             actions_matcher,
@@ -124,14 +126,13 @@ where
             };
             let tiles = services.service::<GpuTileStorage>();
             let render_context = services.service::<RenderContext>();
-            let mut comp = ImageCompositor::new();
-            comp.create_cache(
+            self.compositor.create_cache(
                 &canvas.image,
                 tiles,
                 &render_context.device,
                 &render_context.queue,
             );
-            comp.composite(
+            self.compositor.composite(
                 &canvas.image,
                 tiles,
                 &render_context.device,
