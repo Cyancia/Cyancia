@@ -1304,6 +1304,7 @@ dependencies = [
  "cyancia_utils",
  "cyancia_widgets",
  "encase",
+ "futures",
  "glam 0.30.10",
  "iced_aw",
  "iced_core",

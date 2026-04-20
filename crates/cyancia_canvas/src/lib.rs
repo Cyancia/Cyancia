@@ -31,10 +31,41 @@ wrapper! {
 
 #[derive(Debug)]
 pub struct CCanvas {
-    pub id: CanvasId,
-    pub tool_proxy_id: ToolProxyId,
+    id: CanvasId,
+    tool_proxy_id: ToolProxyId,
     pub image: CImage,
     pub transform: CanvasTransform,
+    dirty_tiles: IRect,
+}
+
+impl CCanvas {
+    pub fn new(image: CImage, tool_proxy_id: ToolProxyId) -> Self {
+        Self {
+            id: CanvasId(Uuid::new_v4()),
+            tool_proxy_id,
+            image,
+            transform: CanvasTransform::default(),
+            dirty_tiles: IRect::default(),
+        }
+    }
+
+    pub fn id(&self) -> CanvasId {
+        self.id
+    }
+
+    pub fn tool_proxy_id(&self) -> ToolProxyId {
+        self.tool_proxy_id
+    }
+
+    pub fn mark_dirty(&mut self, tiles: IRect) {
+        self.dirty_tiles = self.dirty_tiles.union(tiles);
+    }
+
+    pub fn clear_dirty(&mut self) -> IRect {
+        let rect = self.dirty_tiles;
+        self.dirty_tiles = IRect::EMPTY;
+        rect
+    }
 }
 
 pub struct CanvasPlugin;

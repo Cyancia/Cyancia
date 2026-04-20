@@ -67,12 +67,10 @@ impl WindowView for MainView {
 
         let img = CImage::new(UVec2 { x: 1024, y: 768 });
         let root_layer = img.root_id();
-        let canvas = CCanvas {
-            id: CanvasId::new(Uuid::new_v4()),
-            tool_proxy_id: services.service_mut::<ToolProxies>().add(ToolProxy::new()),
-            image: CImage::new(UVec2 { x: 1024, y: 768 }),
-            transform: Default::default(),
-        };
+        let canvas = CCanvas::new(
+            img,
+            services.service_mut::<ToolProxies>().add(ToolProxy::new()),
+        );
         // TODO this should not be done here
         let tiles = services.service::<GpuTileStorage>();
         for layer in canvas.image.layer_stack().iter_layers() {
@@ -87,7 +85,7 @@ impl WindowView for MainView {
 
         let (main_window, task) = window::open(Default::default());
         let (mut dock_manager, dock_manager_task) = DockManager::new(main_window);
-        let canvas_dock = CanvasDock::new(canvas.id, actions_matcher.clone());
+        let canvas_dock = CanvasDock::new(canvas.id(), actions_matcher.clone());
         let canvas_dock_id = <CanvasDock as Dock<Theme, Renderer>>::id(&canvas_dock);
         let current_canvas_layers_dock = CurrentCanvasLayersDock::new();
         let current_canvas_layers_dock_id =

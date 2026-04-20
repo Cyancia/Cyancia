@@ -1,19 +1,24 @@
 use std::collections::VecDeque;
 
+use bevy_math::IRect;
 use cyancia_assets::store::AssetRegistry;
-use cyancia_canvas::{CCanvas, CanvasManager};
+use cyancia_canvas::{CCanvas, CanvasId, CanvasManager, event::CanvasUpdate};
 use cyancia_image::tile::GpuTileStorage;
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_math::number::LerpAngle;
-use cyancia_runtime::{Services, service::Service};
+use cyancia_runtime::{Services, event::Event, service::Service};
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
+use futures::channel::oneshot;
 use glam::{FloatExt, Vec2};
 use iced_runtime::Task;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
+use wgpu::{Buffer, BufferAsyncError};
 
 use crate::{
-    input_processing::RawPenInput, instance::BrushPresetInstance, render::BrushPresetOperator,
+    input_processing::RawPenInput,
+    instance::BrushPresetInstance,
+    render::{BrushPresetOperator, StrokeInfo},
 };
 
 #[derive(Default)]
@@ -76,6 +81,7 @@ impl ToolFunction for BrushTool {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
             return Task::none();
         };
+        let canvas_id = canvas.id();
         let Some(position) = canvas
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
@@ -93,7 +99,12 @@ impl ToolFunction for BrushTool {
         brush.update_stroke(params);
         log::info!("Brush update took: {:?}", now.elapsed());
 
-        Task::none()
+        let (tx, rx) = oneshot::channel();
+        if let Some(staging) = brush.map_stroke_info_async(tx) {
+            Task::future(canvas_update_notifier(canvas_id, rx, staging)).discard()
+        } else {
+            Task::none()
+        }
     }
 
     fn end(
@@ -111,13 +122,21 @@ impl ToolFunction for BrushTool {
         else {
             return Task::none();
         };
+        let canvas_id = canvas.id();
         let active_layer = canvas.image.active_layer;
         let final_input = RawPenInput { position };
 
         let success =
             services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
-                brush.end_stroke(final_input, &tiles, active_layer);
+                let stroke_info = brush.end_stroke(final_input, &tiles, active_layer);
+                CanvasUpdate::broadcast(CanvasUpdate {
+                    id: canvas_id,
+                    dirty_tiles: IRect {
+                        min: stroke_info.accumulated_bound_min,
+                        max: stroke_info.accumulated_bound_max,
+                    },
+                });
             });
 
         if success.is_none() {
@@ -133,3 +152,22 @@ wrapper! {
 }
 
 impl Service for CurrentBrushPresetOperator {}
+
+async fn canvas_update_notifier(
+    id: CanvasId,
+    rx: oneshot::Receiver<Result<(), BufferAsyncError>>,
+    staging_buffer: Buffer,
+) {
+    rx.await.unwrap().unwrap();
+    let stroke_info_data = staging_buffer.slice(..).get_mapped_range();
+    let storage = encase::StorageBuffer::new(stroke_info_data.as_ref());
+    let stroke_info = storage.create::<StrokeInfo>().unwrap();
+    dbg!(stroke_info);
+    CanvasUpdate::broadcast(CanvasUpdate {
+        id,
+        dirty_tiles: IRect {
+            min: stroke_info.accumulated_bound_min,
+            max: stroke_info.accumulated_bound_max,
+        },
+    });
+}

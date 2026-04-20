@@ -26,6 +26,7 @@ use cyancia_render::{
 use cyancia_shader_graph::graph::texture::TextureId;
 use cyancia_utils::include_shader;
 use encase::{ShaderType, StorageBuffer};
+use futures::channel::oneshot;
 use glam::{IVec2, IVec4, UVec2, UVec3, UVec4, Vec2, Vec4Swizzles};
 use parking_lot::RwLock;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
@@ -33,12 +34,12 @@ use uuid::Uuid;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferAddress, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoder, ComputePipeline, ComputePipelineDescriptor,
-    Device, Extent3d, MapMode, Origin3d, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDimension,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferAddress, BufferAsyncError,
+    BufferBindingType, BufferDescriptor, BufferUsages, CommandEncoder, ComputePipeline,
+    ComputePipelineDescriptor, Device, Extent3d, MapMode, Origin3d, PipelineLayoutDescriptor,
+    Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
+    TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDimension,
     naga::StorageAccess,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::PollType,
@@ -170,9 +171,9 @@ impl BrushPresetOperator {
         final_input: RawPenInput,
         tiles: &GpuTileStorage,
         target_layer: LayerId,
-    ) {
+    ) -> StrokeInfo {
         let Some(renderer) = &self.renderer else {
-            return;
+            return StrokeInfo::default();
         };
 
         for pen_input in self.input_processor.flush(final_input) {
@@ -181,8 +182,21 @@ impl BrushPresetOperator {
 
         let now = std::time::Instant::now();
         renderer.postprocess_stroke(&self.device, &self.queue);
-        renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
+        let stroke_info =
+            renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
+        stroke_info
+    }
+
+    pub fn map_stroke_info_async(
+        &self,
+        buffer_map_result: oneshot::Sender<Result<(), BufferAsyncError>>,
+    ) -> Option<Buffer> {
+        let Some(renderer) = &self.renderer else {
+            return None;
+        };
+
+        Some(renderer.map_stroke_info_async(&self.device, &self.queue, buffer_map_result))
     }
 }
 
@@ -313,7 +327,7 @@ impl BrushPresetRenderer {
         queue: &Queue,
         tiles: &GpuTileStorage,
         target_layer_id: LayerId,
-    ) {
+    ) -> StrokeInfo {
         let tile_info = self.resources.intermediate_buffers.tile_info_buffer();
         let tile_info_staging = device.create_buffer(&BufferDescriptor {
             label: Some("tile info staging"),
@@ -435,26 +449,56 @@ impl BrushPresetRenderer {
                 stroke_info.fence_sync_failures
             );
         }
+
+        stroke_info
+    }
+
+    pub fn map_stroke_info_async(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        buffer_map_result: oneshot::Sender<Result<(), BufferAsyncError>>,
+    ) -> Buffer {
+        let staging = device.create_buffer(&BufferDescriptor {
+            label: Some("stroke info staging"),
+            size: self.resources.stroke_info.size(),
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut ec = device.create_command_encoder(&Default::default());
+        ec.copy_buffer_to_buffer(
+            self.resources.stroke_info.inner_buffer().unwrap(),
+            0,
+            &staging,
+            0,
+            self.resources.stroke_info.size(),
+        );
+        queue.submit([ec.finish()]);
+        staging
+            .slice(..)
+            .map_async(MapMode::Read, move |r| buffer_map_result.send(r).unwrap());
+        staging
     }
 }
 
 pub const MAX_SAMPLES_BETWEEN_INPUTS: usize = 256;
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct ComputedPenInput {
     pub position: Vec2,
     pub draw_direction_vec: Vec2,
     pub draw_direction_angle: f32,
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct PenInput {
     pub position: Vec2,
     pub bezier_control_prev: Vec2,
     pub bezier_control_cur: Vec2,
 }
 
-#[derive(ShaderType, Clone, Copy)]
+#[derive(ShaderType, Debug, Clone, Copy)]
 pub struct StrokeInfo {
     pub accumulated_bound_min: IVec2,
     pub accumulated_bound_max: IVec2,
@@ -475,7 +519,7 @@ impl Default for StrokeInfo {
     }
 }
 
-#[derive(ShaderType, Clone, Copy)]
+#[derive(ShaderType, Debug, Clone, Copy)]
 pub struct OutputSamples {
     pub n_samples: u32,
     pub samples: [ComputedPenInput; MAX_SAMPLES_BETWEEN_INPUTS],
@@ -490,13 +534,13 @@ impl Default for OutputSamples {
     }
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct DabInfo {
     pub bound_min: IVec2,
     pub bound_max: IVec2,
 }
 
-#[derive(ShaderType, Clone, Copy)]
+#[derive(ShaderType, Debug, Clone, Copy)]
 pub struct DabInfos {
     pub n_dabs: u32,
     pub buf: [DabInfo; MAX_SAMPLES_BETWEEN_INPUTS],
@@ -511,13 +555,13 @@ impl Default for DabInfos {
     }
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct PassFence {
     pub cur_sample: u32,
     pub cur_sample_finished_threads: u32,
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct PenInputSampler {
     pub last_input: PenInput,
     pub last_sample: ComputedPenInput,

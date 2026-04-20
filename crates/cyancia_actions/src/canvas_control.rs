@@ -58,9 +58,7 @@ impl<T: CanvasToolAction> ActionFunction for CanvasToolSwitch<T> {
         let Some(canvas) = canvases.current() else {
             return Task::none();
         };
-        let canvas_tool_proxy_id = canvas.tool_proxy_id;
-        // Drop the read guard before taking the write guard on ToolProxies.
-        drop(canvases);
+        let canvas_tool_proxy_id = canvas.tool_proxy_id();
 
         let mut tool_proxies = services.remove_service::<ToolProxies>();
         let tool_proxy = tool_proxies.get_mut(&canvas_tool_proxy_id);

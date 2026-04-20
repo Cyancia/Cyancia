@@ -66,6 +66,7 @@ impl ImageCompositor {
 
     pub fn composite(
         &mut self,
+        dirty_tiles: IRect,
         image: &CImage,
         tiles: &GpuTileStorage,
         device: &Device,

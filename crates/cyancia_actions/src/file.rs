@@ -78,12 +78,7 @@ impl ActionFunction for OpenFileAction {
                 let mut tool_proxy = ToolProxy::new();
                 tool_proxy.switch_tool(ToolId::new("pan_tool".into()), services);
                 let tool_proxy_id = services.service_mut::<ToolProxies>().add(tool_proxy);
-                let canvas = CCanvas {
-                    id: CanvasId::new(Uuid::new_v4()),
-                    tool_proxy_id,
-                    image,
-                    transform: Default::default(),
-                };
+                let canvas = CCanvas::new(image, tool_proxy_id);
 
                 // TODO this should not be done here
                 let tiles = services.service::<GpuTileStorage>();
@@ -96,7 +91,7 @@ impl ActionFunction for OpenFileAction {
                         },
                     );
                 }
-                let id = canvas.id;
+                let id = canvas.id();
                 services.service_mut::<CanvasManager>().add_canvas(canvas);
 
                 CanvasCreated::broadcast(CanvasCreated { id });
