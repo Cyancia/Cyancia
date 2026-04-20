@@ -9,6 +9,7 @@ use cyancia_runtime::{Services, service::Service};
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use glam::{FloatExt, Vec2};
+use iced_runtime::Task;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
@@ -18,9 +19,13 @@ use crate::{
 #[derive(Default)]
 pub struct BrushTool;
 
+pub enum BrushToolMessage {}
+
 impl ToolFunction for BrushTool {
-    fn id(&self) -> ToolId {
-        ToolId::new("brush_tool".into())
+    type Message = BrushToolMessage;
+
+    fn id() -> ToolId {
+        ToolId::new("brush_tool")
     }
 
     fn begin(
@@ -28,21 +33,21 @@ impl ToolFunction for BrushTool {
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
+    ) -> Task<Self::Message> {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return;
+            return Task::none();
         };
 
         let Some(position) = canvas
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
         else {
-            return;
+            return Task::none();
         };
         let active_layer = canvas.image.active_layer;
         if !canvas.image.active_layer_data().can_contain_pixels() {
             log::warn!("Unable to paint to the active layer which cannot contain pixels.");
-            return;
+            return Task::none();
         }
         let params = RawPenInput { position };
 
@@ -58,6 +63,8 @@ impl ToolFunction for BrushTool {
         if success.is_none() {
             log::error!("No current brush preset operator found.");
         }
+
+        Task::none()
     }
 
     fn update(
@@ -65,26 +72,28 @@ impl ToolFunction for BrushTool {
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
+    ) -> Task<Self::Message> {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return;
+            return Task::none();
         };
         let Some(position) = canvas
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
         else {
-            return;
+            return Task::none();
         };
         let params = RawPenInput { position };
 
         let Some(brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
             log::error!("No current brush preset operator found.");
-            return;
+            return Task::none();
         };
 
         let now = std::time::Instant::now();
         brush.update_stroke(params);
         log::info!("Brush update took: {:?}", now.elapsed());
+
+        Task::none()
     }
 
     fn end(
@@ -92,15 +101,15 @@ impl ToolFunction for BrushTool {
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
+    ) -> Task<Self::Message> {
         let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return;
+            return Task::none();
         };
         let Some(position) = canvas
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
         else {
-            return;
+            return Task::none();
         };
         let active_layer = canvas.image.active_layer;
         let final_input = RawPenInput { position };
@@ -114,6 +123,8 @@ impl ToolFunction for BrushTool {
         if success.is_none() {
             log::error!("No current brush preset operator found.");
         }
+
+        Task::none()
     }
 }
 

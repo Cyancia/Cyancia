@@ -40,8 +40,8 @@ impl ToolsAppExt for Application {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    pub ToolId : Arc<str>
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub ToolId : &'static str
 }
 
 pub struct Tool {
@@ -49,42 +49,168 @@ pub struct Tool {
 }
 
 pub trait ToolFunction: Send + Sync + 'static {
-    fn id(&self) -> ToolId;
-    fn activate(&mut self, services: &mut Services) {}
+    type Message: Send + Sync + 'static;
+
+    fn id() -> ToolId;
+    fn activate(&mut self, services: &mut Services) -> Task<Self::Message> {
+        Task::none()
+    }
     fn hover(
         &mut self,
         keyboard: &KeyboardState,
         mouse: &HoverMouseState,
         services: &mut Services,
-    ) {
+    ) -> Task<Self::Message> {
+        Task::none()
     }
     fn begin(
         &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
+    ) -> Task<Self::Message> {
+        Task::none()
     }
     fn update(
         &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
+    ) -> Task<Self::Message> {
+        Task::none()
     }
     fn end(
         &mut self,
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
+    ) -> Task<Self::Message> {
+        Task::none()
     }
-    fn deactivate(&mut self, services: &mut Services) {}
+    fn deactivate(&mut self, services: &mut Services) -> Task<Self::Message> {
+        Task::none()
+    }
+    fn handle_message(
+        &mut self,
+        message: Self::Message,
+        services: &mut Services,
+    ) -> Task<Self::Message> {
+        Task::none()
+    }
+}
+
+pub trait ErasedToolFunction: Send + Sync + 'static {
+    fn id(&self) -> ToolId;
+    fn activate(&mut self, services: &mut Services) -> Task<Box<dyn Any + Send + Sync>>;
+    fn hover(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &HoverMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>>;
+    fn begin(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>>;
+    fn update(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>>;
+    fn end(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>>;
+    fn deactivate(&mut self, services: &mut Services) -> Task<Box<dyn Any + Send + Sync>>;
+    fn handle_message(
+        &mut self,
+        message: Box<dyn Any + Send + Sync>,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>>;
+}
+
+impl<T: ToolFunction> ErasedToolFunction for T {
+    fn id(&self) -> ToolId {
+        T::id()
+    }
+
+    fn activate(&mut self, services: &mut Services) -> Task<Box<dyn Any + Send + Sync>> {
+        self.activate(services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn hover(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &HoverMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
+        self.hover(keyboard, mouse, services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn begin(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
+        self.begin(keyboard, mouse, services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn update(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
+        self.update(keyboard, mouse, services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn end(
+        &mut self,
+        keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
+        self.end(keyboard, mouse, services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn deactivate(&mut self, services: &mut Services) -> Task<Box<dyn Any + Send + Sync>> {
+        self.deactivate(services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    }
+
+    fn handle_message(
+        &mut self,
+        message: Box<dyn Any + Send + Sync>,
+        services: &mut Services,
+    ) -> Task<Box<dyn Any + Send + Sync>> {
+        let message = message
+            .downcast::<T::Message>()
+            .expect("Invalid message type passed to tool function.");
+        self.handle_message(*message, services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send + Sync>)
+    }
+}
+
+#[derive(Debug)]
+pub struct ErasedToolFunctionMessage {
+    pub tool_id: ToolId,
+    pub message: Box<dyn Any + Send + Sync>,
 }
 
 #[derive(Default)]
 pub struct ToolFunctionRegistry {
-    spawners: HashMap<ToolId, Box<dyn Fn() -> Box<dyn ToolFunction> + Send + Sync>>,
+    spawners: HashMap<ToolId, Box<dyn Fn() -> Box<dyn ErasedToolFunction> + Send + Sync>>,
 }
 
 impl ToolFunctionRegistry {
@@ -100,7 +226,7 @@ struct State {
     last: ToolId,
     current: ToolId,
     last_switch: Instant,
-    current_function: Box<dyn ToolFunction>,
+    current_function: Box<dyn ErasedToolFunction>,
 }
 
 pub struct ToolProxy {
@@ -112,28 +238,49 @@ impl ToolProxy {
         Self { state: None }
     }
 
-    pub fn switch_tool(&mut self, tool: ToolId, services: &mut Services) {
-        let last = match self.state.take() {
-            Some(mut st) => {
-                st.current_function.deactivate(services);
-                st.current
-            }
-            None => tool.clone(),
+    pub fn switch_tool(
+        &mut self,
+        tool: ToolId,
+        services: &mut Services,
+    ) -> Task<ErasedToolFunctionMessage> {
+        let (deactivate, last) = match self.state.take() {
+            Some(mut st) => (
+                st.current_function
+                    .deactivate(services)
+                    .map(move |message| ErasedToolFunctionMessage {
+                        tool_id: st.current,
+                        message,
+                    }),
+                st.current,
+            ),
+            None => (Task::none(), tool),
         };
 
         let registry = services.service::<ToolFunctionRegistry>();
         if let Some(new_tool) = registry.spawners.get(&tool) {
+            let mut f = new_tool();
+            let active = f
+                .activate(services)
+                .map(move |message| ErasedToolFunctionMessage {
+                    tool_id: tool,
+                    message,
+                });
+
             self.state = Some(State {
                 last,
-                current: tool.clone(),
+                current: tool,
                 last_switch: Instant::now(),
-                current_function: new_tool(),
+                current_function: f,
             });
+
+            deactivate.chain(active)
         } else {
             log::error!(
                 "Unable to switch to tool {:?}: not found in registry.",
                 tool
             );
+
+            deactivate
         }
     }
 
@@ -142,9 +289,15 @@ impl ToolProxy {
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
-        if let Some(f) = self.current_function() {
-            f.begin(keyboard, mouse, services);
+    ) -> Task<ErasedToolFunctionMessage> {
+        if let Some((id, f)) = self.current_function() {
+            f.begin(keyboard, mouse, services)
+                .map(move |message| ErasedToolFunctionMessage {
+                    tool_id: id,
+                    message,
+                })
+        } else {
+            Task::none()
         }
     }
 
@@ -153,9 +306,15 @@ impl ToolProxy {
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
-        if let Some(f) = self.current_function() {
-            f.update(keyboard, mouse, services);
+    ) -> Task<ErasedToolFunctionMessage> {
+        if let Some((id, f)) = self.current_function() {
+            f.update(keyboard, mouse, services)
+                .map(move |message| ErasedToolFunctionMessage {
+                    tool_id: id,
+                    message,
+                })
+        } else {
+            Task::none()
         }
     }
 
@@ -164,9 +323,15 @@ impl ToolProxy {
         keyboard: &KeyboardState,
         mouse: &HoverMouseState,
         services: &mut Services,
-    ) {
-        if let Some(f) = self.current_function() {
-            f.hover(keyboard, mouse, services);
+    ) -> Task<ErasedToolFunctionMessage> {
+        if let Some((id, f)) = self.current_function() {
+            f.hover(keyboard, mouse, services)
+                .map(move |message| ErasedToolFunctionMessage {
+                    tool_id: id,
+                    message,
+                })
+        } else {
+            Task::none()
         }
     }
 
@@ -175,14 +340,43 @@ impl ToolProxy {
         keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
-    ) {
-        if let Some(f) = self.current_function() {
-            f.end(keyboard, mouse, services);
+    ) -> Task<ErasedToolFunctionMessage> {
+        if let Some((id, f)) = self.current_function() {
+            f.end(keyboard, mouse, services)
+                .map(move |message| ErasedToolFunctionMessage {
+                    tool_id: id,
+                    message,
+                })
+        } else {
+            Task::none()
         }
     }
 
-    fn current_function(&mut self) -> Option<&mut Box<dyn ToolFunction>> {
-        self.state.as_mut().map(|st| &mut st.current_function)
+    pub fn handle_message(
+        &mut self,
+        message: ErasedToolFunctionMessage,
+        services: &mut Services,
+    ) -> Task<ErasedToolFunctionMessage> {
+        // TODO: Store all tools to avoid discarding message.
+        if let Some((id, f)) = self.current_function() {
+            if id == message.tool_id {
+                f.handle_message(message.message, services)
+                    .map(move |message| ErasedToolFunctionMessage {
+                        tool_id: id,
+                        message,
+                    })
+            } else {
+                Task::none()
+            }
+        } else {
+            Task::none()
+        }
+    }
+
+    fn current_function(&mut self) -> Option<(ToolId, &mut Box<dyn ErasedToolFunction>)> {
+        self.state
+            .as_mut()
+            .map(|st| (st.current, &mut st.current_function))
     }
 }
 

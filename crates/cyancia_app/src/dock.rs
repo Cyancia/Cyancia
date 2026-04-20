@@ -13,7 +13,7 @@ use cyancia_input::{
     mouse::{HoverMouseState, PressedMouseState},
 };
 use cyancia_runtime::{Services, event::Event, service::RenderContext};
-use cyancia_tools::ToolProxies;
+use cyancia_tools::{ErasedToolFunctionMessage, ToolProxies};
 use cyancia_widgets::drag_drop_column::DragDropColumn;
 use iced::{
     Length,
@@ -87,6 +87,7 @@ pub enum CanvasDockMessage {
     CanvasFocus(Point),
     MouseEvent(mouse::Event),
     WidgetRectChange(Rect),
+    ToolFunctionMessage(ErasedToolFunctionMessage),
 }
 
 impl<Theme> Dock<Theme, iced_wgpu::Renderer> for CanvasDock
@@ -154,13 +155,13 @@ where
                 };
                 let tool_proxy_id = canvas.tool_proxy_id;
 
-                services.service_scope::<ToolProxies, ()>(|tool_proxies, services| {
+                let task = services.service_scope::<ToolProxies, _>(|tool_proxies, services| {
                     let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
 
                     match event {
                         mouse::Event::ButtonPressed(button) => {
                             if button != mouse::Button::Left {
-                                return;
+                                return Task::none();
                             }
 
                             self.is_pressed = true;
@@ -170,11 +171,11 @@ where
                                     position: self.cursor_position,
                                 },
                                 services,
-                            );
+                            )
                         }
                         mouse::Event::ButtonReleased(button) => {
                             if button != mouse::Button::Left {
-                                return;
+                                return Task::none();
                             }
 
                             self.is_pressed = false;
@@ -184,7 +185,7 @@ where
                                     position: self.cursor_position,
                                 },
                                 services,
-                            );
+                            )
                         }
                         mouse::Event::CursorMoved { position } => {
                             self.cursor_position = position;
@@ -196,7 +197,7 @@ where
                                         position: self.cursor_position,
                                     },
                                     services,
-                                );
+                                )
                             } else {
                                 tool_proxy.mouse_moved_hovering(
                                     &actions_matcher.keyboard_state(),
@@ -204,12 +205,14 @@ where
                                         position: self.cursor_position,
                                     },
                                     services,
-                                );
+                                )
                             }
                         }
-                        _ => {}
+                        _ => Task::none(),
                     }
                 });
+
+                return task.map(CanvasDockMessage::ToolFunctionMessage);
             }
             CanvasDockMessage::CanvasFocus(cursor_pos) => {
                 self.cursor_position = cursor_pos;
@@ -222,6 +225,20 @@ where
                 if let Some(canvas) = canvas_manager.get_mut(&self.canvas) {
                     canvas.transform.widget_bounds = rect;
                 }
+            }
+            CanvasDockMessage::ToolFunctionMessage(message) => {
+                let Some(canvas) = services.service::<CanvasManager>().get(&self.canvas) else {
+                    return Task::none();
+                };
+
+                let tool_proxy_id = canvas.tool_proxy_id;
+                return services
+                    .service_scope::<ToolProxies, _>(|tool_proxies, services| {
+                        tool_proxies
+                            .get_mut(&tool_proxy_id)
+                            .handle_message(message, services)
+                    })
+                    .map(CanvasDockMessage::ToolFunctionMessage);
             }
         }
 
