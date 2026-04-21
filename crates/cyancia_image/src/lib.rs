@@ -9,6 +9,7 @@ extern crate image as imagers;
 
 use crate::{
     blend_modes::BlendMode,
+    composite::LayerPreviewOverriders,
     layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, LayerStackNode},
     texel::TexelType,
     tile::GpuTileStorage,
@@ -26,7 +27,8 @@ pub struct ImagePlugin;
 
 impl Plugin for ImagePlugin {
     fn build(&self, app: &mut Application) {
-        app.add_service::<GpuTileStorage>();
+        app.add_service::<GpuTileStorage>()
+            .add_service::<LayerPreviewOverriders>();
     }
 }
 

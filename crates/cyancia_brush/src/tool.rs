@@ -3,7 +3,11 @@ use std::collections::VecDeque;
 use bevy_math::IRect;
 use cyancia_assets::store::AssetRegistry;
 use cyancia_canvas::{CCanvas, CanvasId, CanvasManager, event::CanvasUpdate};
-use cyancia_image::tile::GpuTileStorage;
+use cyancia_image::{
+    composite::{LayerPreviewOverriders, PixelPreviewOverrider},
+    layer::LayerId,
+    tile::GpuTileStorage,
+};
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_math::number::LerpAngle;
 use cyancia_runtime::{Services, event::Event, service::Service};
@@ -22,9 +26,13 @@ use crate::{
 };
 
 #[derive(Default)]
-pub struct BrushTool;
+pub struct BrushTool {
+    target_layer: Option<(CanvasId, LayerId)>,
+}
 
-pub enum BrushToolMessage {}
+pub enum BrushToolMessage {
+    StrokeInfoReadback(StrokeInfo),
+}
 
 impl ToolFunction for BrushTool {
     type Message = BrushToolMessage;
@@ -55,6 +63,7 @@ impl ToolFunction for BrushTool {
             return Task::none();
         }
         let params = RawPenInput { position };
+        self.target_layer = Some((canvas.id(), active_layer));
 
         let success =
             services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
@@ -78,10 +87,13 @@ impl ToolFunction for BrushTool {
         mouse: &PressedMouseState,
         services: &mut Services,
     ) -> Task<Self::Message> {
-        let Some(canvas) = services.service::<CanvasManager>().current() else {
+        let Some((canvas_id, active_layer)) = self.target_layer else {
             return Task::none();
         };
-        let canvas_id = canvas.id();
+
+        let Some(canvas) = services.service::<CanvasManager>().get(&canvas_id) else {
+            return Task::none();
+        };
         let Some(position) = canvas
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
@@ -101,7 +113,8 @@ impl ToolFunction for BrushTool {
 
         let (tx, rx) = oneshot::channel();
         if let Some(staging) = brush.map_stroke_info_async(tx) {
-            Task::future(canvas_update_notifier(canvas_id, rx, staging)).discard()
+            Task::future(stroke_info_readback(canvas_id, rx, staging))
+                .map(BrushToolMessage::StrokeInfoReadback)
         } else {
             Task::none()
         }
@@ -113,7 +126,11 @@ impl ToolFunction for BrushTool {
         mouse: &PressedMouseState,
         services: &mut Services,
     ) -> Task<Self::Message> {
-        let Some(canvas) = services.service::<CanvasManager>().current() else {
+        let Some((canvas_id, active_layer)) = self.target_layer.take() else {
+            return Task::none();
+        };
+
+        let Some(canvas) = services.service::<CanvasManager>().get(&canvas_id) else {
             return Task::none();
         };
         let Some(position) = canvas
@@ -122,8 +139,6 @@ impl ToolFunction for BrushTool {
         else {
             return Task::none();
         };
-        let canvas_id = canvas.id();
-        let active_layer = canvas.image.active_layer;
         let final_input = RawPenInput { position };
 
         let success =
@@ -139,8 +154,47 @@ impl ToolFunction for BrushTool {
                 });
             });
 
+        let overriders = services.service_mut::<LayerPreviewOverriders>();
+        overriders.remove_overrider(&active_layer);
+
         if success.is_none() {
             log::error!("No current brush preset operator found.");
+        }
+
+        Task::none()
+    }
+
+    fn handle_message(
+        &mut self,
+        message: Self::Message,
+        services: &mut Services,
+    ) -> Task<Self::Message> {
+        match message {
+            BrushToolMessage::StrokeInfoReadback(stroke_info) => {
+                let Some((canvas_id, active_layer)) = self.target_layer else {
+                    return Task::none();
+                };
+
+                let brush = services.service::<CurrentBrushPresetOperator>();
+                let Some(buffer) = brush.stroke_buffer() else {
+                    return Task::none();
+                };
+                // TODO Do stroke post process. This is not actually what outputs.
+                let overrider = PixelPreviewOverrider {
+                    texture: buffer.textures()[1 - stroke_info.total_dabs as usize % 2].clone(),
+                    tile_info_buffer: buffer.tile_info_buffer().clone(),
+                };
+
+                let overriders = services.service_mut::<LayerPreviewOverriders>();
+                overriders.insert_overrider(active_layer, overrider);
+                CanvasUpdate::broadcast(CanvasUpdate {
+                    id: canvas_id,
+                    dirty_tiles: IRect {
+                        min: stroke_info.accumulated_bound_min,
+                        max: stroke_info.accumulated_bound_max,
+                    },
+                });
+            }
         }
 
         Task::none()
@@ -153,21 +207,13 @@ wrapper! {
 
 impl Service for CurrentBrushPresetOperator {}
 
-async fn canvas_update_notifier(
+async fn stroke_info_readback(
     id: CanvasId,
     rx: oneshot::Receiver<Result<(), BufferAsyncError>>,
     staging_buffer: Buffer,
-) {
+) -> StrokeInfo {
     rx.await.unwrap().unwrap();
     let stroke_info_data = staging_buffer.slice(..).get_mapped_range();
     let storage = encase::StorageBuffer::new(stroke_info_data.as_ref());
-    let stroke_info = storage.create::<StrokeInfo>().unwrap();
-    dbg!(stroke_info);
-    CanvasUpdate::broadcast(CanvasUpdate {
-        id,
-        dirty_tiles: IRect {
-            min: stroke_info.accumulated_bound_min,
-            max: stroke_info.accumulated_bound_max,
-        },
-    });
+    storage.create::<StrokeInfo>().unwrap()
 }

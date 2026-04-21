@@ -1,4 +1,4 @@
-import package::image::image_tilling::{TileInfo, TILE_SIZE};
+import package::image::image_tilling::{TileInfo, DynamicTileInfo, TILE_SIZE};
 import package::image::texture_unpack::{pack_rgba8_texel, unpack_rgba8_texel};
 
 @group(0) @binding(0) var src: texture_storage_2d_array<r32uint, read>;
@@ -7,6 +7,8 @@ import package::image::texture_unpack::{pack_rgba8_texel, unpack_rgba8_texel};
 @group(0) @binding(3) var<storage> dst_tile_info: array<TileInfo>;
 @group(0) @binding(4) var output: texture_storage_2d_array<r32uint, write>;
 @group(0) @binding(5) var<storage> output_tile_info: array<TileInfo>;
+@if(OVERRIDER) @group(0) @binding(6) var src_overrider: texture_storage_2d_array<r32uint, read>;
+@if(OVERRIDER) @group(0) @binding(7) var<storage> src_overrider_tile_info: DynamicTileInfo;
 
 fn convert_pixel_to_src_tile(pixel: vec2i) -> vec3u {
     for (var i = 0u; i < arrayLength(&src_tile_info); i = i + 1u) {
@@ -41,6 +43,18 @@ fn convert_pixel_to_output_tile(pixel: vec2i) -> vec3u {
     return vec3u(0, 0, 0xffffffffu);
 }
 
+@if(OVERRIDER)
+fn convert_pixel_to_src_overrider_tile(pixel: vec2i) -> vec3u {
+    for (var i = 0u; i < src_overrider_tile_info.n_tiles; i = i + 1u) {
+        let info = src_overrider_tile_info.buf[i];
+        if pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
+            pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE) {
+            return vec3u(vec2u(pixel - info.origin), i);
+        }
+    }
+    return vec3u(0, 0, 0xffffffffu);
+}
+
 fn get_src_color(pixel: vec2i) -> vec4f {
     let tile = convert_pixel_to_src_tile(pixel);
     if (tile.z == 0xffffffffu) {
@@ -55,6 +69,15 @@ fn get_dst_color(pixel: vec2i) -> vec4f {
         return vec4f(0.0);
     }
     return unpack_rgba8_texel(textureLoad(dst, tile.xy, tile.z));
+}
+
+@if(OVERRIDER)
+fn get_src_overrider_color(pixel: vec2i) -> vec4f {
+    let tile = convert_pixel_to_src_overrider_tile(pixel);
+    if (tile.z == 0xffffffffu) {
+        return vec4f(0.0);
+    }
+    return unpack_rgba8_texel(textureLoad(src_overrider, tile.xy, tile.z));
 }
 
 fn set_output_color(pixel: vec2i, color: vec4f) {
@@ -75,6 +98,15 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let pixel = id.xy;
     let src_color = get_src_color(vec2i(pixel));
     let dst_color = get_dst_color(vec2i(pixel));
-    let blended_color = blend(src_color, dst_color);
-    set_output_color(vec2i(pixel), blended_color);
+    @if(OVERRIDER) {
+        let src_overrider_color = get_src_overrider_color(vec2i(pixel));
+        let overriden_src_color = package::image::blend_modes::blend_normal(src_overrider_color, src_color);
+        let blended_color = blend(overriden_src_color, dst_color);
+        set_output_color(vec2i(pixel), blended_color);
+    }
+
+    @if(!OVERRIDER) {
+        let blended_color = blend(src_color, dst_color);
+        set_output_color(vec2i(pixel), blended_color);
+    }
 }

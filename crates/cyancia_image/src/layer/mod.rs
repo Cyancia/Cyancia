@@ -14,7 +14,7 @@ use wgpu::{Buffer, ComputePass, Device, Queue, TextureFormat, TextureView};
 use crate::{
     CImage,
     blend_modes::BlendMode,
-    composite::{BlendFunction, ImageCompositor},
+    composite::{BlendFunction, ImageCompositor, LayerPreviewOverriders},
     layer::{group_layer::GroupLayer, pixel_layer::PixelLayer},
     texel::TexelType,
     tile::GpuTileStorage,
@@ -109,19 +109,22 @@ impl LayerData {
     pub fn create_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &mut LayerPreviewOverriders,
         image: &CImage,
         node: &LayerStackNode,
         tiles: &GpuTileStorage,
         device: &Device,
         queue: &Queue,
     ) {
-        self.data
-            .create_blend_cache(compositor, image, self, node, tiles, device, queue)
+        self.data.create_blend_cache(
+            compositor, overriders, image, self, node, tiles, device, queue,
+        )
     }
 
     pub fn prepare_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &LayerPreviewOverriders,
         image: &CImage,
         node: &LayerStackNode,
         tiles: &GpuTileStorage,
@@ -134,6 +137,7 @@ impl LayerData {
     ) {
         self.data.prepare_blend_cache(
             compositor,
+            overriders,
             image,
             self,
             node,
@@ -167,6 +171,7 @@ pub trait Layer: Send + Sync + DynClone + 'static {
     fn create_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &mut LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
         node: &LayerStackNode,
@@ -177,6 +182,7 @@ pub trait Layer: Send + Sync + DynClone + 'static {
     fn prepare_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
         node: &LayerStackNode,

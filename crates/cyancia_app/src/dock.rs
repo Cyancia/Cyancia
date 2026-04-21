@@ -8,7 +8,11 @@ use cyancia_canvas::{
     widget::CanvasWidget,
 };
 use cyancia_dock::dock::{Dock, DockId};
-use cyancia_image::{composite::ImageCompositor, tile::GpuTileStorage, widget::LayerNodeWidget};
+use cyancia_image::{
+    composite::{ImageCompositor, LayerPreviewOverriders},
+    tile::GpuTileStorage,
+    widget::LayerNodeWidget,
+};
 use cyancia_input::{
     action::ActionCollection,
     key::KeyboardState,
@@ -226,29 +230,33 @@ where
                     .map(CanvasDockMessage::ToolFunctionMessage);
             }
             CanvasDockMessage::Tick => {
-                services.service_scope::<CanvasManager, ()>(|canvas_manager, services| {
-                    let Some(canvas) = canvas_manager.get_mut(&self.canvas) else {
-                        return;
-                    };
-                    let tiles = services.service::<GpuTileStorage>();
-                    let render_context = services.service::<RenderContext>();
-                    let dirty_tiles = canvas.clear_dirty();
-                    if dirty_tiles.is_empty() {
-                        return;
-                    }
-                    self.compositor.create_cache(
-                        &canvas.image,
-                        tiles,
-                        &render_context.device,
-                        &render_context.queue,
-                    );
-                    self.compositor.composite(
-                        dirty_tiles,
-                        &canvas.image,
-                        tiles,
-                        &render_context.device,
-                        &render_context.queue,
-                    );
+                services.service_scope::<CanvasManager, _>(|canvas_manager, services| {
+                    services.service_scope::<LayerPreviewOverriders, _>(|overriders, services| {
+                        let Some(canvas) = canvas_manager.get_mut(&self.canvas) else {
+                            return;
+                        };
+                        let tiles = services.service::<GpuTileStorage>();
+                        let render_context = services.service::<RenderContext>();
+                        let dirty_tiles = canvas.clear_dirty();
+                        if dirty_tiles.is_empty() {
+                            return;
+                        }
+                        self.compositor.create_cache(
+                            overriders,
+                            &canvas.image,
+                            tiles,
+                            &render_context.device,
+                            &render_context.queue,
+                        );
+                        self.compositor.composite(
+                            overriders,
+                            dirty_tiles,
+                            &canvas.image,
+                            tiles,
+                            &render_context.device,
+                            &render_context.queue,
+                        );
+                    });
                 });
             }
             CanvasDockMessage::CanvasUpdate(rect) => {

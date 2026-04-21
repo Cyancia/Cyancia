@@ -4,7 +4,7 @@ use encase::ShaderType;
 use glam::IVec2;
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView,
+    TextureFormat, TextureUsages, TextureView, TextureViewDimension, wgt::TextureViewDescriptor,
 };
 
 use crate::{
@@ -22,7 +22,6 @@ pub struct DynamicGpuTileInfoBuffer {
 pub struct DynamicIntermediateBuffer {
     device: Device,
     queue: Queue,
-    textures_inner: [Texture; 2],
     textures: [TextureView; 2],
     tile_info: DynamicBuffer<DynamicGpuTileInfoBuffer>,
     texel_type: TexelType,
@@ -48,10 +47,18 @@ impl DynamicIntermediateBuffer {
             view_formats: &[],
         };
 
-        let texture_a_raw = device.create_texture(&desc);
-        let texture_b_raw = device.create_texture(&desc);
-        let texture_a = texture_a_raw.create_view(&Default::default());
-        let texture_b = texture_b_raw.create_view(&Default::default());
+        let texture_a = device
+            .create_texture(&desc)
+            .create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
+        let texture_b = device
+            .create_texture(&desc)
+            .create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
 
         let mut info = DynamicBuffer::new(
             Some("dynamic intermediate buffer".into()),
@@ -66,7 +73,6 @@ impl DynamicIntermediateBuffer {
         Self {
             device,
             queue,
-            textures_inner: [texture_a_raw, texture_b_raw],
             textures: [texture_a, texture_b],
             tile_info: info,
             texel_type,
@@ -84,8 +90,8 @@ impl DynamicIntermediateBuffer {
 
     pub fn clear(&mut self) {
         let mut ec = self.device.create_command_encoder(&Default::default());
-        for texture in &self.textures_inner {
-            ec.clear_texture(texture, &Default::default());
+        for texture in &self.textures {
+            ec.clear_texture(texture.texture(), &Default::default());
         }
         self.queue.submit([ec.finish()]);
 
@@ -128,10 +134,16 @@ impl IntermediateBuffer {
 
         let texture_a = device
             .create_texture(&desc)
-            .create_view(&Default::default());
+            .create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
         let texture_b = device
             .create_texture(&desc)
-            .create_view(&Default::default());
+            .create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
 
         let mut tile_info_buffer = BufferVec::new(
             Some("intermediate buffer tile info".into()),

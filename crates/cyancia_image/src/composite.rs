@@ -5,6 +5,7 @@ use std::{
 };
 
 use bevy_math::IRect;
+use cyancia_runtime::{Services, service::Service};
 use dyn_clone::DynClone;
 use encase::ShaderType;
 use glam::{IVec2, UVec2, UVec3};
@@ -46,6 +47,7 @@ impl ImageCompositor {
     // TODO: incremental cache building and preparing
     pub fn create_cache(
         &mut self,
+        overriders: &mut LayerPreviewOverriders,
         image: &CImage,
         tiles: &GpuTileStorage,
         device: &Device,
@@ -55,6 +57,7 @@ impl ImageCompositor {
         let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
         root_data.create_blend_cache(
             self,
+            overriders,
             image,
             image.layer_stack().root_node(),
             tiles,
@@ -66,6 +69,7 @@ impl ImageCompositor {
 
     pub fn composite(
         &mut self,
+        overriders: &LayerPreviewOverriders,
         dirty_tiles: IRect,
         image: &CImage,
         tiles: &GpuTileStorage,
@@ -90,6 +94,7 @@ impl ImageCompositor {
         let now = std::time::Instant::now();
         root_data.prepare_blend_cache(
             self,
+            overriders,
             image,
             image.layer_stack().root_node(),
             tiles,
@@ -131,4 +136,50 @@ impl ImageCompositor {
     pub fn insert_blend_cache<T: Send + Sync + 'static>(&mut self, layer_id: LayerId, cache: T) {
         self.cache.insert(layer_id, Box::new(cache));
     }
+}
+
+#[derive(Default)]
+pub struct LayerPreviewOverriders {
+    overriders: HashMap<LayerId, Box<dyn Any + Send + Sync>>,
+    defaults: HashMap<LayerId, Box<dyn Any + Send + Sync>>,
+}
+
+impl LayerPreviewOverriders {
+    pub fn new() -> Self {
+        Self {
+            overriders: HashMap::new(),
+            defaults: HashMap::new(),
+        }
+    }
+
+    pub fn get_overrider<T: Send + Sync + 'static>(&self, layer_id: &LayerId) -> &T {
+        self.overriders
+            .get(layer_id)
+            .unwrap_or_else(|| {
+                self.defaults
+                    .get(layer_id)
+                    .expect("default overrider not found")
+            })
+            .downcast_ref::<T>()
+            .expect("overrider of wrong type")
+    }
+
+    pub fn insert_overrider<T: Send + Sync + 'static>(&mut self, layer_id: LayerId, overrider: T) {
+        self.overriders.insert(layer_id, Box::new(overrider));
+    }
+
+    pub fn remove_overrider(&mut self, layer_id: &LayerId) {
+        self.overriders.remove(layer_id);
+    }
+
+    pub fn insert_default<T: Send + Sync + 'static>(&mut self, layer_id: LayerId, default: T) {
+        self.defaults.insert(layer_id, Box::new(default));
+    }
+}
+
+impl Service for LayerPreviewOverriders {}
+
+pub struct PixelPreviewOverrider {
+    pub texture: TextureView,
+    pub tile_info_buffer: Buffer,
 }

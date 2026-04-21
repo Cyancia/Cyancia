@@ -14,7 +14,7 @@ use wgpu::{
 
 use crate::{
     CImage,
-    composite::ImageCompositor,
+    composite::{ImageCompositor, LayerPreviewOverriders},
     dynamic_intermediate_buffer::IntermediateBuffer,
     layer::{Layer, LayerData, LayerStackNode},
     texel::TexelType,
@@ -36,6 +36,7 @@ impl Layer for GroupLayer {
     fn create_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &mut LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
         node: &LayerStackNode,
@@ -45,7 +46,9 @@ impl Layer for GroupLayer {
     ) {
         for child_node in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(child_node.id).unwrap();
-            child_layer.create_blend_cache(compositor, image, child_node, tiles, device, queue);
+            child_layer.create_blend_cache(
+                compositor, overriders, image, child_node, tiles, device, queue,
+            );
         }
 
         let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(IRect {
@@ -62,7 +65,7 @@ impl Layer for GroupLayer {
             }
         }
 
-        let shader = include_str!("../shaders/blend_layers.wesl").replace(
+        let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &layer
                 .blend_func
@@ -194,6 +197,7 @@ impl Layer for GroupLayer {
     fn prepare_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
         node: &LayerStackNode,
@@ -218,6 +222,7 @@ impl Layer for GroupLayer {
             let child_layer = image.layer_stack().get_layer(child_node.id).unwrap();
             child_layer.prepare_blend_cache(
                 compositor,
+                overriders,
                 image,
                 child_node,
                 tiles,

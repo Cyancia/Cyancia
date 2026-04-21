@@ -8,12 +8,14 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyTextureInfo, TextureView, TextureViewDimension,
+    StorageTextureAccess, TexelCopyTextureInfo, TextureDescriptor, TextureDimension, TextureUsages,
+    TextureView, TextureViewDimension, wgt::TextureViewDescriptor,
 };
 
 use crate::{
     CImage,
-    composite::ImageCompositor,
+    composite::{ImageCompositor, LayerPreviewOverriders, PixelPreviewOverrider},
+    dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
     layer::{Layer, LayerData, LayerStackNode},
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage},
@@ -34,6 +36,7 @@ impl Layer for PixelLayer {
     fn create_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &mut LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
         node: &LayerStackNode,
@@ -52,7 +55,7 @@ impl Layer for PixelLayer {
             }
         }
 
-        let shader = include_str!("../shaders/blend_layers.wesl").replace(
+        let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &layer
                 .blend_func
@@ -77,6 +80,7 @@ impl Layer for PixelLayer {
         let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
         compiler.set_mangler(Default::default());
         compiler.set_options(Default::default());
+        compiler.set_feature("OVERRIDER", true);
         let compiled_shader = match compiler.compile(&"package::template".parse().unwrap()) {
             Ok(s) => s.to_string(),
             Err(e) => {
@@ -86,12 +90,41 @@ impl Layer for PixelLayer {
         };
 
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
-            label: "layer blend shader".into(),
+            label: "pixel layer blend shader".into(),
             source: ShaderSource::Wgsl(compiled_shader.into()),
         });
 
+        let default_overrider = PixelPreviewOverrider {
+            texture: device
+                .create_texture(&TextureDescriptor {
+                    label: Some("pixel layer default preview overrider"),
+                    size: Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: layer_info.texel_type.wgpu_format(),
+                    usage: TextureUsages::STORAGE_BINDING,
+                    view_formats: &[],
+                })
+                .create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2Array),
+                    ..Default::default()
+                }),
+            tile_info_buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: "default pixel layer preview overrider tile info buffer".into(),
+                size: DynamicGpuTileInfoBuffer::min_size().get(),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+        };
+        overriders.insert_default(layer.id(), default_overrider);
+
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: "layer blend bind group layout".into(),
+            label: "pixel layer blend bind group layout".into(),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -153,17 +186,37 @@ impl Layer for PixelLayer {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: image.texel_type().wgpu_format(),
+                        view_dimension: TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(DynamicGpuTileInfoBuffer::min_size()),
+                    },
+                    count: None,
+                },
             ],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: "layer blend pipeline layout".into(),
+            label: "pixel layer blend pipeline layout".into(),
             bind_group_layouts: &[&layout],
             push_constant_ranges: &[],
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: "layer blend pipeline".into(),
+            label: "pixel layer blend pipeline".into(),
             layout: Some(&pipeline_layout),
             module: &shader_module,
             entry_point: "main".into(),
@@ -185,6 +238,7 @@ impl Layer for PixelLayer {
     fn prepare_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
+        overriders: &LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
         node: &LayerStackNode,
@@ -202,8 +256,10 @@ impl Layer for PixelLayer {
             return;
         };
 
+        let overrider = overriders.get_overrider::<PixelPreviewOverrider>(&layer.id());
+
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: "layer blend bind group".into(),
+            label: "pixel layer blend bind group".into(),
             layout: &cache.layout,
             entries: &[
                 BindGroupEntry {
@@ -229,6 +285,14 @@ impl Layer for PixelLayer {
                 BindGroupEntry {
                     binding: 5,
                     resource: output_tile_info.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&overrider.texture),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: overrider.tile_info_buffer.as_entire_binding(),
                 },
             ],
         });

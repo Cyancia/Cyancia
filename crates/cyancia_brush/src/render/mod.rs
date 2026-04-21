@@ -198,6 +198,11 @@ impl BrushPresetOperator {
 
         Some(renderer.map_stroke_info_async(&self.device, &self.queue, buffer_map_result))
     }
+
+    pub fn stroke_buffer(&self) -> Option<&DynamicIntermediateBuffer> {
+        let r = self.renderer.as_ref()?;
+        Some(&r.resources.intermediate_buffers)
+    }
 }
 
 pub struct BrushPresetRenderer {
