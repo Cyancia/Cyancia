@@ -234,32 +234,114 @@ impl BrushPresetRenderer {
             assets,
         );
 
-        let input_sampling = BrushInputSamplingPipeline::new(
+        let target_layer_format = resources.target_layer.texture().format();
+        let intermediate_tile_info_buffer = resources.intermediate_buffers.tile_info_buffer();
+
+        let mut input_sampling =
+            BrushInputSamplingPipeline::new(device, brush.input_sampling.clone().into());
+        input_sampling.prepare(
             device,
-            &resources,
-            brush.input_sampling.clone().into(),
+            &resources.pen_input,
+            &resources.input_sampler,
+            &resources.output_samples,
+            &resources.estimate_dispatch,
+            &resources.stroke_info,
         );
-        let tile_allocation = BrushTileAllocationPipeline::new(device, &resources, false);
-        let estimate = BrushEstimatePipeline::new(
+
+        let mut tile_allocation = BrushTileAllocationPipeline::new(device, false);
+        tile_allocation.prepare(
             device,
-            &resources,
+            &resources.dab_infos,
+            &intermediate_tile_info_buffer,
+            &resources.stroke_info,
+        );
+
+        let mut estimate = BrushEstimatePipeline::new(
+            device,
             brush.main_graph.size_estimation.clone().into(),
+            target_layer_format,
+            &resources.external_var_layouts,
         );
-        let main = BrushMainPipeline::new(device, &resources, brush.main_graph.main.clone().into());
-        let stroke_pp_estimate = BrushEstimatePipeline::new(
+        estimate.prepare(
             device,
-            &resources,
+            &resources.output_samples,
+            &resources.stroke_info,
+            &resources.referenced_textures,
+            &resources.target_layer_tile_info,
+            &resources.target_layer,
+            &resources.dab_infos,
+            &resources.tile_allocation_dispatch,
+            &resources.main_dispatch,
+            &resources.external_var_buffers,
+        );
+
+        let mut main = BrushMainPipeline::new(
+            device,
+            brush.main_graph.main.clone().into(),
+            target_layer_format,
+            &resources.external_var_layouts,
+        );
+        main.prepare(
+            device,
+            &resources.output_samples,
+            &resources.stroke_info,
+            &resources.referenced_textures,
+            &resources.target_layer_tile_info,
+            &resources.target_layer,
+            &resources.intermediate_buffers,
+            &resources.dab_infos,
+            &resources.pass_fence,
+            &resources.external_var_buffers,
+        );
+
+        let mut stroke_pp_estimate = BrushEstimatePipeline::new(
+            device,
             brush
                 .stroke_postprocess_graphs
                 .size_estimation
                 .clone()
                 .into(),
+            target_layer_format,
+            &resources.external_var_layouts,
         );
-        let stroke_pp_tile_allocation = BrushTileAllocationPipeline::new(device, &resources, true);
-        let stroke_pp_main = BrushMainPipeline::new(
+        stroke_pp_estimate.prepare(
             device,
-            &resources,
+            &resources.output_samples,
+            &resources.stroke_info,
+            &resources.referenced_textures,
+            &resources.target_layer_tile_info,
+            &resources.target_layer,
+            &resources.dab_infos,
+            &resources.tile_allocation_dispatch,
+            &resources.main_dispatch,
+            &resources.external_var_buffers,
+        );
+
+        let mut stroke_pp_tile_allocation = BrushTileAllocationPipeline::new(device, true);
+        stroke_pp_tile_allocation.prepare(
+            device,
+            &resources.dab_infos,
+            &intermediate_tile_info_buffer,
+            &resources.stroke_info,
+        );
+
+        let mut stroke_pp_main = BrushMainPipeline::new(
+            device,
             brush.stroke_postprocess_graphs.main.clone().into(),
+            target_layer_format,
+            &resources.external_var_layouts,
+        );
+        stroke_pp_main.prepare(
+            device,
+            &resources.output_samples,
+            &resources.stroke_info,
+            &resources.referenced_textures,
+            &resources.target_layer_tile_info,
+            &resources.target_layer,
+            &resources.intermediate_buffers,
+            &resources.dab_infos,
+            &resources.pass_fence,
+            &resources.external_var_buffers,
         );
 
         Self {
@@ -299,9 +381,11 @@ impl BrushPresetRenderer {
         {
             ec.push_debug_group("brush preset update stroke");
             self.input_sampling.dispatch(&mut ec);
-            self.estimate.dispatch_indirect(&mut ec, &self.resources);
-            self.tile_allocation.dispatch(&mut ec, &self.resources);
-            self.main.dispatch(&mut ec, &self.resources);
+            self.estimate
+                .dispatch_indirect(&mut ec, &self.resources.estimate_dispatch);
+            self.tile_allocation
+                .dispatch(&mut ec, &self.resources.tile_allocation_dispatch);
+            self.main.dispatch(&mut ec, &self.resources.main_dispatch);
             ec.pop_debug_group();
         }
 
@@ -319,8 +403,9 @@ impl BrushPresetRenderer {
         ec.push_debug_group("brush preset stroke postprocess");
         self.stroke_pp_estimate.dispatch(&mut ec, 1, 1, 1);
         self.stroke_pp_tile_allocation
-            .dispatch(&mut ec, &self.resources);
-        self.stroke_pp_main.dispatch(&mut ec, &self.resources);
+            .dispatch(&mut ec, &self.resources.tile_allocation_dispatch);
+        self.stroke_pp_main
+            .dispatch(&mut ec, &self.resources.main_dispatch);
         ec.pop_debug_group();
 
         queue.submit([ec.finish()]);

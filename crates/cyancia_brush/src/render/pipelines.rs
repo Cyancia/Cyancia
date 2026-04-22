@@ -1,42 +1,47 @@
-use std::{
-    borrow::Cow,
-    num::{NonZeroU32, NonZeroU64},
-};
+use std::borrow::Cow;
 
 use bevy_math::URect;
 use cyancia_image::{
-    dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
-    tile::{GpuTileInfo, GpuTileStorageInner},
+    dynamic_intermediate_buffer::{DynamicGpuTileInfoBuffer, DynamicIntermediateBuffer},
+    tile::GpuTileInfo,
 };
-use cyancia_render::buffer::DynamicBuffer;
+use cyancia_render::{buffer::DynamicBuffer, texture_atlas::TextureAtlas};
 use encase::ShaderType;
 use glam::UVec3;
-use toml::de;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
-    CommandEncoder, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TextureSampleType, TextureViewDimension,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, CommandEncoder,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
+    PipelineLayoutDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TextureFormat, TextureSampleType, TextureView, TextureViewDimension,
 };
 
 use crate::render::{
     DabInfos, EXTERNAL_VARIABLE_BASE_BINDING, OutputSamples, PassFence, PenInput, PenInputSampler,
-    StrokeInfo, StrokeResources,
+    StrokeInfo,
 };
 
+fn external_var_entries(buffers: &[Buffer]) -> Vec<BindGroupEntry<'_>> {
+    buffers
+        .iter()
+        .enumerate()
+        .map(|(i, buffer)| BindGroupEntry {
+            binding: EXTERNAL_VARIABLE_BASE_BINDING + i as u32,
+            resource: BindingResource::Buffer(buffer.as_entire_buffer_binding()),
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone)]
 pub struct BrushInputSamplingPipeline {
-    bind_group: BindGroup,
+    bind_group: Option<BindGroup>,
+    layout: BindGroupLayout,
     pipeline: ComputePipeline,
 }
 
 impl BrushInputSamplingPipeline {
-    pub fn new(
-        device: &Device,
-        resources: &StrokeResources,
-        compiled_shader: Cow<'_, str>,
-    ) -> Self {
+    pub fn new(device: &Device, compiled_shader: Cow<'_, str>) -> Self {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush input sampling layout"),
             entries: &[
@@ -93,33 +98,6 @@ impl BrushInputSamplingPipeline {
             ],
         });
 
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush input sampling bind group"),
-            layout: &layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: resources.pen_input.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: resources.input_sampler.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: resources.output_samples.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: resources.estimate_dispatch.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: resources.stroke_info.binding().unwrap(),
-                },
-            ],
-        });
-
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("brush input sampling shader"),
             source: ShaderSource::Wgsl(compiled_shader),
@@ -141,34 +119,79 @@ impl BrushInputSamplingPipeline {
         });
 
         Self {
-            bind_group,
+            bind_group: None,
+            layout,
             pipeline,
         }
     }
 
+    pub fn prepare(
+        &mut self,
+        device: &Device,
+        pen_input: &DynamicBuffer<PenInput>,
+        input_sampler: &DynamicBuffer<PenInputSampler>,
+        output_samples: &DynamicBuffer<OutputSamples>,
+        estimate_dispatch: &Buffer,
+        stroke_info: &DynamicBuffer<StrokeInfo>,
+    ) {
+        self.bind_group = Some(device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush input sampling bind group"),
+            layout: &self.layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: pen_input.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: input_sampler.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: output_samples.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: estimate_dispatch.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: stroke_info.binding().unwrap(),
+                },
+            ],
+        }));
+    }
+
     pub fn dispatch(&self, ec: &mut CommandEncoder) {
+        let bind_group = self
+            .bind_group
+            .as_ref()
+            .expect("BrushInputSamplingPipeline::prepare() must be called before dispatch()");
+
+        ec.push_debug_group("brush preset input sampling");
         {
-            ec.push_debug_group("brush preset input sampling");
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("brush sample compute pass"),
                 ..Default::default()
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(0, bind_group, &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
         ec.pop_debug_group();
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct BrushTileAllocationPipeline {
-    bind_group: BindGroup,
+    bind_group: Option<BindGroup>,
+    layout: BindGroupLayout,
     pipeline: ComputePipeline,
 }
 
 impl BrushTileAllocationPipeline {
-    pub fn new(device: &Device, resources: &StrokeResources, is_postprocess: bool) -> Self {
+    pub fn new(device: &Device, is_postprocess: bool) -> Self {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush tile allocation layout"),
             entries: &[
@@ -201,28 +224,6 @@ impl BrushTileAllocationPipeline {
                         min_binding_size: Some(StrokeInfo::min_size()),
                     },
                     count: None,
-                },
-            ],
-        });
-
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush tile allocation bind group"),
-            layout: &layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: resources.dab_infos.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: resources
-                        .intermediate_buffers
-                        .tile_info_buffer()
-                        .as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: resources.stroke_info.binding().unwrap(),
                 },
             ],
         });
@@ -271,12 +272,45 @@ impl BrushTileAllocationPipeline {
         });
 
         Self {
-            bind_group,
+            bind_group: None,
+            layout,
             pipeline,
         }
     }
 
-    pub fn dispatch(&self, ec: &mut CommandEncoder, resources: &StrokeResources) {
+    pub fn prepare(
+        &mut self,
+        device: &Device,
+        dab_infos: &DynamicBuffer<DabInfos>,
+        tile_info_buffer: &Buffer,
+        stroke_info: &DynamicBuffer<StrokeInfo>,
+    ) {
+        self.bind_group = Some(device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush tile allocation bind group"),
+            layout: &self.layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: dab_infos.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: stroke_info.binding().unwrap(),
+                },
+            ],
+        }));
+    }
+
+    pub fn dispatch(&self, ec: &mut CommandEncoder, tile_allocation_dispatch: &Buffer) {
+        let bind_group = self
+            .bind_group
+            .as_ref()
+            .expect("BrushTileAllocationPipeline::prepare() must be called before dispatch()");
+
         ec.push_debug_group("brush preset tile allocation");
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
@@ -285,23 +319,26 @@ impl BrushTileAllocationPipeline {
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups_indirect(&resources.tile_allocation_dispatch, 0);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.dispatch_workgroups_indirect(tile_allocation_dispatch, 0);
         }
         ec.pop_debug_group();
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct BrushEstimatePipeline {
-    bind_group: BindGroup,
+    bind_group: Option<BindGroup>,
+    layout: BindGroupLayout,
     pipeline: ComputePipeline,
 }
 
 impl BrushEstimatePipeline {
     pub fn new(
         device: &Device,
-        resources: &StrokeResources,
         compiled_shader: Cow<'_, str>,
+        target_layer_format: TextureFormat,
+        external_var_layouts: &[BindGroupLayoutEntry],
     ) -> Self {
         let layout_entries = {
             let mut entries = vec![
@@ -360,7 +397,7 @@ impl BrushEstimatePipeline {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
-                        format: resources.target_layer.texture().format(),
+                        format: target_layer_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -396,63 +433,13 @@ impl BrushEstimatePipeline {
                     count: None,
                 },
             ];
-            entries.extend(resources.external_var_layouts.clone());
+            entries.extend_from_slice(external_var_layouts);
             entries
         };
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush estimate layout"),
             entries: &layout_entries,
-        });
-
-        let bind_group_entries = {
-            let mut entries = vec![
-                BindGroupEntry {
-                    binding: 0,
-                    resource: resources.output_samples.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: resources.stroke_info.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(
-                        resources.referenced_textures.texture_view(),
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: resources.referenced_textures.atlas_bounds_buffer_binding(),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: resources.target_layer_tile_info.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 5,
-                    resource: BindingResource::TextureView(&resources.target_layer),
-                },
-                BindGroupEntry {
-                    binding: 9,
-                    resource: resources.dab_infos.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 16,
-                    resource: resources.tile_allocation_dispatch.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 17,
-                    resource: resources.main_dispatch.as_entire_binding(),
-                },
-            ];
-            entries.extend(resources.external_var_bindings());
-            entries
-        };
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush estimate bind group"),
-            layout: &layout,
-            entries: &bind_group_entries,
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -476,12 +463,78 @@ impl BrushEstimatePipeline {
         });
 
         Self {
-            bind_group,
+            bind_group: None,
+            layout,
             pipeline,
         }
     }
 
+    pub fn prepare(
+        &mut self,
+        device: &Device,
+        output_samples: &DynamicBuffer<OutputSamples>,
+        stroke_info: &DynamicBuffer<StrokeInfo>,
+        referenced_textures: &TextureAtlas,
+        target_layer_tile_info: &Buffer,
+        target_layer: &TextureView,
+        dab_infos: &DynamicBuffer<DabInfos>,
+        tile_allocation_dispatch: &Buffer,
+        main_dispatch: &Buffer,
+        external_var_buffers: &[Buffer],
+    ) {
+        let mut entries = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: output_samples.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: stroke_info.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::TextureView(referenced_textures.texture_view()),
+            },
+            BindGroupEntry {
+                binding: 3,
+                resource: referenced_textures.atlas_bounds_buffer_binding(),
+            },
+            BindGroupEntry {
+                binding: 4,
+                resource: target_layer_tile_info.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 5,
+                resource: BindingResource::TextureView(target_layer),
+            },
+            BindGroupEntry {
+                binding: 9,
+                resource: dab_infos.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 16,
+                resource: tile_allocation_dispatch.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 17,
+                resource: main_dispatch.as_entire_binding(),
+            },
+        ];
+        entries.extend(external_var_entries(external_var_buffers));
+
+        self.bind_group = Some(device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush estimate bind group"),
+            layout: &self.layout,
+            entries: &entries,
+        }));
+    }
+
     pub fn dispatch(&self, ec: &mut CommandEncoder, x: u32, y: u32, z: u32) {
+        let bind_group = self
+            .bind_group
+            .as_ref()
+            .expect("BrushEstimatePipeline::prepare() must be called before dispatch()");
+
         ec.push_debug_group("brush preset estimate");
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
@@ -490,13 +543,18 @@ impl BrushEstimatePipeline {
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(0, bind_group, &[]);
             pass.dispatch_workgroups(x, y, z);
         }
         ec.pop_debug_group();
     }
 
-    pub fn dispatch_indirect(&self, ec: &mut CommandEncoder, resources: &StrokeResources) {
+    pub fn dispatch_indirect(&self, ec: &mut CommandEncoder, estimate_dispatch: &Buffer) {
+        let bind_group = self
+            .bind_group
+            .as_ref()
+            .expect("BrushEstimatePipeline::prepare() must be called before dispatch_indirect()");
+
         ec.push_debug_group("brush preset estimate");
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
@@ -505,23 +563,26 @@ impl BrushEstimatePipeline {
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups_indirect(&resources.estimate_dispatch, 0);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.dispatch_workgroups_indirect(estimate_dispatch, 0);
         }
         ec.pop_debug_group();
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct BrushMainPipeline {
-    bind_group: BindGroup,
+    bind_group: Option<BindGroup>,
+    layout: BindGroupLayout,
     pipeline: ComputePipeline,
 }
 
 impl BrushMainPipeline {
     pub fn new(
         device: &Device,
-        resources: &StrokeResources,
         compiled_shader: Cow<'_, str>,
+        target_layer_format: TextureFormat,
+        external_var_layouts: &[BindGroupLayoutEntry],
     ) -> Self {
         let layout_entries = {
             let mut entries = vec![
@@ -580,7 +641,7 @@ impl BrushMainPipeline {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
-                        format: resources.target_layer.texture().format(),
+                        format: target_layer_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -600,9 +661,7 @@ impl BrushMainPipeline {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
-                        format: resources.intermediate_buffers.textures()[0]
-                            .texture()
-                            .format(),
+                        format: target_layer_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -612,9 +671,7 @@ impl BrushMainPipeline {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
-                        format: resources.intermediate_buffers.textures()[1]
-                            .texture()
-                            .format(),
+                        format: target_layer_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -640,78 +697,13 @@ impl BrushMainPipeline {
                     count: None,
                 },
             ];
-            entries.extend(resources.external_var_layouts.clone());
+            entries.extend_from_slice(external_var_layouts);
             entries
         };
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush main layout"),
             entries: &layout_entries,
-        });
-
-        let bind_group_entries = {
-            let mut entries = vec![
-                BindGroupEntry {
-                    binding: 0,
-                    resource: resources.output_samples.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: resources.stroke_info.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(
-                        resources.referenced_textures.texture_view(),
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: resources.referenced_textures.atlas_bounds_buffer_binding(),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: resources.target_layer_tile_info.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 5,
-                    resource: BindingResource::TextureView(&resources.target_layer),
-                },
-                BindGroupEntry {
-                    binding: 6,
-                    resource: resources
-                        .intermediate_buffers
-                        .tile_info_buffer()
-                        .as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 7,
-                    resource: BindingResource::TextureView(
-                        &resources.intermediate_buffers.textures()[0],
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 8,
-                    resource: BindingResource::TextureView(
-                        &resources.intermediate_buffers.textures()[1],
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 9,
-                    resource: resources.dab_infos.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 10,
-                    resource: resources.pass_fence.binding().unwrap(),
-                },
-            ];
-            entries.extend(resources.external_var_bindings());
-            entries
-        };
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush main bind group"),
-            layout: &layout,
-            entries: &bind_group_entries,
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -735,12 +727,86 @@ impl BrushMainPipeline {
         });
 
         Self {
-            bind_group,
+            bind_group: None,
+            layout,
             pipeline,
         }
     }
 
-    pub fn dispatch(&self, ec: &mut CommandEncoder, resources: &StrokeResources) {
+    pub fn prepare(
+        &mut self,
+        device: &Device,
+        output_samples: &DynamicBuffer<OutputSamples>,
+        stroke_info: &DynamicBuffer<StrokeInfo>,
+        referenced_textures: &TextureAtlas,
+        target_layer_tile_info: &Buffer,
+        target_layer: &TextureView,
+        intermediate_buffers: &DynamicIntermediateBuffer,
+        dab_infos: &DynamicBuffer<DabInfos>,
+        pass_fence: &DynamicBuffer<PassFence>,
+        external_var_buffers: &[Buffer],
+    ) {
+        let mut entries = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: output_samples.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: stroke_info.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::TextureView(referenced_textures.texture_view()),
+            },
+            BindGroupEntry {
+                binding: 3,
+                resource: referenced_textures.atlas_bounds_buffer_binding(),
+            },
+            BindGroupEntry {
+                binding: 4,
+                resource: target_layer_tile_info.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 5,
+                resource: BindingResource::TextureView(target_layer),
+            },
+            BindGroupEntry {
+                binding: 6,
+                resource: intermediate_buffers.tile_info_buffer().as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&intermediate_buffers.textures()[0]),
+            },
+            BindGroupEntry {
+                binding: 8,
+                resource: BindingResource::TextureView(&intermediate_buffers.textures()[1]),
+            },
+            BindGroupEntry {
+                binding: 9,
+                resource: dab_infos.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 10,
+                resource: pass_fence.binding().unwrap(),
+            },
+        ];
+        entries.extend(external_var_entries(external_var_buffers));
+
+        self.bind_group = Some(device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush main bind group"),
+            layout: &self.layout,
+            entries: &entries,
+        }));
+    }
+
+    pub fn dispatch(&self, ec: &mut CommandEncoder, main_dispatch: &Buffer) {
+        let bind_group = self
+            .bind_group
+            .as_ref()
+            .expect("BrushMainPipeline::prepare() must be called before dispatch()");
+
         ec.push_debug_group("brush preset main");
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
@@ -749,8 +815,8 @@ impl BrushMainPipeline {
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups_indirect(&resources.main_dispatch, 0);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.dispatch_workgroups_indirect(main_dispatch, 0);
         }
         ec.pop_debug_group();
     }
