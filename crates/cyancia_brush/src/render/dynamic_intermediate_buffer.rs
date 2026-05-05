@@ -30,7 +30,7 @@ pub struct DynamicIntermediateBuffer {
 impl DynamicIntermediateBuffer {
     pub fn new(initial: u32, texel_type: TexelType, device: Device, queue: Queue) -> Self {
         let desc = TextureDescriptor {
-            label: Some("dynamic intermediate buffer texture"),
+            label: None,
             size: Extent3d {
                 width: GpuTileStorageInner::TILE_SIZE,
                 height: GpuTileStorageInner::TILE_SIZE,
@@ -46,8 +46,14 @@ impl DynamicIntermediateBuffer {
             view_formats: &[],
         };
 
-        let texture_a_raw = device.create_texture(&desc);
-        let texture_b_raw = device.create_texture(&desc);
+        let texture_a_raw = device.create_texture(&TextureDescriptor {
+            label: Some("dynamic intermediate texture a"),
+            ..desc
+        });
+        let texture_b_raw = device.create_texture(&TextureDescriptor {
+            label: Some("dynamic intermediate texture b"),
+            ..desc
+        });
         let texture_a = texture_a_raw.create_view(&Default::default());
         let texture_b = texture_b_raw.create_view(&Default::default());
 
@@ -72,6 +78,22 @@ impl DynamicIntermediateBuffer {
         }
     }
 
+    pub fn src_texture(&self, is_even_round: bool) -> &TextureView {
+        if is_even_round {
+            &self.textures[0]
+        } else {
+            &self.textures[1]
+        }
+    }
+
+    pub fn dst_texture(&self, is_even_round: bool) -> &TextureView {
+        if is_even_round {
+            &self.textures[1]
+        } else {
+            &self.textures[0]
+        }
+    }
+
     pub fn textures(&self) -> &[TextureView; 2] {
         &self.textures
     }
@@ -89,9 +111,7 @@ impl DynamicIntermediateBuffer {
         // old texture content at the same array-layer index, causing the
         // previous stroke's tile pixels to be composited into the wrong canvas
         // position (e.g. tile (1,1) visually "flying" to position (1,3)).
-        let mut ec = self
-            .device
-            .create_command_encoder(&Default::default());
+        let mut ec = self.device.create_command_encoder(&Default::default());
         for texture in &self.textures_inner {
             ec.clear_texture(texture, &Default::default());
         }
@@ -103,5 +123,9 @@ impl DynamicIntermediateBuffer {
             buf: vec![GpuTileInfo::NULL; self.tiles as usize],
         });
         self.tile_info.write_buffer(&self.device, &self.queue);
+    }
+
+    pub fn texel_type(&self) -> TexelType {
+        self.texel_type
     }
 }

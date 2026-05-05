@@ -4,18 +4,19 @@ use std::{
 };
 
 use bevy_math::URect;
+use bytemuck::Contiguous;
 use cyancia_image::tile::{GpuTileInfo, GpuTileStorageInner};
 use cyancia_render::buffer::DynamicBuffer;
 use encase::ShaderType;
-use glam::UVec3;
+use glam::{UVec3, UVec4};
 use toml::de;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
-    CommandEncoder, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TextureSampleType, TextureViewDimension,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferAddress, BufferBindingType,
+    BufferUsages, CommandEncoder, ComputePass, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StorageTextureAccess, TextureSampleType, TextureViewDimension,
 };
 
 use crate::render::{
@@ -143,19 +144,14 @@ impl BrushInputSamplingPipeline {
         }
     }
 
-    pub fn dispatch(&self, ec: &mut CommandEncoder) {
+    pub fn dispatch(&self, pass: &mut ComputePass) {
+        pass.push_debug_group("brush preset input sampling");
         {
-            ec.push_debug_group("brush preset input sampling");
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush sample compute pass"),
-                ..Default::default()
-            });
-
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
-        ec.pop_debug_group();
+        pass.pop_debug_group();
     }
 }
 
@@ -273,19 +269,14 @@ impl BrushTileAllocationPipeline {
         }
     }
 
-    pub fn dispatch(&self, ec: &mut CommandEncoder, resources: &StrokeResources) {
-        ec.push_debug_group("brush preset tile allocation");
+    pub fn dispatch(&self, pass: &mut ComputePass, resources: &StrokeResources) {
+        pass.push_debug_group("brush preset tile allocation");
         {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush tile allocation compute pass"),
-                ..Default::default()
-            });
-
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.dispatch_workgroups_indirect(&resources.tile_allocation_dispatch, 0);
         }
-        ec.pop_debug_group();
+        pass.pop_debug_group();
     }
 }
 
@@ -388,7 +379,7 @@ impl BrushEstimatePipeline {
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
-                        min_binding_size: Some(UVec3::min_size()),
+                        min_binding_size: Some(UVec4::min_size()),
                     },
                     count: None,
                 },
@@ -478,39 +469,30 @@ impl BrushEstimatePipeline {
         }
     }
 
-    pub fn dispatch(&self, ec: &mut CommandEncoder, x: u32, y: u32, z: u32) {
-        ec.push_debug_group("brush preset estimate");
+    pub fn dispatch(&self, pass: &mut ComputePass, x: u32, y: u32, z: u32) {
+        pass.push_debug_group("brush preset estimate");
         {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush estimate compute pass"),
-                ..Default::default()
-            });
-
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.dispatch_workgroups(x, y, z);
         }
-        ec.pop_debug_group();
+        pass.pop_debug_group();
     }
 
-    pub fn dispatch_indirect(&self, ec: &mut CommandEncoder, resources: &StrokeResources) {
-        ec.push_debug_group("brush preset estimate");
+    pub fn dispatch_indirect(&self, pass: &mut ComputePass, resources: &StrokeResources) {
+        pass.push_debug_group("brush preset estimate");
         {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush estimate compute pass"),
-                ..Default::default()
-            });
-
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.dispatch_workgroups_indirect(&resources.estimate_dispatch, 0);
         }
-        ec.pop_debug_group();
+        pass.pop_debug_group();
     }
 }
 
 pub struct BrushMainPipeline {
-    bind_group: BindGroup,
+    bind_group_even: BindGroup,
+    bind_group_odd: BindGroup,
     pipeline: ComputePipeline,
 }
 
@@ -596,10 +578,8 @@ impl BrushMainPipeline {
                     binding: 7,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: resources.intermediate_buffers.textures()[0]
-                            .texture()
-                            .format(),
+                        access: StorageTextureAccess::ReadOnly,
+                        format: resources.intermediate_buffers.texel_type().wgpu_format(),
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -608,10 +588,8 @@ impl BrushMainPipeline {
                     binding: 8,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: resources.intermediate_buffers.textures()[1]
-                            .texture()
-                            .format(),
+                        access: StorageTextureAccess::WriteOnly,
+                        format: resources.intermediate_buffers.texel_type().wgpu_format(),
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -623,16 +601,6 @@ impl BrushMainPipeline {
                         ty: BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: Some(DabInfos::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 10,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(PassFence::min_size()),
                     },
                     count: None,
                 },
@@ -682,33 +650,60 @@ impl BrushMainPipeline {
                         .as_entire_binding(),
                 },
                 BindGroupEntry {
-                    binding: 7,
-                    resource: BindingResource::TextureView(
-                        &resources.intermediate_buffers.textures()[0],
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 8,
-                    resource: BindingResource::TextureView(
-                        &resources.intermediate_buffers.textures()[1],
-                    ),
-                },
-                BindGroupEntry {
                     binding: 9,
                     resource: resources.dab_infos.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 10,
-                    resource: resources.pass_fence.binding().unwrap(),
                 },
             ];
             entries.extend(resources.external_var_bindings());
             entries
         };
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+
+        let bind_group_entries_even = {
+            let mut entries = bind_group_entries.clone();
+            entries.extend([
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(
+                        &resources.intermediate_buffers.src_texture(true),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(
+                        &resources.intermediate_buffers.dst_texture(true),
+                    ),
+                },
+            ]);
+            entries
+        };
+        let bind_group_even = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group"),
             layout: &layout,
-            entries: &bind_group_entries,
+            entries: &bind_group_entries_even,
+        });
+
+        let bind_group_entries_odd = {
+            let mut entries = bind_group_entries.clone();
+            entries.extend([
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(
+                        &resources.intermediate_buffers.src_texture(false),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(
+                        &resources.intermediate_buffers.dst_texture(false),
+                    ),
+                },
+            ]);
+            entries
+        };
+        let bind_group_odd = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush main bind group"),
+            layout: &layout,
+            entries: &bind_group_entries_odd,
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -732,23 +727,33 @@ impl BrushMainPipeline {
         });
 
         Self {
-            bind_group,
+            bind_group_even,
+            bind_group_odd,
             pipeline,
         }
     }
 
-    pub fn dispatch(&self, ec: &mut CommandEncoder, resources: &StrokeResources) {
-        ec.push_debug_group("brush preset main");
+    pub fn dispatch(&self, pass: &mut ComputePass, resources: &StrokeResources) {
+        pass.push_debug_group("brush preset main");
         {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush main compute pass"),
-                ..Default::default()
-            });
-
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups_indirect(&resources.main_dispatch, 0);
+
+            for (i, offset) in resources.main_dispatch_offsets.iter().enumerate() {
+                pass.push_debug_group(&format!("brush preset main dispatch {}", i));
+                pass.set_bind_group(
+                    0,
+                    // TODO: Accumulate previous dabs.
+                    if i % 2 == 0 {
+                        &self.bind_group_even
+                    } else {
+                        &self.bind_group_odd
+                    },
+                    &[],
+                );
+                pass.dispatch_workgroups_indirect(&resources.main_dispatch, *offset);
+                pass.pop_debug_group();
+            }
         }
-        ec.pop_debug_group();
+        pass.pop_debug_group();
     }
 }

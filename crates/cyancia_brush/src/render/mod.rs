@@ -33,11 +33,11 @@ use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferAddress, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoder, ComputePipeline, ComputePipelineDescriptor,
-    Device, Extent3d, MapMode, Origin3d, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDimension,
+    BufferDescriptor, BufferUsages, CommandEncoder, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, Extent3d, MapMode, Origin3d, PipelineLayoutDescriptor,
+    Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
+    TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDimension,
     naga::StorageAccess,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::PollType,
@@ -135,6 +135,7 @@ impl BrushPresetOperator {
             let now = std::time::Instant::now();
             let compiled = instance.compile(EXTERNAL_VARIABLE_BASE_BINDING).unwrap();
             log::info!("Brush preset compilation: {:?}", now.elapsed());
+            println!("Compiled brush preset: {}", compiled);
             compiled
         });
 
@@ -185,7 +186,7 @@ impl BrushPresetOperator {
         }
 
         let now = std::time::Instant::now();
-        renderer.postprocess_stroke(&self.device, &self.queue);
+        // renderer.postprocess_stroke(&self.device, &self.queue);
         renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
     }
@@ -196,9 +197,8 @@ pub struct BrushPresetRenderer {
     tile_allocation: BrushTileAllocationPipeline,
     estimate: BrushEstimatePipeline,
     main: BrushMainPipeline,
-    stroke_pp_estimate: BrushEstimatePipeline,
     stroke_pp_tile_allocation: BrushTileAllocationPipeline,
-    stroke_pp_main: BrushMainPipeline,
+    stroke_pp: Vec<(BrushEstimatePipeline, BrushMainPipeline)>,
     resources: StrokeResources,
 }
 
@@ -225,30 +225,26 @@ impl BrushPresetRenderer {
             brush.main_graph.size_estimation.clone().into(),
         );
         let main = BrushMainPipeline::new(device, &resources, brush.main_graph.main.clone().into());
-        let stroke_pp_estimate = BrushEstimatePipeline::new(
-            device,
-            &resources,
-            brush
-                .stroke_postprocess_graphs
-                .size_estimation
-                .clone()
-                .into(),
-        );
         let stroke_pp_tile_allocation = BrushTileAllocationPipeline::new(device, &resources, true);
-        let stroke_pp_main = BrushMainPipeline::new(
-            device,
-            &resources,
-            brush.stroke_postprocess_graphs.main.clone().into(),
-        );
+
+        let mut stroke_pp = Vec::new();
+        for graph in &brush.stroke_postprocess_graphs {
+            let estimate = BrushEstimatePipeline::new(
+                device,
+                &resources,
+                graph.size_estimation.clone().into(),
+            );
+            let main = BrushMainPipeline::new(device, &resources, graph.main.clone().into());
+            stroke_pp.push((estimate, main));
+        }
 
         Self {
             input_sampling,
             tile_allocation,
             estimate,
             main,
-            stroke_pp_estimate,
             stroke_pp_tile_allocation,
-            stroke_pp_main,
+            stroke_pp,
             resources,
         }
     }
@@ -273,16 +269,19 @@ impl BrushPresetRenderer {
             0,
             PenInput::min_size().into_integer(),
         );
-        ec.clear_buffer(self.resources.pass_fence.inner_buffer().unwrap(), 0, None);
 
+        ec.push_debug_group("brush preset update stroke");
         {
-            ec.push_debug_group("brush preset update stroke");
-            self.input_sampling.dispatch(&mut ec);
-            self.estimate.dispatch_indirect(&mut ec, &self.resources);
-            self.tile_allocation.dispatch(&mut ec, &self.resources);
-            self.main.dispatch(&mut ec, &self.resources);
-            ec.pop_debug_group();
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("brush preset update pass"),
+                ..Default::default()
+            });
+            self.input_sampling.dispatch(&mut pass);
+            self.estimate.dispatch_indirect(&mut pass, &self.resources);
+            self.tile_allocation.dispatch(&mut pass, &self.resources);
+            self.main.dispatch(&mut pass, &self.resources);
         }
+        ec.pop_debug_group();
 
         queue.submit([ec.finish()]);
     }
@@ -293,16 +292,26 @@ impl BrushPresetRenderer {
         }
 
         let mut ec = device.create_command_encoder(&Default::default());
-        ec.clear_buffer(self.resources.pass_fence.inner_buffer().unwrap(), 0, None);
 
         ec.push_debug_group("brush preset stroke postprocess");
-        self.stroke_pp_estimate.dispatch(&mut ec, 1, 1, 1);
-        self.stroke_pp_tile_allocation
-            .dispatch(&mut ec, &self.resources);
-        self.stroke_pp_main.dispatch(&mut ec, &self.resources);
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("brush preset stroke postprocess pass"),
+                ..Default::default()
+            });
+
+            for (estimate, main) in &self.stroke_pp {
+                estimate.dispatch(&mut pass, 1, 1, 1);
+                self.stroke_pp_tile_allocation
+                    .dispatch(&mut pass, &self.resources);
+                // main.dispatch(&mut pass, &self.resources);
+            }
+        }
         ec.pop_debug_group();
 
+        unsafe { device.start_graphics_debugger_capture() };
         queue.submit([ec.finish()]);
+        unsafe { device.stop_graphics_debugger_capture() };
     }
 
     pub fn copy_last_surface_to_layer(
@@ -427,12 +436,6 @@ impl BrushPresetRenderer {
             stroke_info.accumulated_bound_min,
             stroke_info.accumulated_bound_max
         );
-        if stroke_info.fence_sync_failures > 0 {
-            log::warn!(
-                "{} fence sync failures occurred during stroke rendering.",
-                stroke_info.fence_sync_failures
-            );
-        }
     }
 }
 
@@ -458,7 +461,6 @@ pub struct StrokeInfo {
     pub accumulated_bound_max: IVec2,
     pub max_affected_tiles_count: UVec2,
     pub total_dabs: u32,
-    pub fence_sync_failures: u32,
 }
 
 impl Default for StrokeInfo {
@@ -468,7 +470,6 @@ impl Default for StrokeInfo {
             accumulated_bound_max: IVec2::MIN,
             max_affected_tiles_count: Default::default(),
             total_dabs: Default::default(),
-            fence_sync_failures: Default::default(),
         }
     }
 }
@@ -530,7 +531,6 @@ pub struct StrokeResources {
     pub output_samples: DynamicBuffer<OutputSamples>,
     pub stroke_info: DynamicBuffer<StrokeInfo>,
     pub dab_infos: DynamicBuffer<DabInfos>,
-    pub pass_fence: DynamicBuffer<PassFence>,
 
     pub external_var_layouts: Vec<BindGroupLayoutEntry>,
     pub external_var_buffers: Vec<Buffer>,
@@ -544,6 +544,7 @@ pub struct StrokeResources {
     pub estimate_dispatch: Buffer,
     pub tile_allocation_dispatch: Buffer,
     pub main_dispatch: Buffer,
+    pub main_dispatch_offsets: [BufferAddress; MAX_SAMPLES_BETWEEN_INPUTS],
 }
 
 impl StrokeResources {
@@ -579,10 +580,6 @@ impl StrokeResources {
         let mut dab_infos = DynamicBuffer::new(Some("dab infos buffer"), BufferUsages::STORAGE);
         dab_infos.push(&DabInfos::default());
         dab_infos.write_buffer(device, queue);
-
-        let mut pass_fence = DynamicBuffer::new(Some("pass fence buffer"), BufferUsages::STORAGE);
-        pass_fence.push(&PassFence::default());
-        pass_fence.write_buffer(device, queue);
 
         let mut external_var_layouts = Vec::new();
         let mut cur_binding = EXTERNAL_VARIABLE_BASE_BINDING;
@@ -679,11 +676,15 @@ impl StrokeResources {
         tile_allocation_dispatch.push(&UVec4::ZERO);
         tile_allocation_dispatch.write_buffer(device, queue);
 
-        let mut main_dispatch = DynamicBuffer::new(
-            Some("main dispatch buffer"),
+        let mut main_dispatch = BufferVec::new(
+            Some("main dispatch buffer".to_string()),
             BufferUsages::STORAGE | BufferUsages::INDIRECT,
         );
-        main_dispatch.push(&UVec4::ZERO);
+        let mut main_dispatch_offsets = [0; MAX_SAMPLES_BETWEEN_INPUTS];
+        for i in 0..MAX_SAMPLES_BETWEEN_INPUTS {
+            let (_, offset) = main_dispatch.push(&UVec4::ZERO);
+            main_dispatch_offsets[i] = offset;
+        }
         main_dispatch.write_buffer(device, queue);
 
         Self {
@@ -694,7 +695,6 @@ impl StrokeResources {
             output_samples,
             stroke_info,
             dab_infos,
-            pass_fence,
 
             external_var_layouts,
             external_var_buffers,
@@ -708,6 +708,7 @@ impl StrokeResources {
             estimate_dispatch: estimate_dispatch.into_inner_buffer().unwrap(),
             tile_allocation_dispatch: tile_allocation_dispatch.into_inner_buffer().unwrap(),
             main_dispatch: main_dispatch.into_inner_buffer().unwrap(),
+            main_dispatch_offsets,
         }
     }
 
@@ -727,10 +728,6 @@ impl StrokeResources {
         self.dab_infos.clear();
         self.dab_infos.push(&DabInfos::default());
         self.dab_infos.write_buffer(device, queue);
-
-        self.pass_fence.clear();
-        self.pass_fence.push(&PassFence::default());
-        self.pass_fence.write_buffer(device, queue);
 
         self.intermediate_buffers.clear();
 

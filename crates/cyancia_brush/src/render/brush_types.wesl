@@ -15,12 +15,7 @@ struct StrokeInfo {
     @if(!SIZE_ESTIMATION) accumulated_bound_min: vec2i,
     @if(!SIZE_ESTIMATION) accumulated_bound_max: vec2i,
 
-    @if(SIZE_ESTIMATION) max_affected_tiles_count_x: atomic<u32>,
-    @if(SIZE_ESTIMATION) max_affected_tiles_count_y: atomic<u32>,
-    @if(!SIZE_ESTIMATION) max_affected_tiles_count: vec2u,
-
     total_dabs: u32,
-    fence_sync_failures: u32,
 }
 
 struct DynamicTileInfo {
@@ -63,9 +58,4 @@ struct PenInput {
     // this one.  Computed on the CPU by BezierInputSampler.
     bezier_control_prev: vec2f,
     bezier_control_cur: vec2f,
-}
-
-struct PassFence {
-    cur_sample: atomic<u32>,
-    cur_sample_finished_threads: atomic<u32>,
 }

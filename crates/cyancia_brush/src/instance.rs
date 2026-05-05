@@ -61,7 +61,7 @@ impl Display for CompiledBrushGraph {
 pub struct CompiledBrushPreset {
     pub input_sampling: String,
     pub main_graph: CompiledBrushGraph,
-    pub stroke_postprocess_graphs: CompiledBrushGraph,
+    pub stroke_postprocess_graphs: Vec<CompiledBrushGraph>,
     pub n_stroke_postprocess_graphs: u32,
     pub texture_usage: Vec<TextureId>,
     pub external_vars: Arc<GraphExternalVariableStorage>,
@@ -80,11 +80,15 @@ impl Display for CompiledBrushPreset {
             "-------------- Main graph shader -------------- \n{}",
             self.main_graph
         )?;
-        writeln!(
-            f,
-            "-------------- Stroke postprocess graph shader -------------- \n{}",
-            self.stroke_postprocess_graphs
-        )?;
+
+        for (i, graph) in self.stroke_postprocess_graphs.iter().enumerate() {
+            writeln!(
+                f,
+                "-------------- Stroke postprocess graph shader {} -------------- \n{}",
+                i, graph
+            )?;
+        }
+
         writeln!(f, "-------------- Texture usages --------------")?;
         for usage in &self.texture_usage {
             writeln!(f, "  - {}", usage)?;
@@ -436,12 +440,17 @@ fn compile_template(
     external_variable_bindings: &str,
     size_estimation: bool,
     postprocess: bool,
+    n_stroke_pp: u32,
 ) -> anyhow::Result<String> {
     let shader = include_str!("render/brush_template.wesl")
         .replace("//CODEGENFLAG_COMPILED_GRAPH", &shader)
         .replace(
             "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
             external_variable_bindings,
+        )
+        .replace(
+            "//CODEGENFLAG_N_STROKE_PP",
+            n_stroke_pp.to_string().as_str(),
         );
 
     let mut resolver = VirtualResolver::new();
@@ -471,8 +480,8 @@ fn compile_template_main(
     let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
 
     Ok(CompiledBrushGraph {
-        main: compile_template(&shader, external_variable_bindings, false, false)?,
-        size_estimation: compile_template(&shader, external_variable_bindings, true, false)?,
+        main: compile_template(&shader, external_variable_bindings, false, false, 0)?,
+        size_estimation: compile_template(&shader, external_variable_bindings, true, false, 0)?,
     })
 }
 
@@ -480,45 +489,33 @@ fn compile_template_stroke_postprocess(
     graphs: &[Graph],
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
-) -> anyhow::Result<CompiledBrushGraph> {
+) -> anyhow::Result<Vec<CompiledBrushGraph>> {
     let compiled_graphs = graphs
         .iter()
         .map(|graph| graph.compile(Default::default(), Default::default(), texture_usage))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut concated_graphs_size_estimation = String::new();
-    let mut concated_graphs_main = String::new();
-    let len = compiled_graphs.len();
-    for (i, (_, g)) in compiled_graphs.into_iter().enumerate() {
-        concated_graphs_size_estimation.extend(g.chars().chain(['\n']));
-        // TODO: Don't hardcode these code.
-        concated_graphs_main.extend(
-            format!(
-                "
-                    wait_for_sample({i});
-                    {g}
-                    finish_sample_thread();
-                    storageBarrier();
-                "
-            )
-            .chars(),
-        );
+    let mut compiled_brushes = Vec::with_capacity(graphs.len());
+    for (_, g) in compiled_graphs {
+        compiled_brushes.push(CompiledBrushGraph {
+            main: compile_template(
+                &g,
+                external_variable_bindings,
+                false,
+                true,
+                graphs.len() as u32,
+            )?,
+            size_estimation: compile_template(
+                &g,
+                external_variable_bindings,
+                true,
+                true,
+                graphs.len() as u32,
+            )?,
+        });
     }
 
-    Ok(CompiledBrushGraph {
-        main: compile_template(
-            &concated_graphs_main,
-            external_variable_bindings,
-            false,
-            true,
-        )?,
-        size_estimation: compile_template(
-            &concated_graphs_size_estimation,
-            external_variable_bindings,
-            true,
-            true,
-        )?,
-    })
+    Ok(compiled_brushes)
 }
 
 pub const BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
