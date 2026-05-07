@@ -47,218 +47,304 @@ use crate::{
 use crate::graph::node::GraphNodeRunError;
 use cyancia_shader_graph_derive::stateless;
 
-macro_rules! impl_math_format {
-    ($fmt:expr, $a:expr, $b:expr, $c:expr, ($one:literal)) => {
-        format!($fmt, $a)
-    };
-    ($fmt:expr, $a:expr, $b:expr, $c:expr, ($one:literal, $two:literal)) => {
-        format!($fmt, $a, $b)
-    };
-    ($fmt:expr, $a:expr, $b:expr, $c:expr, ($one:literal, $two:literal, $three:literal)) => {
-        format!($fmt, $a, $b, $c)
-    };
-}
+#[derive(Default, Clone)]
+pub struct ScalarMathNode;
 
-macro_rules! math_node {
-    (
-        $node_name:ident,
-        $node_mode_name:ident,
-        $node_message_name:ident,
-        $node_title:literal,
-        $header_color:expr,
-        $slot_ty:ty = $slot_default:expr,
-        $default_op:ident,
-        $($op_name:ident, $op_str:literal => ($func_call:expr, $($operands_name:literal),* $(,)?)),* $(,)?
-    ) => {
-        #[derive(Default, Clone)]
-        pub struct $node_name;
-
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-        pub enum $node_mode_name {
-            $($op_name),*
-        }
-
-        impl $node_mode_name {
-            pub const ALL: [$node_mode_name; count!($($op_name)*)] = [
-                $($node_mode_name::$op_name),*
-            ];
-
-            pub fn operands_names(&self) -> &[&'static str] {
-                match self {
-                    $( $node_mode_name::$op_name => &[$($operands_name),*], )*
-                }
-            }
-
-            #[allow(unused_variables)]
-            pub fn func_call(&self, input_a: &str, input_b: &str, input_c: &str) -> String {
-                match self {
-                    $(
-                        $node_mode_name::$op_name => {
-                            impl_math_format!($func_call, input_a, input_b, input_c, ($($operands_name),*))
-                        },
-                    )*
-                }
-            }
-        }
-
-        impl ToString for $node_mode_name {
-            fn to_string(&self) -> String {
-                match self {
-                    $( $node_mode_name::$op_name => $op_str, )*
-                }
-                .to_string()
-            }
-        }
-
-        #[derive(Clone)]
-        pub enum $node_message_name {
-            ModeChanged($node_mode_name),
-            LiteralUpdate(ErasedGraphLiteralUpdateMessage),
-        }
-
-        impl<Data: GraphData> GraphNode<Data> for $node_name {
-            type State = $node_mode_name;
-
-            type Message = $node_message_name;
-
-            fn name(&self) -> &'static str {
-                $node_title
-            }
-
-            fn default_state(&self) -> Self::State {
-                $node_mode_name::$default_op
-            }
-
-            fn header_color(&self) -> Color {
-                $header_color
-            }
-
-            fn create_inputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext<'_, Data>,) -> Vec<GraphDefaultInputSlot> {
-                vec![
-                    GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
-                    GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
-                    GraphDefaultInputSlot::new::<$slot_ty>($slot_default),
-                ]
-            }
-
-            fn create_outputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext<'_, Data>,) -> Vec<GraphDefaultOutputSlot> {
-                vec![GraphDefaultOutputSlot::new::<$slot_ty>()]
-            }
-
-            fn view_inputs(
-                &self,
-                state: &Self::State,
-                ctx: GraphNodeInputsViewContext<'_, Data>,
-            ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-                let mut column = Column::new().spacing(2);
-                column = column.push(pick_list(
-                    $node_mode_name::ALL,
-                    Some(*state),
-                    $node_message_name::ModeChanged,
-                ));
-
-                for (i, slot_name) in state.operands_names().iter().enumerate() {
-                    if let Some(elem) = ctx.view_input(slot_name, i) {
-                        column = column.push(elem.map(|m| $node_message_name::LiteralUpdate(m)));
-                    }
-                }
-
-                column.spacing(2).into()
-            }
-
-            fn view_outputs(
-                &self,
-                _state: &Self::State,
-                ctx: GraphNodeOutputsViewContext<'_, Data>,
-            ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-                let mut column = Column::new().spacing(2);
-
-                if let Some(elem) = ctx.view_output("Result", 0) {
-                    column = column.push(elem.map(|m| $node_message_name::LiteralUpdate(m)));
-                }
-
-                column.into()
-            }
-
-            fn update(
-                &self,
-                state: &mut Self::State,
-                message: Self::Message,
-                mut ctx: GraphNodeUpdateContext<'_, Data>,
-            ) {
-                match message {
-                    $node_message_name::ModeChanged(mode) => {
-                        *state = mode;
-                    }
-                    $node_message_name::LiteralUpdate(msg) => {
-                        ctx.update_literal(msg);
-                    }
-                }
-            }
-
-            fn generate_code(
-                &self,
-                state: &Self::State,
-                mut ctx: GraphNodeCodeGenContext<'_, Data>,
-            ) -> Result<String, GraphNodeCodeGenError> {
-                let input_a = ctx.get_input(0)?;
-                let input_b = ctx.get_input(1)?;
-                let input_c = ctx.get_input(2)?;
-                let output = ctx.get_output(0)?;
-
-                Ok(format!(
-                    "let {} = {};\n",
-                    output,
-                    state.func_call(&input_a, &input_b, &input_c)
-                ))
-            }
-        }
-    };
-}
-
-math_node!(
-    ScalarMathNode,
-    ScalarMathNodeMode,
-    ScalarMathNodeMessage,
-    "Scalar Math",
-    color!(0x90be6d),
-    F32Type = 0.0,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScalarMathNodeMode {
     Add,
-    Add, "Add" => ("{} + {}", "A", "B"),
-    Subtract, "Subtract" => ("{} - {}", "Minuend", "Subtrahend"),
-    Multiply, "Multiply" => ("{} * {}", "A", "B"),
-    Divide, "Divide" => ("{} / {}", "Dividend", "Divisor"),
-    Acos, "Acos" => ("acos({})", "X"),
-    Acosh, "Acosh" => ("acosh({})", "X"),
-    Asin, "Asin" => ("asin({})", "X"),
-    Asinh, "Asinh" => ("asinh({})", "X"),
-    Atan, "Atan" => ("atan({})", "X"),
-    Atanh, "Atanh" => ("atanh({})", "X"),
-    Ceil, "Ceil" => ("ceil({})", "X"),
-    Cos, "Cos" => ("cos({})", "X"),
-    Cosh, "Cosh" => ("cosh({})", "X"),
-    Degrees, "Degrees" => ("degrees({})", "X"),
-    Exp, "Exp" => ("exp({})", "X"),
-    Exp2, "Exp2" => ("exp2({})", "X"),
-    Floor, "Floor" => ("floor({})", "X"),
-    Fract, "Fract" => ("fract({})", "X"),
-    InverseSqrt, "Inverse Sqrt" => ("inverseSqrt({})", "X"),
-    Ln, "Ln" => ("log({})", "X"),
-    Log2, "Log2" => ("log2({})", "X"),
-    Max, "Max" => ("max({}, {})", "A", "B"),
-    Min, "Min" => ("min({}, {})", "A", "B"),
-    Pow, "Pow" => ("pow({}, {})", "Base", "Exponent"),
-    Radians, "Radians" => ("radians({})", "X"),
-    Round, "Round" => ("round({})", "X"),
-    Saturate, "Saturate" => ("saturate({})", "X"),
-    Sign, "Sign" => ("sign({})", "X"),
-    Sin, "Sin" => ("sin({})", "X"),
-    Sinh, "Sinh" => ("sinh({})", "X"),
-    Sqrt, "Sqrt" => ("sqrt({})", "X"),
-    Tan, "Tan" => ("tan({})", "X"),
-    Tanh, "Tanh" => ("tanh({})", "X"),
-    Trunc, "Trunc" => ("trunc({})", "X"),
-);
+    Subtract,
+    Multiply,
+    Divide,
+    Acos,
+    Acosh,
+    Asin,
+    Asinh,
+    Atan,
+    Atanh,
+    Ceil,
+    Cos,
+    Cosh,
+    Degrees,
+    Exp,
+    Exp2,
+    Floor,
+    Fract,
+    InverseSqrt,
+    Ln,
+    Log2,
+    Max,
+    Min,
+    Pow,
+    Radians,
+    Round,
+    Saturate,
+    Sign,
+    Sin,
+    Sinh,
+    Sqrt,
+    Tan,
+    Tanh,
+    Trunc,
+}
+
+impl ScalarMathNodeMode {
+    pub const ALL: [ScalarMathNodeMode; 34] = [
+        ScalarMathNodeMode::Add,
+        ScalarMathNodeMode::Subtract,
+        ScalarMathNodeMode::Multiply,
+        ScalarMathNodeMode::Divide,
+        ScalarMathNodeMode::Acos,
+        ScalarMathNodeMode::Acosh,
+        ScalarMathNodeMode::Asin,
+        ScalarMathNodeMode::Asinh,
+        ScalarMathNodeMode::Atan,
+        ScalarMathNodeMode::Atanh,
+        ScalarMathNodeMode::Ceil,
+        ScalarMathNodeMode::Cos,
+        ScalarMathNodeMode::Cosh,
+        ScalarMathNodeMode::Degrees,
+        ScalarMathNodeMode::Exp,
+        ScalarMathNodeMode::Exp2,
+        ScalarMathNodeMode::Floor,
+        ScalarMathNodeMode::Fract,
+        ScalarMathNodeMode::InverseSqrt,
+        ScalarMathNodeMode::Ln,
+        ScalarMathNodeMode::Log2,
+        ScalarMathNodeMode::Max,
+        ScalarMathNodeMode::Min,
+        ScalarMathNodeMode::Pow,
+        ScalarMathNodeMode::Radians,
+        ScalarMathNodeMode::Round,
+        ScalarMathNodeMode::Saturate,
+        ScalarMathNodeMode::Sign,
+        ScalarMathNodeMode::Sin,
+        ScalarMathNodeMode::Sinh,
+        ScalarMathNodeMode::Sqrt,
+        ScalarMathNodeMode::Tan,
+        ScalarMathNodeMode::Tanh,
+        ScalarMathNodeMode::Trunc,
+    ];
+
+    pub fn operands_names(&self) -> &[&'static str] {
+        match self {
+            ScalarMathNodeMode::Add => &["A", "B"],
+            ScalarMathNodeMode::Subtract => &["Minuend", "Subtrahend"],
+            ScalarMathNodeMode::Multiply => &["A", "B"],
+            ScalarMathNodeMode::Divide => &["Dividend", "Divisor"],
+            ScalarMathNodeMode::Acos => &["X"],
+            ScalarMathNodeMode::Acosh => &["X"],
+            ScalarMathNodeMode::Asin => &["X"],
+            ScalarMathNodeMode::Asinh => &["X"],
+            ScalarMathNodeMode::Atan => &["X"],
+            ScalarMathNodeMode::Atanh => &["X"],
+            ScalarMathNodeMode::Ceil => &["X"],
+            ScalarMathNodeMode::Cos => &["X"],
+            ScalarMathNodeMode::Cosh => &["X"],
+            ScalarMathNodeMode::Degrees => &["X"],
+            ScalarMathNodeMode::Exp => &["X"],
+            ScalarMathNodeMode::Exp2 => &["X"],
+            ScalarMathNodeMode::Floor => &["X"],
+            ScalarMathNodeMode::Fract => &["X"],
+            ScalarMathNodeMode::InverseSqrt => &["X"],
+            ScalarMathNodeMode::Ln => &["X"],
+            ScalarMathNodeMode::Log2 => &["X"],
+            ScalarMathNodeMode::Max => &["A", "B"],
+            ScalarMathNodeMode::Min => &["A", "B"],
+            ScalarMathNodeMode::Pow => &["Base", "Exponent"],
+            ScalarMathNodeMode::Radians => &["X"],
+            ScalarMathNodeMode::Round => &["X"],
+            ScalarMathNodeMode::Saturate => &["X"],
+            ScalarMathNodeMode::Sign => &["X"],
+            ScalarMathNodeMode::Sin => &["X"],
+            ScalarMathNodeMode::Sinh => &["X"],
+            ScalarMathNodeMode::Sqrt => &["X"],
+            ScalarMathNodeMode::Tan => &["X"],
+            ScalarMathNodeMode::Tanh => &["X"],
+            ScalarMathNodeMode::Trunc => &["X"],
+        }
+    }
+}
+
+impl ToString for ScalarMathNodeMode {
+    fn to_string(&self) -> String {
+        match self {
+            ScalarMathNodeMode::Add => "Add",
+            ScalarMathNodeMode::Subtract => "Subtract",
+            ScalarMathNodeMode::Multiply => "Multiply",
+            ScalarMathNodeMode::Divide => "Divide",
+            ScalarMathNodeMode::Acos => "Acos",
+            ScalarMathNodeMode::Acosh => "Acosh",
+            ScalarMathNodeMode::Asin => "Asin",
+            ScalarMathNodeMode::Asinh => "Asinh",
+            ScalarMathNodeMode::Atan => "Atan",
+            ScalarMathNodeMode::Atanh => "Atanh",
+            ScalarMathNodeMode::Ceil => "Ceil",
+            ScalarMathNodeMode::Cos => "Cos",
+            ScalarMathNodeMode::Cosh => "Cosh",
+            ScalarMathNodeMode::Degrees => "Degrees",
+            ScalarMathNodeMode::Exp => "Exp",
+            ScalarMathNodeMode::Exp2 => "Exp2",
+            ScalarMathNodeMode::Floor => "Floor",
+            ScalarMathNodeMode::Fract => "Fract",
+            ScalarMathNodeMode::InverseSqrt => "Inverse Sqrt",
+            ScalarMathNodeMode::Ln => "Ln",
+            ScalarMathNodeMode::Log2 => "Log2",
+            ScalarMathNodeMode::Max => "Max",
+            ScalarMathNodeMode::Min => "Min",
+            ScalarMathNodeMode::Pow => "Pow",
+            ScalarMathNodeMode::Radians => "Radians",
+            ScalarMathNodeMode::Round => "Round",
+            ScalarMathNodeMode::Saturate => "Saturate",
+            ScalarMathNodeMode::Sign => "Sign",
+            ScalarMathNodeMode::Sin => "Sin",
+            ScalarMathNodeMode::Sinh => "Sinh",
+            ScalarMathNodeMode::Sqrt => "Sqrt",
+            ScalarMathNodeMode::Tan => "Tan",
+            ScalarMathNodeMode::Tanh => "Tanh",
+            ScalarMathNodeMode::Trunc => "Trunc",
+        }
+        .to_string()
+    }
+}
+
+#[derive(Clone)]
+pub enum ScalarMathNodeMessage {
+    ModeChanged(ScalarMathNodeMode),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
+impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
+    type State = ScalarMathNodeMode;
+    type Message = ScalarMathNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Scalar Math"
+    }
+
+    fn default_state(&self) -> Self::State {
+        ScalarMathNodeMode::Add
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x90be6d)
+    }
+
+    fn create_inputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext<'_, Data>) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+            GraphDefaultInputSlot::new::<F32Type>(0.0),
+        ]
+    }
+
+    fn create_outputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext<'_, Data>) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<F32Type>()]
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext<'_, Data>,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = Column::new().spacing(2);
+        column = column.push(pick_list(
+            ScalarMathNodeMode::ALL,
+            Some(*state),
+            ScalarMathNodeMessage::ModeChanged,
+        ));
+
+        for (i, slot_name) in state.operands_names().iter().enumerate() {
+            if let Some(elem) = ctx.view_input(slot_name, i) {
+                column = column.push(elem.map(|m| ScalarMathNodeMessage::LiteralUpdate(m)));
+            }
+        }
+
+        column.spacing(2).into()
+    }
+
+    fn view_outputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext<'_, Data>,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let mut column = Column::new().spacing(2);
+
+        if let Some(elem) = ctx.view_output("Result", 0) {
+            column = column.push(elem.map(|m| ScalarMathNodeMessage::LiteralUpdate(m)));
+        }
+
+        column.into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
+    ) {
+        match message {
+            ScalarMathNodeMessage::ModeChanged(mode) => {
+                *state = mode;
+            }
+            ScalarMathNodeMessage::LiteralUpdate(msg) => {
+                ctx.update_literal(msg);
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input_a = ctx.get_input(0)?;
+        let input_b = ctx.get_input(1)?;
+        let input_c = ctx.get_input(2)?;
+        let output = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = {};\n",
+            output,
+            match state {
+                ScalarMathNodeMode::Add => format!("{} + {}", input_a, input_b),
+                ScalarMathNodeMode::Subtract => format!("{} - {}", input_a, input_b),
+                ScalarMathNodeMode::Multiply => format!("{} * {}", input_a, input_b),
+                ScalarMathNodeMode::Divide => format!("{} / {}", input_a, input_b),
+                ScalarMathNodeMode::Acos => format!("acos({})", input_a),
+                ScalarMathNodeMode::Acosh => format!("acosh({})", input_a),
+                ScalarMathNodeMode::Asin => format!("asin({})", input_a),
+                ScalarMathNodeMode::Asinh => format!("asinh({})", input_a),
+                ScalarMathNodeMode::Atan => format!("atan({})", input_a),
+                ScalarMathNodeMode::Atanh => format!("atanh({})", input_a),
+                ScalarMathNodeMode::Ceil => format!("ceil({})", input_a),
+                ScalarMathNodeMode::Cos => format!("cos({})", input_a),
+                ScalarMathNodeMode::Cosh => format!("cosh({})", input_a),
+                ScalarMathNodeMode::Degrees => format!("degrees({})", input_a),
+                ScalarMathNodeMode::Exp => format!("exp({})", input_a),
+                ScalarMathNodeMode::Exp2 => format!("exp2({})", input_a),
+                ScalarMathNodeMode::Floor => format!("floor({})", input_a),
+                ScalarMathNodeMode::Fract => format!("fract({})", input_a),
+                ScalarMathNodeMode::InverseSqrt => format!("inverseSqrt({})", input_a),
+                ScalarMathNodeMode::Ln => format!("log({})", input_a),
+                ScalarMathNodeMode::Log2 => format!("log2({})", input_a),
+                ScalarMathNodeMode::Max => format!("max({}, {})", input_a, input_b),
+                ScalarMathNodeMode::Min => format!("min({}, {})", input_a, input_b),
+                ScalarMathNodeMode::Pow => format!("pow({}, {})", input_a, input_b),
+                ScalarMathNodeMode::Radians => format!("radians({})", input_a),
+                ScalarMathNodeMode::Round => format!("round({})", input_a),
+                ScalarMathNodeMode::Saturate => format!("saturate({})", input_a),
+                ScalarMathNodeMode::Sign => format!("sign({})", input_a),
+                ScalarMathNodeMode::Sin => format!("sin({})", input_a),
+                ScalarMathNodeMode::Sinh => format!("sinh({})", input_a),
+                ScalarMathNodeMode::Sqrt => format!("sqrt({})", input_a),
+                ScalarMathNodeMode::Tan => format!("tan({})", input_a),
+                ScalarMathNodeMode::Tanh => format!("tanh({})", input_a),
+                ScalarMathNodeMode::Trunc => format!("trunc({})", input_a),
+            }
+        ))
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct VectorMathNode;

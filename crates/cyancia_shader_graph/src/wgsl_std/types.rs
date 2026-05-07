@@ -13,6 +13,8 @@ use uuid::Uuid;
 
 use crate::{GraphRenderer, GraphTheme, graph::slot::GraphValueType};
 
+// TODO: Boolean and rectangle types
+
 #[derive(Default, Clone)]
 pub struct F32Type;
 
