@@ -9,7 +9,7 @@ use std::{
 use cyancia_math::curve::CubicCurve;
 use cyancia_utils::{count, wrapper};
 use cyancia_widgets::curve_edit::CurveEdit;
-use glam::{Vec2, Vec4};
+use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
 use iced_core::{Color, Element, color};
 use iced_widget::{Column, column, keyed::column, pick_list, space, text_input};
 use indexmap::{IndexMap, map::Entry};
@@ -230,7 +230,11 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         color!(0x90be6d)
     }
 
-    fn create_inputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext<'_, Data>) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
@@ -238,7 +242,11 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         ]
     }
 
-    fn create_outputs(&self, _state: &Self::State, ctx: GraphNodeCreateSlotsContext<'_, Data>) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>()]
     }
 
@@ -343,6 +351,57 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
                 ScalarMathNodeMode::Trunc => format!("trunc({})", input_a),
             }
         ))
+    }
+
+    fn run(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRunContext<'_, Data>,
+    ) -> Result<(), GraphNodeRunError> {
+        let a = *ctx.get_input_value::<F32Type>(0)?;
+        let b = *ctx.get_input_value::<F32Type>(1)?;
+        let c = *ctx.get_input_value::<F32Type>(2)?;
+
+        let result = match state {
+            ScalarMathNodeMode::Add => a + b,
+            ScalarMathNodeMode::Subtract => a - b,
+            ScalarMathNodeMode::Multiply => a * b,
+            ScalarMathNodeMode::Divide => a / b,
+            ScalarMathNodeMode::Acos => a.acos(),
+            ScalarMathNodeMode::Acosh => a.acosh(),
+            ScalarMathNodeMode::Asin => a.asin(),
+            ScalarMathNodeMode::Asinh => a.asinh(),
+            ScalarMathNodeMode::Atan => a.atan(),
+            ScalarMathNodeMode::Atanh => a.atanh(),
+            ScalarMathNodeMode::Ceil => a.ceil(),
+            ScalarMathNodeMode::Cos => a.cos(),
+            ScalarMathNodeMode::Cosh => a.cosh(),
+            ScalarMathNodeMode::Degrees => a.to_degrees(),
+            ScalarMathNodeMode::Exp => a.exp(),
+            ScalarMathNodeMode::Exp2 => a.exp2(),
+            ScalarMathNodeMode::Floor => a.floor(),
+            ScalarMathNodeMode::Fract => a.fract(),
+            ScalarMathNodeMode::InverseSqrt => 1.0 / a.sqrt(),
+            ScalarMathNodeMode::Ln => a.ln(),
+            ScalarMathNodeMode::Log2 => a.log2(),
+            ScalarMathNodeMode::Max => a.max(b),
+            ScalarMathNodeMode::Min => a.min(b),
+            ScalarMathNodeMode::Pow => a.powf(b),
+            ScalarMathNodeMode::Radians => a.to_radians(),
+            ScalarMathNodeMode::Round => a.round(),
+            ScalarMathNodeMode::Saturate => a.clamp(0.0, 1.0),
+            ScalarMathNodeMode::Sign => a.signum(),
+            ScalarMathNodeMode::Sin => a.sin(),
+            ScalarMathNodeMode::Sinh => a.sinh(),
+            ScalarMathNodeMode::Sqrt => a.sqrt(),
+            ScalarMathNodeMode::Tan => a.tan(),
+            ScalarMathNodeMode::Tanh => a.tanh(),
+            ScalarMathNodeMode::Trunc => a.trunc(),
+        };
+
+        ctx.set_output_value::<F32Type>(0, result)?;
+
+        Ok(())
     }
 }
 
@@ -588,7 +647,6 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
             | VectorMathNodeMode::Fract
             | VectorMathNodeMode::InverseSqrt
             | VectorMathNodeMode::Ln
-            | VectorMathNodeMode::Length
             | VectorMathNodeMode::Log2
             | VectorMathNodeMode::Max
             | VectorMathNodeMode::Min
@@ -606,7 +664,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
             | VectorMathNodeMode::Tanh
             | VectorMathNodeMode::Trunc => vec![GraphDefaultOutputSlot::new::<Vec2FType>()],
 
-            VectorMathNodeMode::Dot | VectorMathNodeMode::Distance => {
+            VectorMathNodeMode::Dot | VectorMathNodeMode::Distance | VectorMathNodeMode::Length => {
                 vec![GraphDefaultOutputSlot::new::<F32Type>()]
             }
         }
@@ -719,6 +777,76 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
             }
         ))
     }
+
+    fn run(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRunContext<'_, Data>,
+    ) -> Result<(), GraphNodeRunError> {
+        let a = *ctx.get_input_value::<Vec2FType>(0)?;
+        let b = *ctx.get_input_value::<Vec2FType>(1)?;
+        let c = *ctx.get_input_value::<Vec2FType>(2)?;
+
+        match state {
+            VectorMathNodeMode::Dot => {
+                ctx.set_output_value::<F32Type>(0, a.dot(b))?;
+            }
+            VectorMathNodeMode::Distance => {
+                ctx.set_output_value::<F32Type>(0, a.distance(b))?;
+            }
+            VectorMathNodeMode::Length => {
+                ctx.set_output_value::<F32Type>(0, a.length())?;
+            }
+            _ => {
+                let result = match state {
+                    VectorMathNodeMode::Add => a + b,
+                    VectorMathNodeMode::Subtract => a - b,
+                    VectorMathNodeMode::Multiply => a * b,
+                    VectorMathNodeMode::Divide => a / b,
+                    VectorMathNodeMode::Acos => Vec2::new(a.x.acos(), a.y.acos()),
+                    VectorMathNodeMode::Acosh => Vec2::new(a.x.acosh(), a.y.acosh()),
+                    VectorMathNodeMode::Asin => Vec2::new(a.x.asin(), a.y.asin()),
+                    VectorMathNodeMode::Asinh => Vec2::new(a.x.asinh(), a.y.asinh()),
+                    VectorMathNodeMode::Atan => Vec2::new(a.x.atan(), a.y.atan()),
+                    VectorMathNodeMode::Atanh => Vec2::new(a.x.atanh(), a.y.atanh()),
+                    VectorMathNodeMode::Ceil => a.ceil(),
+                    VectorMathNodeMode::Cos => Vec2::new(a.x.cos(), a.y.cos()),
+                    VectorMathNodeMode::Cosh => Vec2::new(a.x.cosh(), a.y.cosh()),
+                    VectorMathNodeMode::Degrees => Vec2::new(a.x.to_degrees(), a.y.to_degrees()),
+                    VectorMathNodeMode::Exp => Vec2::new(a.x.exp(), a.y.exp()),
+                    VectorMathNodeMode::Exp2 => Vec2::new(a.x.exp2(), a.y.exp2()),
+                    VectorMathNodeMode::Floor => a.floor(),
+                    VectorMathNodeMode::Fract => a.fract(),
+                    VectorMathNodeMode::InverseSqrt => {
+                        Vec2::new(1.0 / a.x.sqrt(), 1.0 / a.y.sqrt())
+                    }
+                    VectorMathNodeMode::Ln => Vec2::new(a.x.ln(), a.y.ln()),
+                    VectorMathNodeMode::Log2 => Vec2::new(a.x.log2(), a.y.log2()),
+                    VectorMathNodeMode::Max => a.max(b),
+                    VectorMathNodeMode::Min => a.min(b),
+                    VectorMathNodeMode::Mix => a.lerp(b, c.x),
+                    VectorMathNodeMode::Pow => Vec2::new(a.x.powf(b.x), a.y.powf(b.y)),
+                    VectorMathNodeMode::Radians => Vec2::new(a.x.to_radians(), a.y.to_radians()),
+                    VectorMathNodeMode::Reflect => a - b * 2.0 * a.dot(b),
+                    VectorMathNodeMode::Round => a.round(),
+                    VectorMathNodeMode::Saturate => a.clamp(Vec2::ZERO, Vec2::ONE),
+                    VectorMathNodeMode::Sign => Vec2::new(a.x.signum(), a.y.signum()),
+                    VectorMathNodeMode::Sin => Vec2::new(a.x.sin(), a.y.sin()),
+                    VectorMathNodeMode::Sinh => Vec2::new(a.x.sinh(), a.y.sinh()),
+                    VectorMathNodeMode::Sqrt => Vec2::new(a.x.sqrt(), a.y.sqrt()),
+                    VectorMathNodeMode::Tan => Vec2::new(a.x.tan(), a.y.tan()),
+                    VectorMathNodeMode::Tanh => Vec2::new(a.x.tanh(), a.y.tanh()),
+                    VectorMathNodeMode::Trunc => a.trunc(),
+                    VectorMathNodeMode::Dot
+                    | VectorMathNodeMode::Distance
+                    | VectorMathNodeMode::Length => unreachable!(),
+                };
+                ctx.set_output_value::<Vec2FType>(0, result)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -774,6 +902,14 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
             output, input_value, input_min, input_max
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let value = *ctx.get_input_value::<F32Type>(0)?;
+        let min = *ctx.get_input_value::<F32Type>(1)?;
+        let max = *ctx.get_input_value::<F32Type>(2)?;
+        ctx.set_output_value::<F32Type>(0, value.clamp(min, max))?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -826,6 +962,13 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
             "let {} = step({}, {});\n",
             output, input_edge, input_x
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let edge = *ctx.get_input_value::<F32Type>(0)?;
+        let x = *ctx.get_input_value::<F32Type>(1)?;
+        ctx.set_output_value::<F32Type>(0, if x < edge { 0.0 } else { 1.0 })?;
+        Ok(())
     }
 }
 
@@ -882,6 +1025,15 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
             output, input_edge0, input_edge1, input_x
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let edge0 = *ctx.get_input_value::<F32Type>(0)?;
+        let edge1 = *ctx.get_input_value::<F32Type>(1)?;
+        let x = *ctx.get_input_value::<F32Type>(2)?;
+        let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+        ctx.set_output_value::<F32Type>(0, t * t * (3.0 - 2.0 * t))?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -935,6 +1087,13 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
             output_x, input_vector, output_y, input_vector
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let v = *ctx.get_input_value::<Vec2FType>(0)?;
+        ctx.set_output_value::<F32Type>(0, v.x)?;
+        ctx.set_output_value::<F32Type>(1, v.y)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -987,6 +1146,13 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
             "let {} = vec2f({}, {});\n",
             output_vector, input_x, input_y
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let x = *ctx.get_input_value::<F32Type>(0)?;
+        let y = *ctx.get_input_value::<F32Type>(1)?;
+        ctx.set_output_value::<Vec2FType>(0, Vec2::new(x, y))?;
+        Ok(())
     }
 }
 
@@ -1044,6 +1210,15 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
             "let {} = vec4f({}, {}, {}, {});\n",
             output_color, input_r, input_g, input_b, input_a
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let r = *ctx.get_input_value::<F32Type>(0)?;
+        let g = *ctx.get_input_value::<F32Type>(1)?;
+        let b = *ctx.get_input_value::<F32Type>(2)?;
+        let a = *ctx.get_input_value::<F32Type>(3)?;
+        ctx.set_output_value::<ColorType>(0, Vec4::new(r, g, b, a))?;
+        Ok(())
     }
 }
 
@@ -1108,6 +1283,15 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
             output_a,
             input_color
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let c = *ctx.get_input_value::<ColorType>(0)?;
+        ctx.set_output_value::<F32Type>(0, c.x)?;
+        ctx.set_output_value::<F32Type>(1, c.y)?;
+        ctx.set_output_value::<F32Type>(2, c.z)?;
+        ctx.set_output_value::<F32Type>(3, c.w)?;
+        Ok(())
     }
 }
 
@@ -1257,6 +1441,8 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         let index = ctx.texture_usage.use_texture(*state);
         Ok(format!("let {} = {}u;\n", ctx.get_output(0)?, index))
     }
+
+    // TODO texture pixel colors are available on CPU.
 }
 
 // TODO: Mixing in different color spaces.
@@ -1313,6 +1499,16 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
             output, input_color_a, input_color_b, input_factor
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let a = *ctx.get_input_value::<ColorType>(0)?;
+        let b = *ctx.get_input_value::<ColorType>(1)?;
+        let t = *ctx.get_input_value::<F32Type>(2)?;
+        ctx.set_output_value::<ColorType>(0, a.lerp(b, t))?;
+        Ok(())
+    }
+
+    // TODO texture sizes are available on CPU.
 }
 
 #[derive(Default, Clone)]
@@ -1584,6 +1780,38 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         }
 
         Ok(code)
+    }
+
+    fn run(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeRunContext<'_, Data>,
+    ) -> Result<(), GraphNodeRunError> {
+        let Some(id) = state.id.as_ref() else {
+            return Ok(Default::default());
+        };
+        let Some(func) = ctx.resources.functions.get(id) else {
+            return Ok(Default::default());
+        };
+
+        let input_values = (0..ctx.inputs.len()).try_fold(
+            Vec::with_capacity(ctx.inputs.len()),
+            |mut acc, i| {
+                acc.push(ctx.get_input_value_raw(i)?.clone());
+                Ok::<_, GraphNodeRunError>(acc)
+            },
+        )?;
+
+        let output_values = func
+            .graph
+            .run(ctx.data, input_values)
+            .map_err(|e| GraphNodeRunError::Custom(e.into()))?;
+
+        for (slot_id, output_value) in ctx.outputs.iter().zip(output_values) {
+            ctx.output_storage.insert(*slot_id, output_value);
+        }
+
+        Ok(())
     }
 }
 
@@ -1993,8 +2221,6 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
             "Selected external literal not found in storage"
         ))?;
         let output = ctx.get_output(0)?;
-        // TODO: Use uniform buffer to transfer external variables into shader.
-        //       For current architecture, everytime user modifies them, the whole shader needs to be recompiled.
         Ok(format!(
             "let {} = {};\n",
             output,
@@ -2056,6 +2282,21 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
                 ctx.update_literal(m);
             }
         }
+    }
+
+    fn run(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeRunContext<'_, Data>,
+    ) -> Result<(), GraphNodeRunError> {
+        let id = state
+            .as_ref()
+            .ok_or(anyhow::anyhow!("No external literal selected"))?;
+        let var = ctx.resources.external_vars.get(id).ok_or(anyhow::anyhow!(
+            "Selected external literal not found in storage"
+        ))?;
+        ctx.output_storage.insert(ctx.outputs[0], var.value.clone());
+        Ok(())
     }
 }
 
@@ -2214,6 +2455,17 @@ let {} = package::render::math::sample_cubic_curve(
             ctx.get_input(0)?
         ))
     }
+
+    fn run(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRunContext<'_, Data>,
+    ) -> Result<(), GraphNodeRunError> {
+        let x = *ctx.get_input_value::<F32Type>(0)?;
+        let y = CubicCurve::new(state.control_points.clone()).sample(x);
+        ctx.set_output_value::<F32Type>(0, y)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -2265,5 +2517,27 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
             ctx.get_output(1)?,
             ctx.get_input(0)?
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let seed = *ctx.get_input_value::<F32Type>(0)?;
+        ctx.set_output_value::<F32Type>(0, Self::hash11(seed))?;
+        ctx.set_output_value::<Vec2FType>(1, Self::hash21(seed))?;
+        Ok(())
+    }
+}
+
+impl RandomNode {
+    pub fn hash11(mut p: f32) -> f32 {
+        p = (p * 0.1031).fract();
+        p *= p + 33.33;
+        p *= p + p;
+        p.fract()
+    }
+
+    pub fn hash21(p: f32) -> Vec2 {
+        let mut p3 = Vec3::splat(p) * Vec3::new(0.1031, 0.1030, 0.0973);
+        p3 += p3.dot(p3.yzx() + Vec3::splat(33.33));
+        ((Vec2::new(p3.x, p3.x) + Vec2::new(p3.y, p3.z)) * Vec2::new(p3.z, p3.y)).fract()
     }
 }

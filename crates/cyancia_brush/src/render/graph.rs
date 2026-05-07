@@ -1,4 +1,4 @@
-use bevy_math::Rect;
+use bevy_math::{Rect, VectorSpace};
 use cyancia_image::blend_modes::BlendMode;
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
@@ -6,8 +6,8 @@ use cyancia_shader_graph::{
         GraphData,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeUpdateContext,
-            StatelessCommonGraphNode,
+            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeRunContext,
+            GraphNodeRunError, GraphNodeUpdateContext, StatelessCommonGraphNode,
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
@@ -16,6 +16,7 @@ use cyancia_shader_graph::{
 use cyancia_shader_graph_derive::stateless;
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element, color};
+use iced_wgpu::graphics::damage;
 use iced_widget::{Column, column, pick_list};
 use serde::{Deserialize, Serialize};
 
@@ -80,6 +81,14 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPositionNode {
             ctx.get_output(0)?
         ))
     }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphData>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<Vec2FType>(0, ctx.data.pen_input.position)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -129,6 +138,15 @@ impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))
+    }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphData>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<F32Type>(0, ctx.data.pen_input.draw_direction_angle)?;
+        ctx.set_output_value::<Vec2FType>(1, ctx.data.pen_input.draw_direction_vec)?;
+        Ok(())
     }
 }
 
@@ -255,6 +273,11 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
             anchor,
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        unimplemented!();
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -314,6 +337,14 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinBoundsNode 
             bounds
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let bounds = *ctx.get_input_value::<RectType>(1)?;
+        // TODO We are unable to determine if the current pixel is filtered out or not.
+        ctx.set_output_value::<ColorType>(0, Vec4::ZERO)?;
+        ctx.set_output_value::<RectType>(1, bounds)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -360,6 +391,10 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputColorNode {
             ctx.get_input(0)?
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -401,10 +436,11 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
         &self,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!(
-            "set_output_bounds({});\n",
-            ctx.get_input(0)?,
-        ))
+        Ok(format!("set_output_bounds({});\n", ctx.get_input(0)?,))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
     }
 }
 
@@ -780,6 +816,12 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StrokeBoundsNode {
             "let {ibounds} = get_accumulated_pixel_bounds();\nlet {} = Rect(vec2f({ibounds}.min), vec2f({ibounds}.max));\n",
             ctx.get_output(0)?
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        // TODO This should be available on CPU when postprocess.
+        todo!();
+        Ok(())
     }
 }
 

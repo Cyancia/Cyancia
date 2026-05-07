@@ -641,10 +641,10 @@ pub struct GraphNodeRunContext<'a, Data: GraphData> {
 }
 
 impl<'a, Data: GraphData> GraphNodeRunContext<'a, Data> {
-    pub fn get_input_value<T: GraphLiteralValue>(
+    pub fn get_input_value<T: GraphValueType>(
         &self,
         index: usize,
-    ) -> Result<&T, GraphNodeRunError> {
+    ) -> Result<&T::AssociatedLiteralType, GraphNodeRunError> {
         let slot_id = self
             .inputs
             .get(index)
@@ -661,9 +661,29 @@ impl<'a, Data: GraphData> GraphNodeRunContext<'a, Data> {
                 .get(&connected)
                 .ok_or(GraphNodeRunError::MissingOutputSlot)?;
 
-            Ok(connected_value.as_ref::<T>())
+            Ok(connected_value.as_ref::<T::AssociatedLiteralType>())
         } else {
-            Ok(slot.data.as_ref::<T>())
+            Ok(slot.data.as_ref::<T::AssociatedLiteralType>())
+        }
+    }
+
+    pub fn get_input_value_raw(&self, index: usize) -> Result<&GraphLiteral, GraphNodeRunError> {
+        let slot_id = self
+            .inputs
+            .get(index)
+            .ok_or(GraphNodeRunError::SlotIndexOutOfBounds)?;
+
+        let slot = self
+            .graph_slots
+            .get_input(slot_id)
+            .ok_or(GraphNodeRunError::MissingInputSlot)?;
+
+        if let Some(connected) = slot.connected {
+            self.output_storage
+                .get(&connected)
+                .ok_or(GraphNodeRunError::MissingOutputSlot)
+        } else {
+            Ok(&slot.data)
         }
     }
 

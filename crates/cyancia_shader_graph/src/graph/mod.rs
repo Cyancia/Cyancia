@@ -496,8 +496,8 @@ impl<Data: GraphData> Graph<Data> {
     pub fn run(
         &self,
         data: &Data,
-        output_storage: &mut HashMap<GraphOutputSlotId, GraphLiteral>,
-    ) -> Result<(), GraphRunError> {
+        graph_input_values: Vec<GraphLiteral>,
+    ) -> Result<Vec<GraphLiteral>, GraphRunError> {
         if self.cached_run_order.read().is_none() {
             self.update_run_order_cache();
         }
@@ -506,7 +506,21 @@ impl<Data: GraphData> Graph<Data> {
         }
 
         let run_order = self.cached_run_order.read();
+        let signature = self.cached_signature.read();
+
         let run_order = run_order.as_ref().unwrap();
+        let signature = signature.as_ref().unwrap();
+        if signature.inputs.len() != graph_input_values.len() {
+            return Err(GraphRunError::IncorrectInputParams {
+                expected: signature.inputs.len(),
+                found: graph_input_values.len(),
+            });
+        }
+
+        let mut output_storage = HashMap::new();
+        for (slot_id, value) in signature.inputs.keys().zip(graph_input_values) {
+            output_storage.insert(*slot_id, value);
+        }
 
         for node_id in run_order.iter() {
             let node = self.nodes.get(node_id).unwrap();
@@ -516,7 +530,7 @@ impl<Data: GraphData> Graph<Data> {
                 inputs: &node.inputs,
                 outputs: &node.outputs,
                 graph_slots: &self.slots,
-                output_storage,
+                output_storage: &mut output_storage,
                 resources: &self.resources,
             };
 
@@ -532,7 +546,22 @@ impl<Data: GraphData> Graph<Data> {
             }
         }
 
-        Ok(())
+        let graph_output_values = signature
+            .outputs
+            .keys()
+            .filter_map(|input_slot_id| {
+                let input_slot = self.slots.inputs.get(input_slot_id)?;
+                let connected_output_id = input_slot.connected?;
+                output_storage.get(&connected_output_id).cloned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            graph_output_values.len(),
+            signature.outputs.len(),
+            "This should never fail."
+        );
+
+        Ok(graph_output_values)
     }
 
     pub fn resources(&self) -> &GraphResources<Data> {
@@ -663,6 +692,8 @@ pub enum GraphCompileError {
 pub enum GraphRunError {
     #[error("{0}")]
     NodeRunError(ContextualGraphNodeRunError),
+    #[error("Expected {expected} input(s), but found {found}")]
+    IncorrectInputParams { expected: usize, found: usize },
     #[error("{0}")]
     CustomError(anyhow::Error),
 }
