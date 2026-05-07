@@ -26,9 +26,8 @@ struct AtomicDispatchParams {
     z: atomic<u32>,
 }
 
-struct CircularMask {
-    min_bounds: vec2f,
-    max_bounds: vec2f,
+struct Mask {
+    bounds: Rect,
     value: f32,
 }
 
@@ -57,10 +56,10 @@ fn get_accumulated_pixel_bounds() -> IRect {
     }
 }
 
-fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> CircularMask {
+fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> Mask {
     let dist = sdf_ellipse(pixel, center, ab);
     let value = smoothstep(1.0, 0.0, dist);
-    return CircularMask(center - ab, center + ab, value);
+    return Mask(Rect(center - ab, center + ab), value);
 }
 
 fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {
@@ -145,11 +144,6 @@ fn filter_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_sc
     let tex_size = vec2f(atlas_size(mask_local_index));
     let mat = texture_transform_mat_inv(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor);
 
-    @if(SIZE_ESTIMATION) {
-        let rect = transform_rect(Rect(vec2f(0.0), tex_size), texture_transform_mat(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor));
-        require_bounds(vec2i(rect.min), vec2i(rect.max));
-    }
-
     let tex_px = (mat * vec3f(vec2f(pixel), 1.0)).xy;
     if tex_px.x < 0.0 || tex_px.x >= tex_size.x || tex_px.y < 0.0 || tex_px.y >= tex_size.y {
         return vec4f(0.0);
@@ -158,13 +152,15 @@ fn filter_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_sc
     return vec4f(color * mask_value);
 }
 
-fn filter_within_bounds(pixel: vec2i, color: vec4f, bounds_min: vec2f, bounds_max: vec2f) -> vec4f {
-    @if(SIZE_ESTIMATION) {
-        require_bounds(vec2i(bounds_min), vec2i(bounds_max));
-    }
+fn filter_within_mask_bounds(mask_local_index: u32, mask_scale: vec2f, mask_rotation: f32, mask_translation: vec2f, mask_anchor: vec2f) -> Rect {
+    let tex_size = vec2f(atlas_size(mask_local_index));
+    let rect = transform_rect(Rect(vec2f(0.0), tex_size), texture_transform_mat(mask_local_index, mask_scale, mask_rotation, mask_translation, mask_anchor));
+    return rect;
+}
 
+fn filter_within_bounds(pixel: vec2i, color: vec4f, bounds: Rect) -> vec4f {
     let pixelf = vec2f(pixel);
-    if pixelf.x < bounds_min.x || pixelf.x >= bounds_max.x || pixelf.y < bounds_min.y || pixelf.y >= bounds_max.y {
+    if any(pixelf < bounds.min) || any(pixelf >= bounds.max) {
         return vec4f(0.0);
     }
     return color;
@@ -203,12 +199,10 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // set_output_color(pixel_pos, target_layer_color(pixel_pos) + 0.1);
 }
 
-@if(SIZE_ESTIMATION) var<private> affected_pixels_precise: IRect;
+var<private> affected_pixels_precise: IRect;
 
-@if(SIZE_ESTIMATION)
-fn require_bounds(pixel_min: vec2i, pixel_max: vec2i) {
-    affected_pixels_precise.min = min(affected_pixels_precise.min, pixel_min);
-    affected_pixels_precise.max = max(affected_pixels_precise.max, pixel_max);
+fn set_output_bounds(bounds: Rect) {
+    affected_pixels_precise = IRect(vec2i(bounds.min), vec2i(bounds.max));
 }
 
 @if(SIZE_ESTIMATION)

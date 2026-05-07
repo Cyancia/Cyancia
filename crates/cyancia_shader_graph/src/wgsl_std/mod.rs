@@ -38,6 +38,7 @@ pub fn builtin_types() -> GraphTypeRegistry {
     types.register_type::<Vec2FType>();
     types.register_type::<ColorType>();
     types.register_type::<TextureType>();
+    types.register_type::<RectType>();
 
     types.register_caster::<F32ToVec2FCaster>();
     types.register_caster::<Vec2FToF32Caster>();

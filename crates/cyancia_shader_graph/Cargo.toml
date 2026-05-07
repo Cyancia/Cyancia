@@ -29,3 +29,4 @@ encase.workspace = true
 cyancia_math.workspace = true
 cyancia_shader_graph_derive.workspace = true
 dashmap.workspace = true
+bevy_math.workspace = true

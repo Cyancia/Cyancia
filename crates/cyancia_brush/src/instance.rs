@@ -35,7 +35,7 @@ use wesl::{VirtualResolver, Wesl};
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
     render::graph::{
-        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushGraphData, BrushGraphDataTuple, CurrentPixelColorNode, DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, LayerPixelColorNode, OutputColorNode, OutputRequiredSpacingNode, OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode, StrokeBoundsNode
+        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushGraphData, BrushGraphDataTuple, CurrentPixelColorNode, DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode, StrokeBoundsNode
     },
 };
 
@@ -567,6 +567,7 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     nodes.register::<FilterWithinMaskNode>();
     nodes.register::<FilterWithinBoundsNode>();
     nodes.register::<OutputColorNode>();
+    nodes.register::<OutputBoundsNode>();
     nodes.register::<PasteTextureNode>();
     nodes.register::<BlendColorNode>();
     nodes.register::<LayerPixelColorNode>();
@@ -588,6 +589,7 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     nodes.register::<FilterWithinMaskNode>();
     nodes.register::<FilterWithinBoundsNode>();
     nodes.register::<OutputColorNode>();
+    nodes.register::<OutputBoundsNode>();
     nodes.register::<PasteTextureNode>();
     nodes.register::<BlendColorNode>();
     nodes.register::<LayerPixelColorNode>();
