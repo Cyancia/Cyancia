@@ -35,11 +35,7 @@ use wesl::{VirtualResolver, Wesl};
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
     render::graph::{
-        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
-        DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode,
-        FilterWithinMaskNode, LayerPixelColorNode, OutputColorNode, OutputRequiredSpacingNode,
-        OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
-        StrokeBoundsNode,
+        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushGraphData, BrushGraphDataTuple, CurrentPixelColorNode, DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, LayerPixelColorNode, OutputColorNode, OutputRequiredSpacingNode, OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode, StrokeBoundsNode
     },
 };
 
@@ -101,11 +97,11 @@ pub struct BrushPresetInstance {
     brush_id: AssetId<BrushPreset>,
     metadata: BrushPresetMetadata,
 
-    spacing_factor_graph: Graph,
-    required_spacing_graph: Graph,
-    main_graph: Graph,
-    stroke_postprocess_graphs: Vec<Graph>,
-    graph_resources: GraphResources,
+    spacing_factor_graph: Graph<BrushGraphDataTuple>,
+    required_spacing_graph: Graph<BrushGraphData>,
+    main_graph: Graph<BrushGraphData>,
+    stroke_postprocess_graphs: Vec<Graph<BrushGraphData>>,
+    graph_resources: GraphResources<BrushGraphData>,
     runtime_revision: AtomicU64,
 }
 
@@ -113,7 +109,7 @@ impl BrushPresetInstance {
     pub fn from_asset(
         handle: &AssetHandle<BrushPreset>,
         textures: Arc<GraphTextureStorage>,
-        functions: Arc<GraphFunctionStorage>,
+        functions: Arc<GraphFunctionStorage<BrushGraphData>>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let preset = handle.get().unwrap();
 
@@ -156,9 +152,14 @@ impl BrushPresetInstance {
         };
 
         let spacing_factor_graph = {
-            let (g, e) = Graph::from_serialized(
+            let (g, e) = Graph::<BrushGraphDataTuple>::from_serialized(
                 &preset.spacing_factor_graph,
-                resources.clone(),
+                GraphResources {
+                    textures: resources.textures.clone(),
+                    // TODO Spacing factor graph is using a different data type.
+                    functions: Default::default(),
+                    external_vars: resources.external_vars.clone(),
+                },
                 BRUSH_GRAPH_TYPES.clone(),
                 SPACING_FACTOR_GRAPH_NODES.as_ref(),
             );
@@ -284,38 +285,38 @@ impl BrushPresetInstance {
         self.stroke_postprocess_graphs.len() - 1
     }
 
-    pub fn required_spacing_graph(&self) -> &Graph {
+    pub fn required_spacing_graph(&self) -> &Graph<BrushGraphData> {
         &self.required_spacing_graph
     }
 
-    pub fn required_spacing_graph_mut(&mut self) -> &mut Graph {
+    pub fn required_spacing_graph_mut(&mut self) -> &mut Graph<BrushGraphData> {
         self.increment_runtime_revision();
         &mut self.required_spacing_graph
     }
 
-    pub fn spacing_factor_graph(&self) -> &Graph {
+    pub fn spacing_factor_graph(&self) -> &Graph<BrushGraphDataTuple> {
         &self.spacing_factor_graph
     }
 
-    pub fn spacing_factor_graph_mut(&mut self) -> &mut Graph {
+    pub fn spacing_factor_graph_mut(&mut self) -> &mut Graph<BrushGraphDataTuple> {
         self.increment_runtime_revision();
         &mut self.spacing_factor_graph
     }
 
-    pub fn main_graph(&self) -> &Graph {
+    pub fn main_graph(&self) -> &Graph<BrushGraphData> {
         &self.main_graph
     }
 
-    pub fn main_graph_mut(&mut self) -> &mut Graph {
+    pub fn main_graph_mut(&mut self) -> &mut Graph<BrushGraphData> {
         self.increment_runtime_revision();
         &mut self.main_graph
     }
 
-    pub fn stroke_postprocess_graphs(&self) -> &Vec<Graph> {
+    pub fn stroke_postprocess_graphs(&self) -> &Vec<Graph<BrushGraphData>> {
         &self.stroke_postprocess_graphs
     }
 
-    pub fn stroke_postprocess_graphs_mut(&mut self) -> &mut Vec<Graph> {
+    pub fn stroke_postprocess_graphs_mut(&mut self) -> &mut Vec<Graph<BrushGraphData>> {
         self.increment_runtime_revision();
         &mut self.stroke_postprocess_graphs
     }
@@ -364,7 +365,7 @@ impl BrushPresetInstance {
         &self.graph_resources.textures
     }
 
-    pub fn functions(&self) -> &Arc<GraphFunctionStorage> {
+    pub fn functions(&self) -> &Arc<GraphFunctionStorage<BrushGraphData>> {
         &self.graph_resources.functions
     }
 
@@ -404,7 +405,7 @@ fn add_modules(resolver: &mut VirtualResolver) {
     );
 }
 
-fn compile_input_sampling(factor: &Graph, required: &Graph) -> anyhow::Result<String> {
+fn compile_input_sampling(factor: &Graph<BrushGraphDataTuple>, required: &Graph<BrushGraphData>) -> anyhow::Result<String> {
     let (_, factor) = factor.compile(
         Vec::new(),
         Default::default(),
@@ -473,7 +474,7 @@ fn compile_template(
 //      It is not allowed to use a pixel color sampled from previous input to determine the bounds.
 
 fn compile_template_main(
-    graph: &Graph,
+    graph: &Graph<BrushGraphData>,
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
 ) -> anyhow::Result<CompiledBrushGraph> {
@@ -486,7 +487,7 @@ fn compile_template_main(
 }
 
 fn compile_template_stroke_postprocess(
-    graphs: &[Graph],
+    graphs: &[Graph<BrushGraphData>],
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
 ) -> anyhow::Result<Vec<CompiledBrushGraph>> {
@@ -519,12 +520,12 @@ fn compile_template_stroke_postprocess(
 }
 
 pub const BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
-pub const REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+pub const REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(required_spacing_graph_nodes);
-pub const SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+pub const SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphDataTuple>>> =
     LazyLock::new(spacing_factor_graph_nodes);
-pub const MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> = LazyLock::new(main_graph_nodes);
-pub const STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+pub const MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> = LazyLock::new(main_graph_nodes);
+pub const STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(stroke_postprocess_graph_nodes);
 
 fn brush_graph_types() -> Arc<GraphTypeRegistry> {
@@ -534,7 +535,7 @@ fn brush_graph_types() -> Arc<GraphTypeRegistry> {
     types.into()
 }
 
-fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
@@ -545,7 +546,7 @@ fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.into()
 }
 
-fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphDataTuple>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
@@ -556,7 +557,7 @@ fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.into()
 }
 
-fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
@@ -577,7 +578,7 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.into()
 }
 
-fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
@@ -600,23 +601,23 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
 }
 
 pub struct GraphFunctionInstance {
-    graph_function: GraphFunction,
+    graph_function: GraphFunction<BrushGraphData>,
     runtime_revision: AtomicU64,
 }
 
 impl GraphFunctionInstance {
-    pub fn new(graph_function: GraphFunction) -> Self {
+    pub fn new(graph_function: GraphFunction<BrushGraphData>) -> Self {
         Self {
             graph_function,
             runtime_revision: AtomicU64::new(0),
         }
     }
 
-    pub fn graph_function(&self) -> &GraphFunction {
+    pub fn graph_function(&self) -> &GraphFunction<BrushGraphData> {
         &self.graph_function
     }
 
-    pub fn graph_function_mut(&mut self) -> &mut GraphFunction {
+    pub fn graph_function_mut(&mut self) -> &mut GraphFunction<BrushGraphData> {
         self.increment_runtime_revision();
         &mut self.graph_function
     }

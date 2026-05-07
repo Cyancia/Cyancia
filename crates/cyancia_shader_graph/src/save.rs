@@ -10,7 +10,7 @@ use toml::ser::Buffer;
 use crate::{
     GraphSerializer,
     graph::{
-        Graph, GraphResources, GraphSignature,
+        Graph, GraphData, GraphResources, GraphSignature,
         external::{ExternalVariable, ExternalVariableId, GraphExternalVariableStorage},
         function::{GraphFunction, GraphFunctionId},
         node::{
@@ -81,7 +81,7 @@ pub enum GraphDeserializeError {
     DeserializerError(toml::de::Error),
 }
 
-impl Graph {
+impl<Data: GraphData> Graph<Data> {
     pub fn to_toml(&self) -> Result<String, anyhow::Error> {
         let graph = self.as_serialized()?;
         Ok(toml::to_string(&graph)?)
@@ -89,9 +89,9 @@ impl Graph {
 
     pub fn from_toml(
         s: &str,
-        resources: GraphResources,
+        resources: GraphResources<Data>,
         type_registry: Arc<GraphTypeRegistry>,
-        node_registry: &GraphNodeRegistry,
+        node_registry: &GraphNodeRegistry<Data>,
         external_vars: Arc<GraphExternalVariableStorage>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let graph = match toml::from_str::<SerializableGraph>(s) {
@@ -105,9 +105,9 @@ impl Graph {
 
     pub fn from_serialized(
         serialized: &SerializableGraph,
-        resources: GraphResources,
+        resources: GraphResources<Data>,
         type_registry: Arc<GraphTypeRegistry>,
-        node_registry: &GraphNodeRegistry,
+        node_registry: &GraphNodeRegistry<Data>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let SerializableGraph {
             nodes,
@@ -444,7 +444,9 @@ pub struct SerializableGraphFunction {
 }
 
 impl SerializableGraphFunction {
-    pub fn serialize_func(func: &GraphFunction) -> Result<Self, anyhow::Error> {
+    pub fn serialize_func<Data: crate::graph::GraphData>(
+        func: &GraphFunction<Data>,
+    ) -> Result<Self, anyhow::Error> {
         Ok(SerializableGraphFunction {
             id: func.id,
             name: func.name.clone(),
@@ -452,18 +454,22 @@ impl SerializableGraphFunction {
         })
     }
 
-    pub fn deserialize_func(
+    pub fn deserialize_func<Data: crate::graph::GraphData>(
         &self,
         type_registry: Arc<GraphTypeRegistry>,
-        node_registry: &GraphNodeRegistry,
-    ) -> (Option<GraphFunction>, Vec<GraphDeserializeError>) {
-        let (maybe_graph, err) = Graph::from_serialized(
-            &self.graph,
-            // Graph functions are not going to reference any resources,
-            Default::default(),
-            type_registry,
-            node_registry,
-        );
+        node_registry: &GraphNodeRegistry<Data>,
+    ) -> (Option<GraphFunction<Data>>, Vec<GraphDeserializeError>) {
+        // Create empty resources for the graph function
+        let resources = GraphResources {
+            textures: Arc::new(Default::default()),
+            functions: Arc::new(crate::graph::function::GraphFunctionStorage::new(
+                Default::default(),
+            )),
+            external_vars: Arc::new(Default::default()),
+        };
+
+        let (maybe_graph, err) =
+            Graph::from_serialized(&self.graph, resources, type_registry, node_registry);
 
         let func = maybe_graph.map(|graph| GraphFunction {
             id: self.id,

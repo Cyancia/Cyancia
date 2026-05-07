@@ -1299,6 +1299,7 @@ dependencies = [
  "cyancia_render",
  "cyancia_runtime",
  "cyancia_shader_graph",
+ "cyancia_shader_graph_derive",
  "cyancia_tools",
  "cyancia_utils",
  "cyancia_widgets",
@@ -1511,6 +1512,7 @@ dependencies = [
  "cyancia_math",
  "cyancia_render",
  "cyancia_runtime",
+ "cyancia_shader_graph_derive",
  "cyancia_utils",
  "cyancia_widgets",
  "dashmap",
@@ -1530,6 +1532,15 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "uuid",
+]
+
+[[package]]
+name = "cyancia_shader_graph_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

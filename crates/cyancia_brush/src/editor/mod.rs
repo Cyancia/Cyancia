@@ -22,7 +22,7 @@ use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     editor::{GraphView, GraphViewMessage},
     graph::{
-        Graph, GraphResources,
+        Graph, GraphData, GraphResources,
         external::{ExternalVariable, ExternalVariableId},
         function::{GraphFunction, GraphFunctionId, GraphFunctionStorage},
         node::GraphNodeRegistry,
@@ -55,19 +55,20 @@ use crate::{
         BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES, REQUIRED_SPACING_GRAPH_NODES,
         SPACING_FACTOR_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
-    render::BrushPresetOperator,
+    render::{BrushPresetOperator, graph::BrushGraphData},
     tool::CurrentBrushPresetOperator,
 };
 
-const FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry>> = LazyLock::new(|| {
-    let mut registry = GraphNodeRegistry::default();
+const FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+    LazyLock::new(|| {
+        let mut registry = GraphNodeRegistry::default();
 
-    registry.merge(builtin_nodes());
-    registry.register::<GraphInputNode>();
-    registry.register::<GraphOutputNode>();
+        registry.merge(builtin_nodes());
+        registry.register::<GraphInputNode>();
+        registry.register::<GraphOutputNode>();
 
-    registry.into()
-});
+        registry.into()
+    });
 
 const FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(|| {
     let mut registry = GraphTypeRegistry::default();
@@ -83,7 +84,7 @@ pub struct BrushEditorView {
 
     input_manager: ActionsMatcher,
     texture_storage: Arc<GraphTextureStorage>,
-    function_storage: Arc<GraphFunctionStorage>,
+    function_storage: Arc<GraphFunctionStorage<BrushGraphData>>,
 
     function_id_to_asset: HashMap<GraphFunctionId, AssetHandle<SerializableGraphFunction>>,
     selected: Option<Selected>,
@@ -102,40 +103,6 @@ pub enum BrushPresetGraph {
     SpacingFactor,
     Main,
     StrokePostprocess { index: usize },
-}
-
-impl BrushPresetGraph {
-    pub fn graph<'a>(&self, brush: &'a BrushPresetInstance) -> &'a Graph {
-        match self {
-            BrushPresetGraph::RequiredSpacing => brush.required_spacing_graph(),
-            BrushPresetGraph::SpacingFactor => brush.spacing_factor_graph(),
-            BrushPresetGraph::Main => brush.main_graph(),
-            BrushPresetGraph::StrokePostprocess { index } => {
-                brush.stroke_postprocess_graphs().get(*index).unwrap()
-            }
-        }
-    }
-
-    pub fn node_registry(&self) -> Arc<GraphNodeRegistry> {
-        match self {
-            BrushPresetGraph::RequiredSpacing => REQUIRED_SPACING_GRAPH_NODES.clone(),
-            BrushPresetGraph::SpacingFactor => SPACING_FACTOR_GRAPH_NODES.clone(),
-            BrushPresetGraph::Main => MAIN_GRAPH_NODES.clone(),
-            BrushPresetGraph::StrokePostprocess { index } => STROKE_POSTPROCESS_GRAPH_NODES.clone(),
-        }
-    }
-
-    pub fn graph_mut<'a>(&self, brush: &'a mut BrushPresetInstance) -> &'a mut Graph {
-        match self {
-            BrushPresetGraph::RequiredSpacing => brush.required_spacing_graph_mut(),
-            BrushPresetGraph::SpacingFactor => brush.spacing_factor_graph_mut(),
-            BrushPresetGraph::Main => brush.main_graph_mut(),
-            BrushPresetGraph::StrokePostprocess { index } => brush
-                .stroke_postprocess_graphs_mut()
-                .get_mut(*index)
-                .unwrap(),
-        }
-    }
 }
 
 pub struct SelectedBrush {
@@ -357,11 +324,28 @@ impl WindowView for BrushEditorView {
             match selected {
                 Selected::Brush(brush) => {
                     let instance = brush.instance.read();
-                    let graph = brush.viewing_graph.graph(&instance);
-                    let node_registry = brush.viewing_graph.node_registry();
 
-                    let graph_view = Element::new(GraphView::new(&graph, &node_registry))
-                        .map(BrushEditorMessage::GraphView);
+                    let graph_view = match brush.viewing_graph {
+                        BrushPresetGraph::RequiredSpacing => Element::new(GraphView::new(
+                            instance.required_spacing_graph(),
+                            REQUIRED_SPACING_GRAPH_NODES.as_ref(),
+                        )),
+                        BrushPresetGraph::SpacingFactor => Element::new(GraphView::new(
+                            instance.spacing_factor_graph(),
+                            SPACING_FACTOR_GRAPH_NODES.as_ref(),
+                        )),
+                        BrushPresetGraph::Main => Element::new(GraphView::new(
+                            instance.main_graph(),
+                            MAIN_GRAPH_NODES.as_ref(),
+                        )),
+                        BrushPresetGraph::StrokePostprocess { index } => {
+                            Element::new(GraphView::new(
+                                instance.stroke_postprocess_graphs().get(index).unwrap(),
+                                STROKE_POSTPROCESS_GRAPH_NODES.as_ref(),
+                            ))
+                        }
+                    }
+                    .map(BrushEditorMessage::GraphView);
                     // TODO: External var browser may not only be placed in editor. They're modifiable values for the user.
                     //       For example the brush size and opacity.
                     let ext_vars = external_var_view(
@@ -388,7 +372,7 @@ impl WindowView for BrushEditorView {
                     .push(
                         DragDropColumn::with_children(
                             instance.stroke_postprocess_graphs().iter().enumerate().map(
-                                |(index, graph)| {
+                                |(index, _)| {
                                     Element::new(
                                         button(text(format!("Stroke Postprocess {}", index)))
                                             .on_press_with(move || {
@@ -562,12 +546,33 @@ impl WindowView for BrushEditorView {
                 match selected {
                     Selected::Brush(brush) => {
                         let mut instance = brush.instance.write();
-                        let g = brush.viewing_graph.graph_mut(&mut instance);
-                        Self::apply_graph_view_message(
-                            g,
-                            message,
-                            &brush.viewing_graph.node_registry(),
-                        );
+                        match brush.viewing_graph {
+                            BrushPresetGraph::RequiredSpacing => Self::apply_graph_view_message(
+                                instance.required_spacing_graph_mut(),
+                                message,
+                                REQUIRED_SPACING_GRAPH_NODES.as_ref(),
+                            ),
+                            BrushPresetGraph::SpacingFactor => Self::apply_graph_view_message(
+                                instance.spacing_factor_graph_mut(),
+                                message,
+                                SPACING_FACTOR_GRAPH_NODES.as_ref(),
+                            ),
+                            BrushPresetGraph::Main => Self::apply_graph_view_message(
+                                instance.main_graph_mut(),
+                                message,
+                                MAIN_GRAPH_NODES.as_ref(),
+                            ),
+                            BrushPresetGraph::StrokePostprocess { index } => {
+                                Self::apply_graph_view_message(
+                                    instance
+                                        .stroke_postprocess_graphs_mut()
+                                        .get_mut(index)
+                                        .unwrap(),
+                                    message,
+                                    STROKE_POSTPROCESS_GRAPH_NODES.as_ref(),
+                                )
+                            }
+                        }
                     }
                     Selected::Function(func) => {
                         Self::apply_graph_view_message(
@@ -794,10 +799,10 @@ impl WindowView for BrushEditorView {
 }
 
 impl BrushEditorView {
-    fn apply_graph_view_message(
-        graph: &mut Graph,
+    fn apply_graph_view_message<Data: GraphData>(
+        graph: &mut Graph<Data>,
         message: GraphViewMessage,
-        nodes: &GraphNodeRegistry,
+        nodes: &GraphNodeRegistry<Data>,
     ) {
         match message {
             GraphViewMessage::NodeMoveRequest(point, id) => {

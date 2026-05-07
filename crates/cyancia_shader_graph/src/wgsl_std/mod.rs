@@ -1,13 +1,13 @@
-use crate::graph::{node::GraphNodeRegistry, variable::GraphTypeRegistry};
+use crate::graph::{GraphData, node::{GraphNodeRegistry}, variable::GraphTypeRegistry};
 
 pub mod casters;
 pub mod nodes;
 pub mod types;
 
-pub fn builtin_nodes() -> GraphNodeRegistry {
+pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
     use nodes::*;
 
-    let mut nodes = GraphNodeRegistry::default();
+    let mut nodes = GraphNodeRegistry::with_capacity();
 
     nodes.register::<ScalarMathNode>();
     nodes.register::<VectorMathNode>();
