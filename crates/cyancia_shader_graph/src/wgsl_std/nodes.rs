@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use cyancia_assets::asset::AssetHandle;
 use cyancia_math::curve::CubicCurve;
 use cyancia_utils::{count, wrapper};
 use cyancia_widgets::curve_edit::CurveEdit;
@@ -41,7 +42,7 @@ use crate::{
         variable::GraphTypeRegistry,
     },
     save::GraphSerializable,
-    wgsl_std::types::{ColorType, F32Type, TextureLocalIndex, TextureType, Vec2FType},
+    wgsl_std::types::{ColorType, F32Type, TextureReference, TextureType, Vec2FType},
 };
 
 use crate::graph::node::GraphNodeRunError;
@@ -1322,7 +1323,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for GetPixelColorNode {
         _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
+            GraphDefaultInputSlot::new::<TextureType>(TextureReference::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
         ]
     }
@@ -1442,7 +1443,20 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         Ok(format!("let {} = {}u;\n", ctx.get_output(0)?, index))
     }
 
-    // TODO texture pixel colors are available on CPU.
+    fn run(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRunContext<'_, Data>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<TextureType>(
+            0,
+            TextureReference {
+                local_index: 0, // We are not using local index on CPU, so this can be 0.
+                external_id: *state,
+            },
+        )?;
+        Ok(())
+    }
 }
 
 // TODO: Mixing in different color spaces.
@@ -1507,8 +1521,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
         ctx.set_output_value::<ColorType>(0, a.lerp(b, t))?;
         Ok(())
     }
-
-    // TODO texture sizes are available on CPU.
 }
 
 #[derive(Default, Clone)]
@@ -1537,7 +1549,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
         _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<TextureType>(
-            TextureLocalIndex::NULL,
+            TextureReference::NULL,
         )]
     }
 
@@ -1559,6 +1571,21 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
             "let {} = vec2f(texture_bounds[{}].max - texture_bounds[{}].min);\n",
             output_size, input_texture, input_texture
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let reference = *ctx.get_input_value::<TextureType>(0)?;
+        let texture_object = ctx
+            .resources
+            .textures
+            .get(&reference.external_id)
+            .expect("Texture not found");
+        let texture = texture_object.handle.get().expect("Unable to load texture");
+        ctx.set_output_value::<Vec2FType>(
+            0,
+            Vec2::new(texture.image.width() as f32, texture.image.height() as f32),
+        )?;
+        Ok(())
     }
 }
 

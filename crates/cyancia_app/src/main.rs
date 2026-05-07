@@ -57,11 +57,11 @@ fn main() {
 
     app.add_service::<RenderContext>()
         .add_service::<WindowCommandBuffer>()
-        .add_plugin(RenderPlugin)
         .add_plugin(AssetsPlugin {
             asset_root: "assets".into(),
             bundles: asset_bundles,
         })
+        .add_plugin(RenderPlugin)
         .add_plugin(ShaderGraphPlugin)
         .add_plugin(ToolsPlugin)
         .add_plugin(ImagePlugin)

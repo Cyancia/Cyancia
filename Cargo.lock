@@ -1458,6 +1458,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy_math",
+ "bytemuck",
+ "cyancia_assets",
  "cyancia_runtime",
  "cyancia_utils",
  "encase",
@@ -1465,10 +1467,14 @@ dependencies = [
  "iced_renderer",
  "iced_wgpu",
  "iced_widget",
+ "image",
  "parse-display",
  "serde",
+ "thiserror 2.0.18",
+ "toml",
  "wesl",
  "wgpu",
+ "zip",
 ]
 
 [[package]]

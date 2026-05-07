@@ -11,7 +11,7 @@ use cyancia_shader_graph::{
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
-    wgsl_std::types::{ColorType, F32Type, RectType, TextureLocalIndex, TextureType, Vec2FType},
+    wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
 };
 use cyancia_shader_graph_derive::stateless;
 use glam::{Vec2, Vec4};
@@ -227,7 +227,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
-            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
+            GraphDefaultInputSlot::new::<TextureType>(TextureReference::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ONE),
@@ -496,7 +496,7 @@ impl<Data: GraphData> GraphNode<Data> for PasteTextureNode {
         _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
+            GraphDefaultInputSlot::new::<TextureType>(TextureReference::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ONE),

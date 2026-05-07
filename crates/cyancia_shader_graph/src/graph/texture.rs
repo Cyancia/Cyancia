@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use cyancia_assets::asset::AssetHandle;
+use cyancia_render::texture::Image;
 use cyancia_utils::wrapper;
 use indexmap::IndexMap;
 use parse_display::Display;
@@ -21,6 +23,7 @@ impl TextureId {
 pub struct TextureObject {
     pub external_id: TextureId,
     pub name: String,
+    pub handle: AssetHandle<Image>,
 }
 
 impl PartialEq for TextureObject {
@@ -41,8 +44,20 @@ pub struct GraphTextureStorage {
 }
 
 impl GraphTextureStorage {
-    pub fn new(textures: Vec<TextureObject>) -> Self {
-        let textures = textures.into_iter().map(|t| (t.external_id, t)).collect();
+    pub fn new(textures: Vec<AssetHandle<Image>>) -> Self {
+        let textures = textures
+            .into_iter()
+            .map(|t| {
+                let id = (*t.id()).into();
+                let name = t.get().unwrap().metadata.name.clone();
+                let object = TextureObject {
+                    external_id: id,
+                    name,
+                    handle: t.clone(),
+                };
+                (id, object)
+            })
+            .collect();
         Self { textures }
     }
 

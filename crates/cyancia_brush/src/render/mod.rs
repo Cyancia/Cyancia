@@ -19,8 +19,7 @@ use cyancia_image::{
 use cyancia_input::mouse::PressedMouseState;
 use cyancia_math::number::LerpAngle;
 use cyancia_render::{
-    buffer::{BufferVec, DynamicBuffer},
-    texture_atlas::{TextureAtlas, TextureAtlasBuilder},
+    buffer::{BufferVec, DynamicBuffer}, texture::GpuImage, texture_atlas::{TextureAtlas, TextureAtlasBuilder}
 };
 use cyancia_shader_graph::graph::texture::TextureId;
 use cyancia_utils::include_shader;
@@ -44,7 +43,7 @@ use wgpu::{
 };
 
 use crate::{
-    asset::{BrushPreset, GpuImage},
+    asset::BrushPreset,
     input_processing::{InputProcessor, RawPenInput},
     instance::{BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset},
     render::{

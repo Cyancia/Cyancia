@@ -13,6 +13,7 @@ use cyancia_assets::{
     store::AssetRegistry,
 };
 use cyancia_input::action::ActionManifestCollection;
+use cyancia_render::texture::Image;
 use cyancia_runtime::{
     Services,
     service::{FromServices, RenderContext},
@@ -48,7 +49,7 @@ use uuid::Uuid;
 use wgpu::{Device, Queue};
 
 use crate::{
-    asset::{BrushPreset, BrushPresetMetadata, GpuImage, Image},
+    asset::{BrushPreset, BrushPresetMetadata},
     browser::{ExternalVarViewMessage, brush_asset_browser, external_var_view},
     input_processing::InputProcessor,
     instance::{
@@ -204,13 +205,7 @@ impl WindowView for BrushEditorView {
         let textures = services
             .service::<AssetRegistry>()
             .all_handles_of::<Image>()
-            .unwrap()
-            .into_iter()
-            .map(|h| TextureObject {
-                external_id: TextureId::new(*h.id()),
-                name: h.get().unwrap().metadata.name.clone(),
-            })
-            .collect();
+            .unwrap();
         let texture_storage = Arc::new(GraphTextureStorage::new(textures));
 
         let actions = services

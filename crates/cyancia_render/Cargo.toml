@@ -17,6 +17,12 @@ serde.workspace = true
 parse-display.workspace = true
 anyhow.workspace = true
 bevy_math.workspace = true
+image.workspace = true
+cyancia_assets.workspace = true
+zip.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+bytemuck.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

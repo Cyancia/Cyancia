@@ -12,7 +12,7 @@ use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{GraphRenderer, GraphTheme, graph::slot::GraphValueType};
+use crate::{GraphRenderer, GraphTheme, graph::{slot::GraphValueType, texture::TextureId}};
 
 // TODO: Boolean and rectangle types
 
@@ -203,17 +203,27 @@ impl GraphValueType for ColorType {
 #[derive(Default, Clone)]
 pub struct TextureType;
 
-wrapper! {
-    #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-    pub TextureLocalIndex : u32
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TextureReference {
+    pub local_index: u32,
+    pub external_id: TextureId,
 }
 
-impl TextureLocalIndex {
-    pub const NULL: Self = Self(0);
+impl Default for TextureReference {
+    fn default() -> Self {
+        Self::NULL
+    }
+}
+
+impl TextureReference {
+    pub const NULL: Self = Self {
+        local_index: 0,
+        external_id: TextureId::NULL,
+    };
 }
 
 impl GraphValueType for TextureType {
-    type AssociatedLiteralType = TextureLocalIndex;
+    type AssociatedLiteralType = TextureReference;
 
     type Message = ();
 
@@ -226,7 +236,7 @@ impl GraphValueType for TextureType {
     }
 
     fn default_literal(&self) -> Self::AssociatedLiteralType {
-        TextureLocalIndex::NULL
+        TextureReference::NULL
     }
 
     fn wgsl_type(&self) -> Option<&'static str> {
@@ -250,7 +260,7 @@ impl GraphValueType for TextureType {
     fn update_literal(&self, _data: &mut Self::AssociatedLiteralType, _message: Self::Message) {}
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
-        Some(data.to_string())
+        Some(data.local_index.to_string())
     }
 }
 
