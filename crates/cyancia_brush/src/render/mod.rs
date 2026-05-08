@@ -19,7 +19,9 @@ use cyancia_image::{
 use cyancia_input::mouse::PressedMouseState;
 use cyancia_math::number::LerpAngle;
 use cyancia_render::{
-    buffer::{BufferVec, DynamicBuffer}, texture::GpuImage, texture_atlas::{TextureAtlas, TextureAtlasBuilder}
+    buffer::{BufferVec, DynamicBuffer},
+    texture::GpuImage,
+    texture_atlas::{TextureAtlas, TextureAtlasBuilder},
 };
 use cyancia_shader_graph::graph::texture::TextureId;
 use cyancia_utils::include_shader;
@@ -155,19 +157,32 @@ impl BrushPresetOperator {
         renderer.reset(&self.device, &self.queue);
         self.input_processor.reset();
 
-        if let Some(pen_input) = self.input_processor.push(input) {
-            renderer.update(&self.device, &self.queue, pen_input);
-        }
+        let samples = self.input_processor.push(
+            input,
+            instance.required_spacing_graph(),
+            instance.spacing_factor_graph(),
+        );
+        dbg!(&samples);
+        // if let Some(pen_input) = self.input_processor.push(input) {
+        //     renderer.update(&self.device, &self.queue, pen_input);
+        // }
     }
 
     pub fn update_stroke(&mut self, input: RawPenInput) {
         let Some(renderer) = &self.renderer else {
             return;
         };
+        let instance = self.instance.read();
 
-        if let Some(pen_input) = self.input_processor.push(input) {
-            renderer.update(&self.device, &self.queue, pen_input);
-        }
+        let samples = self.input_processor.push(
+            input,
+            instance.required_spacing_graph(),
+            instance.spacing_factor_graph(),
+        );
+        dbg!(&samples);
+        // if let Some(pen_input) = self.input_processor.push(input) {
+        //     renderer.update(&self.device, &self.queue, pen_input);
+        // }
     }
 
     pub fn end_stroke(
@@ -180,13 +195,13 @@ impl BrushPresetOperator {
             return;
         };
 
-        for pen_input in self.input_processor.flush(final_input) {
-            renderer.update(&self.device, &self.queue, pen_input);
-        }
+        // for pen_input in self.input_processor.flush(final_input) {
+        //     renderer.update(&self.device, &self.queue, pen_input);
+        // }
 
         let now = std::time::Instant::now();
         // renderer.postprocess_stroke(&self.device, &self.queue);
-        renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
+        // renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
     }
 }
@@ -440,14 +455,14 @@ impl BrushPresetRenderer {
 
 pub const MAX_SAMPLES_BETWEEN_INPUTS: usize = 256;
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct ComputedPenInput {
     pub position: Vec2,
     pub draw_direction_vec: Vec2,
     pub draw_direction_angle: f32,
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct PenInput {
     pub position: Vec2,
     pub bezier_control_prev: Vec2,
@@ -473,7 +488,7 @@ impl Default for StrokeInfo {
     }
 }
 
-#[derive(ShaderType, Clone, Copy)]
+#[derive(ShaderType, Debug, Clone, Copy)]
 pub struct OutputSamples {
     pub n_samples: u32,
     pub samples: [ComputedPenInput; MAX_SAMPLES_BETWEEN_INPUTS],
@@ -488,13 +503,13 @@ impl Default for OutputSamples {
     }
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct DabInfo {
     pub bound_min: IVec2,
     pub bound_max: IVec2,
 }
 
-#[derive(ShaderType, Clone, Copy)]
+#[derive(ShaderType, Debug, Clone, Copy)]
 pub struct DabInfos {
     pub n_dabs: u32,
     pub buf: [DabInfo; MAX_SAMPLES_BETWEEN_INPUTS],
@@ -509,13 +524,7 @@ impl Default for DabInfos {
     }
 }
 
-#[derive(ShaderType, Default, Clone, Copy)]
-pub struct PassFence {
-    pub cur_sample: u32,
-    pub cur_sample_finished_threads: u32,
-}
-
-#[derive(ShaderType, Default, Clone, Copy)]
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct PenInputSampler {
     pub last_input: PenInput,
     pub last_sample: ComputedPenInput,

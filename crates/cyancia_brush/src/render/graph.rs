@@ -7,7 +7,8 @@ use cyancia_shader_graph::{
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
             GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeRunContext,
-            GraphNodeRunError, GraphNodeUpdateContext, StatelessCommonGraphNode,
+            GraphNodeRunError, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
+            StatelessCommonGraphNode,
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
@@ -1110,6 +1111,10 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputSpacingNode {
         color!(0x23948d)
     }
 
+    fn update_signature(&self, mut ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
+        ctx.require_input_slot_as_graph_output(0, "Spacing".to_string());
+    }
+
     fn create_inputs(
         &self,
         _ctx: GraphNodeCreateSlotsContext<'_, Data>,
@@ -1129,6 +1134,10 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputSpacingNode {
         mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("return {};\n", ctx.get_input(0)?))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
     }
 }
 
@@ -1265,6 +1274,10 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputRequiredSpacingNo
         color!(0x3f463c)
     }
 
+    fn update_signature(&self, mut ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
+        ctx.require_input_slot_as_graph_output(0, "Required Spacing".to_string());
+    }
+
     fn create_inputs(
         &self,
         _ctx: GraphNodeCreateSlotsContext<'_, Data>,
@@ -1284,5 +1297,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputRequiredSpacingNo
         mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("return {};\n", ctx.get_input(0)?))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
     }
 }

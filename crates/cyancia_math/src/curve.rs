@@ -129,6 +129,34 @@ impl CubicCurve {
     }
 }
 
+pub struct CubicBezierCurve {
+    pub p0: Vec2,
+    pub p1: Vec2,
+    pub p2: Vec2,
+    pub p3: Vec2,
+}
+
+impl CubicBezierCurve {
+    pub fn new(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2) -> Self {
+        Self { p0, p1, p2, p3 }
+    }
+
+    pub fn sample(&self, t: f32) -> Vec2 {
+        let mt = 1.0 - t;
+        mt * mt * mt * self.p0
+            + 3.0 * mt * mt * t * self.p1
+            + 3.0 * mt * t * t * self.p2
+            + t * t * t * self.p3
+    }
+
+    pub fn tangent(&self, t: f32) -> Vec2 {
+        let mt = 1.0 - t;
+        3.0 * mt * mt * (self.p1 - self.p0)
+            + 6.0 * mt * t * (self.p2 - self.p1)
+            + 3.0 * t * t * (self.p3 - self.p2)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

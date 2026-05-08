@@ -20,8 +20,8 @@ use wgpu::{
 };
 
 use crate::render::{
-    DabInfos, EXTERNAL_VARIABLE_BASE_BINDING, OutputSamples, PassFence, PenInput, PenInputSampler,
-    StrokeInfo, StrokeResources, dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
+    DabInfos, EXTERNAL_VARIABLE_BASE_BINDING, OutputSamples, PenInput, PenInputSampler, StrokeInfo,
+    StrokeResources, dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
 };
 
 pub struct BrushInputSamplingPipeline {

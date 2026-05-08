@@ -480,8 +480,11 @@ impl<Data: GraphData> Graph<Data> {
             .keys()
             .filter_map(|input_slot_id| {
                 let input_slot = self.slots.inputs.get(input_slot_id)?;
-                let connected_output_id = input_slot.connected?;
-                output_slot_idents.get(&connected_output_id).cloned()
+                if let Some(connected_output_id) = input_slot.connected {
+                    output_slot_idents.get(&connected_output_id).cloned()
+                } else {
+                    input_slot.data.to_code()
+                }
             })
             .collect::<Vec<_>>();
         assert_eq!(
@@ -551,8 +554,11 @@ impl<Data: GraphData> Graph<Data> {
             .keys()
             .filter_map(|input_slot_id| {
                 let input_slot = self.slots.inputs.get(input_slot_id)?;
-                let connected_output_id = input_slot.connected?;
-                output_storage.get(&connected_output_id).cloned()
+                if let Some(connected_output_id) = input_slot.connected {
+                    output_storage.get(&connected_output_id).cloned()
+                } else {
+                    Some(input_slot.data.clone())
+                }
             })
             .collect::<Vec<_>>();
         assert_eq!(

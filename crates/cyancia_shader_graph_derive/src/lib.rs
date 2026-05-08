@@ -146,6 +146,14 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
             ) -> ::std::result::Result<(), #crate_path::graph::node::GraphNodeRunError> {
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::run(self, ctx)
             }
+
+            fn update_signature(
+                &self,
+                _state: &Self::State,
+                ctx: #crate_path::graph::node::GraphNodeUpdateSignatureContext<'_, #data_ty>
+            ) {
+                <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::update_signature(self, ctx);
+            }
         }
     }
 }

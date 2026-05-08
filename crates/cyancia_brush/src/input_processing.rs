@@ -1,7 +1,12 @@
+use cyancia_math::curve::CubicBezierCurve;
+use cyancia_shader_graph::graph::Graph;
 use glam::Vec2;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-use crate::render::PenInput;
+use crate::render::{
+    ComputedPenInput, MAX_SAMPLES_BETWEEN_INPUTS, PenInput,
+    graph::{BrushGraphData, BrushGraphDataTuple},
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RawPenInput {
@@ -14,6 +19,8 @@ pub struct InputProcessor {
 
     older_stable: Option<Vec2>,
     prev_stable: Option<Vec2>,
+
+    last_sample: Option<ComputedPenInput>,
 }
 
 impl Default for InputProcessor {
@@ -29,6 +36,7 @@ impl InputProcessor {
             stabilizer,
             older_stable: None,
             prev_stable: None,
+            last_sample: None,
         }
     }
 
@@ -42,13 +50,20 @@ impl InputProcessor {
         self.stabilizer = stabilizer;
     }
 
-    pub fn push(&mut self, input: RawPenInput) -> Option<PenInput> {
+    pub fn push(
+        &mut self,
+        input: RawPenInput,
+        required_spacing: &Graph<BrushGraphData>,
+        spacing_factor: &Graph<BrushGraphDataTuple>,
+    ) -> Vec<ComputedPenInput> {
         self.samples.enqueue(input);
 
-        let stabilized = self.stabilizer.stabilize(&self.samples)?;
-        let new_pos = stabilized.position;
+        let Some(stablized) = self.stabilizer.stabilize(&self.samples) else {
+            return Vec::new();
+        };
+        let new_pos = stablized.position;
 
-        let result = match (self.older_stable, self.prev_stable) {
+        let pen_input = match (self.older_stable, self.prev_stable) {
             (Some(older), Some(prev)) => {
                 let tangent_start = (new_pos - older) * 0.5;
                 let tangent_end = new_pos - prev;
@@ -73,22 +88,81 @@ impl InputProcessor {
 
         self.older_stable = self.prev_stable;
         self.prev_stable = Some(new_pos);
-        result
+
+        let Some(pen_input) = pen_input else {
+            return Vec::new();
+        };
+        const BEZIER_SAMPLES: usize = 32;
+
+        let p1 = pen_input.bezier_control_prev;
+        let p2 = pen_input.bezier_control_cur;
+        let p3 = pen_input.position;
+
+        let p0 = match self.last_sample {
+            Some(s) => s.position,
+            None => {
+                self.last_sample = Some(compute_pen_input(
+                    &CubicBezierCurve::new(p3, p1, p2, p3),
+                    1.0,
+                ));
+                return Vec::new();
+            }
+        };
+
+        let curve = CubicBezierCurve::new(p0, p1, p2, p3);
+        let new_computed = compute_pen_input(&curve, 1.0);
+
+        // Build arc-length table.
+        let mut arc_table = [0.0f32; BEZIER_SAMPLES + 1];
+        let mut prev_p = p0;
+        for i in 1..=BEZIER_SAMPLES {
+            let p = curve.sample(i as f32 / BEZIER_SAMPLES as f32);
+            arc_table[i] = arc_table[i - 1] + prev_p.distance(p);
+            prev_p = p;
+        }
+        let total_arc = arc_table[BEZIER_SAMPLES];
+
+        let spacing = compute_required_spacing(new_computed, required_spacing);
+        if total_arc < 0.0001 || spacing <= 0.0 {
+            return Vec::new();
+        }
+
+        let mut output = Vec::new();
+        let mut remaining_arc = total_arc;
+        while output.len() < MAX_SAMPLES_BETWEEN_INPUTS {
+            let target_arc = total_arc - remaining_arc;
+            let t = bezier_t_for_arc_length(&arc_table, target_arc);
+            let interpolated = compute_pen_input(&curve, t);
+
+            output.push(interpolated);
+            remaining_arc -= spacing;
+
+            if remaining_arc < spacing {
+                self.last_sample = Some(interpolated);
+                break;
+            }
+        }
+
+        output
     }
 
     pub fn reset(&mut self) {
         self.samples.clear();
         self.older_stable = None;
         self.prev_stable = None;
+        self.last_sample = None;
     }
 
-    pub fn flush(&mut self, final_input: RawPenInput) -> Vec<PenInput> {
+    pub fn flush(
+        &mut self,
+        final_input: RawPenInput,
+        required_spacing: &Graph<BrushGraphData>,
+        spacing_factor: &Graph<BrushGraphDataTuple>,
+    ) -> Vec<ComputedPenInput> {
         let steps = self.stabilizer.convergence_steps();
         let mut result = Vec::new();
         for _ in 0..steps {
-            if let Some(pen_input) = self.push(final_input) {
-                result.push(pen_input);
-            }
+            result.extend(self.push(final_input, required_spacing, spacing_factor));
         }
         result
     }
@@ -166,4 +240,77 @@ impl InputSampleStabilizer for BasicStabilizer {
     fn convergence_steps(&self) -> usize {
         1
     }
+}
+
+fn compute_spacing_factor(
+    lhs: ComputedPenInput,
+    rhs: ComputedPenInput,
+    graph: &Graph<BrushGraphDataTuple>,
+) -> f32 {
+    let output = graph
+        .run(
+            &BrushGraphDataTuple {
+                lhs: BrushGraphData { pen_input: lhs },
+                rhs: BrushGraphData { pen_input: rhs },
+            },
+            Vec::new(),
+        )
+        .unwrap();
+
+    // TODO Don't panic
+    assert!(
+        output.len() == 1,
+        "Multiple outputs from spacing factor graph not supported"
+    );
+
+    *output[0].as_ref::<f32>()
+}
+
+fn compute_required_spacing(sample: ComputedPenInput, graph: &Graph<BrushGraphData>) -> f32 {
+    let output = graph
+        .run(&BrushGraphData { pen_input: sample }, Vec::new())
+        .unwrap();
+
+    // TODO Don't panic
+    assert!(
+        output.len() == 1,
+        "Multiple outputs from required spacing graph not supported"
+    );
+
+    *output[0].as_ref::<f32>()
+}
+
+fn compute_pen_input(curve: &CubicBezierCurve, t: f32) -> ComputedPenInput {
+    let position = curve.sample(t);
+    let draw_direction_vec = curve.tangent(t);
+    let draw_direction_angle = draw_direction_vec.y.atan2(draw_direction_vec.x);
+    ComputedPenInput {
+        position,
+        draw_direction_vec,
+        draw_direction_angle,
+    }
+}
+
+fn bezier_t_for_arc_length(arc_table: &[f32], arc_goal: f32) -> f32 {
+    let n = arc_table.len() - 1;
+    let bisect_iterations = (n as f32).log2().ceil() as usize + 1;
+
+    let mut lo = 0usize;
+    let mut hi = n;
+    for _ in 0..bisect_iterations {
+        let mid = (lo + hi) / 2;
+        if arc_table[mid] < arc_goal {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let lo_arc = arc_table[lo];
+    let hi_arc = arc_table[hi];
+    let lo_t = lo as f32 / n as f32;
+    let hi_t = hi as f32 / n as f32;
+    if hi_arc <= lo_arc {
+        return lo_t;
+    }
+    lo_t + (hi_t - lo_t) * (arc_goal - lo_arc) / (hi_arc - lo_arc)
 }

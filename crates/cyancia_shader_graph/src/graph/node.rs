@@ -401,6 +401,7 @@ pub trait StatelessCommonGraphNode<Data: GraphData>: Send + Sync + 'static + Dyn
         &self,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot>;
+    fn update_signature(&self, ctx: GraphNodeUpdateSignatureContext<'_, Data>) {}
     fn generate_code(
         &self,
         ctx: GraphNodeCodeGenContext<'_, Data>,
