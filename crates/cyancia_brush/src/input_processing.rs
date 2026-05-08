@@ -129,19 +129,21 @@ impl InputProcessor {
 
         let mut output = Vec::new();
         let mut remaining_arc = total_arc;
+        let mut last_sample = new_computed;
         while output.len() < MAX_SAMPLES_BETWEEN_INPUTS {
             let target_arc = total_arc - remaining_arc;
             let t = bezier_t_for_arc_length(&arc_table, target_arc);
             let interpolated = compute_pen_input(&curve, t);
 
             output.push(interpolated);
-            remaining_arc -= spacing;
+            remaining_arc -= compute_spacing_factor(last_sample, interpolated, spacing_factor);
+            last_sample = interpolated;
 
             if remaining_arc < spacing {
-                self.last_sample = Some(interpolated);
                 break;
             }
         }
+        self.last_sample = Some(last_sample);
 
         output
     }

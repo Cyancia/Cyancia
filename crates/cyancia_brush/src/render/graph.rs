@@ -1192,6 +1192,12 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for PenPositionsNode {
             ctx.get_output(1)?,
         ))
     }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<Vec2FType>(0, ctx.data.lhs.pen_input.position)?;
+        ctx.set_output_value::<Vec2FType>(1, ctx.data.rhs.pen_input.position)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -1250,6 +1256,14 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for DrawDirectionsNode {
             ctx.get_output(2)?,
             ctx.get_output(3)?,
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<F32Type>(0, ctx.data.lhs.pen_input.draw_direction_angle)?;
+        ctx.set_output_value::<F32Type>(1, ctx.data.rhs.pen_input.draw_direction_angle)?;
+        ctx.set_output_value::<Vec2FType>(2, ctx.data.lhs.pen_input.draw_direction_vec)?;
+        ctx.set_output_value::<Vec2FType>(3, ctx.data.rhs.pen_input.draw_direction_vec)?;
+        Ok(())
     }
 }
 
