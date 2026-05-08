@@ -540,11 +540,12 @@ impl<Data: GraphData> Graph<Data> {
             match node.data.run(context) {
                 Ok(()) => {}
                 Err(err) => {
-                    return Err(GraphRunError::NodeRunError(ContextualGraphNodeRunError {
-                        node_id: *node_id,
-                        node_title: node.data.name().to_string(),
-                        err,
-                    }));
+                    // return Err(GraphRunError::NodeRunError(ContextualGraphNodeRunError {
+                    //     node_id: *node_id,
+                    //     node_title: node.data.name().to_string(),
+                    //     err,
+                    // }));
+                    // TODO Some nodes are only ran on GPU and only available on GPU.
                 }
             }
         }

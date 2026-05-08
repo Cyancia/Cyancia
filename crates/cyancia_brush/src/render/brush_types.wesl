@@ -8,19 +8,14 @@ const ESTIMATION_WORKGROUP_SIZE = vec3u(1, 1, 8);
 
 struct StrokeInfo {
     // In tiles
-    @if(SIZE_ESTIMATION) accumulated_bound_min_x: atomic<i32>,
-    @if(SIZE_ESTIMATION) accumulated_bound_min_y: atomic<i32>,
-    @if(SIZE_ESTIMATION) accumulated_bound_max_x: atomic<i32>,
-    @if(SIZE_ESTIMATION) accumulated_bound_max_y: atomic<i32>,
-    @if(!SIZE_ESTIMATION) accumulated_bound_min: vec2i,
-    @if(!SIZE_ESTIMATION) accumulated_bound_max: vec2i,
+    accumulated_bound_min: vec2i,
+    accumulated_bound_max: vec2i,
 
     total_dabs: u32,
 }
 
 struct DynamicTileInfo {
-    @if(TILE_ALLOCATION) n_tiles: atomic<u32>,
-    @if(!TILE_ALLOCATION) n_tiles: u32,
+    n_tiles: u32,
     buf: array<TileInfo>,
 }
 

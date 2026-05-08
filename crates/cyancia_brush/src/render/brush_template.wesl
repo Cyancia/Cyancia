@@ -1,20 +1,16 @@
 import package::image::image_tiling::{TileInfo, TILE_SIZE};
 import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
-import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfos, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
+import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
-@group(0) @binding(0) var<storage> samples: OutputSamples;
-@group(0) @binding(1) var<storage, read_write> stroke_info: StrokeInfo;
-@group(0) @binding(2) var textures: texture_2d<f32>;
-@group(0) @binding(3) var<storage> texture_bounds: array<URect>;
-@group(0) @binding(4) var<storage> target_layer_tile_info: array<TileInfo>;
-@group(0) @binding(5) var target_layer: texture_storage_2d_array<r32uint, read>;
-@if(!SIZE_ESTIMATION) @group(0) @binding(6) var<storage> buffer_tile_info: DynamicTileInfo;
-@if(!SIZE_ESTIMATION) @group(0) @binding(7) var stroke_buffer_src: texture_storage_2d_array<r32uint, read>;
-@if(!SIZE_ESTIMATION) @group(0) @binding(8) var stroke_buffer_dst: texture_storage_2d_array<r32uint, write>;
-@group(0) @binding(9) var<storage, read_write> dab_infos: DabInfos;
-
-@if(SIZE_ESTIMATION) @group(0) @binding(16) var<storage, read_write> tile_allocation_dispatch: AtomicDispatchParams;
-@if(SIZE_ESTIMATION) @group(0) @binding(17) var<storage, read_write> main_dispatch: array<vec3u>;
+@group(0) @binding(0) var<storage> sample: ComputedPenInput;
+@group(0) @binding(1) var textures: texture_2d<f32>;
+@group(0) @binding(2) var<storage> texture_bounds: array<URect>;
+@group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
+@group(0) @binding(4) var target_layer: texture_storage_2d_array<r32uint, read>;
+@group(0) @binding(5) var<storage> buffer_tile_info: array<TileInfo>;
+@group(0) @binding(6) var stroke_buffer_src: texture_storage_2d_array<r32uint, read>;
+@group(0) @binding(7) var stroke_buffer_dst: texture_storage_2d_array<r32uint, write>;
+@group(0) @binding(8) var<storage, read_write> dab_info: DabInfo;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
@@ -41,19 +37,10 @@ fn atlas_size(local_index: u32) -> vec2u {
 }
 
 fn get_accumulated_pixel_bounds() -> IRect {
-    @if(SIZE_ESTIMATION) {
-        return IRect(
-            vec2i(atomicLoad(&stroke_info.accumulated_bound_min_x), atomicLoad(&stroke_info.accumulated_bound_min_y)) * i32(TILE_SIZE),
-            vec2i(atomicLoad(&stroke_info.accumulated_bound_max_x), atomicLoad(&stroke_info.accumulated_bound_max_y)) * i32(TILE_SIZE) + 1
-        );
-    }
-
-    @if(!SIZE_ESTIMATION) {
-        return IRect(
-            stroke_info.accumulated_bound_min * i32(TILE_SIZE),
-            stroke_info.accumulated_bound_max * i32(TILE_SIZE) + 1
-        );
-    }
+    return IRect(
+        stroke_info.accumulated_bound_min * i32(TILE_SIZE),
+        stroke_info.accumulated_bound_max * i32(TILE_SIZE) + 1
+    );
 }
 
 fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> Mask {
@@ -74,8 +61,8 @@ fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {
 }
 
 fn convert_pixel_to_buffer_tile(pixel: vec2i) -> vec3u {
-    for (var i = 0u; i < buffer_tile_info.n_tiles; i = i + 1u) {
-        let info = buffer_tile_info.buf[i];
+    for (var i = 0u; i < arrayLength(&buffer_tile_info); i = i + 1u) {
+        let info = buffer_tile_info[i];
         if pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
             pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE) {;
             return vec3u(vec2u(pixel - info.origin), i);
@@ -117,19 +104,13 @@ fn sample_local_texture(local_index: u32, pixel: vec2u) -> vec4f {
 }
 
 fn current_input_color(pixel_pos: vec2i) -> vec4f {
-    @if(SIZE_ESTIMATION) {
+    let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
+    if tile_index.z == 0xFFFFFFFFu {
         return vec4f(0.0);
     }
 
-    @if(!SIZE_ESTIMATION) {
-        let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
-        if tile_index.z == 0xFFFFFFFFu {
-            return vec4f(0.0);
-        }
-
-        let color = textureLoad(stroke_buffer_src, vec2i(tile_index.xy), tile_index.z);
-        return package::image::texture_unpack::unpack_rgba8_texel(color);
-    }
+    let color = textureLoad(stroke_buffer_src, vec2i(tile_index.xy), tile_index.z);
+    return package::image::texture_unpack::unpack_rgba8_texel(color);
 }
 
 fn target_layer_color(pixel_pos: vec2i) -> vec4f {
@@ -167,96 +148,23 @@ fn filter_within_bounds(pixel: vec2i, color: vec4f, bounds: Rect) -> vec4f {
 }
 
 fn set_output_color(pixel_pos: vec2i, color: vec4f) {
-    @if(!SIZE_ESTIMATION) {
-        let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
-        if tile_index.z == 0xFFFFFFFFu {
-            return;
-        }
-        let packed = package::image::texture_unpack::pack_rgba8_texel(color);
-        textureStore(stroke_buffer_dst, vec2i(tile_index.xy), tile_index.z, packed);
+    let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
+    if tile_index.z == 0xFFFFFFFFu {
+        return;
     }
+    let packed = package::image::texture_unpack::pack_rgba8_texel(color);
+    textureStore(stroke_buffer_dst, vec2i(tile_index.xy), tile_index.z, packed);
 }
 
-@if(!SIZE_ESTIMATION)
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
-    let dab_index = id.z;
-
-    if dab_index >= dab_infos.n_dabs {
-        return;
-    }
-
-    let dab_info = dab_infos.buf[dab_index];
     let pixel_pos = vec2i(id.xy) + dab_info.bound_min * i32(TILE_SIZE);
     if any(pixel_pos >= dab_info.bound_max * i32(TILE_SIZE)) {
         return;
     }
     let pixel_posf = vec2f(pixel_pos);
-    let graph_input = samples.samples[dab_index];
 
-    main_graph(graph_input, pixel_pos, pixel_posf);
+    main_graph(sample, pixel_pos, pixel_posf);
     // set_output_color(pixel_pos, target_layer_color(pixel_pos) + 0.1);
-}
-
-var<private> affected_pixels_precise: IRect;
-
-fn set_output_bounds(bounds: Rect) {
-    affected_pixels_precise = IRect(vec2i(bounds.min), vec2i(bounds.max));
-}
-
-@if(SIZE_ESTIMATION)
-@compute
-@workgroup_size(1, 1, 8)
-fn estimate(@builtin(global_invocation_id) id: vec3u) {
-    @if(POSTPROCESS) {
-        dab_infos.n_dabs = N_STROKE_PP;
-    }
-
-    @if(!POSTPROCESS) {
-        dab_infos.n_dabs = samples.n_samples;
-    }
-
-    affected_pixels_precise = IRect(vec2i(0x7FFFFFFF), vec2i(-0x7FFFFFFF));
-
-    let dab_index = id.z;
-    if dab_index >= dab_infos.n_dabs {
-        main_dispatch[dab_index] = vec3u(0);
-        return;
-    }
-    let pixel_pos = vec2i(0);
-    let pixel_posf = vec2f(pixel_pos);
-    let graph_input = samples.samples[dab_index];
-    main_graph(graph_input, pixel_pos, pixel_posf);
-
-    let affected_tiles = IRect(
-        affected_pixels_precise.min / i32(TILE_SIZE),
-        (affected_pixels_precise.max - 1) / i32(TILE_SIZE) + 1
-    );
-
-    dab_infos.buf[dab_index].bound_min = affected_tiles.min;
-    dab_infos.buf[dab_index].bound_max = affected_tiles.max;
-
-    atomicMin(&stroke_info.accumulated_bound_min_x, affected_tiles.min.x);
-    atomicMin(&stroke_info.accumulated_bound_min_y, affected_tiles.min.y);
-    atomicMax(&stroke_info.accumulated_bound_max_x, affected_tiles.max.x);
-    atomicMax(&stroke_info.accumulated_bound_max_y, affected_tiles.max.y);
-
-    let affected_tiles_count = vec2u(affected_tiles.max - affected_tiles.min);
-
-    var local_tile_allocation_dispatch = vec3u(
-        unsigned_div_ceil(affected_tiles_count.x, TILE_ALLOCATION_WORKGROUP_SIZE.x),
-        unsigned_div_ceil(affected_tiles_count.y, TILE_ALLOCATION_WORKGROUP_SIZE.y),
-        unsigned_div_ceil(dab_infos.n_dabs, TILE_ALLOCATION_WORKGROUP_SIZE.z)
-    );
-    atomicMax(&tile_allocation_dispatch.x, local_tile_allocation_dispatch.x);
-    atomicMax(&tile_allocation_dispatch.y, local_tile_allocation_dispatch.y);
-    atomicMax(&tile_allocation_dispatch.z, local_tile_allocation_dispatch.z);
-
-    let affected_pixels_count = affected_tiles_count * vec2u(TILE_SIZE);
-    main_dispatch[dab_index] = vec3u(
-        unsigned_div_ceil(affected_pixels_count.x, MAIN_WORKGROUP_SIZE.x),
-        unsigned_div_ceil(affected_pixels_count.y, MAIN_WORKGROUP_SIZE.y),
-        unsigned_div_ceil(dab_infos.n_dabs, MAIN_WORKGROUP_SIZE.z)
-    );
 }

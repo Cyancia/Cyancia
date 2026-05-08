@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use bevy_math::IRect;
+use bevy_math::{IRect, Rect};
 use bytemuck::Contiguous;
 use cyancia_assets::{asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
@@ -23,7 +23,7 @@ use cyancia_render::{
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
 };
-use cyancia_shader_graph::graph::texture::TextureId;
+use cyancia_shader_graph::graph::{Graph, texture::TextureId};
 use cyancia_utils::include_shader;
 use encase::{ShaderType, StorageBuffer};
 use glam::{IVec2, IVec4, UVec2, UVec3, UVec4, Vec2, Vec4Swizzles};
@@ -48,18 +48,11 @@ use crate::{
     asset::BrushPreset,
     input_processing::{InputProcessor, RawPenInput},
     instance::{BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset},
-    render::{
-        dynamic_intermediate_buffer::{DynamicGpuTileInfoBuffer, DynamicIntermediateBuffer},
-        pipelines::{
-            BrushEstimatePipeline, BrushInputSamplingPipeline, BrushMainPipeline,
-            BrushTileAllocationPipeline,
-        },
-    },
+    render::{graph::BrushGraphData, pipeline::BrushMainPipeline},
 };
 
-pub mod dynamic_intermediate_buffer;
 pub mod graph;
-pub mod pipelines;
+pub mod pipeline;
 
 const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 
@@ -154,35 +147,30 @@ impl BrushPresetOperator {
             renderer
         });
 
-        renderer.reset(&self.device, &self.queue);
+        renderer.reset();
         self.input_processor.reset();
 
-        let samples = self.input_processor.push(
-            input,
-            instance.required_spacing_graph(),
-            instance.spacing_factor_graph(),
+        renderer.update(
+            &self.device,
+            &self.queue,
+            self.input_processor
+                .push(input, instance.required_spacing_graph()),
+            instance.main_graph(),
         );
-        dbg!(&samples);
-        // if let Some(pen_input) = self.input_processor.push(input) {
-        //     renderer.update(&self.device, &self.queue, pen_input);
-        // }
     }
 
     pub fn update_stroke(&mut self, input: RawPenInput) {
-        let Some(renderer) = &self.renderer else {
+        let Some(renderer) = &mut self.renderer else {
             return;
         };
         let instance = self.instance.read();
-
-        let samples = self.input_processor.push(
-            input,
-            instance.required_spacing_graph(),
-            instance.spacing_factor_graph(),
+        renderer.update(
+            &self.device,
+            &self.queue,
+            self.input_processor
+                .push(input, instance.required_spacing_graph()),
+            instance.main_graph(),
         );
-        dbg!(&samples);
-        // if let Some(pen_input) = self.input_processor.push(input) {
-        //     renderer.update(&self.device, &self.queue, pen_input);
-        // }
     }
 
     pub fn end_stroke(
@@ -191,10 +179,17 @@ impl BrushPresetOperator {
         tiles: &GpuTileStorage,
         target_layer: LayerId,
     ) {
-        let Some(renderer) = &self.renderer else {
+        let Some(renderer) = &mut self.renderer else {
             return;
         };
 
+        renderer.update(
+            &self.device,
+            &self.queue,
+            self.input_processor
+                .flush(final_input, self.instance.read().required_spacing_graph()),
+            self.instance.read().main_graph(),
+        );
         // for pen_input in self.input_processor.flush(final_input) {
         //     renderer.update(&self.device, &self.queue, pen_input);
         // }
@@ -206,14 +201,26 @@ impl BrushPresetOperator {
     }
 }
 
+fn push_samples(
+    device: &Device,
+    queue: &Queue,
+    main_graph: &Graph<BrushGraphData>,
+    pen_input: Vec<ComputedPenInput>,
+    renderer: &mut BrushPresetRenderer,
+) {
+}
+
 pub struct BrushPresetRenderer {
-    input_sampling: BrushInputSamplingPipeline,
-    tile_allocation: BrushTileAllocationPipeline,
-    estimate: BrushEstimatePipeline,
     main: BrushMainPipeline,
-    stroke_pp_tile_allocation: BrushTileAllocationPipeline,
-    stroke_pp: Vec<(BrushEstimatePipeline, BrushMainPipeline)>,
+    stroke_pp: Vec<BrushMainPipeline>,
     resources: StrokeResources,
+    intermediate_buffer: Option<[DynamicLayerStorage; 2]>,
+    samples_buffer: DynamicBuffer<ComputedPenInput>,
+    samples_offsets: Vec<u32>,
+    dab_info_buffer: DynamicBuffer<DabInfo>,
+    dab_info_offsets: Vec<u32>,
+    dispatch_params: Vec<UVec3>,
+    round: u32,
 }
 
 impl BrushPresetRenderer {
@@ -227,62 +234,91 @@ impl BrushPresetRenderer {
     ) -> Self {
         let resources = StrokeResources::new(device, queue, &brush, target_layer_id, tiles, assets);
 
-        let input_sampling = BrushInputSamplingPipeline::new(
-            device,
-            &resources,
-            brush.input_sampling.clone().into(),
-        );
-        let tile_allocation = BrushTileAllocationPipeline::new(device, &resources, false);
-        let estimate = BrushEstimatePipeline::new(
-            device,
-            &resources,
-            brush.main_graph.size_estimation.clone().into(),
-        );
         let main = BrushMainPipeline::new(device, &resources, brush.main_graph.main.clone().into());
-        let stroke_pp_tile_allocation = BrushTileAllocationPipeline::new(device, &resources, true);
 
         let mut stroke_pp = Vec::new();
         for graph in &brush.stroke_postprocess_graphs {
-            let estimate = BrushEstimatePipeline::new(
-                device,
-                &resources,
-                graph.size_estimation.clone().into(),
-            );
             let main = BrushMainPipeline::new(device, &resources, graph.main.clone().into());
-            stroke_pp.push((estimate, main));
+            stroke_pp.push(main);
         }
 
         Self {
-            input_sampling,
-            tile_allocation,
-            estimate,
             main,
-            stroke_pp_tile_allocation,
             stroke_pp,
             resources,
+            intermediate_buffer: None,
+            samples_buffer: DynamicBuffer::new("samples buffer".into(), BufferUsages::STORAGE),
+            samples_offsets: Vec::new(),
+            dab_info_buffer: DynamicBuffer::new("dab info buffer".into(), BufferUsages::STORAGE),
+            dab_info_offsets: Vec::new(),
+            dispatch_params: Vec::new(),
+            round: 0,
         }
     }
 
-    pub fn reset(&mut self, device: &Device, queue: &Queue) {
-        log::info!("Resetting brush preset renderer resources");
-        self.resources.reset(device, queue);
-    }
+    pub fn update(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        pen_input: Vec<ComputedPenInput>,
+        main_graph: &Graph<BrushGraphData>,
+    ) {
+        if pen_input.is_empty() {
+            return;
+        }
 
-    pub fn update(&self, device: &Device, queue: &Queue, input: PenInput) {
-        let mut input_staging =
-            DynamicBuffer::new(Some("pen input staging buffer"), BufferUsages::COPY_SRC);
-        input_staging.push(&input);
-        input_staging.write_buffer(device, queue);
+        self.samples_buffer.clear();
+        self.dab_info_buffer.clear();
+        self.samples_offsets.clear();
+        self.dab_info_offsets.clear();
+        self.dispatch_params.clear();
+        let mut update_rect = IRect::EMPTY;
+        for sample in pen_input {
+            let output = main_graph
+                .run(&BrushGraphData { pen_input: sample }, Vec::new())
+                .unwrap();
+
+            assert!(output.len() == 1);
+            let bounds = output[0].as_ref::<Rect>().as_irect();
+            self.dab_info_offsets
+                .push(self.dab_info_buffer.push(&DabInfo {
+                    bound_min: bounds.min,
+                    bound_max: bounds.max,
+                }) as u32);
+            self.samples_offsets
+                .push(self.samples_buffer.push(&sample) as u32);
+
+            update_rect = update_rect.union(bounds);
+            let size = bounds.size().as_uvec2();
+            self.dispatch_params
+                .push(UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1));
+        }
+
+        if update_rect.is_empty() {
+            return;
+        }
+
+        self.samples_buffer.write_buffer(device, queue);
+        self.dab_info_buffer.write_buffer(device, queue);
+
+        let buf = self.intermediate_buffer.get_or_insert_with(|| {
+            let buf_a = DynamicLayerStorage::new(
+                device.clone().into(),
+                queue.clone().into(),
+                self.resources.target_layer_info,
+            );
+            let buf_b = DynamicLayerStorage::new(
+                device.clone().into(),
+                queue.clone().into(),
+                self.resources.target_layer_info,
+            );
+            [buf_a, buf_b]
+        });
+
+        buf[0].ensure_pixel_area(update_rect);
+        buf[1].ensure_pixel_area(update_rect);
 
         let mut ec = device.create_command_encoder(&Default::default());
-
-        ec.copy_buffer_to_buffer(
-            &input_staging.into_inner_buffer().unwrap(),
-            0,
-            self.resources.pen_input.inner_buffer().unwrap(),
-            0,
-            PenInput::min_size().into_integer(),
-        );
 
         ec.push_debug_group("brush preset update stroke");
         {
@@ -290,167 +326,180 @@ impl BrushPresetRenderer {
                 label: Some("brush preset update pass"),
                 ..Default::default()
             });
-            self.input_sampling.dispatch(&mut pass);
-            self.estimate.dispatch_indirect(&mut pass, &self.resources);
-            self.tile_allocation.dispatch(&mut pass, &self.resources);
-            self.main.dispatch(&mut pass, &self.resources);
-        }
-        ec.pop_debug_group();
-
-        queue.submit([ec.finish()]);
-    }
-
-    pub fn postprocess_stroke(&self, device: &Device, queue: &Queue) {
-        if self.resources.n_stroke_pp == 0 {
-            return;
-        }
-
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        ec.push_debug_group("brush preset stroke postprocess");
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush preset stroke postprocess pass"),
-                ..Default::default()
-            });
-
-            for (estimate, main) in &self.stroke_pp {
-                estimate.dispatch(&mut pass, 1, 1, 1);
-                self.stroke_pp_tile_allocation
-                    .dispatch(&mut pass, &self.resources);
-                // main.dispatch(&mut pass, &self.resources);
-            }
-        }
-        ec.pop_debug_group();
-
-        unsafe { device.start_graphics_debugger_capture() };
-        queue.submit([ec.finish()]);
-        unsafe { device.stop_graphics_debugger_capture() };
-    }
-
-    pub fn copy_last_surface_to_layer(
-        &self,
-        device: &Device,
-        queue: &Queue,
-        tiles: &GpuTileStorage,
-        target_layer_id: LayerId,
-    ) {
-        let tile_info = self.resources.intermediate_buffers.tile_info_buffer();
-        let tile_info_staging = device.create_buffer(&BufferDescriptor {
-            label: Some("tile info staging"),
-            size: tile_info.size(),
-            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let stroke_info = &self.resources.stroke_info;
-        let stroke_info_staging = device.create_buffer(&BufferDescriptor {
-            label: Some("stroke info staging"),
-            size: stroke_info.size(),
-            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
-        let mut ec = device.create_command_encoder(&Default::default());
-        ec.copy_buffer_to_buffer(&tile_info, 0, &tile_info_staging, 0, tile_info.size());
-        ec.copy_buffer_to_buffer(
-            stroke_info.inner_buffer().unwrap(),
-            0,
-            &stroke_info_staging,
-            0,
-            stroke_info.size(),
-        );
-        let submission_index = queue.submit([ec.finish()]);
-
-        let (tx, rx) = std::sync::mpsc::channel();
-        {
-            let tx = tx.clone();
-            tile_info_staging
-                .slice(..)
-                .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
-        }
-        {
-            let tx = tx.clone();
-            stroke_info_staging
-                .slice(..)
-                .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
-        }
-        device
-            .poll(PollType::Wait {
-                submission_index: Some(submission_index),
-                timeout: None,
-            })
-            .unwrap();
-
-        rx.recv().unwrap().unwrap();
-        rx.recv().unwrap().unwrap();
-
-        let tile_info = {
-            let tile_info_data = tile_info_staging.slice(..).get_mapped_range();
-            let storage = encase::StorageBuffer::new(tile_info_data.as_ref());
-            storage.create::<DynamicGpuTileInfoBuffer>().unwrap()
-        };
-        let stroke_info = {
-            let stroke_info_data = stroke_info_staging.slice(..).get_mapped_range();
-            let storage = encase::StorageBuffer::new(stroke_info_data.as_ref());
-            storage.create::<StrokeInfo>().unwrap()
-        };
-
-        let mut target_layer = tiles.get_layer_mut(target_layer_id).unwrap();
-
-        for i in 0..tile_info.n_tiles as usize {
-            target_layer.get_tile_or_allocate(tile_info.buf[i].index);
-        }
-
-        let result_layer = if (stroke_info.total_dabs + self.resources.n_stroke_pp) % 2 == 0 {
-            &self.resources.intermediate_buffers.textures()[0]
-        } else {
-            &self.resources.intermediate_buffers.textures()[1]
-        };
-
-        let mut ec = device.create_command_encoder(&Default::default());
-        ec.push_debug_group("copy brush preset result to target layer");
-        for (src, tile) in tile_info
-            .buf
-            .iter()
-            .take(tile_info.n_tiles as usize)
-            .enumerate()
-        {
-            let dst = target_layer.get_tile_layer(tile.index).unwrap();
-
-            ec.copy_texture_to_texture(
-                TexelCopyTextureInfo {
-                    texture: result_layer.texture(),
-                    mip_level: 0,
-                    origin: Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: src as u32,
-                    },
-                    aspect: TextureAspect::All,
-                },
-                TexelCopyTextureInfo {
-                    texture: target_layer.texture().unwrap().texture(),
-                    mip_level: 0,
-                    origin: Origin3d { x: 0, y: 0, z: dst },
-                    aspect: TextureAspect::All,
-                },
-                Extent3d {
-                    width: GpuTileStorageInner::TILE_SIZE,
-                    height: GpuTileStorageInner::TILE_SIZE,
-                    depth_or_array_layers: 1,
-                },
+            self.main.dispatch(
+                device,
+                &mut pass,
+                &self.samples_buffer,
+                &self.samples_offsets,
+                &self.dab_info_buffer,
+                &self.dab_info_offsets,
+                &self.resources,
+                &buf,
+                &self.dispatch_params,
+                &mut self.round,
             );
         }
         ec.pop_debug_group();
-        queue.submit([ec.finish()]);
 
-        log::info!(
-            "Copied {} tiles to target layer, affected tiles aabb: [{}, {})",
-            tile_info.n_tiles,
-            stroke_info.accumulated_bound_min,
-            stroke_info.accumulated_bound_max
-        );
+        queue.submit([ec.finish()]);
     }
+
+    fn reset(&mut self) {
+        self.intermediate_buffer = None;
+        self.round = 0;
+    }
+
+    // pub fn postprocess_stroke(&self, device: &Device, queue: &Queue) {
+    //     if self.resources.n_stroke_pp == 0 {
+    //         return;
+    //     }
+
+    //     let mut ec = device.create_command_encoder(&Default::default());
+
+    //     ec.push_debug_group("brush preset stroke postprocess");
+    //     {
+    //         let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+    //             label: Some("brush preset stroke postprocess pass"),
+    //             ..Default::default()
+    //         });
+
+    //         for (estimate, main) in &self.stroke_pp {
+    //             estimate.dispatch(&mut pass, 1, 1, 1);
+    //             self.stroke_pp_tile_allocation
+    //                 .dispatch(&mut pass, &self.resources);
+    //             // main.dispatch(&mut pass, &self.resources);
+    //         }
+    //     }
+    //     ec.pop_debug_group();
+
+    //     unsafe { device.start_graphics_debugger_capture() };
+    //     queue.submit([ec.finish()]);
+    //     unsafe { device.stop_graphics_debugger_capture() };
+    // }
+
+    // pub fn copy_last_surface_to_layer(
+    //     &self,
+    //     device: &Device,
+    //     queue: &Queue,
+    //     tiles: &GpuTileStorage,
+    //     target_layer_id: LayerId,
+    // ) {
+    //     let tile_info = self.resources.intermediate_buffers.tile_info_buffer();
+    //     let tile_info_staging = device.create_buffer(&BufferDescriptor {
+    //         label: Some("tile info staging"),
+    //         size: tile_info.size(),
+    //         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+    //         mapped_at_creation: false,
+    //     });
+    //     let stroke_info = &self.resources.stroke_info;
+    //     let stroke_info_staging = device.create_buffer(&BufferDescriptor {
+    //         label: Some("stroke info staging"),
+    //         size: stroke_info.size(),
+    //         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+    //         mapped_at_creation: false,
+    //     });
+
+    //     let mut ec = device.create_command_encoder(&Default::default());
+    //     ec.copy_buffer_to_buffer(&tile_info, 0, &tile_info_staging, 0, tile_info.size());
+    //     ec.copy_buffer_to_buffer(
+    //         stroke_info.inner_buffer().unwrap(),
+    //         0,
+    //         &stroke_info_staging,
+    //         0,
+    //         stroke_info.size(),
+    //     );
+    //     let submission_index = queue.submit([ec.finish()]);
+
+    //     let (tx, rx) = std::sync::mpsc::channel();
+    //     {
+    //         let tx = tx.clone();
+    //         tile_info_staging
+    //             .slice(..)
+    //             .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
+    //     }
+    //     {
+    //         let tx = tx.clone();
+    //         stroke_info_staging
+    //             .slice(..)
+    //             .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
+    //     }
+    //     device
+    //         .poll(PollType::Wait {
+    //             submission_index: Some(submission_index),
+    //             timeout: None,
+    //         })
+    //         .unwrap();
+
+    //     rx.recv().unwrap().unwrap();
+    //     rx.recv().unwrap().unwrap();
+
+    //     let tile_info = {
+    //         let tile_info_data = tile_info_staging.slice(..).get_mapped_range();
+    //         let storage = encase::StorageBuffer::new(tile_info_data.as_ref());
+    //         storage.create::<DynamicGpuTileInfoBuffer>().unwrap()
+    //     };
+    //     let stroke_info = {
+    //         let stroke_info_data = stroke_info_staging.slice(..).get_mapped_range();
+    //         let storage = encase::StorageBuffer::new(stroke_info_data.as_ref());
+    //         storage.create::<StrokeInfo>().unwrap()
+    //     };
+
+    //     let mut target_layer = tiles.get_layer_mut(target_layer_id).unwrap();
+
+    //     for i in 0..tile_info.n_tiles as usize {
+    //         target_layer.get_tile_or_allocate(tile_info.buf[i].index);
+    //     }
+
+    //     let result_layer = if (stroke_info.total_dabs + self.resources.n_stroke_pp) % 2 == 0 {
+    //         &self.resources.intermediate_buffers.textures()[0]
+    //     } else {
+    //         &self.resources.intermediate_buffers.textures()[1]
+    //     };
+
+    //     let mut ec = device.create_command_encoder(&Default::default());
+    //     ec.push_debug_group("copy brush preset result to target layer");
+    //     for (src, tile) in tile_info
+    //         .buf
+    //         .iter()
+    //         .take(tile_info.n_tiles as usize)
+    //         .enumerate()
+    //     {
+    //         let dst = target_layer.get_tile_layer(tile.index).unwrap();
+
+    //         ec.copy_texture_to_texture(
+    //             TexelCopyTextureInfo {
+    //                 texture: result_layer.texture(),
+    //                 mip_level: 0,
+    //                 origin: Origin3d {
+    //                     x: 0,
+    //                     y: 0,
+    //                     z: src as u32,
+    //                 },
+    //                 aspect: TextureAspect::All,
+    //             },
+    //             TexelCopyTextureInfo {
+    //                 texture: target_layer.texture().unwrap().texture(),
+    //                 mip_level: 0,
+    //                 origin: Origin3d { x: 0, y: 0, z: dst },
+    //                 aspect: TextureAspect::All,
+    //             },
+    //             Extent3d {
+    //                 width: GpuTileStorageInner::TILE_SIZE,
+    //                 height: GpuTileStorageInner::TILE_SIZE,
+    //                 depth_or_array_layers: 1,
+    //             },
+    //         );
+    //     }
+    //     ec.pop_debug_group();
+    //     queue.submit([ec.finish()]);
+
+    //     log::info!(
+    //         "Copied {} tiles to target layer, affected tiles aabb: [{}, {})",
+    //         tile_info.n_tiles,
+    //         stroke_info.accumulated_bound_min,
+    //         stroke_info.accumulated_bound_max
+    //     );
+    // }
 }
 
 pub const MAX_SAMPLES_BETWEEN_INPUTS: usize = 256;
@@ -532,27 +581,14 @@ pub struct PenInputSampler {
 }
 
 pub struct StrokeResources {
-    pub n_stroke_pp: u32,
-
-    pub pen_input: DynamicBuffer<PenInput>,
-    pub input_sampler: DynamicBuffer<PenInputSampler>,
-    pub output_samples: DynamicBuffer<OutputSamples>,
-    pub stroke_info: DynamicBuffer<StrokeInfo>,
-    pub dab_infos: DynamicBuffer<DabInfos>,
-
     pub external_var_layouts: Vec<BindGroupLayoutEntry>,
     pub external_var_buffers: Vec<Buffer>,
     pub referenced_textures: TextureAtlas,
 
-    pub intermediate_buffers: DynamicIntermediateBuffer,
     pub target_layer_id: LayerId,
     pub target_layer: TextureView,
     pub target_layer_tile_info: Buffer,
-
-    pub estimate_dispatch: Buffer,
-    pub tile_allocation_dispatch: Buffer,
-    pub main_dispatch: Buffer,
-    pub main_dispatch_offsets: [BufferAddress; MAX_SAMPLES_BETWEEN_INPUTS],
+    pub target_layer_info: GpuLayerInfo,
 }
 
 impl StrokeResources {
@@ -564,31 +600,6 @@ impl StrokeResources {
         tiles: &GpuTileStorage,
         assets: &AssetRegistry,
     ) -> Self {
-        let mut pen_input = DynamicBuffer::new(Some("pen input buffer"), BufferUsages::STORAGE);
-        pen_input.push(&PenInput::default());
-        pen_input.write_buffer(device, queue);
-
-        let mut input_sampler =
-            DynamicBuffer::new(Some("pen input sampler buffer"), BufferUsages::STORAGE);
-        input_sampler.push(&PenInputSampler::default());
-        input_sampler.write_buffer(device, queue);
-
-        let mut output_samples =
-            DynamicBuffer::new(Some("output samples buffer"), BufferUsages::STORAGE);
-        output_samples.push(&OutputSamples::default());
-        output_samples.write_buffer(device, queue);
-
-        let mut stroke_info = DynamicBuffer::new(
-            Some("stroke info buffer"),
-            BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-        );
-        stroke_info.push(&StrokeInfo::default());
-        stroke_info.write_buffer(device, queue);
-
-        let mut dab_infos = DynamicBuffer::new(Some("dab infos buffer"), BufferUsages::STORAGE);
-        dab_infos.push(&DabInfos::default());
-        dab_infos.write_buffer(device, queue);
-
         let mut external_var_layouts = Vec::new();
         let mut cur_binding = EXTERNAL_VARIABLE_BASE_BINDING;
         for _ in 0..brush.external_vars.all().len() {
@@ -663,83 +674,16 @@ impl StrokeResources {
         let target_layer_binding = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
         let target_layer_info = tiles.get_layer_info(target_layer_id).unwrap();
 
-        let intermediate_buffers = DynamicIntermediateBuffer::new(
-            256,
-            target_layer_info.texel_type,
-            device.clone(),
-            queue.clone(),
-        );
-
-        let mut estimate_dispatch = DynamicBuffer::new(
-            Some("estimate dispatch buffer"),
-            BufferUsages::STORAGE | BufferUsages::INDIRECT,
-        );
-        estimate_dispatch.push(&UVec4::ZERO);
-        estimate_dispatch.write_buffer(device, queue);
-
-        let mut tile_allocation_dispatch = DynamicBuffer::new(
-            Some("tile allocation dispatch buffer"),
-            BufferUsages::STORAGE | BufferUsages::INDIRECT,
-        );
-        tile_allocation_dispatch.push(&UVec4::ZERO);
-        tile_allocation_dispatch.write_buffer(device, queue);
-
-        let mut main_dispatch = BufferVec::new(
-            Some("main dispatch buffer".to_string()),
-            BufferUsages::STORAGE | BufferUsages::INDIRECT,
-        );
-        let mut main_dispatch_offsets = [0; MAX_SAMPLES_BETWEEN_INPUTS];
-        for i in 0..MAX_SAMPLES_BETWEEN_INPUTS {
-            let (_, offset) = main_dispatch.push(&UVec4::ZERO);
-            main_dispatch_offsets[i] = offset;
-        }
-        main_dispatch.write_buffer(device, queue);
-
         Self {
-            n_stroke_pp: brush.n_stroke_postprocess_graphs,
-
-            pen_input,
-            input_sampler,
-            output_samples,
-            stroke_info,
-            dab_infos,
-
             external_var_layouts,
             external_var_buffers,
             referenced_textures,
 
-            intermediate_buffers,
             target_layer_id,
             target_layer: target_layer_binding.texture.deref().clone(),
             target_layer_tile_info: target_layer_binding.tile_info_buffer,
-
-            estimate_dispatch: estimate_dispatch.into_inner_buffer().unwrap(),
-            tile_allocation_dispatch: tile_allocation_dispatch.into_inner_buffer().unwrap(),
-            main_dispatch: main_dispatch.into_inner_buffer().unwrap(),
-            main_dispatch_offsets,
+            target_layer_info,
         }
-    }
-
-    fn reset(&mut self, device: &Device, queue: &Queue) {
-        self.input_sampler.clear();
-        self.input_sampler.push(&PenInputSampler::default());
-        self.input_sampler.write_buffer(device, queue);
-
-        self.stroke_info.clear();
-        self.stroke_info.push(&StrokeInfo::default());
-        self.stroke_info.write_buffer(device, queue);
-
-        self.output_samples.clear();
-        self.output_samples.push(&OutputSamples::default());
-        self.output_samples.write_buffer(device, queue);
-
-        self.dab_infos.clear();
-        self.dab_infos.push(&DabInfos::default());
-        self.dab_infos.write_buffer(device, queue);
-
-        self.intermediate_buffers.clear();
-
-        queue.submit([]);
     }
 
     fn external_var_bindings(&self) -> Vec<BindGroupEntry<'_>> {

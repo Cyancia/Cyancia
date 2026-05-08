@@ -54,7 +54,6 @@ impl InputProcessor {
         &mut self,
         input: RawPenInput,
         required_spacing: &Graph<BrushGraphData>,
-        spacing_factor: &Graph<BrushGraphDataTuple>,
     ) -> Vec<ComputedPenInput> {
         self.samples.enqueue(input);
 
@@ -113,35 +112,27 @@ impl InputProcessor {
         let new_computed = compute_pen_input(&curve, 1.0);
 
         // Build arc-length table.
-        let mut arc_table = [0.0f32; BEZIER_SAMPLES + 1];
+        let mut total_arc = 0.0;
         let mut prev_p = p0;
         for i in 1..=BEZIER_SAMPLES {
             let p = curve.sample(i as f32 / BEZIER_SAMPLES as f32);
-            arc_table[i] = arc_table[i - 1] + prev_p.distance(p);
+            total_arc += p.distance(prev_p);
             prev_p = p;
         }
-        let total_arc = arc_table[BEZIER_SAMPLES];
 
         let spacing = compute_required_spacing(new_computed, required_spacing);
         if total_arc < 0.0001 || spacing <= 0.0 {
             return Vec::new();
         }
-
         let mut output = Vec::new();
-        let mut remaining_arc = total_arc;
         let mut last_sample = new_computed;
-        while output.len() < MAX_SAMPLES_BETWEEN_INPUTS {
-            let target_arc = total_arc - remaining_arc;
-            let t = bezier_t_for_arc_length(&arc_table, target_arc);
+        let total_samples = (total_arc / spacing).floor() as u32;
+        for p in 0..=total_samples {
+            let t = p as f32 / total_samples as f32;
             let interpolated = compute_pen_input(&curve, t);
 
             output.push(interpolated);
-            remaining_arc -= compute_spacing_factor(last_sample, interpolated, spacing_factor);
             last_sample = interpolated;
-
-            if remaining_arc < spacing {
-                break;
-            }
         }
         self.last_sample = Some(last_sample);
 
@@ -159,12 +150,11 @@ impl InputProcessor {
         &mut self,
         final_input: RawPenInput,
         required_spacing: &Graph<BrushGraphData>,
-        spacing_factor: &Graph<BrushGraphDataTuple>,
     ) -> Vec<ComputedPenInput> {
         let steps = self.stabilizer.convergence_steps();
         let mut result = Vec::new();
         for _ in 0..steps {
-            result.extend(self.push(final_input, required_spacing, spacing_factor));
+            result.extend(self.push(final_input, required_spacing));
         }
         result
     }
@@ -244,30 +234,6 @@ impl InputSampleStabilizer for BasicStabilizer {
     }
 }
 
-fn compute_spacing_factor(
-    lhs: ComputedPenInput,
-    rhs: ComputedPenInput,
-    graph: &Graph<BrushGraphDataTuple>,
-) -> f32 {
-    let output = graph
-        .run(
-            &BrushGraphDataTuple {
-                lhs: BrushGraphData { pen_input: lhs },
-                rhs: BrushGraphData { pen_input: rhs },
-            },
-            Vec::new(),
-        )
-        .unwrap();
-
-    // TODO Don't panic
-    assert!(
-        output.len() == 1,
-        "Multiple outputs from spacing factor graph not supported"
-    );
-
-    *output[0].as_ref::<f32>()
-}
-
 fn compute_required_spacing(sample: ComputedPenInput, graph: &Graph<BrushGraphData>) -> f32 {
     let output = graph
         .run(&BrushGraphData { pen_input: sample }, Vec::new())
@@ -291,28 +257,4 @@ fn compute_pen_input(curve: &CubicBezierCurve, t: f32) -> ComputedPenInput {
         draw_direction_vec,
         draw_direction_angle,
     }
-}
-
-fn bezier_t_for_arc_length(arc_table: &[f32], arc_goal: f32) -> f32 {
-    let n = arc_table.len() - 1;
-    let bisect_iterations = (n as f32).log2().ceil() as usize + 1;
-
-    let mut lo = 0usize;
-    let mut hi = n;
-    for _ in 0..bisect_iterations {
-        let mid = (lo + hi) / 2;
-        if arc_table[mid] < arc_goal {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    let lo_arc = arc_table[lo];
-    let hi_arc = arc_table[hi];
-    let lo_t = lo as f32 / n as f32;
-    let hi_t = hi as f32 / n as f32;
-    if hi_arc <= lo_arc {
-        return lo_t;
-    }
-    lo_t + (hi_t - lo_t) * (arc_goal - lo_arc) / (hi_arc - lo_arc)
 }

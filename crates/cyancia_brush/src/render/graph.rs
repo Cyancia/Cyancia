@@ -1,5 +1,6 @@
 use bevy_math::{Rect, VectorSpace};
 use cyancia_image::blend_modes::BlendMode;
+use cyancia_math::rect_transform::RectTransform;
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     graph::{
@@ -15,7 +16,7 @@ use cyancia_shader_graph::{
     wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
 };
 use cyancia_shader_graph_derive::stateless;
-use glam::{Vec2, Vec4};
+use glam::{Mat2, Mat3, Vec2, Vec4};
 use iced_core::{Color, Element, color};
 use iced_wgpu::graphics::damage;
 use iced_widget::{Column, column, pick_list};
@@ -276,7 +277,39 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        unimplemented!();
+        let mask = *ctx.get_input_value::<TextureType>(1)?;
+        let translation = *ctx.get_input_value::<Vec2FType>(2)?;
+        let rotation = *ctx.get_input_value::<F32Type>(3)?;
+        let scale = *ctx.get_input_value::<Vec2FType>(4)?;
+        let anchor = *ctx.get_input_value::<Vec2FType>(5)?;
+        let texture = ctx
+            .resources
+            .textures
+            .get(&mask.external_id)
+            .expect("Texture not found");
+        let img = &texture.handle.get().unwrap().image;
+        let bounds = Rect {
+            min: Vec2::ZERO,
+            max: Vec2::new(img.width() as f32, img.height() as f32),
+        };
+
+        let (s, c) = rotation.sin_cos();
+        let a = Mat2::from_cols_array(&[c * scale.x, s * scale.x, -s * scale.y, c * scale.y]);
+        let t = translation + anchor - a * anchor;
+        let mat = Mat3::from_cols_array(&[
+            c * scale.x,
+            s * scale.x,
+            0.0,
+            -s * scale.y,
+            c * scale.y,
+            0.0,
+            t.x,
+            t.y,
+            1.0,
+        ]);
+        let bounds = bounds.transformed(&mat);
+
+        ctx.set_output_value::<RectType>(1, bounds)?;
         Ok(())
     }
 }
@@ -433,11 +466,15 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
         vec![]
     }
 
+    fn update_signature(&self, mut ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
+        ctx.require_input_slot_as_graph_output(0, "Bounds".to_string());
+    }
+
     fn generate_code(
         &self,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!("set_output_bounds({});\n", ctx.get_input(0)?,))
+        Ok(Default::default())
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
@@ -812,9 +849,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StrokeBoundsNode {
         &self,
         mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        let ibounds = ctx.ident_generator.next_output();
+        // TODO This can be available on GPU but it's useless at most cases.
         Ok(format!(
-            "let {ibounds} = get_accumulated_pixel_bounds();\nlet {} = Rect(vec2f({ibounds}.min), vec2f({ibounds}.max));\n",
+            "let {} = Rect();\n",
             ctx.get_output(0)?
         ))
     }
@@ -881,6 +918,19 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let center = *ctx.get_input_value::<Vec2FType>(1)?;
+        let radii = *ctx.get_input_value::<Vec2FType>(2)?;
+        ctx.set_output_value::<RectType>(
+            1,
+            Rect {
+                min: center - radii,
+                max: center + radii,
+            },
+        )?;
+        Ok(())
     }
 }
 
@@ -1193,7 +1243,10 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for PenPositionsNode {
         ))
     }
 
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>) -> Result<(), GraphNodeRunError> {
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
+    ) -> Result<(), GraphNodeRunError> {
         ctx.set_output_value::<Vec2FType>(0, ctx.data.lhs.pen_input.position)?;
         ctx.set_output_value::<Vec2FType>(1, ctx.data.rhs.pen_input.position)?;
         Ok(())
@@ -1258,7 +1311,10 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for DrawDirectionsNode {
         ))
     }
 
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>) -> Result<(), GraphNodeRunError> {
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
+    ) -> Result<(), GraphNodeRunError> {
         ctx.set_output_value::<F32Type>(0, ctx.data.lhs.pen_input.draw_direction_angle)?;
         ctx.set_output_value::<F32Type>(1, ctx.data.rhs.pen_input.draw_direction_angle)?;
         ctx.set_output_value::<Vec2FType>(2, ctx.data.lhs.pen_input.draw_direction_vec)?;
