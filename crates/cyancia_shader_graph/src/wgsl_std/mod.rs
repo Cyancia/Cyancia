@@ -11,7 +11,9 @@ pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
 
     nodes.register::<ScalarMathNode>();
     nodes.register::<VectorMathNode>();
+    nodes.register::<RectMathNode>();
     nodes.register::<ClampNode>();
+    nodes.register::<RandomNode>();
     nodes.register::<StepNode>();
     nodes.register::<SmoothStepNode>();
     nodes.register::<SplitComponentsNode>();

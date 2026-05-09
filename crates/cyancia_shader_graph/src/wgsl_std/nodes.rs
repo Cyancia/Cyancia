@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use bevy_math::{Rect, VectorSpace};
 use cyancia_assets::asset::AssetHandle;
 use cyancia_math::curve::CubicCurve;
 use cyancia_utils::{count, wrapper};
@@ -42,7 +43,7 @@ use crate::{
         variable::GraphTypeRegistry,
     },
     save::GraphSerializable,
-    wgsl_std::types::{ColorType, F32Type, TextureReference, TextureType, Vec2FType},
+    wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
 };
 
 use crate::graph::node::GraphNodeRunError;
@@ -845,6 +846,218 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
                 ctx.set_output_value::<Vec2FType>(0, result)?;
             }
         }
+
+        Ok(())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct RectMathNode;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display)]
+pub enum RectMathNodeMode {
+    Union,
+    Intersection,
+    Inflate,
+    Shrink,
+}
+
+#[derive(Clone)]
+pub enum RectMathNodeMessage {
+    ModeChanged(RectMathNodeMode),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
+impl<Data: GraphData> GraphNode<Data> for RectMathNode {
+    type State = RectMathNodeMode;
+
+    type Message = RectMathNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Rect Math"
+    }
+
+    fn default_state(&self) -> Self::State {
+        RectMathNodeMode::Union
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xe8638)
+    }
+
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        match state {
+            RectMathNodeMode::Union | RectMathNodeMode::Intersection => vec![
+                GraphDefaultInputSlot::new::<RectType>(Rect::EMPTY),
+                GraphDefaultInputSlot::new::<RectType>(Rect::EMPTY),
+            ],
+            RectMathNodeMode::Inflate | RectMathNodeMode::Shrink => {
+                vec![
+                    GraphDefaultInputSlot::new::<RectType>(Rect::EMPTY),
+                    GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+                ]
+            }
+        }
+    }
+
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<RectType>()]
+    }
+
+    fn view_inputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeInputsViewContext<'_, Data>,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        let pick_list = pick_list(
+            [
+                RectMathNodeMode::Union,
+                RectMathNodeMode::Intersection,
+                RectMathNodeMode::Inflate,
+                RectMathNodeMode::Shrink,
+            ],
+            Some(*state),
+            RectMathNodeMessage::ModeChanged,
+        );
+        Column::new()
+            .push(pick_list)
+            .extend(ctx.view_all_inputs(
+                match state {
+                    RectMathNodeMode::Union | RectMathNodeMode::Intersection => &["A", "B"],
+                    RectMathNodeMode::Inflate | RectMathNodeMode::Shrink => &["Rect", "Amount"],
+                },
+                RectMathNodeMessage::LiteralUpdate,
+            ))
+            .spacing(2)
+            .into()
+    }
+
+    fn view_outputs(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeOutputsViewContext<'_, Data>,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        Column::with_children(ctx.view_all_outputs(&["Result"]))
+            .spacing(2)
+            .into()
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
+    ) {
+        match message {
+            RectMathNodeMessage::ModeChanged(mode) => {
+                *state = mode;
+            }
+            RectMathNodeMessage::LiteralUpdate(msg) => {
+                ctx.update_literal(msg);
+            }
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let a = ctx.get_input(0)?;
+        let b = ctx.get_input(1)?;
+        let output = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = {};\n",
+            output,
+            match state {
+                RectMathNodeMode::Union => {
+                    format!("Rect(min({}.min, {}.min), max({}.max, {}.max))", a, b, a, b)
+                }
+                RectMathNodeMode::Intersection => {
+                    format!("Rect(max({}.min, {}.min), min({}.max, {}.max))", a, b, a, b)
+                }
+                RectMathNodeMode::Inflate => {
+                    let min = ctx.ident_generator.next_output();
+                    let max = ctx.ident_generator.next_output();
+                    format!(
+                        "
+                        let {min} = {a}.min - {b};
+                        let {max} = {a}.max + {b};
+                        var {output} = Rect({min} , {max});
+                        if any({min} > {max}) {{
+                            {output} = Rect(vec2f(1.0, -1.0));
+                        }}
+                    ",
+                    )
+                }
+                RectMathNodeMode::Shrink => {
+                    let min = ctx.ident_generator.next_output();
+                    let max = ctx.ident_generator.next_output();
+                    format!(
+                        "
+                        let {min} = {a}.min + {b};
+                        let {max} = {a}.max - {b};
+                        var {output} = Rect({min} , {max});
+                        if any({min} > {max}) {{
+                            {output} = Rect(vec2f(1.0, -1.0));
+                        }}
+                    ",
+                    )
+                }
+            }
+        ))
+    }
+
+    fn run(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRunContext<'_, Data>,
+    ) -> Result<(), GraphNodeRunError> {
+        let result = match state {
+            RectMathNodeMode::Union => {
+                let a = *ctx.get_input_value::<RectType>(0)?;
+                let b = *ctx.get_input_value::<RectType>(1)?;
+                a.union(b)
+            }
+            RectMathNodeMode::Intersection => {
+                let a = *ctx.get_input_value::<RectType>(0)?;
+                let b = *ctx.get_input_value::<RectType>(1)?;
+                a.intersect(b)
+            }
+            RectMathNodeMode::Inflate => {
+                let rect = *ctx.get_input_value::<RectType>(0)?;
+                let amount = *ctx.get_input_value::<Vec2FType>(1)?;
+                let min = rect.min - amount;
+                let max = rect.max + amount;
+                if min.x > max.x || min.y > max.y {
+                    Rect::EMPTY
+                } else {
+                    Rect { min, max }
+                }
+            }
+            RectMathNodeMode::Shrink => {
+                let rect = *ctx.get_input_value::<RectType>(0)?;
+                let amount = *ctx.get_input_value::<Vec2FType>(1)?;
+                let min = rect.min + amount;
+                let max = rect.max - amount;
+                if min.x > max.x || min.y > max.y {
+                    Rect::EMPTY
+                } else {
+                    Rect { min, max }
+                }
+            }
+        };
+
+        ctx.set_output_value::<RectType>(0, result)?;
 
         Ok(())
     }
