@@ -554,4 +554,18 @@ impl DynamicLayerStorage {
             self.queue.submit([ec.finish()]);
         };
     }
+
+    pub fn iter_tiles(&self) -> impl Iterator<Item = (IVec2, u32, &Arc<TextureView>)> {
+        self.tiles.iter().map(|(coord, texture)| {
+            (
+                *coord,
+                self.tiles.get_index_of(coord).unwrap() as u32,
+                texture,
+            )
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.tiles.len()
+    }
 }

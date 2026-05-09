@@ -201,7 +201,7 @@ impl BrushPresetOperator {
             &self.queue,
             instance.stroke_postprocess_graphs(),
         );
-        // renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
+        renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
     }
 }
@@ -418,129 +418,54 @@ impl BrushPresetRenderer {
         unsafe { device.stop_graphics_debugger_capture() };
     }
 
-    // pub fn copy_last_surface_to_layer(
-    //     &self,
-    //     device: &Device,
-    //     queue: &Queue,
-    //     tiles: &GpuTileStorage,
-    //     target_layer_id: LayerId,
-    // ) {
-    //     let tile_info = self.resources.intermediate_buffers.tile_info_buffer();
-    //     let tile_info_staging = device.create_buffer(&BufferDescriptor {
-    //         label: Some("tile info staging"),
-    //         size: tile_info.size(),
-    //         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-    //         mapped_at_creation: false,
-    //     });
-    //     let stroke_info = &self.resources.stroke_info;
-    //     let stroke_info_staging = device.create_buffer(&BufferDescriptor {
-    //         label: Some("stroke info staging"),
-    //         size: stroke_info.size(),
-    //         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-    //         mapped_at_creation: false,
-    //     });
+    pub fn copy_last_surface_to_layer(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        tiles: &GpuTileStorage,
+        target_layer_id: LayerId,
+    ) {
+        let Some(intermediate_buffers) = &self.intermediate_buffer else {
+            return;
+        };
 
-    //     let mut ec = device.create_command_encoder(&Default::default());
-    //     ec.copy_buffer_to_buffer(&tile_info, 0, &tile_info_staging, 0, tile_info.size());
-    //     ec.copy_buffer_to_buffer(
-    //         stroke_info.inner_buffer().unwrap(),
-    //         0,
-    //         &stroke_info_staging,
-    //         0,
-    //         stroke_info.size(),
-    //     );
-    //     let submission_index = queue.submit([ec.finish()]);
+        let mut target_layer = tiles.get_layer_mut(target_layer_id).unwrap();
+        let result_buffer = &intermediate_buffers[self.round as usize % 2];
+        let mut ec = device.create_command_encoder(&Default::default());
+        ec.push_debug_group("copy brush preset result to target layer");
+        for (coord, src, _) in result_buffer.iter_tiles() {
+            target_layer.get_tile_or_allocate(coord);
+            let dst = target_layer.get_tile_layer(coord).unwrap();
 
-    //     let (tx, rx) = std::sync::mpsc::channel();
-    //     {
-    //         let tx = tx.clone();
-    //         tile_info_staging
-    //             .slice(..)
-    //             .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
-    //     }
-    //     {
-    //         let tx = tx.clone();
-    //         stroke_info_staging
-    //             .slice(..)
-    //             .map_async(MapMode::Read, move |r| tx.send(r).unwrap());
-    //     }
-    //     device
-    //         .poll(PollType::Wait {
-    //             submission_index: Some(submission_index),
-    //             timeout: None,
-    //         })
-    //         .unwrap();
+            ec.copy_texture_to_texture(
+                TexelCopyTextureInfo {
+                    texture: result_buffer.texture().unwrap().texture(),
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: src as u32,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfo {
+                    texture: target_layer.texture().unwrap().texture(),
+                    mip_level: 0,
+                    origin: Origin3d { x: 0, y: 0, z: dst },
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: GpuTileStorageInner::TILE_SIZE,
+                    height: GpuTileStorageInner::TILE_SIZE,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        ec.pop_debug_group();
+        queue.submit([ec.finish()]);
 
-    //     rx.recv().unwrap().unwrap();
-    //     rx.recv().unwrap().unwrap();
-
-    //     let tile_info = {
-    //         let tile_info_data = tile_info_staging.slice(..).get_mapped_range();
-    //         let storage = encase::StorageBuffer::new(tile_info_data.as_ref());
-    //         storage.create::<DynamicGpuTileInfoBuffer>().unwrap()
-    //     };
-    //     let stroke_info = {
-    //         let stroke_info_data = stroke_info_staging.slice(..).get_mapped_range();
-    //         let storage = encase::StorageBuffer::new(stroke_info_data.as_ref());
-    //         storage.create::<StrokeInfo>().unwrap()
-    //     };
-
-    //     let mut target_layer = tiles.get_layer_mut(target_layer_id).unwrap();
-
-    //     for i in 0..tile_info.n_tiles as usize {
-    //         target_layer.get_tile_or_allocate(tile_info.buf[i].index);
-    //     }
-
-    //     let result_layer = if (stroke_info.total_dabs + self.resources.n_stroke_pp) % 2 == 0 {
-    //         &self.resources.intermediate_buffers.textures()[0]
-    //     } else {
-    //         &self.resources.intermediate_buffers.textures()[1]
-    //     };
-
-    //     let mut ec = device.create_command_encoder(&Default::default());
-    //     ec.push_debug_group("copy brush preset result to target layer");
-    //     for (src, tile) in tile_info
-    //         .buf
-    //         .iter()
-    //         .take(tile_info.n_tiles as usize)
-    //         .enumerate()
-    //     {
-    //         let dst = target_layer.get_tile_layer(tile.index).unwrap();
-
-    //         ec.copy_texture_to_texture(
-    //             TexelCopyTextureInfo {
-    //                 texture: result_layer.texture(),
-    //                 mip_level: 0,
-    //                 origin: Origin3d {
-    //                     x: 0,
-    //                     y: 0,
-    //                     z: src as u32,
-    //                 },
-    //                 aspect: TextureAspect::All,
-    //             },
-    //             TexelCopyTextureInfo {
-    //                 texture: target_layer.texture().unwrap().texture(),
-    //                 mip_level: 0,
-    //                 origin: Origin3d { x: 0, y: 0, z: dst },
-    //                 aspect: TextureAspect::All,
-    //             },
-    //             Extent3d {
-    //                 width: GpuTileStorageInner::TILE_SIZE,
-    //                 height: GpuTileStorageInner::TILE_SIZE,
-    //                 depth_or_array_layers: 1,
-    //             },
-    //         );
-    //     }
-    //     ec.pop_debug_group();
-    //     queue.submit([ec.finish()]);
-
-    //     log::info!(
-    //         "Copied {} tiles to target layer, affected tiles aabb: [{}, {})",
-    //         tile_info.n_tiles,
-    //         stroke_info.accumulated_bound_min,
-    //         stroke_info.accumulated_bound_max
-    //     );
-    // }
+        log::info!("Copied {} tiles to target layer.", result_buffer.len());
+    }
 }
 
 pub const MAX_SAMPLES_BETWEEN_INPUTS: usize = 256;
