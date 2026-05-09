@@ -1064,6 +1064,79 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
 }
 
 #[derive(Default, Clone)]
+pub struct TimeNode;
+
+pub struct GraphTimes {
+    pub now: f32,
+    pub stroke_begin: f32,
+}
+
+pub trait GraphDataWithTime: GraphData {
+    fn time(&self) -> GraphTimes;
+    fn wgsl_variable() -> String;
+}
+
+#[stateless]
+impl<Data: GraphDataWithTime> StatelessCommonGraphNode<Data> for TimeNode {
+    fn name(&self) -> &'static str {
+        "Time"
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xf28482)
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+        ]
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Now", "Stroke Begin"]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let now = ctx.get_output(0)?;
+        let stroke_begin = ctx.get_output(1)?;
+        let accessor = Data::wgsl_variable();
+
+        Ok(format!(
+            "
+let {} = {}.now;
+let {} = {}.stroke_begin;
+                ",
+            now, accessor, stroke_begin, accessor
+        ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let time = ctx.data.time();
+        ctx.set_output_value::<F32Type>(0, time.now)?;
+        ctx.set_output_value::<F32Type>(1, time.stroke_begin)?;
+        Ok(())
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct ClampNode;
 
 #[stateless]

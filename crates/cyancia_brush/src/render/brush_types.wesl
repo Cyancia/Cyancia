@@ -39,6 +39,12 @@ struct ComputedPenInput {
     position: vec2f,
     draw_direction_vec: vec2f,
     draw_direction_angle: f32,
+    time: Time,
+}
+
+struct Time {
+    now: f32,
+    stroke_begin: f32,
 }
 
 struct PenInputSampler {

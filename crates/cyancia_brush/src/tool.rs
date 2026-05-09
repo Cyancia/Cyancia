@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use chrono::{DateTime, Utc};
 use cyancia_assets::store::AssetRegistry;
 use cyancia_canvas::{CCanvas, CanvasManager};
 use cyancia_image::tile::GpuTileStorage;
@@ -12,11 +13,15 @@ use glam::{FloatExt, Vec2};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
-    input_processing::RawPenInput, instance::BrushPresetInstance, render::BrushPresetOperator,
+    input_processing::RawPenInput,
+    instance::BrushPresetInstance,
+    render::{BrushPresetOperator, Time},
 };
 
 #[derive(Default)]
-pub struct BrushTool;
+pub struct BrushTool {
+    stroke_begin: Option<DateTime<Utc>>,
+}
 
 impl ToolFunction for BrushTool {
     fn id(&self) -> ToolId {
@@ -40,7 +45,15 @@ impl ToolFunction for BrushTool {
             return;
         };
         let root_layer = canvas.image.root().id();
-        let params = RawPenInput { position };
+        let now = Utc::now();
+        self.stroke_begin = Some(now);
+        let params = RawPenInput {
+            position,
+            time: Time {
+                now: Utc::now().timestamp_micros() as f32 / 1_000_000.0,
+                stroke_begin: now.timestamp_micros() as f32 / 1_000_000.0,
+            },
+        };
 
         services.try_service_scope::<CurrentBrushPresetOperator>(
             |brush, services| {
@@ -69,7 +82,18 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
-        let params = RawPenInput { position };
+        let Some(stroke_begin) = self.stroke_begin else {
+            log::error!("Stroke update called without a stroke begin time.");
+            return;
+        };
+
+        let params = RawPenInput {
+            position,
+            time: Time {
+                now: Utc::now().timestamp_micros() as f32 / 1_000_000.0,
+                stroke_begin: stroke_begin.timestamp_micros() as f32 / 1_000_000.0,
+            },
+        };
 
         let Some(brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
             log::error!("No current brush preset operator found.");
@@ -96,8 +120,19 @@ impl ToolFunction for BrushTool {
         else {
             return;
         };
+        let Some(stroke_begin) = self.stroke_begin else {
+            log::error!("Stroke end called without a stroke begin time.");
+            return;
+        };
+
         let root_layer = canvas.image.root().id();
-        let final_input = RawPenInput { position };
+        let final_input = RawPenInput {
+            position,
+            time: Time {
+                now: Utc::now().timestamp_micros() as f32 / 1_000_000.0,
+                stroke_begin: stroke_begin.timestamp_micros() as f32 / 1_000_000.0,
+            },
+        };
 
         services.try_service_scope::<CurrentBrushPresetOperator>(
             |brush, services| {

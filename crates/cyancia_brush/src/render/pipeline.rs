@@ -21,8 +21,7 @@ use wgpu::{
 };
 
 use crate::render::{
-    ComputedPenInput, DabInfo, DabInfos, EXTERNAL_VARIABLE_BASE_BINDING, OutputSamples, PenInput,
-    PenInputSampler, StrokeInfo, StrokeResources,
+    ComputedPenInput, DabInfo, EXTERNAL_VARIABLE_BASE_BINDING, StrokeResources,
 };
 
 pub struct BrushMainPipeline {

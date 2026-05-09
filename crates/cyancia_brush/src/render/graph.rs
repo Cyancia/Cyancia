@@ -13,7 +13,10 @@ use cyancia_shader_graph::{
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
-    wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
+    wgsl_std::{
+        nodes::{GraphDataWithTime, GraphTimes},
+        types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
+    },
 };
 use cyancia_shader_graph_derive::stateless;
 use glam::{Mat2, Mat3, Vec2, Vec4};
@@ -22,14 +25,28 @@ use iced_wgpu::graphics::damage;
 use iced_widget::{Column, column, pick_list};
 use serde::{Deserialize, Serialize};
 
-use crate::render::ComputedPenInput;
+use crate::render::{ComputedPenInput, Time};
 
 #[derive(Default, Clone)]
 pub struct BrushGraphPostprocessData {
     pub accumulated_pixel_bounds: IRect,
+    pub time: Time,
 }
 
 impl GraphData for BrushGraphPostprocessData {}
+
+impl GraphDataWithTime for BrushGraphPostprocessData {
+    fn time(&self) -> GraphTimes {
+        GraphTimes {
+            now: self.time.now,
+            stroke_begin: self.time.stroke_begin,
+        }
+    }
+
+    fn wgsl_variable() -> String {
+        "sample.time".into()
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct BrushGraphData {
@@ -37,6 +54,19 @@ pub struct BrushGraphData {
 }
 
 impl GraphData for BrushGraphData {}
+
+impl GraphDataWithTime for BrushGraphData {
+    fn time(&self) -> GraphTimes {
+        GraphTimes {
+            now: self.pen_input.time.now,
+            stroke_begin: self.pen_input.time.stroke_begin,
+        }
+    }
+
+    fn wgsl_variable() -> String {
+        "sample.time".into()
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct BrushGraphDataTuple {
@@ -1333,6 +1363,76 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for DrawDirectionsNode {
         ctx.set_output_value::<F32Type>(1, ctx.data.rhs.pen_input.draw_direction_angle)?;
         ctx.set_output_value::<Vec2FType>(2, ctx.data.lhs.pen_input.draw_direction_vec)?;
         ctx.set_output_value::<Vec2FType>(3, ctx.data.rhs.pen_input.draw_direction_vec)?;
+        Ok(())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct TimesNode;
+
+#[stateless]
+impl StatelessCommonGraphNode<BrushGraphDataTuple> for TimesNode {
+    fn name(&self) -> &'static str {
+        "Times"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Src Now", "Src Stroke Begin", "Dst Now", "Dst Stroke Begin"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xb88e9d)
+    }
+
+    fn create_inputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphDataTuple>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "
+            let {} = src.time.now;
+            let {} = src.time.stroke_begin;
+            let {} = dst.time.now;
+            let {} = dst.time.stroke_begin;
+            ",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?,
+            ctx.get_output(2)?,
+            ctx.get_output(3)?,
+        ))
+    }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<F32Type>(0, ctx.data.lhs.pen_input.time.now)?;
+        ctx.set_output_value::<F32Type>(1, ctx.data.lhs.pen_input.time.stroke_begin)?;
+        ctx.set_output_value::<F32Type>(2, ctx.data.rhs.pen_input.time.now)?;
+        ctx.set_output_value::<F32Type>(3, ctx.data.rhs.pen_input.time.stroke_begin)?;
         Ok(())
     }
 }

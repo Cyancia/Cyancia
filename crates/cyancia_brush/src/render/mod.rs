@@ -377,6 +377,10 @@ impl BrushPresetRenderer {
                     .run(
                         &BrushGraphPostprocessData {
                             accumulated_pixel_bounds: self.accumulated_pixel_bounds,
+                            time: Time {
+                                now: 0.0, // TODO
+                                stroke_begin: 0.0, // TODO
+                            },
                         },
                         Vec::new(),
                     )
@@ -472,75 +476,19 @@ pub struct ComputedPenInput {
     pub position: Vec2,
     pub draw_direction_vec: Vec2,
     pub draw_direction_angle: f32,
+    pub time: Time,
 }
 
 #[derive(ShaderType, Debug, Default, Clone, Copy)]
-pub struct PenInput {
-    pub position: Vec2,
-    pub bezier_control_prev: Vec2,
-    pub bezier_control_cur: Vec2,
-}
-
-#[derive(ShaderType, Clone, Copy)]
-pub struct StrokeInfo {
-    pub accumulated_bound_min: IVec2,
-    pub accumulated_bound_max: IVec2,
-    pub max_affected_tiles_count: UVec2,
-    pub total_dabs: u32,
-}
-
-impl Default for StrokeInfo {
-    fn default() -> Self {
-        Self {
-            accumulated_bound_min: IVec2::MAX,
-            accumulated_bound_max: IVec2::MIN,
-            max_affected_tiles_count: Default::default(),
-            total_dabs: Default::default(),
-        }
-    }
-}
-
-#[derive(ShaderType, Debug, Clone, Copy)]
-pub struct OutputSamples {
-    pub n_samples: u32,
-    pub samples: [ComputedPenInput; MAX_SAMPLES_BETWEEN_INPUTS],
-}
-
-impl Default for OutputSamples {
-    fn default() -> Self {
-        Self {
-            n_samples: 0,
-            samples: [ComputedPenInput::default(); MAX_SAMPLES_BETWEEN_INPUTS],
-        }
-    }
+pub struct Time {
+    pub now: f32,
+    pub stroke_begin: f32,
 }
 
 #[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct DabInfo {
     pub bound_min: IVec2,
     pub bound_max: IVec2,
-}
-
-#[derive(ShaderType, Debug, Clone, Copy)]
-pub struct DabInfos {
-    pub n_dabs: u32,
-    pub buf: [DabInfo; MAX_SAMPLES_BETWEEN_INPUTS],
-}
-
-impl Default for DabInfos {
-    fn default() -> Self {
-        Self {
-            n_dabs: 0,
-            buf: [DabInfo::default(); MAX_SAMPLES_BETWEEN_INPUTS],
-        }
-    }
-}
-
-#[derive(ShaderType, Debug, Default, Clone, Copy)]
-pub struct PenInputSampler {
-    pub last_input: PenInput,
-    pub last_sample: ComputedPenInput,
-    pub has_last_sample: u32,
 }
 
 pub struct StrokeResources {

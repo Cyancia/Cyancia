@@ -27,7 +27,7 @@ use cyancia_shader_graph::{
         GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
         SerializableGraphLiteral,
     },
-    wgsl_std::{builtin_nodes, builtin_types},
+    wgsl_std::{builtin_nodes, builtin_types, nodes::TimeNode},
 };
 use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
@@ -40,7 +40,7 @@ use crate::{
         DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
         LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
         OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
-        StrokeBoundsNode,
+        StrokeBoundsNode, TimesNode,
     },
 };
 
@@ -525,6 +525,7 @@ fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
 
     nodes.register::<PenPositionNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<TimeNode>();
     nodes.register::<OutputRequiredSpacingNode>();
 
     nodes.into()
@@ -536,6 +537,7 @@ fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphDataTuple>> {
 
     nodes.register::<PenPositionsNode>();
     nodes.register::<DrawDirectionsNode>();
+    nodes.register::<TimesNode>();
     nodes.register::<OutputSpacingNode>();
 
     nodes.into()
@@ -547,6 +549,7 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
 
     nodes.register::<PenPositionNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<TimeNode>();
     nodes.register::<PixelPositionNode>();
     nodes.register::<FilterWithinMaskNode>();
     nodes.register::<FilterWithinBoundsNode>();
