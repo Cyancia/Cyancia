@@ -535,11 +535,18 @@ impl<Data: GraphData> Graph<Data> {
                 graph_slots: &self.slots,
                 output_storage: &mut output_storage,
                 resources: &self.resources,
+                type_registry: &self.type_registry,
             };
 
             match node.data.run(context) {
                 Ok(()) => {}
                 Err(err) => {
+                    log::error!(
+                        "Error running node {:?} ({:?}): {:?}",
+                        node_id,
+                        node.data.name(),
+                        err
+                    );
                     // return Err(GraphRunError::NodeRunError(ContextualGraphNodeRunError {
                     //     node_id: *node_id,
                     //     node_title: node.data.name().to_string(),

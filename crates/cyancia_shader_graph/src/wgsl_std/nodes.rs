@@ -360,9 +360,9 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRunContext<'_, Data>,
     ) -> Result<(), GraphNodeRunError> {
-        let a = *ctx.get_input_value::<F32Type>(0)?;
-        let b = *ctx.get_input_value::<F32Type>(1)?;
-        let c = *ctx.get_input_value::<F32Type>(2)?;
+        let a = ctx.get_input_value::<F32Type>(0)?;
+        let b = ctx.get_input_value::<F32Type>(1)?;
+        let c = ctx.get_input_value::<F32Type>(2)?;
 
         let result = match state {
             ScalarMathNodeMode::Add => a + b,
@@ -785,9 +785,9 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRunContext<'_, Data>,
     ) -> Result<(), GraphNodeRunError> {
-        let a = *ctx.get_input_value::<Vec2FType>(0)?;
-        let b = *ctx.get_input_value::<Vec2FType>(1)?;
-        let c = *ctx.get_input_value::<Vec2FType>(2)?;
+        let a = ctx.get_input_value::<Vec2FType>(0)?;
+        let b = ctx.get_input_value::<Vec2FType>(1)?;
+        let c = ctx.get_input_value::<Vec2FType>(2)?;
 
         match state {
             VectorMathNodeMode::Dot => {
@@ -1024,18 +1024,18 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
     ) -> Result<(), GraphNodeRunError> {
         let result = match state {
             RectMathNodeMode::Union => {
-                let a = *ctx.get_input_value::<RectType>(0)?;
-                let b = *ctx.get_input_value::<RectType>(1)?;
+                let a = ctx.get_input_value::<RectType>(0)?;
+                let b = ctx.get_input_value::<RectType>(1)?;
                 a.union(b)
             }
             RectMathNodeMode::Intersection => {
-                let a = *ctx.get_input_value::<RectType>(0)?;
-                let b = *ctx.get_input_value::<RectType>(1)?;
+                let a = ctx.get_input_value::<RectType>(0)?;
+                let b = ctx.get_input_value::<RectType>(1)?;
                 a.intersect(b)
             }
             RectMathNodeMode::Inflate => {
-                let rect = *ctx.get_input_value::<RectType>(0)?;
-                let amount = *ctx.get_input_value::<Vec2FType>(1)?;
+                let rect = ctx.get_input_value::<RectType>(0)?;
+                let amount = ctx.get_input_value::<Vec2FType>(1)?;
                 let min = rect.min - amount;
                 let max = rect.max + amount;
                 if min.x > max.x || min.y > max.y {
@@ -1045,8 +1045,8 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
                 }
             }
             RectMathNodeMode::Shrink => {
-                let rect = *ctx.get_input_value::<RectType>(0)?;
-                let amount = *ctx.get_input_value::<Vec2FType>(1)?;
+                let rect = ctx.get_input_value::<RectType>(0)?;
+                let amount = ctx.get_input_value::<Vec2FType>(1)?;
                 let min = rect.min + amount;
                 let max = rect.max - amount;
                 if min.x > max.x || min.y > max.y {
@@ -1118,9 +1118,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let value = *ctx.get_input_value::<F32Type>(0)?;
-        let min = *ctx.get_input_value::<F32Type>(1)?;
-        let max = *ctx.get_input_value::<F32Type>(2)?;
+        let value = ctx.get_input_value::<F32Type>(0)?;
+        let min = ctx.get_input_value::<F32Type>(1)?;
+        let max = ctx.get_input_value::<F32Type>(2)?;
         ctx.set_output_value::<F32Type>(0, value.clamp(min, max))?;
         Ok(())
     }
@@ -1179,8 +1179,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let edge = *ctx.get_input_value::<F32Type>(0)?;
-        let x = *ctx.get_input_value::<F32Type>(1)?;
+        let edge = ctx.get_input_value::<F32Type>(0)?;
+        let x = ctx.get_input_value::<F32Type>(1)?;
         ctx.set_output_value::<F32Type>(0, if x < edge { 0.0 } else { 1.0 })?;
         Ok(())
     }
@@ -1241,9 +1241,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let edge0 = *ctx.get_input_value::<F32Type>(0)?;
-        let edge1 = *ctx.get_input_value::<F32Type>(1)?;
-        let x = *ctx.get_input_value::<F32Type>(2)?;
+        let edge0 = ctx.get_input_value::<F32Type>(0)?;
+        let edge1 = ctx.get_input_value::<F32Type>(1)?;
+        let x = ctx.get_input_value::<F32Type>(2)?;
         let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
         ctx.set_output_value::<F32Type>(0, t * t * (3.0 - 2.0 * t))?;
         Ok(())
@@ -1303,7 +1303,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let v = *ctx.get_input_value::<Vec2FType>(0)?;
+        let v = ctx.get_input_value::<Vec2FType>(0)?;
         ctx.set_output_value::<F32Type>(0, v.x)?;
         ctx.set_output_value::<F32Type>(1, v.y)?;
         Ok(())
@@ -1363,8 +1363,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let x = *ctx.get_input_value::<F32Type>(0)?;
-        let y = *ctx.get_input_value::<F32Type>(1)?;
+        let x = ctx.get_input_value::<F32Type>(0)?;
+        let y = ctx.get_input_value::<F32Type>(1)?;
         ctx.set_output_value::<Vec2FType>(0, Vec2::new(x, y))?;
         Ok(())
     }
@@ -1427,10 +1427,10 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let r = *ctx.get_input_value::<F32Type>(0)?;
-        let g = *ctx.get_input_value::<F32Type>(1)?;
-        let b = *ctx.get_input_value::<F32Type>(2)?;
-        let a = *ctx.get_input_value::<F32Type>(3)?;
+        let r = ctx.get_input_value::<F32Type>(0)?;
+        let g = ctx.get_input_value::<F32Type>(1)?;
+        let b = ctx.get_input_value::<F32Type>(2)?;
+        let a = ctx.get_input_value::<F32Type>(3)?;
         ctx.set_output_value::<ColorType>(0, Vec4::new(r, g, b, a))?;
         Ok(())
     }
@@ -1500,7 +1500,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let c = *ctx.get_input_value::<ColorType>(0)?;
+        let c = ctx.get_input_value::<ColorType>(0)?;
         ctx.set_output_value::<F32Type>(0, c.x)?;
         ctx.set_output_value::<F32Type>(1, c.y)?;
         ctx.set_output_value::<F32Type>(2, c.z)?;
@@ -1728,9 +1728,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let a = *ctx.get_input_value::<ColorType>(0)?;
-        let b = *ctx.get_input_value::<ColorType>(1)?;
-        let t = *ctx.get_input_value::<F32Type>(2)?;
+        let a = ctx.get_input_value::<ColorType>(0)?;
+        let b = ctx.get_input_value::<ColorType>(1)?;
+        let t = ctx.get_input_value::<F32Type>(2)?;
         ctx.set_output_value::<ColorType>(0, a.lerp(b, t))?;
         Ok(())
     }
@@ -1787,7 +1787,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let reference = *ctx.get_input_value::<TextureType>(0)?;
+        let reference = ctx.get_input_value::<TextureType>(0)?;
         let texture_object = ctx
             .resources
             .textures
@@ -2701,7 +2701,7 @@ let {} = package::render::math::sample_cubic_curve(
         state: &Self::State,
         mut ctx: GraphNodeRunContext<'_, Data>,
     ) -> Result<(), GraphNodeRunError> {
-        let x = *ctx.get_input_value::<F32Type>(0)?;
+        let x = ctx.get_input_value::<F32Type>(0)?;
         let y = CubicCurve::new(state.control_points.clone()).sample(x);
         ctx.set_output_value::<F32Type>(0, y)?;
         Ok(())
@@ -2760,7 +2760,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let seed = *ctx.get_input_value::<F32Type>(0)?;
+        let seed = ctx.get_input_value::<F32Type>(0)?;
         ctx.set_output_value::<F32Type>(0, Self::hash11(seed))?;
         ctx.set_output_value::<Vec2FType>(1, Self::hash21(seed))?;
         Ok(())

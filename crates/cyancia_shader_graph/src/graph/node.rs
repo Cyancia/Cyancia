@@ -639,13 +639,14 @@ pub struct GraphNodeRunContext<'a, Data: GraphData> {
     pub graph_slots: &'a GraphSlots,
     pub output_storage: &'a mut HashMap<GraphOutputSlotId, GraphLiteral>,
     pub resources: &'a GraphResources<Data>,
+    pub type_registry: &'a GraphTypeRegistry,
 }
 
 impl<'a, Data: GraphData> GraphNodeRunContext<'a, Data> {
     pub fn get_input_value<T: GraphValueType>(
         &self,
         index: usize,
-    ) -> Result<&T::AssociatedLiteralType, GraphNodeRunError> {
+    ) -> Result<T::AssociatedLiteralType, GraphNodeRunError> {
         let slot_id = self
             .inputs
             .get(index)
@@ -662,9 +663,26 @@ impl<'a, Data: GraphData> GraphNodeRunContext<'a, Data> {
                 .get(&connected)
                 .ok_or(GraphNodeRunError::MissingOutputSlot)?;
 
-            Ok(connected_value.as_ref::<T::AssociatedLiteralType>())
+            if connected_value.ty().name() != slot.data.ty().name() {
+                let casted = self
+                    .type_registry
+                    .try_cast(
+                        connected_value.ty().as_ref(),
+                        slot.data.ty().as_ref(),
+                        connected_value.value(),
+                    )
+                    .ok_or(GraphNodeRunError::FailedToCastVariable)?;
+                casted
+                    .downcast::<T::AssociatedLiteralType>()
+                    .map(|v| *v)
+                    .map_err(|_| GraphNodeRunError::FailedToCastVariable)
+            } else {
+                Ok(connected_value
+                    .clone()
+                    .downcast::<T::AssociatedLiteralType>())
+            }
         } else {
-            Ok(slot.data.as_ref::<T::AssociatedLiteralType>())
+            Ok(slot.data.clone().downcast::<T::AssociatedLiteralType>())
         }
     }
 
@@ -765,7 +783,7 @@ impl<Data: GraphData> GraphNodeCodeGenContext<'_, Data> {
 
         if output_slot.data_ty.name() != slot.data.ty().name() {
             self.type_registry
-                .try_cast(&*output_slot.data_ty, slot.data.ty().as_ref(), ident)
+                .try_wgsl_cast(&*output_slot.data_ty, slot.data.ty().as_ref(), ident)
                 .ok_or(GraphNodeCodeGenError::FailedToCastVariable)
         } else {
             Ok(ident.clone())

@@ -284,11 +284,11 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let mask = *ctx.get_input_value::<TextureType>(1)?;
-        let translation = *ctx.get_input_value::<Vec2FType>(2)?;
-        let rotation = *ctx.get_input_value::<F32Type>(3)?;
-        let scale = *ctx.get_input_value::<Vec2FType>(4)?;
-        let anchor = *ctx.get_input_value::<Vec2FType>(5)?;
+        let mask = ctx.get_input_value::<TextureType>(1)?;
+        let translation = ctx.get_input_value::<Vec2FType>(2)?;
+        let rotation = ctx.get_input_value::<F32Type>(3)?;
+        let scale = ctx.get_input_value::<Vec2FType>(4)?;
+        let anchor = ctx.get_input_value::<Vec2FType>(5)?;
         let texture = ctx
             .resources
             .textures
@@ -380,7 +380,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinBoundsNode 
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let bounds = *ctx.get_input_value::<RectType>(1)?;
+        let bounds = ctx.get_input_value::<RectType>(1)?;
         // TODO We are unable to determine if the current pixel is filtered out or not.
         ctx.set_output_value::<ColorType>(0, Vec4::ZERO)?;
         ctx.set_output_value::<RectType>(1, bounds)?;
@@ -935,8 +935,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let center = *ctx.get_input_value::<Vec2FType>(1)?;
-        let radii = *ctx.get_input_value::<Vec2FType>(2)?;
+        let center = ctx.get_input_value::<Vec2FType>(1)?;
+        let radii = ctx.get_input_value::<Vec2FType>(2)?;
         ctx.set_output_value::<RectType>(
             1,
             Rect {
