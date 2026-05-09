@@ -272,34 +272,6 @@ impl BrushPresetRenderer {
         self.samples_offsets.clear();
         self.dab_info_offsets.clear();
         self.dispatch_params.clear();
-        let mut update_rect = IRect::EMPTY;
-        for sample in pen_input {
-            let output = main_graph
-                .run(&BrushGraphData { pen_input: sample }, Vec::new())
-                .unwrap();
-
-            assert!(output.len() == 1);
-            let bounds = output[0].as_ref::<Rect>().as_irect();
-            self.dab_info_offsets
-                .push(self.dab_info_buffer.push(&DabInfo {
-                    bound_min: bounds.min,
-                    bound_max: bounds.max,
-                }) as u32);
-            self.samples_offsets
-                .push(self.samples_buffer.push(&sample) as u32);
-
-            update_rect = update_rect.union(bounds);
-            let size = bounds.size().as_uvec2();
-            self.dispatch_params
-                .push(UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1));
-        }
-
-        if update_rect.is_empty() {
-            return;
-        }
-
-        self.samples_buffer.write_buffer(device, queue);
-        self.dab_info_buffer.write_buffer(device, queue);
 
         let buf = self.intermediate_buffer.get_or_insert_with(|| {
             let buf_a = DynamicLayerStorage::new(
@@ -315,8 +287,35 @@ impl BrushPresetRenderer {
             [buf_a, buf_b]
         });
 
-        buf[0].ensure_pixel_area(update_rect);
-        buf[1].ensure_pixel_area(update_rect);
+        for sample in pen_input {
+            let output = main_graph
+                .run(&BrushGraphData { pen_input: sample }, Vec::new())
+                .unwrap();
+
+            assert_eq!(output.len(), 1);
+            let bounds = output[0].as_ref::<Rect>().as_irect();
+            self.dab_info_offsets
+                .push(self.dab_info_buffer.push(&DabInfo {
+                    bound_min: bounds.min,
+                    bound_max: bounds.max,
+                }) as u32);
+            self.samples_offsets
+                .push(self.samples_buffer.push(&sample) as u32);
+
+            let size = bounds.size().as_uvec2();
+            self.dispatch_params
+                .push(UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1));
+
+            buf[0].ensure_pixel_area(bounds);
+            buf[1].ensure_pixel_area(bounds);
+        }
+
+        if self.dispatch_params.is_empty() {
+            return;
+        }
+
+        self.samples_buffer.write_buffer(device, queue);
+        self.dab_info_buffer.write_buffer(device, queue);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
