@@ -50,7 +50,7 @@ fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {
             return vec3u(vec2u(pixel - info.origin), i);
         }
     }
-    return vec3u(0xffffffffu, 0, 0);
+    return vec3u(0, 0, 0xFFFFFFFFu);
 }
 
 fn convert_pixel_to_buffer_tile(pixel: vec2i) -> vec3u {
@@ -61,7 +61,7 @@ fn convert_pixel_to_buffer_tile(pixel: vec2i) -> vec3u {
             return vec3u(vec2u(pixel - info.origin), i);
         }
     }
-    return vec3u(0xffffffffu, 0, 0);
+    return vec3u(0, 0, 0xFFFFFFFFu);
 }
 
 fn texture_transform_mat(local_index: u32, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> mat3x3f {
@@ -152,8 +152,8 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
-    let pixel_pos = vec2i(id.xy) + dab_info.bound_min * i32(TILE_SIZE);
-    if any(pixel_pos >= dab_info.bound_max * i32(TILE_SIZE)) {
+    let pixel_pos = vec2i(id.xy) + dab_info.bound_min;
+    if any(pixel_pos >= dab_info.bound_max) {
         return;
     }
     let pixel_posf = vec2f(pixel_pos);
@@ -164,5 +164,6 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     @if(!POSTPROCESS) {
         main_graph(sample, pixel_pos, pixel_posf);
+        // set_output_color(pixel_pos, current_input_color(pixel_pos) + vec4f(0.1));
     }
 }
