@@ -424,21 +424,27 @@ impl BrushPresetRenderer {
 
         let mut target_layer = tiles.get_layer_mut(target_layer_id).unwrap();
         let result_buffer = &intermediate_buffers[self.round as usize % 2];
+
+        for (coord, _, _) in result_buffer.iter_tiles() {
+            target_layer.get_tile_or_allocate(coord);
+        }
+
         let mut ec = device.create_command_encoder(&Default::default());
         ec.push_debug_group("copy brush preset result to target layer");
         for (coord, src, _) in result_buffer.iter_tiles() {
-            target_layer.get_tile_or_allocate(coord);
             let dst = target_layer.get_tile_layer(coord).unwrap();
+            log::info!(
+                "Copying tile {:?} from intermediate buffer to target layer (src layer {}, dst layer {})",
+                coord,
+                src,
+                dst
+            );
 
             ec.copy_texture_to_texture(
                 TexelCopyTextureInfo {
                     texture: result_buffer.texture().unwrap().texture(),
                     mip_level: 0,
-                    origin: Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: src as u32,
-                    },
+                    origin: Origin3d { x: 0, y: 0, z: src },
                     aspect: TextureAspect::All,
                 },
                 TexelCopyTextureInfo {
@@ -456,8 +462,6 @@ impl BrushPresetRenderer {
         }
         ec.pop_debug_group();
         queue.submit([ec.finish()]);
-
-        log::info!("Copied {} tiles to target layer.", result_buffer.len());
     }
 }
 
