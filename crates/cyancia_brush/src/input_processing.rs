@@ -124,13 +124,17 @@ impl InputProcessor {
         if total_arc < 0.0001 || spacing <= 0.0 {
             return Vec::new();
         }
+
+        let total_samples = (total_arc / spacing).floor() as u32;
+        if total_samples == 0 {
+            return Vec::new();
+        }
+
         let mut output = Vec::new();
         let mut last_sample = new_computed;
-        let total_samples = (total_arc / spacing).floor() as u32;
         for p in 0..=total_samples {
             let t = p as f32 / total_samples as f32;
             let interpolated = compute_pen_input(&curve, t);
-
             output.push(interpolated);
             last_sample = interpolated;
         }
