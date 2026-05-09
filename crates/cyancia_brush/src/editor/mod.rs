@@ -56,7 +56,7 @@ use crate::{
         BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES, REQUIRED_SPACING_GRAPH_NODES,
         SPACING_FACTOR_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
-    render::{BrushPresetOperator, graph::BrushGraphData},
+    render::{BrushPresetOperator, graph::{BrushGraphData, BrushGraphPostprocessData}},
     tool::CurrentBrushPresetOperator,
 };
 
@@ -85,7 +85,8 @@ pub struct BrushEditorView {
 
     input_manager: ActionsMatcher,
     texture_storage: Arc<GraphTextureStorage>,
-    function_storage: Arc<GraphFunctionStorage<BrushGraphData>>,
+    main_function_storage: Arc<GraphFunctionStorage<BrushGraphData>>,
+    stroke_pp_function_storage: Arc<GraphFunctionStorage<BrushGraphPostprocessData>>,
 
     function_id_to_asset: HashMap<GraphFunctionId, AssetHandle<SerializableGraphFunction>>,
     selected: Option<Selected>,
@@ -101,7 +102,6 @@ pub struct BrushEditorView {
 #[derive(Clone)]
 pub enum BrushPresetGraph {
     RequiredSpacing,
-    SpacingFactor,
     Main,
     StrokePostprocess { index: usize },
 }
@@ -222,7 +222,9 @@ impl WindowView for BrushEditorView {
 
                 selected: None,
                 texture_storage,
-                function_storage,
+                main_function_storage: function_storage,
+                stroke_pp_function_storage: Arc::new(GraphFunctionStorage::new(HashMap::new())), // TODO
+
                 function_id_to_asset,
 
                 saved_runtime_revision: 0,
@@ -260,7 +262,7 @@ impl WindowView for BrushEditorView {
         .map(BrushEditorMessage::BrushSelected);
 
         let functions = Column::from_iter(
-            self.function_storage
+            self.main_function_storage
                 .all()
                 .iter()
                 .map(|(id, func)| {
@@ -325,10 +327,6 @@ impl WindowView for BrushEditorView {
                             instance.required_spacing_graph(),
                             REQUIRED_SPACING_GRAPH_NODES.as_ref(),
                         )),
-                        BrushPresetGraph::SpacingFactor => Element::new(GraphView::new(
-                            instance.spacing_factor_graph(),
-                            SPACING_FACTOR_GRAPH_NODES.as_ref(),
-                        )),
                         BrushPresetGraph::Main => Element::new(GraphView::new(
                             instance.main_graph(),
                             MAIN_GRAPH_NODES.as_ref(),
@@ -356,9 +354,6 @@ impl WindowView for BrushEditorView {
                             .on_press_with(|| BrushEditorMessage::CreateNewStrokePostprocessGraph),
                         button("Required Spacing").on_press_with(move || {
                             BrushEditorMessage::SwitchToGraph(BrushPresetGraph::RequiredSpacing)
-                        }),
-                        button("Spacing Factor").on_press_with(move || {
-                            BrushEditorMessage::SwitchToGraph(BrushPresetGraph::SpacingFactor)
                         }),
                         button("Main").on_press_with(move || BrushEditorMessage::SwitchToGraph(
                             BrushPresetGraph::Main
@@ -547,11 +542,6 @@ impl WindowView for BrushEditorView {
                                 message,
                                 REQUIRED_SPACING_GRAPH_NODES.as_ref(),
                             ),
-                            BrushPresetGraph::SpacingFactor => Self::apply_graph_view_message(
-                                instance.spacing_factor_graph_mut(),
-                                message,
-                                SPACING_FACTOR_GRAPH_NODES.as_ref(),
-                            ),
                             BrushPresetGraph::Main => Self::apply_graph_view_message(
                                 instance.main_graph_mut(),
                                 message,
@@ -588,7 +578,9 @@ impl WindowView for BrushEditorView {
                 let (instance, errors) = BrushPresetInstance::from_asset(
                     &brush,
                     self.texture_storage.clone(),
-                    self.function_storage.clone(),
+                    self.main_function_storage.clone(),
+                    self.stroke_pp_function_storage.clone(),
+
                 );
 
                 if let Some(instance) = instance {
@@ -652,7 +644,7 @@ impl WindowView for BrushEditorView {
                         name: "[Unnamed Function]".to_string(),
                         graph: Graph::new(
                             GraphResources {
-                                functions: self.function_storage.clone(),
+                                functions: self.main_function_storage.clone(),
                                 ..Default::default()
                             },
                             FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
@@ -666,7 +658,6 @@ impl WindowView for BrushEditorView {
                     metadata: BrushPresetMetadata {
                         name: "[Unnamed Brush]".to_string(),
                     },
-                    spacing_factor_graph: SerializableGraph::default(),
                     required_spacing_graph: SerializableGraph::default(),
                     main_graph: SerializableGraph::default(),
                     stroke_postprocess_graphs: Vec::new(),
@@ -689,7 +680,8 @@ impl WindowView for BrushEditorView {
                 let (instance, _) = BrushPresetInstance::from_asset(
                     &handle,
                     self.texture_storage.clone(),
-                    self.function_storage.clone(),
+                    self.main_function_storage.clone(),
+                    self.stroke_pp_function_storage.clone(),
                 );
                 self.selected = Some(Selected::Brush(SelectedBrush {
                     asset_id: None,

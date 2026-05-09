@@ -48,7 +48,10 @@ use crate::{
     asset::BrushPreset,
     input_processing::{InputProcessor, RawPenInput},
     instance::{BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset},
-    render::{graph::BrushGraphData, pipeline::BrushMainPipeline},
+    render::{
+        graph::{BrushGraphData, BrushGraphPostprocessData},
+        pipeline::{BrushMainPipeline, BrushPostProcessPipeline},
+    },
 };
 
 pub mod graph;
@@ -103,7 +106,7 @@ impl BrushPresetOperator {
             brush_runtime_revision: instance.runtime_revision(),
             target_layer_texture: tiles
                 .get_layer(target_layer)
-                .and_then(|l| l.texture().as_deref().cloned()),
+                .and_then(|l| l.texture().map(|t| t.as_ref().clone())),
         };
         match self.last_session.as_mut() {
             Some(last_session) => {
@@ -190,12 +193,14 @@ impl BrushPresetOperator {
                 .flush(final_input, self.instance.read().required_spacing_graph()),
             self.instance.read().main_graph(),
         );
-        // for pen_input in self.input_processor.flush(final_input) {
-        //     renderer.update(&self.device, &self.queue, pen_input);
-        // }
 
         let now = std::time::Instant::now();
-        // renderer.postprocess_stroke(&self.device, &self.queue);
+        let instance = self.instance.read();
+        renderer.postprocess_stroke(
+            &self.device,
+            &self.queue,
+            instance.stroke_postprocess_graphs(),
+        );
         // renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
     }
@@ -212,7 +217,7 @@ fn push_samples(
 
 pub struct BrushPresetRenderer {
     main: BrushMainPipeline,
-    stroke_pp: Vec<BrushMainPipeline>,
+    stroke_pp: Vec<BrushPostProcessPipeline>,
     resources: StrokeResources,
     intermediate_buffer: Option<[DynamicLayerStorage; 2]>,
     samples_buffer: DynamicBuffer<ComputedPenInput>,
@@ -220,6 +225,7 @@ pub struct BrushPresetRenderer {
     dab_info_buffer: DynamicBuffer<DabInfo>,
     dab_info_offsets: Vec<u32>,
     dispatch_params: Vec<UVec3>,
+    accumulated_pixel_bounds: IRect,
     round: u32,
 }
 
@@ -238,7 +244,7 @@ impl BrushPresetRenderer {
 
         let mut stroke_pp = Vec::new();
         for graph in &brush.stroke_postprocess_graphs {
-            let main = BrushMainPipeline::new(device, &resources, graph.main.clone().into());
+            let main = BrushPostProcessPipeline::new(device, &resources, graph.main.clone().into());
             stroke_pp.push(main);
         }
 
@@ -252,6 +258,7 @@ impl BrushPresetRenderer {
             dab_info_buffer: DynamicBuffer::new("dab info buffer".into(), BufferUsages::STORAGE),
             dab_info_offsets: Vec::new(),
             dispatch_params: Vec::new(),
+            accumulated_pixel_bounds: IRect::EMPTY,
             round: 0,
         }
     }
@@ -308,6 +315,8 @@ impl BrushPresetRenderer {
 
             buf[0].ensure_pixel_area(bounds);
             buf[1].ensure_pixel_area(bounds);
+
+            self.accumulated_pixel_bounds = self.accumulated_pixel_bounds.union(bounds);
         }
 
         if self.dispatch_params.is_empty() {
@@ -348,33 +357,66 @@ impl BrushPresetRenderer {
         self.round = 0;
     }
 
-    // pub fn postprocess_stroke(&self, device: &Device, queue: &Queue) {
-    //     if self.resources.n_stroke_pp == 0 {
-    //         return;
-    //     }
+    pub fn postprocess_stroke(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        graphs: &[Graph<BrushGraphPostprocessData>],
+    ) {
+        let Some(intermediate_buffers) = &self.intermediate_buffer else {
+            return;
+        };
 
-    //     let mut ec = device.create_command_encoder(&Default::default());
+        if self.accumulated_pixel_bounds.is_empty() {
+            return;
+        }
 
-    //     ec.push_debug_group("brush preset stroke postprocess");
-    //     {
-    //         let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-    //             label: Some("brush preset stroke postprocess pass"),
-    //             ..Default::default()
-    //         });
+        let mut ec = device.create_command_encoder(&Default::default());
 
-    //         for (estimate, main) in &self.stroke_pp {
-    //             estimate.dispatch(&mut pass, 1, 1, 1);
-    //             self.stroke_pp_tile_allocation
-    //                 .dispatch(&mut pass, &self.resources);
-    //             // main.dispatch(&mut pass, &self.resources);
-    //         }
-    //     }
-    //     ec.pop_debug_group();
+        ec.push_debug_group("brush preset stroke postprocess");
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("brush preset stroke postprocess pass"),
+                ..Default::default()
+            });
 
-    //     unsafe { device.start_graphics_debugger_capture() };
-    //     queue.submit([ec.finish()]);
-    //     unsafe { device.stop_graphics_debugger_capture() };
-    // }
+            for (graph, pipeline) in graphs.iter().zip(&self.stroke_pp) {
+                let output = graph
+                    .run(
+                        &BrushGraphPostprocessData {
+                            accumulated_pixel_bounds: self.accumulated_pixel_bounds,
+                        },
+                        Vec::new(),
+                    )
+                    .unwrap();
+                assert_eq!(output.len(), 1);
+                let bounds = output[0].as_ref::<Rect>().as_irect();
+                self.dab_info_buffer.clear();
+                self.dab_info_buffer.push(&DabInfo {
+                    bound_min: bounds.min,
+                    bound_max: bounds.max,
+                });
+                self.dab_info_buffer.write_buffer(device, queue);
+
+                let size = bounds.size().as_uvec2();
+                self.accumulated_pixel_bounds = self.accumulated_pixel_bounds.union(bounds);
+                pipeline.dispatch(
+                    device,
+                    &mut pass,
+                    &self.dab_info_buffer,
+                    &self.resources,
+                    &intermediate_buffers,
+                    UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1),
+                    &mut self.round,
+                );
+            }
+        }
+        ec.pop_debug_group();
+
+        unsafe { device.start_graphics_debugger_capture() };
+        queue.submit([ec.finish()]);
+        unsafe { device.stop_graphics_debugger_capture() };
+    }
 
     // pub fn copy_last_surface_to_layer(
     //     &self,

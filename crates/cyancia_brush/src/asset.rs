@@ -21,7 +21,6 @@ use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 pub struct BrushPreset {
     pub metadata: BrushPresetMetadata,
-    pub spacing_factor_graph: SerializableGraph,
     pub required_spacing_graph: SerializableGraph,
     pub main_graph: SerializableGraph,
     pub stroke_postprocess_graphs: Vec<SerializableGraph>,
@@ -81,12 +80,6 @@ impl AssetSerializer for BrushPresetSerializer {
             .read_to_string(&mut metadata_buffer)?;
         let metadata = toml::from_str::<BrushPresetMetadata>(&metadata_buffer)?;
 
-        let mut spacing_factor_graph_buffer = String::new();
-        archive
-            .by_name("spacing_factor.csg")?
-            .read_to_string(&mut spacing_factor_graph_buffer)?;
-        let spacing_factor_graph =
-            toml::from_str::<SerializableGraph>(&spacing_factor_graph_buffer)?;
         let mut required_spacing_graph_buffer = String::new();
         archive
             .by_name("required_spacing.csg")?
@@ -122,7 +115,6 @@ impl AssetSerializer for BrushPresetSerializer {
         Ok(BrushPreset {
             metadata,
             required_spacing_graph,
-            spacing_factor_graph,
             main_graph,
             stroke_postprocess_graphs,
             external_vars,
@@ -136,10 +128,6 @@ impl AssetSerializer for BrushPresetSerializer {
     ) -> Result<(), Self::Error> {
         let mut buf = Vec::new();
         let mut zip = ZipWriter::new(Cursor::new(&mut buf));
-
-        zip.start_file("spacing_factor.csg", FileOptions::<()>::default())?;
-        let spacing_factor_graph_buffer = toml::to_string(&asset.spacing_factor_graph)?;
-        zip.write_all(spacing_factor_graph_buffer.as_bytes())?;
 
         zip.start_file("required_spacing.csg", FileOptions::<()>::default())?;
         let required_spacing_graph_buffer = toml::to_string(&asset.required_spacing_graph)?;

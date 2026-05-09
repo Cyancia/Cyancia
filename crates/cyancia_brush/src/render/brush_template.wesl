@@ -2,7 +2,7 @@ import package::image::image_tiling::{TileInfo, TILE_SIZE};
 import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
 import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
-@group(0) @binding(0) var<storage> sample: ComputedPenInput;
+@if(!POSTPROCESS) @group(0) @binding(0) var<storage> sample: ComputedPenInput;
 @group(0) @binding(1) var textures: texture_2d<f32>;
 @group(0) @binding(2) var<storage> texture_bounds: array<URect>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
@@ -34,13 +34,6 @@ fn main_graph(graph_input: ComputedPenInput, pixel_pos: vec2i, pixel_posf: vec2f
 fn atlas_size(local_index: u32) -> vec2u {
     let bounds = texture_bounds[local_index];
     return bounds.max - bounds.min;
-}
-
-fn get_accumulated_pixel_bounds() -> IRect {
-    return IRect(
-        stroke_info.accumulated_bound_min * i32(TILE_SIZE),
-        stroke_info.accumulated_bound_max * i32(TILE_SIZE) + 1
-    );
 }
 
 fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> Mask {
@@ -165,6 +158,11 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     }
     let pixel_posf = vec2f(pixel_pos);
 
-    main_graph(sample, pixel_pos, pixel_posf);
-    // set_output_color(pixel_pos, target_layer_color(pixel_pos) + 0.1);
+    @if(POSTPROCESS) {
+        main_graph(ComputedPenInput(), pixel_pos, pixel_posf);
+    }
+
+    @if(!POSTPROCESS) {
+        main_graph(sample, pixel_pos, pixel_posf);
+    }
 }

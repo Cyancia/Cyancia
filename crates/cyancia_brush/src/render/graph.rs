@@ -1,4 +1,4 @@
-use bevy_math::{Rect, VectorSpace};
+use bevy_math::{IRect, Rect, VectorSpace};
 use cyancia_image::blend_modes::BlendMode;
 use cyancia_math::rect_transform::RectTransform;
 use cyancia_shader_graph::{
@@ -23,6 +23,13 @@ use iced_widget::{Column, column, pick_list};
 use serde::{Deserialize, Serialize};
 
 use crate::render::ComputedPenInput;
+
+#[derive(Default, Clone)]
+pub struct BrushGraphPostprocessData {
+    pub accumulated_pixel_bounds: IRect,
+}
+
+impl GraphData for BrushGraphPostprocessData {}
 
 #[derive(Default, Clone)]
 pub struct BrushGraphData {
@@ -814,7 +821,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
 pub struct StrokeBoundsNode;
 
 #[stateless]
-impl<Data: GraphData> StatelessCommonGraphNode<Data> for StrokeBoundsNode {
+impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
     fn name(&self) -> &'static str {
         "Stroke Bounds"
     }
@@ -833,32 +840,39 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StrokeBoundsNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphPostprocessData>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphPostprocessData>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<RectType>()]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphPostprocessData>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        // TODO This can be available on GPU but it's useless at most cases.
         Ok(format!(
-            "let {} = Rect();\n",
+            "let {} = Rect(vec2f(dab_info.bound_min), vec2f(dab_info.bound_max));",
             ctx.get_output(0)?
         ))
     }
 
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        // TODO This should be available on CPU when postprocess.
-        todo!();
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphPostprocessData>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<RectType>(
+            0,
+            Rect {
+                min: ctx.data.accumulated_pixel_bounds.min.as_vec2(),
+                max: ctx.data.accumulated_pixel_bounds.max.as_vec2(),
+            },
+        )?;
         Ok(())
     }
 }

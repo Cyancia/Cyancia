@@ -359,7 +359,7 @@ impl DynamicLayerStorage {
     }
 
     pub fn binding_data(&self) -> Option<LayerBindingData> {
-        let texture = self.texture()?;
+        let texture = self.texture()?.clone();
         let tile_info_buffer = self.tile_info_buffer()?.clone();
         Some(LayerBindingData {
             texture,
@@ -379,8 +379,8 @@ impl DynamicLayerStorage {
         self.tile_info_buffer.inner_buffer()
     }
 
-    pub fn texture(&self) -> Option<Arc<TextureView>> {
-        self.texture.clone()
+    pub fn texture(&self) -> Option<&Arc<TextureView>> {
+        self.texture.as_ref()
     }
 
     pub fn ensure_pixel_area(&mut self, pixel_rect: IRect) {
