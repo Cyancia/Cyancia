@@ -206,15 +206,6 @@ impl BrushPresetOperator {
     }
 }
 
-fn push_samples(
-    device: &Device,
-    queue: &Queue,
-    main_graph: &Graph<BrushGraphData>,
-    pen_input: Vec<ComputedPenInput>,
-    renderer: &mut BrushPresetRenderer,
-) {
-}
-
 pub struct BrushPresetRenderer {
     main: BrushMainPipeline,
     stroke_pp: Vec<BrushPostProcessPipeline>,
