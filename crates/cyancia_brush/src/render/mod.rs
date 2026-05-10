@@ -347,6 +347,7 @@ impl BrushPresetRenderer {
     fn reset(&mut self) {
         self.intermediate_buffer = None;
         self.round = 0;
+        self.accumulated_pixel_bounds = IRect::EMPTY;
     }
 
     pub fn postprocess_stroke(
