@@ -14,8 +14,6 @@ import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples,
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
-const N_STROKE_PP: u32 = //CODEGENFLAG_N_STROKE_PP;
-
 struct AtomicDispatchParams {
     x: atomic<u32>,
     y: atomic<u32>,

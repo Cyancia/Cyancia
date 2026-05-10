@@ -47,7 +47,7 @@ use wgpu::{
 use crate::{
     asset::BrushPreset,
     input_processing::{InputProcessor, RawPenInput},
-    instance::{BrushPresetInstance, CompiledBrushGraph, CompiledBrushPreset},
+    instance::{BrushPresetInstance, CompiledBrushPreset},
     render::{
         graph::{BrushGraphData, BrushGraphPostprocessData},
         pipeline::{BrushMainPipeline, BrushPostProcessPipeline},
@@ -239,11 +239,11 @@ impl BrushPresetRenderer {
             assets,
         );
 
-        let main = BrushMainPipeline::new(device, &resources, brush.main_graph.main.clone().into());
+        let main = BrushMainPipeline::new(device, &resources, brush.main_graph.clone().into());
 
         let mut stroke_pp = Vec::new();
         for graph in &brush.stroke_postprocess_graphs {
-            let main = BrushPostProcessPipeline::new(device, &resources, graph.main.clone().into());
+            let main = BrushPostProcessPipeline::new(device, &resources, graph.clone().into());
             stroke_pp.push(main);
         }
 
