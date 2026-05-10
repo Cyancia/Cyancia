@@ -97,14 +97,17 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let Some(brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
-            log::error!("No current brush preset operator found.");
-            return;
-        };
-
-        let now = std::time::Instant::now();
-        brush.update_stroke(params);
-        log::info!("Brush update took: {:?}", now.elapsed());
+        services.try_service_scope::<CurrentBrushPresetOperator>(
+            |brush, services| {
+                let tiles = services.service::<GpuTileStorage>();
+                let now = std::time::Instant::now();
+                brush.update_stroke(params, tiles);
+                log::info!("Brush update took: {:?}", now.elapsed());
+            },
+            || {
+                log::error!("No current brush preset operator found.");
+            },
+        );
     }
 
     fn end(

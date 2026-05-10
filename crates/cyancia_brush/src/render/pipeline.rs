@@ -20,9 +20,7 @@ use wgpu::{
     TextureView, TextureViewDimension,
 };
 
-use crate::render::{
-    ComputedPenInput, DabInfo, EXTERNAL_VARIABLE_BASE_BINDING, StrokeResources,
-};
+use crate::render::{ComputedPenInput, DabInfo, EXTERNAL_VARIABLE_BASE_BINDING, StrokeResources};
 
 pub struct BrushMainPipeline {
     layout: BindGroupLayout,
@@ -38,7 +36,7 @@ impl BrushMainPipeline {
         let layout_entries = bind_group_layout_entries(
             &resources.external_var_layouts,
             false,
-            resources.target_layer.texture().format(),
+            resources.target_layer_format.wgpu_format(),
         );
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -73,6 +71,8 @@ impl BrushMainPipeline {
         &self,
         device: &Device,
         pass: &mut ComputePass,
+        target_layer_texture: &TextureView,
+        target_layer_tile_info: &Buffer,
         samples: &DynamicBuffer<ComputedPenInput>,
         samples_offsets: &[u32],
         dab_infos: &DynamicBuffer<DabInfo>,
@@ -84,6 +84,8 @@ impl BrushMainPipeline {
     ) {
         let bind_group_entries_even = bind_group_entries(
             resources,
+            target_layer_texture,
+            target_layer_tile_info,
             intermediate_buffers,
             Some(samples),
             dab_infos,
@@ -97,6 +99,8 @@ impl BrushMainPipeline {
 
         let bind_group_entries_odd = bind_group_entries(
             resources,
+            target_layer_texture,
+            target_layer_tile_info,
             intermediate_buffers,
             Some(samples),
             dab_infos,
@@ -152,7 +156,7 @@ impl BrushPostProcessPipeline {
         let layout_entries = bind_group_layout_entries(
             &resources.external_var_layouts,
             true,
-            resources.target_layer.texture().format(),
+            resources.target_layer_format.wgpu_format(),
         );
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -187,6 +191,8 @@ impl BrushPostProcessPipeline {
         &self,
         device: &Device,
         pass: &mut ComputePass,
+        target_layer_texture: &TextureView,
+        target_layer_tile_info: &Buffer,
         dab_infos: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
         intermediate_buffers: &[DynamicLayerStorage; 2],
@@ -195,6 +201,8 @@ impl BrushPostProcessPipeline {
     ) {
         let bind_group_entries = bind_group_entries(
             resources,
+            target_layer_texture,
+            target_layer_tile_info,
             intermediate_buffers,
             None,
             dab_infos,
@@ -322,6 +330,8 @@ fn bind_group_layout_entries(
 
 fn bind_group_entries<'a>(
     resources: &'a StrokeResources,
+    target_layer_texture: &'a TextureView,
+    target_layer_tile_info: &'a Buffer,
     intermediate_buffers: &'a [DynamicLayerStorage],
     samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
     dab_infos: &'a DynamicBuffer<DabInfo>,
@@ -338,11 +348,11 @@ fn bind_group_entries<'a>(
         },
         BindGroupEntry {
             binding: 3,
-            resource: resources.target_layer_tile_info.as_entire_binding(),
+            resource: target_layer_tile_info.as_entire_binding(),
         },
         BindGroupEntry {
             binding: 4,
-            resource: BindingResource::TextureView(&resources.target_layer),
+            resource: BindingResource::TextureView(target_layer_texture),
         },
         BindGroupEntry {
             binding: 5,

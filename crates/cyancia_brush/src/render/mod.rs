@@ -62,7 +62,7 @@ const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 #[derive(Debug)]
 pub struct BrushStrokeSessionInfo {
     pub brush_runtime_revision: u64,
-    pub target_layer_texture: Option<TextureView>,
+    pub target_layer_format: TexelType,
 }
 
 pub struct BrushPresetOperator {
@@ -102,11 +102,10 @@ impl BrushPresetOperator {
     ) {
         let instance = self.instance.read();
 
+        let target_layer_info = tiles.get_layer_info(target_layer).unwrap();
         let session = BrushStrokeSessionInfo {
             brush_runtime_revision: instance.runtime_revision(),
-            target_layer_texture: tiles
-                .get_layer(target_layer)
-                .and_then(|l| l.texture().map(|t| t.as_ref().clone())),
+            target_layer_format: target_layer_info.texel_type,
         };
         match self.last_session.as_mut() {
             Some(last_session) => {
@@ -115,9 +114,7 @@ impl BrushPresetOperator {
                     self.renderer = None;
                 }
 
-                if last_session.target_layer_texture.as_ref()
-                    != session.target_layer_texture.as_ref()
-                {
+                if last_session.target_layer_format != session.target_layer_format {
                     self.renderer = None;
                 }
 
@@ -142,8 +139,8 @@ impl BrushPresetOperator {
                 &self.device,
                 &self.queue,
                 &compiled_brush,
-                tiles,
                 target_layer,
+                target_layer_info.texel_type,
                 assets,
             );
             log::info!("Brush preset renderer creation: {:?}", now.elapsed());
@@ -159,10 +156,11 @@ impl BrushPresetOperator {
             self.input_processor
                 .push(input, instance.required_spacing_graph()),
             instance.main_graph(),
+            tiles,
         );
     }
 
-    pub fn update_stroke(&mut self, input: RawPenInput) {
+    pub fn update_stroke(&mut self, input: RawPenInput, tiles: &GpuTileStorage) {
         let Some(renderer) = &mut self.renderer else {
             return;
         };
@@ -173,6 +171,7 @@ impl BrushPresetOperator {
             self.input_processor
                 .push(input, instance.required_spacing_graph()),
             instance.main_graph(),
+            tiles,
         );
     }
 
@@ -192,6 +191,7 @@ impl BrushPresetOperator {
             self.input_processor
                 .flush(final_input, self.instance.read().required_spacing_graph()),
             self.instance.read().main_graph(),
+            tiles,
         );
 
         let now = std::time::Instant::now();
@@ -200,6 +200,7 @@ impl BrushPresetOperator {
             &self.device,
             &self.queue,
             instance.stroke_postprocess_graphs(),
+            tiles,
         );
         renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
@@ -225,11 +226,18 @@ impl BrushPresetRenderer {
         device: &Device,
         queue: &Queue,
         brush: &CompiledBrushPreset,
-        tiles: &GpuTileStorage,
         target_layer_id: LayerId,
+        target_layer_format: TexelType,
         assets: &AssetRegistry,
     ) -> Self {
-        let resources = StrokeResources::new(device, queue, &brush, target_layer_id, tiles, assets);
+        let resources = StrokeResources::new(
+            device,
+            queue,
+            &brush,
+            target_layer_id,
+            target_layer_format,
+            assets,
+        );
 
         let main = BrushMainPipeline::new(device, &resources, brush.main_graph.main.clone().into());
 
@@ -260,6 +268,7 @@ impl BrushPresetRenderer {
         queue: &Queue,
         pen_input: Vec<ComputedPenInput>,
         main_graph: &Graph<BrushGraphData>,
+        tiles: &GpuTileStorage,
     ) {
         if pen_input.is_empty() {
             return;
@@ -275,12 +284,16 @@ impl BrushPresetRenderer {
             let buf_a = DynamicLayerStorage::new(
                 device.clone().into(),
                 queue.clone().into(),
-                self.resources.target_layer_info,
+                GpuLayerInfo {
+                    texel_type: self.resources.target_layer_format,
+                },
             );
             let buf_b = DynamicLayerStorage::new(
                 device.clone().into(),
                 queue.clone().into(),
-                self.resources.target_layer_info,
+                GpuLayerInfo {
+                    texel_type: self.resources.target_layer_format,
+                },
             );
             [buf_a, buf_b]
         });
@@ -317,6 +330,9 @@ impl BrushPresetRenderer {
 
         self.samples_buffer.write_buffer(device, queue);
         self.dab_info_buffer.write_buffer(device, queue);
+        let target_layer = tiles
+            .get_layer_binding_or_empty(self.resources.target_layer_id)
+            .unwrap();
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -329,6 +345,8 @@ impl BrushPresetRenderer {
             self.main.dispatch(
                 device,
                 &mut pass,
+                target_layer.texture.as_ref(),
+                &target_layer.tile_info_buffer,
                 &self.samples_buffer,
                 &self.samples_offsets,
                 &self.dab_info_buffer,
@@ -355,6 +373,7 @@ impl BrushPresetRenderer {
         device: &Device,
         queue: &Queue,
         graphs: &[Graph<BrushGraphPostprocessData>],
+        tiles: &GpuTileStorage,
     ) {
         let Some(intermediate_buffers) = &self.intermediate_buffer else {
             return;
@@ -363,6 +382,10 @@ impl BrushPresetRenderer {
         if self.accumulated_pixel_bounds.is_empty() {
             return;
         }
+
+        let target_layer = tiles
+            .get_layer_binding_or_empty(self.resources.target_layer_id)
+            .unwrap();
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -379,7 +402,7 @@ impl BrushPresetRenderer {
                         &BrushGraphPostprocessData {
                             accumulated_pixel_bounds: self.accumulated_pixel_bounds,
                             time: Time {
-                                now: 0.0, // TODO
+                                now: 0.0,          // TODO
                                 stroke_begin: 0.0, // TODO
                             },
                         },
@@ -401,6 +424,8 @@ impl BrushPresetRenderer {
                 pipeline.dispatch(
                     device,
                     &mut pass,
+                    target_layer.texture.as_ref(),
+                    &target_layer.tile_info_buffer,
                     &self.dab_info_buffer,
                     &self.resources,
                     &intermediate_buffers,
@@ -498,9 +523,7 @@ pub struct StrokeResources {
     pub referenced_textures: TextureAtlas,
 
     pub target_layer_id: LayerId,
-    pub target_layer: TextureView,
-    pub target_layer_tile_info: Buffer,
-    pub target_layer_info: GpuLayerInfo,
+    pub target_layer_format: TexelType,
 }
 
 impl StrokeResources {
@@ -509,7 +532,7 @@ impl StrokeResources {
         queue: &Queue,
         brush: &CompiledBrushPreset,
         target_layer_id: LayerId,
-        tiles: &GpuTileStorage,
+        target_layer_format: TexelType,
         assets: &AssetRegistry,
     ) -> Self {
         let mut external_var_layouts = Vec::new();
@@ -583,18 +606,13 @@ impl StrokeResources {
             .build(Some("referenced textures"), device, queue)
             .unwrap();
 
-        let target_layer_binding = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
-        let target_layer_info = tiles.get_layer_info(target_layer_id).unwrap();
-
         Self {
             external_var_layouts,
             external_var_buffers,
             referenced_textures,
 
             target_layer_id,
-            target_layer: target_layer_binding.texture.deref().clone(),
-            target_layer_tile_info: target_layer_binding.tile_info_buffer,
-            target_layer_info,
+            target_layer_format,
         }
     }
 
