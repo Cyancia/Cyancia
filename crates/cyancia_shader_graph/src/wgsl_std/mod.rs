@@ -1,17 +1,19 @@
-use crate::graph::{node::GraphNodeRegistry, variable::GraphTypeRegistry};
+use crate::graph::{GraphData, node::{GraphNodeRegistry}, variable::GraphTypeRegistry};
 
 pub mod casters;
 pub mod nodes;
 pub mod types;
 
-pub fn builtin_nodes() -> GraphNodeRegistry {
+pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
     use nodes::*;
 
-    let mut nodes = GraphNodeRegistry::default();
+    let mut nodes = GraphNodeRegistry::with_capacity();
 
     nodes.register::<ScalarMathNode>();
     nodes.register::<VectorMathNode>();
+    nodes.register::<RectMathNode>();
     nodes.register::<ClampNode>();
+    nodes.register::<RandomNode>();
     nodes.register::<StepNode>();
     nodes.register::<SmoothStepNode>();
     nodes.register::<SplitComponentsNode>();
@@ -38,6 +40,7 @@ pub fn builtin_types() -> GraphTypeRegistry {
     types.register_type::<Vec2FType>();
     types.register_type::<ColorType>();
     types.register_type::<TextureType>();
+    types.register_type::<RectType>();
 
     types.register_caster::<F32ToVec2FCaster>();
     types.register_caster::<Vec2FToF32Caster>();

@@ -35,7 +35,7 @@ use crate::{
         GraphSlotId, GraphSlotPinPositionCollection, SlotSide, empty_slot, output_slot, valued_slot,
     },
     graph::{
-        Graph, GraphResources,
+        Graph, GraphData, GraphResources,
         node::{
             ErasedGraphNode, ErasedGraphNodeMessage, GraphNodeData, GraphNodeId, GraphNodeRegistry,
         },
@@ -143,7 +143,10 @@ pub struct GraphView<'a> {
 }
 
 impl<'a> GraphView<'a> {
-    pub fn new(graph: &Graph, node_registry: &GraphNodeRegistry) -> Self {
+    pub fn new<Data: GraphData>(
+        graph: &Graph<Data>,
+        node_registry: &GraphNodeRegistry<Data>,
+    ) -> Self {
         Self {
             graph: DrawableGraph::new(graph),
             node_creation_menu_items: node_registry
@@ -182,7 +185,7 @@ pub struct DrawableGraph {
 }
 
 impl DrawableGraph {
-    pub fn new(graph: &Graph) -> Self {
+    pub fn new<Data: GraphData>(graph: &Graph<Data>) -> Self {
         let mut nodes = IndexMap::with_capacity(graph.nodes.len());
         let mut node_indices = HashMap::with_capacity(graph.nodes.len());
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
@@ -279,11 +282,11 @@ pub struct DrawableNode {
 }
 
 impl DrawableNode {
-    pub fn new(
+    pub fn new<Data: GraphData>(
         node_id: GraphNodeId,
-        node: &GraphNodeData,
+        node: &GraphNodeData<Data>,
         slots: &GraphSlots,
-        resources: &GraphResources,
+        resources: &GraphResources<Data>,
         type_registry: &GraphTypeRegistry,
     ) -> Self {
         // let inputs = node

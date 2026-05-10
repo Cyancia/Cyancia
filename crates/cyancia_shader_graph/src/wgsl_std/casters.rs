@@ -1,5 +1,7 @@
+use glam::Vec2;
+
 use crate::{
-    graph::variable::GraphVariableCaster,
+    graph::{slot::GraphValueType, variable::GraphVariableCaster},
     wgsl_std::types::{F32Type, Vec2FType},
 };
 
@@ -11,8 +13,15 @@ impl GraphVariableCaster for F32ToVec2FCaster {
 
     type ToType = Vec2FType;
 
-    fn cast(&self, variable: &String) -> String {
+    fn wgsl_cast(&self, variable: &String) -> String {
         format!("vec2f({}, 0.0)", variable)
+    }
+
+    fn cast(
+        &self,
+        value: &<Self::FromType as GraphValueType>::AssociatedLiteralType,
+    ) -> <Self::ToType as GraphValueType>::AssociatedLiteralType {
+        Vec2::splat(*value)
     }
 }
 
@@ -24,7 +33,14 @@ impl GraphVariableCaster for Vec2FToF32Caster {
 
     type ToType = F32Type;
 
-    fn cast(&self, variable: &String) -> String {
+    fn wgsl_cast(&self, variable: &String) -> String {
         format!("{}.x", variable)
+    }
+
+    fn cast(
+        &self,
+        value: &<Self::FromType as GraphValueType>::AssociatedLiteralType,
+    ) -> <Self::ToType as GraphValueType>::AssociatedLiteralType {
+        value.x
     }
 }

@@ -1291,6 +1291,7 @@ dependencies = [
  "anyhow",
  "bevy_math",
  "bytemuck",
+ "chrono",
  "cyancia_actions",
  "cyancia_assets",
  "cyancia_canvas",
@@ -1300,6 +1301,7 @@ dependencies = [
  "cyancia_render",
  "cyancia_runtime",
  "cyancia_shader_graph",
+ "cyancia_shader_graph_derive",
  "cyancia_tools",
  "cyancia_utils",
  "cyancia_widgets",
@@ -1462,6 +1464,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy_math",
+ "bytemuck",
+ "cyancia_assets",
  "cyancia_runtime",
  "cyancia_utils",
  "encase",
@@ -1469,10 +1473,14 @@ dependencies = [
  "iced_renderer",
  "iced_wgpu",
  "iced_widget",
+ "image",
  "parse-display",
  "serde",
+ "thiserror 2.0.18",
+ "toml",
  "wesl",
  "wgpu",
+ "zip",
 ]
 
 [[package]]
@@ -1512,10 +1520,12 @@ name = "cyancia_shader_graph"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bevy_math",
  "cyancia_assets",
  "cyancia_math",
  "cyancia_render",
  "cyancia_runtime",
+ "cyancia_shader_graph_derive",
  "cyancia_utils",
  "cyancia_widgets",
  "dashmap",
@@ -1535,6 +1545,15 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "uuid",
+]
+
+[[package]]
+name = "cyancia_shader_graph_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

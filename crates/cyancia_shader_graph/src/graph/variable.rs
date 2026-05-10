@@ -33,7 +33,7 @@ impl GraphTypeRegistry {
             .insert(to_name, caster);
     }
 
-    pub fn try_cast(
+    pub fn try_wgsl_cast(
         &self,
         from_type: &dyn ErasedGraphValueType,
         to_type: &dyn ErasedGraphValueType,
@@ -43,7 +43,21 @@ impl GraphTypeRegistry {
             self.casters
                 .get(from_type.name())?
                 .get(to_type.name())?
-                .cast(identifier),
+                .wgsl_cast(identifier),
+        )
+    }
+
+    pub fn try_cast(
+        &self,
+        from_type: &dyn ErasedGraphValueType,
+        to_type: &dyn ErasedGraphValueType,
+        value: &Box<dyn GraphLiteralValue>,
+    ) -> Option<Box<dyn GraphLiteralValue>> {
+        Some(
+            self.casters
+                .get(from_type.name())?
+                .get(to_type.name())?
+                .cast(value),
         )
     }
 
@@ -77,18 +91,31 @@ impl GraphTypeRegistry {
 pub trait GraphVariableCaster: Send + Sync + 'static + Clone {
     type FromType: GraphValueType + Default;
     type ToType: GraphValueType + Default;
-    fn cast(&self, variable: &String) -> String;
+    fn wgsl_cast(&self, variable: &String) -> String;
+    fn cast(
+        &self,
+        value: &<Self::FromType as GraphValueType>::AssociatedLiteralType,
+    ) -> <Self::ToType as GraphValueType>::AssociatedLiteralType;
 }
 
 pub trait ErasedGraphVariableCaster: Send + Sync + 'static + DynClone {
-    fn cast(&self, variable: &String) -> String;
+    fn wgsl_cast(&self, variable: &String) -> String;
+    fn cast(&self, value: &Box<dyn GraphLiteralValue>) -> Box<dyn GraphLiteralValue>;
 }
 
 dyn_clone::clone_trait_object!(ErasedGraphVariableCaster);
 
 impl<T: GraphVariableCaster> ErasedGraphVariableCaster for T {
-    fn cast(&self, variable: &String) -> String {
-        self.cast(variable)
+    fn wgsl_cast(&self, variable: &String) -> String {
+        self.wgsl_cast(variable)
+    }
+
+    fn cast(&self, value: &Box<dyn GraphLiteralValue>) -> Box<dyn GraphLiteralValue> {
+        let from_value = value
+            .downcast_ref::<<T::FromType as GraphValueType>::AssociatedLiteralType>()
+            .expect("Failed to downcast value for casting");
+        let to_value = self.cast(from_value);
+        Box::new(to_value)
     }
 }
 
@@ -122,6 +149,15 @@ impl GraphLiteral {
 
     pub fn new_boxed(value: Box<dyn GraphLiteralValue>, ty: Box<dyn ErasedGraphValueType>) -> Self {
         Self { value, ty }
+    }
+
+    pub fn downcast<T: GraphLiteralValue>(self) -> T {
+        match self.value.downcast::<T>() {
+            Ok(ok) => *ok,
+            Err(_) => {
+                panic!("Failed to downcast Literal")
+            }
+        }
     }
 
     pub fn as_ref<T: GraphLiteralValue>(&self) -> &T {

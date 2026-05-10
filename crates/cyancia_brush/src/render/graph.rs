@@ -1,27 +1,86 @@
+use bevy_math::{IRect, Rect, VectorSpace};
 use cyancia_image::blend_modes::BlendMode;
+use cyancia_math::{mat3::Mat3ScaleRotattionTranslationWithAnchor, rect_transform::RectTransform};
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     graph::{
-        Graph, GraphCompileError,
+        GraphData,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeUpdateContext,
+            GraphNodeInputsViewContext, GraphNodeOutputsViewContext, GraphNodeRunContext,
+            GraphNodeRunError, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
             StatelessCommonGraphNode,
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
-    wgsl_std::types::{ColorType, F32Type, TextureLocalIndex, TextureType, Vec2FType},
+    wgsl_std::{
+        nodes::{GraphDataWithTime, GraphTimes},
+        types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
+    },
 };
-use glam::{Vec2, Vec4};
+use cyancia_shader_graph_derive::stateless;
+use glam::{Mat2, Mat3, Vec2, Vec4};
 use iced_core::{Color, Element, color};
-use iced_widget::{Column, column, pick_list, space};
+use iced_wgpu::graphics::damage;
+use iced_widget::{Column, column, pick_list};
 use serde::{Deserialize, Serialize};
-use wesl::{VirtualResolver, Wesl};
+
+use crate::render::{ComputedPenInput, Time};
+
+#[derive(Default, Clone)]
+pub struct BrushGraphPostprocessData {
+    pub accumulated_pixel_bounds: IRect,
+    pub time: Time,
+}
+
+impl GraphData for BrushGraphPostprocessData {}
+
+impl GraphDataWithTime for BrushGraphPostprocessData {
+    fn time(&self) -> GraphTimes {
+        GraphTimes {
+            now: self.time.now,
+            stroke_begin: self.time.stroke_begin,
+        }
+    }
+
+    fn wgsl_variable() -> String {
+        "sample.time".into()
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct BrushGraphData {
+    pub pen_input: ComputedPenInput,
+}
+
+impl GraphData for BrushGraphData {}
+
+impl GraphDataWithTime for BrushGraphData {
+    fn time(&self) -> GraphTimes {
+        GraphTimes {
+            now: self.pen_input.time.now,
+            stroke_begin: self.pen_input.time.stroke_begin,
+        }
+    }
+
+    fn wgsl_variable() -> String {
+        "sample.time".into()
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct BrushGraphDataTuple {
+    pub lhs: BrushGraphData,
+    pub rhs: BrushGraphData,
+}
+
+impl GraphData for BrushGraphDataTuple {}
 
 #[derive(Default, Clone)]
 pub struct PenPositionNode;
 
-impl StatelessCommonGraphNode for PenPositionNode {
+#[stateless]
+impl StatelessCommonGraphNode<BrushGraphData> for PenPositionNode {
     fn name(&self) -> &'static str {
         "Pen Position"
     }
@@ -38,29 +97,44 @@ impl StatelessCommonGraphNode for PenPositionNode {
         color!(0x79b5f2)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>()]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphData>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "let {} = graph_input.position;",
             ctx.get_output(0)?
         ))
     }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphData>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<Vec2FType>(0, ctx.data.pen_input.position)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
 pub struct DrawDirectionNode;
 
-impl StatelessCommonGraphNode for DrawDirectionNode {
+#[stateless]
+impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
     fn name(&self) -> &'static str {
         "Draw Direction"
     }
@@ -77,11 +151,17 @@ impl StatelessCommonGraphNode for DrawDirectionNode {
         color!(0xc1c073)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>(),
             GraphDefaultOutputSlot::new::<Vec2FType>(),
@@ -90,7 +170,7 @@ impl StatelessCommonGraphNode for DrawDirectionNode {
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphData>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "let {} = graph_input.draw_direction_angle;\nlet {} = graph_input.draw_direction_vec;\n",
@@ -98,12 +178,22 @@ impl StatelessCommonGraphNode for DrawDirectionNode {
             ctx.get_output(1)?
         ))
     }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphData>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<F32Type>(0, ctx.data.pen_input.draw_direction_angle)?;
+        ctx.set_output_value::<Vec2FType>(1, ctx.data.pen_input.draw_direction_vec)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
 pub struct PixelPositionNode;
 
-impl StatelessCommonGraphNode for PixelPositionNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for PixelPositionNode {
     fn name(&self) -> &'static str {
         "Pixel Position"
     }
@@ -120,17 +210,23 @@ impl StatelessCommonGraphNode for PixelPositionNode {
         color!(0x79f2a0)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>()]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("let {} = pixel_posf;", ctx.get_output(0)?))
     }
@@ -139,7 +235,8 @@ impl StatelessCommonGraphNode for PixelPositionNode {
 #[derive(Default, Clone)]
 pub struct FilterWithinMaskNode;
 
-impl StatelessCommonGraphNode for FilterWithinMaskNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
     fn name(&self) -> &'static str {
         "Filter Within Mask"
     }
@@ -156,17 +253,20 @@ impl StatelessCommonGraphNode for FilterWithinMaskNode {
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
-        &["Color"]
+        &["Color", "Bounds"]
     }
 
     fn header_color(&self) -> Color {
         color!(0x79f2bb)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
-            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
+            GraphDefaultInputSlot::new::<TextureType>(TextureReference::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ONE),
@@ -174,77 +274,148 @@ impl StatelessCommonGraphNode for FilterWithinMaskNode {
         ]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
-        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<ColorType>(),
+            GraphDefaultOutputSlot::new::<RectType>(),
+        ]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let color = ctx.get_input(0)?;
+        let mask = ctx.get_input(1)?;
+        let translation = ctx.get_input(2)?;
+        let rotation = ctx.get_input(3)?;
+        let scale = ctx.get_input(4)?;
+        let anchor = ctx.get_input(5)?;
+
         Ok(format!(
-            "let {} = filter_within_mask(pixel_pos, {}, {}, {}, {}, {}, {});\n",
+            "let {} = filter_within_mask(pixel_pos, {}, {}, {}, {}, {}, {});\nlet {} = filter_within_mask_bounds({}, {}, {}, {}, {});\n",
             ctx.get_output(0)?,
-            ctx.get_input(0)?,
-            ctx.get_input(1)?,
-            ctx.get_input(4)?,
-            ctx.get_input(3)?,
-            ctx.get_input(2)?,
-            ctx.get_input(5)?
+            color,
+            mask,
+            scale,
+            rotation,
+            translation,
+            anchor,
+            ctx.get_output(1)?,
+            mask,
+            scale,
+            rotation,
+            translation,
+            anchor,
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let mask = ctx.get_input_value::<TextureType>(1)?;
+        let translation = ctx.get_input_value::<Vec2FType>(2)?;
+        let rotation = ctx.get_input_value::<F32Type>(3)?;
+        let scale = ctx.get_input_value::<Vec2FType>(4)?;
+        let anchor = ctx.get_input_value::<Vec2FType>(5)?;
+        let texture = ctx
+            .resources
+            .textures
+            .get(&mask.external_id)
+            .expect("Texture not found");
+        let img = &texture.handle.get().unwrap().image;
+        let size = Vec2::new(img.width() as f32, img.height() as f32);
+        let bounds = Rect {
+            min: Vec2::ZERO,
+            max: size,
+        };
+
+        let mat = Mat3::from_scale_angle_translation_with_anchor(
+            scale,
+            rotation,
+            translation,
+            anchor * size,
+        );
+        let bounds = bounds.transformed(&mat);
+
+        ctx.set_output_value::<RectType>(1, bounds)?;
+        Ok(())
     }
 }
 
 #[derive(Default, Clone)]
 pub struct FilterWithinBoundsNode;
 
-impl StatelessCommonGraphNode for FilterWithinBoundsNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinBoundsNode {
     fn name(&self) -> &'static str {
         "Filter Within Bounds"
     }
 
     fn input_slot_names(&self) -> &[&'static str] {
-        &["Color", "Min Bounds", "Max Bounds"]
+        &["Color", "Bounds"]
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
-        &["Color"]
+        &["Color", "Bounds"]
     }
 
     fn header_color(&self) -> Color {
         color!(0x79b8f2)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
-            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
-            GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
+            GraphDefaultInputSlot::new::<RectType>(Rect::default()),
         ]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
-        vec![GraphDefaultOutputSlot::new::<ColorType>()]
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<ColorType>(),
+            GraphDefaultOutputSlot::new::<RectType>(),
+        ]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let color = ctx.get_input(0)?;
+        let bounds = ctx.get_input(1)?;
+
         Ok(format!(
-            "let {} = filter_within_bounds(pixel_pos, {}, {}, {});\n",
+            "let {} = filter_within_bounds(pixel_pos, {}, {});\nlet {} = {};\n",
             ctx.get_output(0)?,
-            ctx.get_input(0)?,
-            ctx.get_input(1)?,
-            ctx.get_input(2)?
+            color,
+            bounds,
+            ctx.get_output(1)?,
+            bounds
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let bounds = ctx.get_input_value::<RectType>(1)?;
+        // TODO We are unable to determine if the current pixel is filtered out or not.
+        ctx.set_output_value::<ColorType>(0, Vec4::ZERO)?;
+        ctx.set_output_value::<RectType>(1, bounds)?;
+        Ok(())
     }
 }
 
 #[derive(Default, Clone)]
 pub struct OutputColorNode;
 
-impl StatelessCommonGraphNode for OutputColorNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputColorNode {
     fn name(&self) -> &'static str {
         "Output Color"
     }
@@ -261,19 +432,83 @@ impl StatelessCommonGraphNode for OutputColorNode {
         color!(0xf50687)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO)]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
 
-    fn generate_code(&self, ctx: GraphNodeCodeGenContext) -> Result<String, GraphNodeCodeGenError> {
+    fn generate_code(
+        &self,
+        ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "set_output_color(pixel_pos, {});\n",
-            ctx.get_input(0)?,
+            ctx.get_input(0)?
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct OutputBoundsNode;
+
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
+    fn name(&self) -> &'static str {
+        "Output Bounds"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &["Bounds"]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0x6db477)
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<RectType>(Rect::default())]
+    }
+
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![]
+    }
+
+    fn update_signature(&self, mut ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
+        ctx.require_input_slot_as_graph_output(0, "Bounds".to_string());
+    }
+
+    fn generate_code(
+        &self,
+        ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(Default::default())
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
     }
 }
 
@@ -307,9 +542,8 @@ pub enum PasteTextureNodeMessage {
     SetMode(PasteTextureMode),
 }
 
-impl GraphNode for PasteTextureNode {
+impl<Data: GraphData> GraphNode<Data> for PasteTextureNode {
     type State = PasteTextureNodeState;
-
     type Message = PasteTextureNodeMessage;
 
     fn name(&self) -> &'static str {
@@ -326,11 +560,11 @@ impl GraphNode for PasteTextureNode {
 
     fn create_inputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<TextureType>(TextureLocalIndex::NULL),
+            GraphDefaultInputSlot::new::<TextureType>(TextureReference::NULL),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
             GraphDefaultInputSlot::new::<F32Type>(0.0),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ONE),
@@ -340,8 +574,8 @@ impl GraphNode for PasteTextureNode {
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
@@ -349,7 +583,7 @@ impl GraphNode for PasteTextureNode {
     fn view_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeInputsViewContext,
+        ctx: GraphNodeInputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_inputs(
             &["Texture", "Translation", "Rotation", "Scale", "Anchor"],
@@ -365,8 +599,8 @@ impl GraphNode for PasteTextureNode {
 
     fn view_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeOutputsViewContext,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_outputs(&["Color"])).into()
     }
@@ -375,7 +609,7 @@ impl GraphNode for PasteTextureNode {
         &self,
         state: &mut Self::State,
         message: Self::Message,
-        mut ctx: GraphNodeUpdateContext,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
     ) {
         match message {
             PasteTextureNodeMessage::LiteralUpdate(message) => ctx.update_literal(message),
@@ -386,20 +620,18 @@ impl GraphNode for PasteTextureNode {
     fn generate_code(
         &self,
         state: &Self::State,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         let tex = ctx.get_input(0)?;
         let translation = ctx.get_input(1)?;
         let rotation = ctx.get_input(2)?;
         let scale = ctx.get_input(3)?;
         let anchor = ctx.get_input(4)?;
-
         let output = ctx.get_output(0)?;
         let fn_name = match state.mode {
             PasteTextureMode::Clamp => "sample_transformed_local_texture_clamp",
             PasteTextureMode::Wrap => "sample_transformed_local_texture_wrap",
         };
-
         Ok(format!(
             "let {} = {}({}, pixel_posf, {}, {}, {}, {});\n",
             output, fn_name, tex, scale, rotation, translation, anchor
@@ -410,7 +642,8 @@ impl GraphNode for PasteTextureNode {
 #[derive(Default, Clone)]
 pub struct CurrentPixelColorNode;
 
-impl StatelessCommonGraphNode for CurrentPixelColorNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for CurrentPixelColorNode {
     fn name(&self) -> &'static str {
         "Current Pixel Color"
     }
@@ -427,17 +660,23 @@ impl StatelessCommonGraphNode for CurrentPixelColorNode {
         color!(0xf279f0)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO)]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "let {} = current_input_color(vec2i({}));\n",
@@ -450,7 +689,8 @@ impl StatelessCommonGraphNode for CurrentPixelColorNode {
 #[derive(Default, Clone)]
 pub struct LayerPixelColorNode;
 
-impl StatelessCommonGraphNode for LayerPixelColorNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for LayerPixelColorNode {
     fn name(&self) -> &'static str {
         "Layer Pixel Color"
     }
@@ -467,17 +707,23 @@ impl StatelessCommonGraphNode for LayerPixelColorNode {
         color!(0x79f2d4)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO)]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "let {} = target_layer_color(vec2i({}));\n",
@@ -501,9 +747,8 @@ pub enum BlendColorNodeMessage {
     SetBlendMode(BlendMode),
 }
 
-impl GraphNode for BlendColorNode {
+impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
     type State = BlendColorNodeState;
-
     type Message = BlendColorNodeMessage;
 
     fn name(&self) -> &'static str {
@@ -522,8 +767,8 @@ impl GraphNode for BlendColorNode {
 
     fn create_inputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
@@ -533,8 +778,8 @@ impl GraphNode for BlendColorNode {
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
@@ -542,14 +787,13 @@ impl GraphNode for BlendColorNode {
     fn view_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeInputsViewContext,
+        ctx: GraphNodeInputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         let pick = pick_list(
             BlendMode::ALL,
             Some(state.blend_mode),
             BlendColorNodeMessage::SetBlendMode,
         );
-
         column![pick]
             .extend(ctx.view_all_inputs(
                 &["Src Color", "Dst Color"],
@@ -560,8 +804,8 @@ impl GraphNode for BlendColorNode {
 
     fn view_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeOutputsViewContext,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_outputs(&["Color"])).into()
     }
@@ -570,7 +814,7 @@ impl GraphNode for BlendColorNode {
         &self,
         state: &mut Self::State,
         message: Self::Message,
-        mut ctx: GraphNodeUpdateContext,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
     ) {
         match message {
             BlendColorNodeMessage::LiteralUpdate(message) => ctx.update_literal(message),
@@ -581,12 +825,11 @@ impl GraphNode for BlendColorNode {
     fn generate_code(
         &self,
         state: &Self::State,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         let src = ctx.get_input(0)?;
         let dst = ctx.get_input(1)?;
         let output = ctx.get_output(0)?;
-
         Ok(format!(
             "let {} = package::image::blend_modes::{}({}, {});\n",
             output,
@@ -600,7 +843,8 @@ impl GraphNode for BlendColorNode {
 #[derive(Default, Clone)]
 pub struct StrokeBoundsNode;
 
-impl StatelessCommonGraphNode for StrokeBoundsNode {
+#[stateless]
+impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
     fn name(&self) -> &'static str {
         "Stroke Bounds"
     }
@@ -610,45 +854,57 @@ impl StatelessCommonGraphNode for StrokeBoundsNode {
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
-        &["Min Bounds", "Max Bounds"]
+        &["Bounds"]
     }
 
     fn header_color(&self) -> Color {
         color!(0xa2f279)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphPostprocessData>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
-        vec![
-            GraphDefaultOutputSlot::new::<Vec2FType>(),
-            GraphDefaultOutputSlot::new::<Vec2FType>(),
-        ]
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphPostprocessData>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<RectType>()]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphPostprocessData>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        let bounds = ctx.ident_generator.next_output();
         Ok(format!(
-            "
-            let {bounds} = get_accumulated_pixel_bounds();
-            let {} = vec2f({bounds}.min);
-            let {} = vec2f({bounds}.max);
-            ",
-            ctx.get_output(0)?,
-            ctx.get_output(1)?
+            "let {} = Rect(vec2f(sample.accumulated_bound.min), vec2f(sample.accumulated_bound.max));",
+            ctx.get_output(0)?
         ))
+    }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphPostprocessData>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<RectType>(
+            0,
+            Rect {
+                min: ctx.data.accumulated_pixel_bounds.min.as_vec2(),
+                max: ctx.data.accumulated_pixel_bounds.max.as_vec2(),
+            },
+        )?;
+        Ok(())
     }
 }
 
 #[derive(Default, Clone)]
 pub struct EllipticalMaskNode;
 
-impl StatelessCommonGraphNode for EllipticalMaskNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
     fn name(&self) -> &'static str {
         "Elliptical Mask"
     }
@@ -658,14 +914,17 @@ impl StatelessCommonGraphNode for EllipticalMaskNode {
     }
 
     fn output_slot_names(&self) -> &[&'static str] {
-        &["Mask Value", "Min Bounds", "Max Bounds"]
+        &["Mask Value", "Bounds"]
     }
 
     fn header_color(&self) -> Color {
         color!(0x462bbb)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
             GraphDefaultInputSlot::new::<Vec2FType>(Vec2::ZERO),
@@ -673,29 +932,42 @@ impl StatelessCommonGraphNode for EllipticalMaskNode {
         ]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>(),
-            GraphDefaultOutputSlot::new::<Vec2FType>(),
-            GraphDefaultOutputSlot::new::<Vec2FType>(),
+            GraphDefaultOutputSlot::new::<RectType>(),
         ]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         let mask = ctx.ident_generator.next_output();
-
         Ok(format!(
-            "let {mask} = elliptical_mask({}, {}, {});\nlet {} = {mask}.value;\nlet {} = {mask}.min_bounds;\nlet {} = {mask}.max_bounds;\n",
+            "let {mask} = elliptical_mask({}, {}, {});\nlet {} = {mask}.value;\nlet {} = {mask}.bounds;\n",
             ctx.get_input(0)?,
             ctx.get_input(1)?,
             ctx.get_input(2)?,
             ctx.get_output(0)?,
-            ctx.get_output(1)?,
-            ctx.get_output(2)?,
+            ctx.get_output(1)?
         ))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        let center = ctx.get_input_value::<Vec2FType>(1)?;
+        let radii = ctx.get_input_value::<Vec2FType>(2)?;
+        ctx.set_output_value::<RectType>(
+            1,
+            Rect {
+                min: center - radii,
+                max: center + radii,
+            },
+        )?;
+        Ok(())
     }
 }
 
@@ -713,9 +985,8 @@ pub enum BlendWithBufferNodeMessage {
     SetBlendMode(BlendMode),
 }
 
-impl GraphNode for BlendWithInputNode {
+impl<Data: GraphData> GraphNode<Data> for BlendWithInputNode {
     type State = BlendWithBufferNodeState;
-
     type Message = BlendWithBufferNodeMessage;
 
     fn name(&self) -> &'static str {
@@ -734,8 +1005,8 @@ impl GraphNode for BlendWithInputNode {
 
     fn create_inputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
@@ -745,8 +1016,8 @@ impl GraphNode for BlendWithInputNode {
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
@@ -754,7 +1025,7 @@ impl GraphNode for BlendWithInputNode {
     fn view_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeInputsViewContext,
+        ctx: GraphNodeInputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_inputs(
             &["Color", "Opacity"],
@@ -770,8 +1041,8 @@ impl GraphNode for BlendWithInputNode {
 
     fn view_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeOutputsViewContext,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_outputs(&["Color"])).into()
     }
@@ -780,7 +1051,7 @@ impl GraphNode for BlendWithInputNode {
         &self,
         state: &mut Self::State,
         message: Self::Message,
-        mut ctx: GraphNodeUpdateContext,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
     ) {
         match message {
             BlendWithBufferNodeMessage::LiteralUpdate(message) => ctx.update_literal(message),
@@ -791,11 +1062,10 @@ impl GraphNode for BlendWithInputNode {
     fn generate_code(
         &self,
         state: &Self::State,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         let color = ctx.get_input(0)?;
         let opacity = ctx.get_input(1)?;
-
         Ok(format!(
             "let {} = package::image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), current_input_color(pixel_pos));\n",
             ctx.get_output(0)?,
@@ -818,9 +1088,8 @@ pub enum BlendWithLayerNodeMessage {
     SetBlendMode(BlendMode),
 }
 
-impl GraphNode for BlendWithLayerNode {
+impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
     type State = BlendWithLayerNodeState;
-
     type Message = BlendWithLayerNodeMessage;
 
     fn name(&self) -> &'static str {
@@ -839,8 +1108,8 @@ impl GraphNode for BlendWithLayerNode {
 
     fn create_inputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>(Vec4::ZERO),
@@ -850,8 +1119,8 @@ impl GraphNode for BlendWithLayerNode {
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext,
+        _state: &Self::State,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>()]
     }
@@ -859,7 +1128,7 @@ impl GraphNode for BlendWithLayerNode {
     fn view_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeInputsViewContext,
+        ctx: GraphNodeInputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_inputs(
             &["Color", "Opacity"],
@@ -875,8 +1144,8 @@ impl GraphNode for BlendWithLayerNode {
 
     fn view_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeOutputsViewContext,
+        _state: &Self::State,
+        ctx: GraphNodeOutputsViewContext<'_, Data>,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         Column::with_children(ctx.view_all_outputs(&["Color"])).into()
     }
@@ -885,7 +1154,7 @@ impl GraphNode for BlendWithLayerNode {
         &self,
         state: &mut Self::State,
         message: Self::Message,
-        mut ctx: GraphNodeUpdateContext,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
     ) {
         match message {
             BlendWithLayerNodeMessage::LiteralUpdate(message) => ctx.update_literal(message),
@@ -896,11 +1165,10 @@ impl GraphNode for BlendWithLayerNode {
     fn generate_code(
         &self,
         state: &Self::State,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         let color = ctx.get_input(0)?;
         let opacity = ctx.get_input(1)?;
-
         Ok(format!(
             "let {} = package::image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), target_layer_color(pixel_pos));\n",
             ctx.get_output(0)?,
@@ -912,7 +1180,8 @@ impl GraphNode for BlendWithLayerNode {
 #[derive(Default, Clone)]
 pub struct OutputSpacingNode;
 
-impl StatelessCommonGraphNode for OutputSpacingNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputSpacingNode {
     fn name(&self) -> &'static str {
         "Output Spacing"
     }
@@ -929,26 +1198,41 @@ impl StatelessCommonGraphNode for OutputSpacingNode {
         color!(0x23948d)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn update_signature(&self, mut ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
+        ctx.require_input_slot_as_graph_output(0, "Spacing".to_string());
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("return {};\n", ctx.get_input(0)?))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
     }
 }
 
 #[derive(Default, Clone)]
 pub struct PenPositionsNode;
 
-impl StatelessCommonGraphNode for PenPositionsNode {
+#[stateless]
+impl StatelessCommonGraphNode<BrushGraphDataTuple> for PenPositionsNode {
     fn name(&self) -> &'static str {
         "Pen Positions"
     }
@@ -965,11 +1249,17 @@ impl StatelessCommonGraphNode for PenPositionsNode {
         color!(0x79f2c9)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<Vec2FType>(),
             GraphDefaultOutputSlot::new::<Vec2FType>(),
@@ -978,7 +1268,7 @@ impl StatelessCommonGraphNode for PenPositionsNode {
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphDataTuple>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "
@@ -989,12 +1279,22 @@ impl StatelessCommonGraphNode for PenPositionsNode {
             ctx.get_output(1)?,
         ))
     }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<Vec2FType>(0, ctx.data.lhs.pen_input.position)?;
+        ctx.set_output_value::<Vec2FType>(1, ctx.data.rhs.pen_input.position)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
 pub struct DrawDirectionsNode;
 
-impl StatelessCommonGraphNode for DrawDirectionsNode {
+#[stateless]
+impl StatelessCommonGraphNode<BrushGraphDataTuple> for DrawDirectionsNode {
     fn name(&self) -> &'static str {
         "Draw Directions"
     }
@@ -1011,11 +1311,17 @@ impl StatelessCommonGraphNode for DrawDirectionsNode {
         color!(0x79f2c0)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>(),
             GraphDefaultOutputSlot::new::<F32Type>(),
@@ -1026,7 +1332,7 @@ impl StatelessCommonGraphNode for DrawDirectionsNode {
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphDataTuple>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "
@@ -1041,12 +1347,94 @@ impl StatelessCommonGraphNode for DrawDirectionsNode {
             ctx.get_output(3)?,
         ))
     }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<F32Type>(0, ctx.data.lhs.pen_input.draw_direction_angle)?;
+        ctx.set_output_value::<F32Type>(1, ctx.data.rhs.pen_input.draw_direction_angle)?;
+        ctx.set_output_value::<Vec2FType>(2, ctx.data.lhs.pen_input.draw_direction_vec)?;
+        ctx.set_output_value::<Vec2FType>(3, ctx.data.rhs.pen_input.draw_direction_vec)?;
+        Ok(())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct TimesNode;
+
+#[stateless]
+impl StatelessCommonGraphNode<BrushGraphDataTuple> for TimesNode {
+    fn name(&self) -> &'static str {
+        "Times"
+    }
+
+    fn input_slot_names(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn output_slot_names(&self) -> &[&'static str] {
+        &["Src Now", "Src Stroke Begin", "Dst Now", "Dst Stroke Begin"]
+    }
+
+    fn header_color(&self) -> Color {
+        color!(0xb88e9d)
+    }
+
+    fn create_inputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphDataTuple>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+            GraphDefaultOutputSlot::new::<F32Type>(),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphDataTuple>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "
+            let {} = src.time.now;
+            let {} = src.time.stroke_begin;
+            let {} = dst.time.now;
+            let {} = dst.time.stroke_begin;
+            ",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?,
+            ctx.get_output(2)?,
+            ctx.get_output(3)?,
+        ))
+    }
+
+    fn run(
+        &self,
+        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
+    ) -> Result<(), GraphNodeRunError> {
+        ctx.set_output_value::<F32Type>(0, ctx.data.lhs.pen_input.time.now)?;
+        ctx.set_output_value::<F32Type>(1, ctx.data.lhs.pen_input.time.stroke_begin)?;
+        ctx.set_output_value::<F32Type>(2, ctx.data.rhs.pen_input.time.now)?;
+        ctx.set_output_value::<F32Type>(3, ctx.data.rhs.pen_input.time.stroke_begin)?;
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone)]
 pub struct OutputRequiredSpacingNode;
 
-impl StatelessCommonGraphNode for OutputRequiredSpacingNode {
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputRequiredSpacingNode {
     fn name(&self) -> &'static str {
         "Output Required Spacing"
     }
@@ -1063,18 +1451,32 @@ impl StatelessCommonGraphNode for OutputRequiredSpacingNode {
         color!(0x3f463c)
     }
 
-    fn create_inputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultInputSlot> {
+    fn update_signature(&self, mut ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
+        ctx.require_input_slot_as_graph_output(0, "Required Spacing".to_string());
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<F32Type>(0.0)]
     }
 
-    fn create_outputs(&self, ctx: GraphNodeCreateSlotsContext) -> Vec<GraphDefaultOutputSlot> {
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("return {};\n", ctx.get_input(0)?))
+    }
+
+    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+        Ok(())
     }
 }

@@ -367,7 +367,7 @@ impl DynamicLayerStorage {
     }
 
     pub fn binding_data(&self) -> Option<LayerBindingData> {
-        let texture = self.texture()?;
+        let texture = self.texture()?.clone();
         let tile_info_buffer = self.tile_info_buffer()?.clone();
         Some(LayerBindingData {
             texture,
@@ -387,8 +387,8 @@ impl DynamicLayerStorage {
         self.tile_info_buffer.inner_buffer()
     }
 
-    pub fn texture(&self) -> Option<Arc<TextureView>> {
-        self.texture.clone()
+    pub fn texture(&self) -> Option<&Arc<TextureView>> {
+        self.texture.as_ref()
     }
 
     pub fn ensure_pixel_area(&mut self, pixel_rect: IRect) {
@@ -561,5 +561,19 @@ impl DynamicLayerStorage {
             ec.clear_texture(tex.texture(), &Default::default());
             self.queue.submit([ec.finish()]);
         };
+    }
+
+    pub fn iter_tiles(&self) -> impl Iterator<Item = (IVec2, u32, &Arc<TextureView>)> {
+        self.tiles.iter().map(|(coord, texture)| {
+            (
+                *coord,
+                self.tiles.get_index_of(coord).unwrap() as u32,
+                texture,
+            )
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.tiles.len()
     }
 }

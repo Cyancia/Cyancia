@@ -27,7 +27,7 @@ use cyancia_shader_graph::{
         GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
         SerializableGraphLiteral,
     },
-    wgsl_std::{builtin_nodes, builtin_types},
+    wgsl_std::{builtin_nodes, builtin_types, nodes::TimeNode},
 };
 use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
@@ -35,34 +35,18 @@ use wesl::{VirtualResolver, Wesl};
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
     render::graph::{
-        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, CurrentPixelColorNode,
-        DrawDirectionNode, DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode,
-        FilterWithinMaskNode, LayerPixelColorNode, OutputColorNode, OutputRequiredSpacingNode,
+        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushGraphData,
+        BrushGraphDataTuple, BrushGraphPostprocessData, CurrentPixelColorNode, DrawDirectionNode,
+        DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
+        LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
         OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
-        StrokeBoundsNode,
+        StrokeBoundsNode, TimesNode,
     },
 };
 
-pub struct CompiledBrushGraph {
-    pub main: String,
-    pub size_estimation: String,
-}
-
-impl Display for CompiledBrushGraph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "-------------- Shader --------------")?;
-        writeln!(f, "{}", self.main)?;
-        writeln!(f, "-------------- Size estimation --------------")?;
-        writeln!(f, "{}", self.size_estimation)?;
-        Ok(())
-    }
-}
-
 pub struct CompiledBrushPreset {
-    pub input_sampling: String,
-    pub main_graph: CompiledBrushGraph,
-    pub stroke_postprocess_graphs: CompiledBrushGraph,
-    pub n_stroke_postprocess_graphs: u32,
+    pub main_graph: String,
+    pub stroke_postprocess_graphs: Vec<String>,
     pub texture_usage: Vec<TextureId>,
     pub external_vars: Arc<GraphExternalVariableStorage>,
 }
@@ -72,19 +56,18 @@ impl Display for CompiledBrushPreset {
         writeln!(f, "-------------- Compiled brush preset --------------")?;
         writeln!(
             f,
-            "-------------- Input sampling shader -------------- \n{}",
-            self.input_sampling
-        )?;
-        writeln!(
-            f,
             "-------------- Main graph shader -------------- \n{}",
             self.main_graph
         )?;
-        writeln!(
-            f,
-            "-------------- Stroke postprocess graph shader -------------- \n{}",
-            self.stroke_postprocess_graphs
-        )?;
+
+        for (i, graph) in self.stroke_postprocess_graphs.iter().enumerate() {
+            writeln!(
+                f,
+                "-------------- Stroke postprocess graph shader {} -------------- \n{}",
+                i, graph
+            )?;
+        }
+
         writeln!(f, "-------------- Texture usages --------------")?;
         for usage in &self.texture_usage {
             writeln!(f, "  - {}", usage)?;
@@ -97,11 +80,13 @@ pub struct BrushPresetInstance {
     brush_id: AssetId<BrushPreset>,
     metadata: BrushPresetMetadata,
 
-    spacing_factor_graph: Graph,
-    required_spacing_graph: Graph,
-    main_graph: Graph,
-    stroke_postprocess_graphs: Vec<Graph>,
-    graph_resources: GraphResources,
+    required_spacing_graph: Graph<BrushGraphData>,
+    main_graph: Graph<BrushGraphData>,
+    stroke_postprocess_graphs: Vec<Graph<BrushGraphPostprocessData>>,
+    textures: Arc<GraphTextureStorage>,
+    main_functions: Arc<GraphFunctionStorage<BrushGraphData>>,
+    stroke_pp_functions: Arc<GraphFunctionStorage<BrushGraphPostprocessData>>,
+    external_vars: Arc<GraphExternalVariableStorage>,
     runtime_revision: AtomicU64,
 }
 
@@ -109,7 +94,8 @@ impl BrushPresetInstance {
     pub fn from_asset(
         handle: &AssetHandle<BrushPreset>,
         textures: Arc<GraphTextureStorage>,
-        functions: Arc<GraphFunctionStorage>,
+        main_functions: Arc<GraphFunctionStorage<BrushGraphData>>,
+        stroke_pp_functions: Arc<GraphFunctionStorage<BrushGraphPostprocessData>>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let preset = handle.get().unwrap();
 
@@ -129,34 +115,19 @@ impl BrushPresetInstance {
             })
             .collect::<Vec<_>>();
         let external_vars = Arc::new(GraphExternalVariableStorage::new(external_vars));
-        let resources = GraphResources {
-            textures,
-            functions,
-            external_vars: external_vars.clone(),
-        };
 
         let mut errors = Vec::new();
 
         let required_spacing_graph = {
             let (g, e) = Graph::from_serialized(
                 &preset.required_spacing_graph,
-                resources.clone(),
+                GraphResources {
+                    textures: textures.clone(),
+                    functions: main_functions.clone(),
+                    external_vars: external_vars.clone(),
+                },
                 BRUSH_GRAPH_TYPES.clone(),
                 REQUIRED_SPACING_GRAPH_NODES.as_ref(),
-            );
-            errors.extend(e);
-            match g {
-                Some(g) => g,
-                None => return (None, errors),
-            }
-        };
-
-        let spacing_factor_graph = {
-            let (g, e) = Graph::from_serialized(
-                &preset.spacing_factor_graph,
-                resources.clone(),
-                BRUSH_GRAPH_TYPES.clone(),
-                SPACING_FACTOR_GRAPH_NODES.as_ref(),
             );
             errors.extend(e);
             match g {
@@ -168,7 +139,11 @@ impl BrushPresetInstance {
         let main_graph = {
             let (g, e) = Graph::from_serialized(
                 &preset.main_graph,
-                resources.clone(),
+                GraphResources {
+                    textures: textures.clone(),
+                    functions: main_functions.clone(),
+                    external_vars: external_vars.clone(),
+                },
                 BRUSH_GRAPH_TYPES.clone(),
                 MAIN_GRAPH_NODES.as_ref(),
             );
@@ -184,7 +159,11 @@ impl BrushPresetInstance {
         for serialized in &preset.stroke_postprocess_graphs {
             let (g, e) = Graph::from_serialized(
                 serialized,
-                resources.clone(),
+                GraphResources {
+                    textures: textures.clone(),
+                    functions: stroke_pp_functions.clone(),
+                    external_vars: external_vars.clone(),
+                },
                 BRUSH_GRAPH_TYPES.clone(),
                 STROKE_POSTPROCESS_GRAPH_NODES.as_ref(),
             );
@@ -200,10 +179,12 @@ impl BrushPresetInstance {
                 brush_id: handle.id(),
                 metadata: preset.metadata.clone(),
                 required_spacing_graph,
-                spacing_factor_graph,
                 main_graph,
                 stroke_postprocess_graphs,
-                graph_resources: resources,
+                textures,
+                main_functions,
+                stroke_pp_functions,
+                external_vars,
                 runtime_revision: AtomicU64::new(0),
             }),
             errors,
@@ -211,7 +192,6 @@ impl BrushPresetInstance {
     }
 
     pub fn as_asset(&self) -> anyhow::Result<BrushPreset> {
-        let spacing_factor_graph = self.spacing_factor_graph.as_serialized()?;
         let required_spacing_graph = self.required_spacing_graph.as_serialized()?;
         let main_graph = self.main_graph.as_serialized()?;
         let stroke_postprocess_graphs = self
@@ -220,7 +200,6 @@ impl BrushPresetInstance {
             .map(|g| g.as_serialized())
             .collect::<anyhow::Result<Vec<_>>>()?;
         let external_vars = self
-            .graph_resources
             .external_vars
             .all()
             .iter()
@@ -229,7 +208,6 @@ impl BrushPresetInstance {
 
         Ok(BrushPreset {
             metadata: self.metadata.clone(),
-            spacing_factor_graph,
             required_spacing_graph,
             main_graph,
             stroke_postprocess_graphs,
@@ -239,7 +217,7 @@ impl BrushPresetInstance {
 
     pub fn compile(&self, mut existing_binding_count: u32) -> anyhow::Result<CompiledBrushPreset> {
         let mut external_variable_bindings = String::new();
-        for entry in self.graph_resources.external_vars.all().iter() {
+        for entry in self.external_vars.all().iter() {
             external_variable_bindings.extend(
                 generate_external_variable_binding(0, existing_binding_count, entry.value())
                     .chars(),
@@ -248,9 +226,6 @@ impl BrushPresetInstance {
         }
 
         let mut texture_usage = GraphTextureUsageRecorder::default();
-
-        let input_sampling =
-            compile_input_sampling(&self.spacing_factor_graph, &self.required_spacing_graph)?;
 
         let main_graph = compile_template_main(
             &self.main_graph,
@@ -265,53 +240,49 @@ impl BrushPresetInstance {
         )?;
 
         Ok(CompiledBrushPreset {
-            input_sampling,
             main_graph,
             stroke_postprocess_graphs,
-            n_stroke_postprocess_graphs: self.stroke_postprocess_graphs.len() as u32,
             texture_usage: texture_usage.used_textures_ordered(),
-            external_vars: self.graph_resources.external_vars.clone(),
+            external_vars: self.external_vars.clone(),
         })
     }
 
     pub fn new_stroke_postprocess_graph(&mut self) -> usize {
-        let graph = Graph::new(self.graph_resources.clone(), BRUSH_GRAPH_TYPES.clone());
+        let graph = Graph::new(
+            GraphResources {
+                textures: self.textures.clone(),
+                functions: self.stroke_pp_functions.clone(),
+                external_vars: self.external_vars.clone(),
+            },
+            BRUSH_GRAPH_TYPES.clone(),
+        );
         self.stroke_postprocess_graphs.push(graph);
         self.stroke_postprocess_graphs.len() - 1
     }
 
-    pub fn required_spacing_graph(&self) -> &Graph {
+    pub fn required_spacing_graph(&self) -> &Graph<BrushGraphData> {
         &self.required_spacing_graph
     }
 
-    pub fn required_spacing_graph_mut(&mut self) -> &mut Graph {
+    pub fn required_spacing_graph_mut(&mut self) -> &mut Graph<BrushGraphData> {
         self.increment_runtime_revision();
         &mut self.required_spacing_graph
     }
 
-    pub fn spacing_factor_graph(&self) -> &Graph {
-        &self.spacing_factor_graph
-    }
-
-    pub fn spacing_factor_graph_mut(&mut self) -> &mut Graph {
-        self.increment_runtime_revision();
-        &mut self.spacing_factor_graph
-    }
-
-    pub fn main_graph(&self) -> &Graph {
+    pub fn main_graph(&self) -> &Graph<BrushGraphData> {
         &self.main_graph
     }
 
-    pub fn main_graph_mut(&mut self) -> &mut Graph {
+    pub fn main_graph_mut(&mut self) -> &mut Graph<BrushGraphData> {
         self.increment_runtime_revision();
         &mut self.main_graph
     }
 
-    pub fn stroke_postprocess_graphs(&self) -> &Vec<Graph> {
+    pub fn stroke_postprocess_graphs(&self) -> &Vec<Graph<BrushGraphPostprocessData>> {
         &self.stroke_postprocess_graphs
     }
 
-    pub fn stroke_postprocess_graphs_mut(&mut self) -> &mut Vec<Graph> {
+    pub fn stroke_postprocess_graphs_mut(&mut self) -> &mut Vec<Graph<BrushGraphPostprocessData>> {
         self.increment_runtime_revision();
         &mut self.stroke_postprocess_graphs
     }
@@ -328,19 +299,15 @@ impl BrushPresetInstance {
     pub fn iter_external_vars(
         &self,
     ) -> impl Iterator<Item = (ExternalVariableId, ExternalVariable)> + '_ {
-        self.graph_resources
-            .external_vars
-            .all()
-            .iter()
-            .map(|entry| {
-                let var = entry.value().clone();
-                (var.id, var)
-            })
+        self.external_vars.all().iter().map(|entry| {
+            let var = entry.value().clone();
+            (var.id, var)
+        })
     }
 
     pub fn insert_external_var(&mut self, var: ExternalVariable) {
         self.increment_runtime_revision();
-        self.graph_resources.external_vars.insert(var);
+        self.external_vars.insert(var);
     }
 
     pub fn update_external_var(
@@ -348,20 +315,20 @@ impl BrushPresetInstance {
         id: &ExternalVariableId,
         msg: ErasedGraphLiteralUpdateMessage,
     ) {
-        self.graph_resources.external_vars.update(&id, msg);
+        self.external_vars.update(&id, msg);
     }
 
     pub fn remove_external_var(&mut self, id: &ExternalVariableId) {
         self.increment_runtime_revision();
-        self.graph_resources.external_vars.remove(id);
+        self.external_vars.remove(id);
     }
 
     pub fn textures(&self) -> &Arc<GraphTextureStorage> {
-        &self.graph_resources.textures
+        &self.textures
     }
 
-    pub fn functions(&self) -> &Arc<GraphFunctionStorage> {
-        &self.graph_resources.functions
+    pub fn main_functions(&self) -> &Arc<GraphFunctionStorage<BrushGraphData>> {
+        &self.main_functions
     }
 
     pub fn runtime_revision(&self) -> u64 {
@@ -400,41 +367,9 @@ fn add_modules(resolver: &mut VirtualResolver) {
     );
 }
 
-fn compile_input_sampling(factor: &Graph, required: &Graph) -> anyhow::Result<String> {
-    let (_, factor) = factor.compile(
-        Vec::new(),
-        Default::default(),
-        &mut GraphTextureUsageRecorder::default(),
-    )?;
-    let (_, required) = required.compile(
-        Vec::new(),
-        Default::default(),
-        &mut GraphTextureUsageRecorder::default(),
-    )?;
-
-    let shader = include_str!("render/brush_sample.wesl")
-        .to_string()
-        .replace("//CODEGENFLAG_COMPUTED_GRAPH_SPACING_FACTOR", &factor)
-        .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &required);
-
-    let mut resolver = VirtualResolver::new();
-    resolver.add_module("package::template".parse().unwrap(), shader.into());
-    add_modules(&mut resolver);
-
-    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-    compiler.set_mangler(Default::default());
-    compiler.set_options(Default::default());
-    let shader = compiler
-        .compile(&"package::template".parse().unwrap())?
-        .to_string();
-
-    Ok(shader)
-}
-
 fn compile_template(
     shader: &str,
     external_variable_bindings: &str,
-    size_estimation: bool,
     postprocess: bool,
 ) -> anyhow::Result<String> {
     let shader = include_str!("render/brush_template.wesl")
@@ -451,7 +386,6 @@ fn compile_template(
     let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
     compiler.set_mangler(Default::default());
     compiler.set_options(Default::default());
-    compiler.set_feature("SIZE_ESTIMATION", size_estimation);
     compiler.set_feature("POSTPROCESS", postprocess);
     let compiled_shader = compiler
         .compile(&"package::template".parse().unwrap())?
@@ -464,71 +398,47 @@ fn compile_template(
 //      It is not allowed to use a pixel color sampled from previous input to determine the bounds.
 
 fn compile_template_main(
-    graph: &Graph,
+    graph: &Graph<BrushGraphData>,
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
-) -> anyhow::Result<CompiledBrushGraph> {
+) -> anyhow::Result<String> {
     let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
 
-    Ok(CompiledBrushGraph {
-        main: compile_template(&shader, external_variable_bindings, false, false)?,
-        size_estimation: compile_template(&shader, external_variable_bindings, true, false)?,
-    })
+    Ok(compile_template(
+        &shader,
+        external_variable_bindings,
+        false,
+    )?)
 }
 
 fn compile_template_stroke_postprocess(
-    graphs: &[Graph],
+    graphs: &[Graph<BrushGraphPostprocessData>],
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
-) -> anyhow::Result<CompiledBrushGraph> {
+) -> anyhow::Result<Vec<String>> {
     let compiled_graphs = graphs
         .iter()
         .map(|graph| graph.compile(Default::default(), Default::default(), texture_usage))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut concated_graphs_size_estimation = String::new();
-    let mut concated_graphs_main = String::new();
-    let len = compiled_graphs.len();
-    for (i, (_, g)) in compiled_graphs.into_iter().enumerate() {
-        concated_graphs_size_estimation.extend(g.chars().chain(['\n']));
-        // TODO: Don't hardcode these code.
-        concated_graphs_main.extend(
-            format!(
-                "
-                    wait_for_sample({i});
-                    {g}
-                    finish_sample_thread();
-                    storageBarrier();
-                "
-            )
-            .chars(),
-        );
+    let mut compiled_brushes = Vec::with_capacity(graphs.len());
+    for (_, shader) in compiled_graphs {
+        compiled_brushes.push(compile_template(&shader, external_variable_bindings, true)?);
     }
 
-    Ok(CompiledBrushGraph {
-        main: compile_template(
-            &concated_graphs_main,
-            external_variable_bindings,
-            false,
-            true,
-        )?,
-        size_estimation: compile_template(
-            &concated_graphs_size_estimation,
-            external_variable_bindings,
-            true,
-            true,
-        )?,
-    })
+    Ok(compiled_brushes)
 }
 
 pub const BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
-pub const REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+pub const REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(required_spacing_graph_nodes);
-pub const SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
+pub const SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphDataTuple>>> =
     LazyLock::new(spacing_factor_graph_nodes);
-pub const MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> = LazyLock::new(main_graph_nodes);
-pub const STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry>> =
-    LazyLock::new(stroke_postprocess_graph_nodes);
+pub const MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+    LazyLock::new(main_graph_nodes);
+pub const STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<
+    Arc<GraphNodeRegistry<BrushGraphPostprocessData>>,
+> = LazyLock::new(stroke_postprocess_graph_nodes);
 
 fn brush_graph_types() -> Arc<GraphTypeRegistry> {
     let mut types = GraphTypeRegistry::default();
@@ -537,38 +447,42 @@ fn brush_graph_types() -> Arc<GraphTypeRegistry> {
     types.into()
 }
 
-fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
     nodes.register::<PenPositionNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<TimeNode>();
     nodes.register::<OutputRequiredSpacingNode>();
 
     nodes.into()
 }
 
-fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphDataTuple>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
     nodes.register::<PenPositionsNode>();
     nodes.register::<DrawDirectionsNode>();
+    nodes.register::<TimesNode>();
     nodes.register::<OutputSpacingNode>();
 
     nodes.into()
 }
 
-fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
     nodes.register::<PenPositionNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<TimeNode>();
     nodes.register::<PixelPositionNode>();
     nodes.register::<FilterWithinMaskNode>();
     nodes.register::<FilterWithinBoundsNode>();
     nodes.register::<OutputColorNode>();
+    nodes.register::<OutputBoundsNode>();
     nodes.register::<PasteTextureNode>();
     nodes.register::<BlendColorNode>();
     nodes.register::<LayerPixelColorNode>();
@@ -580,16 +494,15 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry> {
     nodes.into()
 }
 
-fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
+fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphPostprocessData>> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
-    nodes.register::<PenPositionNode>();
-    nodes.register::<DrawDirectionNode>();
     nodes.register::<PixelPositionNode>();
     nodes.register::<FilterWithinMaskNode>();
     nodes.register::<FilterWithinBoundsNode>();
     nodes.register::<OutputColorNode>();
+    nodes.register::<OutputBoundsNode>();
     nodes.register::<PasteTextureNode>();
     nodes.register::<BlendColorNode>();
     nodes.register::<LayerPixelColorNode>();
@@ -603,23 +516,23 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry> {
 }
 
 pub struct GraphFunctionInstance {
-    graph_function: GraphFunction,
+    graph_function: GraphFunction<BrushGraphData>,
     runtime_revision: AtomicU64,
 }
 
 impl GraphFunctionInstance {
-    pub fn new(graph_function: GraphFunction) -> Self {
+    pub fn new(graph_function: GraphFunction<BrushGraphData>) -> Self {
         Self {
             graph_function,
             runtime_revision: AtomicU64::new(0),
         }
     }
 
-    pub fn graph_function(&self) -> &GraphFunction {
+    pub fn graph_function(&self) -> &GraphFunction<BrushGraphData> {
         &self.graph_function
     }
 
-    pub fn graph_function_mut(&mut self) -> &mut GraphFunction {
+    pub fn graph_function_mut(&mut self) -> &mut GraphFunction<BrushGraphData> {
         self.increment_runtime_revision();
         &mut self.graph_function
     }

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use bevy_math::Rect;
 use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
 use cyancia_widgets::spin_slider::SpinSlider;
@@ -11,7 +12,9 @@ use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{GraphRenderer, GraphTheme, graph::slot::GraphValueType};
+use crate::{GraphRenderer, GraphTheme, graph::{slot::GraphValueType, texture::TextureId}};
+
+// TODO: Boolean and rectangle types
 
 #[derive(Default, Clone)]
 pub struct F32Type;
@@ -200,17 +203,27 @@ impl GraphValueType for ColorType {
 #[derive(Default, Clone)]
 pub struct TextureType;
 
-wrapper! {
-    #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-    pub TextureLocalIndex : u32
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TextureReference {
+    pub local_index: u32,
+    pub external_id: TextureId,
 }
 
-impl TextureLocalIndex {
-    pub const NULL: Self = Self(0);
+impl Default for TextureReference {
+    fn default() -> Self {
+        Self::NULL
+    }
+}
+
+impl TextureReference {
+    pub const NULL: Self = Self {
+        local_index: 0,
+        external_id: TextureId::NULL,
+    };
 }
 
 impl GraphValueType for TextureType {
-    type AssociatedLiteralType = TextureLocalIndex;
+    type AssociatedLiteralType = TextureReference;
 
     type Message = ();
 
@@ -223,7 +236,7 @@ impl GraphValueType for TextureType {
     }
 
     fn default_literal(&self) -> Self::AssociatedLiteralType {
-        TextureLocalIndex::NULL
+        TextureReference::NULL
     }
 
     fn wgsl_type(&self) -> Option<&'static str> {
@@ -247,6 +260,78 @@ impl GraphValueType for TextureType {
     fn update_literal(&self, _data: &mut Self::AssociatedLiteralType, _message: Self::Message) {}
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
-        Some(data.to_string())
+        Some(data.local_index.to_string())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct RectType;
+
+#[derive(Debug, Clone)]
+pub enum RectMessage {
+    MinX(f32),
+    MinY(f32),
+    MaxX(f32),
+    MaxY(f32),
+}
+
+impl GraphValueType for RectType {
+    type AssociatedLiteralType = Rect;
+
+    type Message = RectMessage;
+
+    fn color(&self) -> Color {
+        color!(0x8779f2)
+    }
+
+    fn name(&self) -> &'static str {
+        "Rectangle"
+    }
+
+    fn default_literal(&self) -> Self::AssociatedLiteralType {
+        Rect::default()
+    }
+
+    fn wgsl_type(&self) -> Option<&'static str> {
+        Some("Rect")
+    }
+
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+    ) -> Option<Vec<u8>> {
+        let mut buf = DynamicBuffer::default();
+        buf.push(literal);
+        Some(buf.into_inner())
+    }
+
+    fn view_literal(
+        &self,
+        data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        column![
+            SpinSlider::new(0.0..=1.0, data.min.x, RectMessage::MinX).step(0.01),
+            SpinSlider::new(0.0..=1.0, data.min.y, RectMessage::MinY).step(0.01),
+            SpinSlider::new(0.0..=1.0, data.max.x, RectMessage::MaxX).step(0.01),
+            SpinSlider::new(0.0..=1.0, data.max.y, RectMessage::MaxY).step(0.01),
+        ]
+        .padding(2)
+        .into()
+    }
+
+    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
+        match message {
+            RectMessage::MinX(x) => data.min.x = x,
+            RectMessage::MinY(y) => data.min.y = y,
+            RectMessage::MaxX(x) => data.max.x = x,
+            RectMessage::MaxY(y) => data.max.y = y,
+        }
+    }
+
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        Some(format!(
+            "Rect(vec2f({}, {}), vec2f({}, {}))",
+            data.min.x, data.min.y, data.max.x, data.max.y
+        ))
     }
 }

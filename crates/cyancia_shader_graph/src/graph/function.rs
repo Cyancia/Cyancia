@@ -5,7 +5,7 @@ use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::graph::Graph;
+use crate::graph::{Graph, GraphData};
 
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
@@ -13,27 +13,27 @@ wrapper! {
     pub GraphFunctionId : Uuid
 }
 
-pub struct GraphFunction {
+pub struct GraphFunction<Data: GraphData> {
     pub id: GraphFunctionId,
     pub name: String,
-    pub graph: Graph,
+    pub graph: Graph<Data>,
 }
 
 #[derive(Default)]
-pub struct GraphFunctionStorage {
-    functions: HashMap<GraphFunctionId, GraphFunction>,
+pub struct GraphFunctionStorage<Data: GraphData> {
+    functions: HashMap<GraphFunctionId, GraphFunction<Data>>,
 }
 
-impl GraphFunctionStorage {
-    pub fn new(functions: HashMap<GraphFunctionId, GraphFunction>) -> Self {
+impl<Data: GraphData> GraphFunctionStorage<Data> {
+    pub fn new(functions: HashMap<GraphFunctionId, GraphFunction<Data>>) -> Self {
         Self { functions }
     }
 
-    pub fn get(&self, id: &GraphFunctionId) -> Option<&GraphFunction> {
+    pub fn get(&self, id: &GraphFunctionId) -> Option<&GraphFunction<Data>> {
         self.functions.get(id)
     }
 
-    pub fn all(&self) -> &HashMap<GraphFunctionId, GraphFunction> {
+    pub fn all(&self) -> &HashMap<GraphFunctionId, GraphFunction<Data>> {
         &self.functions
     }
 }

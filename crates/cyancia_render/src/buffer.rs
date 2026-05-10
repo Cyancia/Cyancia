@@ -102,7 +102,7 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
         Some(BindingResource::Buffer(BufferBinding {
             buffer: self.buffer.as_ref()?,
             offset: 0,
-            size: NonZeroU64::new(self.last_written?),
+            size: Some(T::min_size()),
         }))
     }
 
@@ -189,7 +189,7 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
         }
     }
 
-    pub fn push(&mut self, item: &T) -> usize {
+    pub fn push(&mut self, item: &T) -> (usize, BufferAddress) {
         let element_size = u64::from(T::min_size()) as usize;
         let offset = self.data.len();
 
@@ -205,7 +205,8 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
         let mut dest = &mut self.data[offset..(offset + element_size)];
         item.write_into(&mut Writer::new(item, &mut dest, 0).unwrap());
 
-        offset / u64::from(T::min_size()) as usize
+        let index = offset / u64::from(T::min_size()) as usize;
+        (index, offset as BufferAddress)
     }
 
     pub fn write_buffer(&mut self, device: &Device, queue: &Queue) {

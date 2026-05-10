@@ -140,11 +140,20 @@ pub struct AssetMetadata {
     pub in_memory: bool,
 }
 
-#[derive(Clone)]
 pub struct AssetHandle<T: Asset> {
     id: AssetId<T>,
     bundle: Arc<AssetBundleCache>,
     index_db: Arc<AssetIndexDb>,
+}
+
+impl<T: Asset> Clone for AssetHandle<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            bundle: Arc::clone(&self.bundle),
+            index_db: Arc::clone(&self.index_db),
+        }
+    }
 }
 
 impl<T: Asset> PartialEq for AssetHandle<T> {

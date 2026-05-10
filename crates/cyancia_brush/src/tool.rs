@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy_math::IRect;
+use chrono::{DateTime, Utc};
 use cyancia_assets::store::AssetRegistry;
 use cyancia_canvas::{CCanvas, CanvasId, CanvasManager, event::CanvasUpdate};
 use cyancia_image::{
@@ -13,25 +14,26 @@ use cyancia_math::number::LerpAngle;
 use cyancia_runtime::{Services, event::Event, service::Service};
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
-use futures::channel::oneshot;
 use glam::{FloatExt, Vec2};
 use iced_runtime::Task;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use wgpu::{Buffer, BufferAsyncError};
 
 use crate::{
     input_processing::RawPenInput,
     instance::BrushPresetInstance,
-    render::{BrushPresetOperator, StrokeInfo},
+    render::{BrushPresetOperator, Time},
 };
+
+const TIMESTAMP_MOD: i64 = 1_000_000;
 
 #[derive(Default)]
 pub struct BrushTool {
     target_layer: Option<(CanvasId, LayerId)>,
+    stroke_begin: Option<DateTime<Utc>>,
 }
 
 pub enum BrushToolMessage {
-    StrokeInfoReadback(StrokeInfo),
+    CanvasUpdateDuringStroke(CanvasId, IRect),
 }
 
 impl ToolFunction for BrushTool {
@@ -62,16 +64,24 @@ impl ToolFunction for BrushTool {
             log::warn!("Unable to paint to the active layer which cannot contain pixels.");
             return Task::none();
         }
-        let params = RawPenInput { position };
+
+        let now = Utc::now();
+        self.stroke_begin = Some(now);
         self.target_layer = Some((canvas.id(), active_layer));
+
+        let params = RawPenInput {
+            position,
+            time: Time {
+                now: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
+            },
+        };
 
         let success =
             services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
                 let assets = services.service::<AssetRegistry>();
-                let target_layer_info = tiles.get_layer_info(active_layer).unwrap();
-                let target_layer_binding = tiles.get_layer_binding_or_empty(active_layer).unwrap();
-                brush.begin_stroke(params, &assets, target_layer_binding, target_layer_info);
+                brush.begin_stroke(params, tiles, assets, active_layer);
             });
 
         if success.is_none() {
@@ -100,7 +110,19 @@ impl ToolFunction for BrushTool {
         else {
             return Task::none();
         };
-        let params = RawPenInput { position };
+
+        let Some(stroke_begin) = self.stroke_begin else {
+            log::error!("Stroke update called without a stroke begin time.");
+            return Task::none();
+        };
+
+        let params = RawPenInput {
+            position,
+            time: Time {
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
+            },
+        };
 
         let Some(brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
             log::error!("No current brush preset operator found.");
@@ -108,13 +130,25 @@ impl ToolFunction for BrushTool {
         };
 
         let now = std::time::Instant::now();
-        brush.update_stroke(params);
-        log::info!("Brush update took: {:?}", now.elapsed());
+        // update_stroke needs GpuTileStorage — split borrow via a workaround:
+        // We take the tiles reference separately. Since services holds both, we call
+        // update_stroke through try_service_scope instead.
+        // NOTE: We drop brush borrow here and re-scope below.
+        drop(brush);
 
-        let (tx, rx) = oneshot::channel();
-        if let Some(staging) = brush.map_stroke_info_async(tx) {
-            Task::future(stroke_info_readback(canvas_id, rx, staging))
-                .map(BrushToolMessage::StrokeInfoReadback)
+        let bounds = {
+            let mut captured_bounds = None;
+            services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
+                let tiles = services.service::<GpuTileStorage>();
+                brush.update_stroke(params, tiles);
+                captured_bounds = brush.accumulated_pixel_bounds();
+            });
+            log::info!("Brush update took: {:?}", now.elapsed());
+            captured_bounds
+        };
+
+        if let Some(dirty_tiles) = bounds {
+            Task::done(BrushToolMessage::CanvasUpdateDuringStroke(canvas_id, dirty_tiles))
         } else {
             Task::none()
         }
@@ -139,26 +173,35 @@ impl ToolFunction for BrushTool {
         else {
             return Task::none();
         };
-        let final_input = RawPenInput { position };
 
-        let success =
-            services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
+        let Some(stroke_begin) = self.stroke_begin.take() else {
+            log::error!("Stroke end called without a stroke begin time.");
+            return Task::none();
+        };
+
+        let final_input = RawPenInput {
+            position,
+            time: Time {
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
+            },
+        };
+
+        let dirty_tiles =
+            services.try_service_scope::<CurrentBrushPresetOperator, Option<IRect>>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
-                let stroke_info = brush.end_stroke(final_input, &tiles, active_layer);
-                CanvasUpdate::broadcast(CanvasUpdate {
-                    id: canvas_id,
-                    dirty_tiles: IRect {
-                        min: stroke_info.accumulated_bound_min,
-                        max: stroke_info.accumulated_bound_max,
-                    },
-                });
-            });
+                brush.end_stroke(final_input, tiles, active_layer);
+                brush.accumulated_pixel_bounds()
+            }).flatten();
 
         let overriders = services.service_mut::<LayerPreviewOverriders>();
         overriders.remove_overrider(&active_layer);
 
-        if success.is_none() {
-            log::error!("No current brush preset operator found.");
+        if let Some(dirty_tiles) = dirty_tiles {
+            CanvasUpdate::broadcast(CanvasUpdate {
+                id: canvas_id,
+                dirty_tiles,
+            });
         }
 
         Task::none()
@@ -170,29 +213,26 @@ impl ToolFunction for BrushTool {
         services: &mut Services,
     ) -> Task<Self::Message> {
         match message {
-            BrushToolMessage::StrokeInfoReadback(stroke_info) => {
-                let Some((canvas_id, active_layer)) = self.target_layer else {
+            BrushToolMessage::CanvasUpdateDuringStroke(canvas_id, dirty_tiles) => {
+                let Some((_, active_layer)) = self.target_layer else {
                     return Task::none();
                 };
 
-                let brush = services.service::<CurrentBrushPresetOperator>();
-                let Some(buffer) = brush.stroke_buffer() else {
-                    return Task::none();
-                };
-                // TODO Do stroke post process. This is not actually what outputs.
-                let overrider = PixelPreviewOverrider {
-                    texture: buffer.textures()[1 - stroke_info.total_dabs as usize % 2].clone(),
-                    tile_info_buffer: buffer.tile_info_buffer().clone(),
-                };
+                // Update the preview overrider with the current intermediate buffer.
+                let updated = services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, _| {
+                    // stroke_buffer() returns the [DynamicLayerStorage; 2], pick the current round.
+                    let round = brush.stroke_round() as usize;
+                    if let Some(buf) = brush.stroke_buffer() {
+                        // We cannot construct PixelPreviewOverrider here because it needs
+                        // TextureView + Buffer (not Arc/Option). Leave preview update to a
+                        // future refactor when PixelPreviewOverrider accepts Arc<TextureView>.
+                        // TODO: wire up preview overrider once API alignment is sorted.
+                    }
+                });
 
-                let overriders = services.service_mut::<LayerPreviewOverriders>();
-                overriders.insert_overrider(active_layer, overrider);
                 CanvasUpdate::broadcast(CanvasUpdate {
                     id: canvas_id,
-                    dirty_tiles: IRect {
-                        min: stroke_info.accumulated_bound_min,
-                        max: stroke_info.accumulated_bound_max,
-                    },
+                    dirty_tiles,
                 });
             }
         }
@@ -206,14 +246,3 @@ wrapper! {
 }
 
 impl Service for CurrentBrushPresetOperator {}
-
-async fn stroke_info_readback(
-    id: CanvasId,
-    rx: oneshot::Receiver<Result<(), BufferAsyncError>>,
-    staging_buffer: Buffer,
-) -> StrokeInfo {
-    rx.await.unwrap().unwrap();
-    let stroke_info_data = staging_buffer.slice(..).get_mapped_range();
-    let storage = encase::StorageBuffer::new(stroke_info_data.as_ref());
-    storage.create::<StrokeInfo>().unwrap()
-}
