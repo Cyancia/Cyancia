@@ -65,12 +65,12 @@ fn convert_pixel_to_buffer_tile(pixel: vec2i) -> vec3u {
 
 fn texture_transform_mat(local_index: u32, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> mat3x3f {
     let tex_size = vec2f(atlas_size(local_index));
-    return scale_rotate_transform_anchored(scale, rotate, translate - 0.5 * tex_size, anchor * tex_size);
+    return scale_rotate_transform_anchored(scale, rotate, translate, anchor * tex_size);
 }
 
 fn texture_transform_mat_inv(local_index: u32, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> mat3x3f {
     let tex_size = vec2f(atlas_size(local_index));
-    return scale_rotate_transform_anchored_inv(scale, rotate, translate - 0.5 * tex_size, anchor * tex_size);
+    return scale_rotate_transform_anchored_inv(scale, rotate, translate, anchor * tex_size);
 }
 
 fn sample_transformed_local_texture_clamp(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {

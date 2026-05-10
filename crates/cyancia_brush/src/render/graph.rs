@@ -1,6 +1,6 @@
 use bevy_math::{IRect, Rect, VectorSpace};
 use cyancia_image::blend_modes::BlendMode;
-use cyancia_math::rect_transform::RectTransform;
+use cyancia_math::{mat3::Mat3ScaleRotattionTranslationWithAnchor, rect_transform::RectTransform};
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
     graph::{
@@ -325,25 +325,18 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
             .get(&mask.external_id)
             .expect("Texture not found");
         let img = &texture.handle.get().unwrap().image;
+        let size = Vec2::new(img.width() as f32, img.height() as f32);
         let bounds = Rect {
             min: Vec2::ZERO,
-            max: Vec2::new(img.width() as f32, img.height() as f32),
+            max: size,
         };
 
-        let (s, c) = rotation.sin_cos();
-        let a = Mat2::from_cols_array(&[c * scale.x, s * scale.x, -s * scale.y, c * scale.y]);
-        let t = translation + anchor - a * anchor;
-        let mat = Mat3::from_cols_array(&[
-            c * scale.x,
-            s * scale.x,
-            0.0,
-            -s * scale.y,
-            c * scale.y,
-            0.0,
-            t.x,
-            t.y,
-            1.0,
-        ]);
+        let mat = Mat3::from_scale_angle_translation_with_anchor(
+            scale,
+            rotation,
+            translation,
+            anchor * size,
+        );
         let bounds = bounds.transformed(&mat);
 
         ctx.set_output_value::<RectType>(1, bounds)?;

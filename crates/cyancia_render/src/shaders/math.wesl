@@ -73,23 +73,32 @@ fn scale_rotate_transform_inv(scale: vec2f, angle: f32, translation: vec2f) -> m
 fn scale_rotate_transform_anchored(scale: vec2f, angle: f32, translation: vec2f, anchor: vec2f) -> mat3x3f {
     let c = cos(angle);
     let s = sin(angle);
-    let a = mat2x2f(c * scale.x, s * scale.x, -s * scale.y, c * scale.y);
+    let m00 = c * scale.x;
+    let m01 = s * scale.x;
+    let m10 = -s * scale.y;
+    let m11 = c * scale.y;
+    let m02 = translation.x - (anchor.x * m00 + anchor.y * m10);
+    let m12 = translation.y - (anchor.x * m01 + anchor.y * m11);
     return mat3x3f(
-        vec3f(c * scale.x, s * scale.x, 0.0),
-        vec3f(-s * scale.y, c * scale.y, 0.0),
-        vec3f(translation + anchor - (a * anchor), 1.0)
+        m00, m01, 0.0,
+        m10, m11, 0.0,
+        m02, m12, 1.0
     );
 }
 
 fn scale_rotate_transform_anchored_inv(scale: vec2f, angle: f32, translation: vec2f, anchor: vec2f) -> mat3x3f {
     let c = cos(angle);
     let s = sin(angle);
-    let inv_scale = 1.0 / scale;
-    let a_inv = mat2x2f(c * inv_scale.x, -s * inv_scale.y, s * inv_scale.x, c * inv_scale.y);
+    let m00 = c / scale.x;
+    let m10 = s / scale.x;
+    let m01 = -s / scale.y;
+    let m11 = c / scale.y;
+    let m02 = anchor.x - (m00 * translation.x + m01 * translation.y);
+    let m12 = anchor.y - (m10 * translation.x + m11 * translation.y);
     return mat3x3f(
-        vec3f(c * inv_scale.x, -s * inv_scale.y, 0.0),
-        vec3f(s * inv_scale.x,  c * inv_scale.y, 0.0),
-        vec3f(anchor - a_inv * (translation + anchor), 1.0)
+        m00, m01, 0.0,
+        m10, m11, 0.0,
+        m02, m12, 1.0
     );
 }
 
