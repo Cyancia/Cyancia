@@ -2849,7 +2849,7 @@ impl RandomNode {
     }
 
     pub fn hash21(p: f32) -> Vec2 {
-        let mut p3 = Vec3::splat(p) * Vec3::new(0.1031, 0.1030, 0.0973);
+        let mut p3 = (Vec3::splat(p) * Vec3::new(0.1031, 0.1030, 0.0973)).fract();
         p3 += p3.dot(p3.yzx() + Vec3::splat(33.33));
         ((Vec2::new(p3.x, p3.x) + Vec2::new(p3.y, p3.z)) * Vec2::new(p3.z, p3.y)).fract()
     }
