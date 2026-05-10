@@ -576,4 +576,80 @@ impl DynamicLayerStorage {
     pub fn len(&self) -> usize {
         self.tiles.len()
     }
+
+    pub fn deep_clone(&self) -> Self {
+        if self.tiles.is_empty() {
+            return Self::new(
+                self.device.clone(),
+                self.queue.clone(),
+                self.layer_info.clone(),
+            );
+        }
+
+        let texture = self.texture.as_ref().unwrap().texture();
+        let new_texture = self.device.create_texture(&TextureDescriptor {
+            label: Some("tile texture clone"),
+            size: Extent3d {
+                width: Self::TILE_SIZE,
+                height: Self::TILE_SIZE,
+                depth_or_array_layers: texture.depth_or_array_layers(),
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: self.layer_info.texel_type.wgpu_format(),
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC
+                | TextureUsages::COPY_DST
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+
+        let mut ce = self.device.create_command_encoder(&Default::default());
+        ce.copy_texture_to_texture(
+            texture.as_image_copy(),
+            new_texture.as_image_copy(),
+            Extent3d {
+                width: Self::TILE_SIZE,
+                height: Self::TILE_SIZE,
+                depth_or_array_layers: texture.depth_or_array_layers(),
+            },
+        );
+        self.queue.submit([ce.finish()]);
+
+        let new_texture_view = Arc::new(new_texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D2Array),
+            ..Default::default()
+        }));
+
+        let mut new_tiles = IndexMap::new();
+        let mut new_tile_info_buffer =
+            BufferVec::new(Some("tile info buffer clone".into()), BufferUsages::STORAGE);
+
+        for (i, (coord, _)) in self.tiles.iter().enumerate() {
+            new_tiles.insert(
+                *coord,
+                Arc::new(new_texture.create_view(&TextureViewDescriptor {
+                    base_array_layer: i as u32,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })),
+            );
+            new_tile_info_buffer.push(&GpuTileInfo {
+                index: *coord,
+                origin: *coord * IVec2::splat(Self::TILE_SIZE as i32),
+            });
+        }
+
+        new_tile_info_buffer.write_buffer(&self.device, &self.queue);
+
+        Self {
+            device: self.device.clone(),
+            queue: self.queue.clone(),
+            texture: Some(new_texture_view),
+            tiles: new_tiles,
+            tile_info_buffer: new_tile_info_buffer,
+            layer_info: self.layer_info.clone(),
+        }
+    }
 }

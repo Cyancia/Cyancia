@@ -119,7 +119,9 @@ impl ImageCompositor {
 
         drop(pass);
 
+        unsafe { device.start_graphics_debugger_capture() };
         queue.submit([ec.finish()]);
+        unsafe { device.stop_graphics_debugger_capture() };
     }
 
     pub fn get_blend_cache<T: Send + Sync + 'static>(&self, layer_id: &LayerId) -> Option<&T> {

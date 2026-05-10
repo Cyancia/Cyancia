@@ -73,6 +73,9 @@ pub struct BrushPresetOperator {
     last_session: Option<BrushStrokeSessionInfo>,
     input_processor: InputProcessor,
     cached_brush: Option<CompiledBrushPreset>,
+    intermediate_buffers: Option<[DynamicLayerStorage; 2]>,
+    round: u32,
+    accumulated_pixel_bounds: IRect,
 }
 
 impl BrushPresetOperator {
@@ -90,6 +93,9 @@ impl BrushPresetOperator {
             last_session: None,
             input_processor,
             cached_brush: None,
+            intermediate_buffers: None,
+            round: 0,
+            accumulated_pixel_bounds: IRect::EMPTY,
         }
     }
 
@@ -147,7 +153,20 @@ impl BrushPresetOperator {
             renderer
         });
 
-        renderer.reset();
+        let intermediate_buffers = self.intermediate_buffers.insert([
+            DynamicLayerStorage::new(
+                self.device.clone().into(),
+                self.queue.clone().into(),
+                target_layer_info,
+            ),
+            DynamicLayerStorage::new(
+                self.device.clone().into(),
+                self.queue.clone().into(),
+                target_layer_info,
+            ),
+        ]);
+        self.round = 0;
+        self.accumulated_pixel_bounds = IRect::EMPTY;
         self.input_processor.reset();
 
         renderer.update(
@@ -157,6 +176,9 @@ impl BrushPresetOperator {
                 .push(input, instance.required_spacing_graph()),
             instance.main_graph(),
             tiles,
+            intermediate_buffers,
+            &mut self.round,
+            &mut self.accumulated_pixel_bounds,
         );
     }
 
@@ -164,6 +186,11 @@ impl BrushPresetOperator {
         let Some(renderer) = &mut self.renderer else {
             return;
         };
+
+        let Some(intermediate_buffers) = &mut self.intermediate_buffers else {
+            return;
+        };
+
         let instance = self.instance.read();
         renderer.update(
             &self.device,
@@ -172,6 +199,9 @@ impl BrushPresetOperator {
                 .push(input, instance.required_spacing_graph()),
             instance.main_graph(),
             tiles,
+            intermediate_buffers,
+            &mut self.round,
+            &mut self.accumulated_pixel_bounds,
         );
     }
 
@@ -180,10 +210,9 @@ impl BrushPresetOperator {
         final_input: RawPenInput,
         tiles: &GpuTileStorage,
         target_layer: LayerId,
-    ) {
-        let Some(renderer) = &mut self.renderer else {
-            return;
-        };
+    ) -> Option<IRect> {
+        let renderer = self.renderer.as_mut()?;
+        let intermediate_buffers = self.intermediate_buffers.as_mut()?;
 
         renderer.update(
             &self.device,
@@ -192,6 +221,9 @@ impl BrushPresetOperator {
                 .flush(final_input, self.instance.read().required_spacing_graph()),
             self.instance.read().main_graph(),
             tiles,
+            intermediate_buffers,
+            &mut self.round,
+            &mut self.accumulated_pixel_bounds,
         );
 
         let now = std::time::Instant::now();
@@ -202,29 +234,63 @@ impl BrushPresetOperator {
             instance.stroke_postprocess_graphs(),
             tiles,
             final_input.time,
+            intermediate_buffers,
+            &mut self.round,
+            &mut self.accumulated_pixel_bounds,
         );
-        renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
+        renderer.copy_last_surface_to_layer(
+            &self.device,
+            &self.queue,
+            tiles,
+            target_layer,
+            intermediate_buffers,
+            self.round,
+        );
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
+
+        Some(self.accumulated_pixel_bounds)
     }
 
-    /// Returns the accumulated pixel bounds of the current stroke (from CPU-side tracking).
-    pub fn accumulated_pixel_bounds(&self) -> Option<IRect> {
-        let renderer = self.renderer.as_ref()?;
-        if renderer.accumulated_pixel_bounds.is_empty() {
-            None
+    pub fn generate_preview(
+        &mut self,
+        tiles: &GpuTileStorage,
+    ) -> Option<(IRect, DynamicLayerStorage)> {
+        let renderer = self.renderer.as_mut()?;
+        let mut accumulated_pixel_bounds = self.accumulated_pixel_bounds;
+        let mut round = self.round;
+
+        let intermediate_buffers = self.intermediate_buffers.as_ref()?;
+        let result_buffer = intermediate_buffers[self.round as usize % 2].deep_clone();
+        let another_buffer = intermediate_buffers[(self.round as usize + 1) % 2].deep_clone();
+
+        let mut new_intermediate_buffers = if round % 2 == 0 {
+            [result_buffer, another_buffer]
         } else {
-            Some(renderer.accumulated_pixel_bounds)
+            [another_buffer, result_buffer]
+        };
+        let instance = self.instance.read();
+
+        renderer.postprocess_stroke(
+            &self.device,
+            &self.queue,
+            instance.stroke_postprocess_graphs(),
+            tiles,
+            // TODO
+            Time {
+                now: 0.0,
+                stroke_begin: 0.0,
+            },
+            &mut new_intermediate_buffers,
+            &mut round,
+            &mut accumulated_pixel_bounds,
+        );
+
+        let [result_buffer_a, result_buffer_b] = new_intermediate_buffers;
+        if round % 2 == 0 {
+            Some((accumulated_pixel_bounds, result_buffer_a))
+        } else {
+            Some((accumulated_pixel_bounds, result_buffer_b))
         }
-    }
-
-    /// Returns the current intermediate stroke buffer (for preview overriding).
-    pub fn stroke_buffer(&self) -> Option<&[DynamicLayerStorage; 2]> {
-        self.renderer.as_ref()?.intermediate_buffer.as_ref()
-    }
-
-    /// Returns the current round index (used to select the active buffer).
-    pub fn stroke_round(&self) -> u32 {
-        self.renderer.as_ref().map(|r| r.round).unwrap_or(0)
     }
 }
 
@@ -232,15 +298,12 @@ pub struct BrushPresetRenderer {
     main: BrushMainPipeline,
     stroke_pp: Vec<BrushPostProcessPipeline>,
     resources: StrokeResources,
-    intermediate_buffer: Option<[DynamicLayerStorage; 2]>,
     samples_buffer: DynamicBuffer<ComputedPenInput>,
     samples_offsets: Vec<u32>,
     stroke_pp_data: DynamicBuffer<StrokePostprocessData>,
     dab_info_buffer: DynamicBuffer<DabInfo>,
     dab_info_offsets: Vec<u32>,
     dispatch_params: Vec<UVec3>,
-    accumulated_pixel_bounds: IRect,
-    round: u32,
 }
 
 impl BrushPresetRenderer {
@@ -273,7 +336,6 @@ impl BrushPresetRenderer {
             main,
             stroke_pp,
             resources,
-            intermediate_buffer: None,
             samples_buffer: DynamicBuffer::new("samples buffer".into(), BufferUsages::STORAGE),
             samples_offsets: Vec::new(),
             stroke_pp_data: DynamicBuffer::new(
@@ -283,11 +345,10 @@ impl BrushPresetRenderer {
             dab_info_buffer: DynamicBuffer::new("dab info buffer".into(), BufferUsages::STORAGE),
             dab_info_offsets: Vec::new(),
             dispatch_params: Vec::new(),
-            accumulated_pixel_bounds: IRect::EMPTY,
-            round: 0,
         }
     }
 
+    // TODO: Copy unchanged tiles onto another buffer?
     pub fn update(
         &mut self,
         device: &Device,
@@ -295,6 +356,9 @@ impl BrushPresetRenderer {
         pen_input: Vec<ComputedPenInput>,
         main_graph: &Graph<BrushGraphData>,
         tiles: &GpuTileStorage,
+        intermediate_buffers: &mut [DynamicLayerStorage; 2],
+        round: &mut u32,
+        accumulated_pixel_bounds: &mut IRect,
     ) {
         if pen_input.is_empty() {
             return;
@@ -305,24 +369,6 @@ impl BrushPresetRenderer {
         self.samples_offsets.clear();
         self.dab_info_offsets.clear();
         self.dispatch_params.clear();
-
-        let buf = self.intermediate_buffer.get_or_insert_with(|| {
-            let buf_a = DynamicLayerStorage::new(
-                device.clone().into(),
-                queue.clone().into(),
-                GpuLayerInfo {
-                    texel_type: self.resources.target_layer_format,
-                },
-            );
-            let buf_b = DynamicLayerStorage::new(
-                device.clone().into(),
-                queue.clone().into(),
-                GpuLayerInfo {
-                    texel_type: self.resources.target_layer_format,
-                },
-            );
-            [buf_a, buf_b]
-        });
 
         for sample in pen_input {
             let output = main_graph
@@ -344,10 +390,10 @@ impl BrushPresetRenderer {
             self.dispatch_params
                 .push(UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1));
 
-            buf[0].ensure_pixel_area(bounds);
-            buf[1].ensure_pixel_area(bounds);
+            intermediate_buffers[0].ensure_pixel_area(bounds);
+            intermediate_buffers[1].ensure_pixel_area(bounds);
 
-            self.accumulated_pixel_bounds = self.accumulated_pixel_bounds.union(bounds);
+            *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
         }
 
         if self.dispatch_params.is_empty() {
@@ -378,20 +424,14 @@ impl BrushPresetRenderer {
                 &self.dab_info_buffer,
                 &self.dab_info_offsets,
                 &self.resources,
-                &buf,
+                &intermediate_buffers,
                 &self.dispatch_params,
-                &mut self.round,
+                round,
             );
         }
         ec.pop_debug_group();
 
         queue.submit([ec.finish()]);
-    }
-
-    fn reset(&mut self) {
-        self.intermediate_buffer = None;
-        self.round = 0;
-        self.accumulated_pixel_bounds = IRect::EMPTY;
     }
 
     pub fn postprocess_stroke(
@@ -401,12 +441,11 @@ impl BrushPresetRenderer {
         graphs: &[Graph<BrushGraphPostprocessData>],
         tiles: &GpuTileStorage,
         time: Time,
+        intermediate_buffers: &mut [DynamicLayerStorage; 2],
+        round: &mut u32,
+        accumulated_pixel_bounds: &mut IRect,
     ) {
-        let Some(intermediate_buffers) = &self.intermediate_buffer else {
-            return;
-        };
-
-        if self.accumulated_pixel_bounds.is_empty() {
+        if accumulated_pixel_bounds.is_empty() {
             return;
         }
 
@@ -427,7 +466,7 @@ impl BrushPresetRenderer {
                 let output = graph
                     .run(
                         &BrushGraphPostprocessData {
-                            accumulated_pixel_bounds: self.accumulated_pixel_bounds,
+                            accumulated_pixel_bounds: *accumulated_pixel_bounds,
                             time: Time {
                                 now: 0.0,          // TODO
                                 stroke_begin: 0.0, // TODO
@@ -448,13 +487,13 @@ impl BrushPresetRenderer {
 
                 self.stroke_pp_data.clear();
                 self.stroke_pp_data.push(&StrokePostprocessData {
-                    accumulated_pixel_bounds: self.accumulated_pixel_bounds,
+                    accumulated_pixel_bounds: *accumulated_pixel_bounds,
                     time,
                 });
                 self.stroke_pp_data.write_buffer(device, queue);
 
                 let size = bounds.size().as_uvec2();
-                self.accumulated_pixel_bounds = self.accumulated_pixel_bounds.union(bounds);
+                *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
                 pipeline.dispatch(
                     device,
                     &mut pass,
@@ -465,15 +504,13 @@ impl BrushPresetRenderer {
                     &self.resources,
                     &intermediate_buffers,
                     UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1),
-                    &mut self.round,
+                    round,
                 );
             }
         }
         ec.pop_debug_group();
 
-        unsafe { device.start_graphics_debugger_capture() };
         queue.submit([ec.finish()]);
-        unsafe { device.stop_graphics_debugger_capture() };
     }
 
     pub fn copy_last_surface_to_layer(
@@ -482,13 +519,11 @@ impl BrushPresetRenderer {
         queue: &Queue,
         tiles: &GpuTileStorage,
         target_layer_id: LayerId,
+        intermediate_buffers: &[DynamicLayerStorage; 2],
+        round: u32,
     ) {
-        let Some(intermediate_buffers) = &self.intermediate_buffer else {
-            return;
-        };
-
         let mut target_layer = tiles.get_layer_mut(target_layer_id).unwrap();
-        let result_buffer = &intermediate_buffers[self.round as usize % 2];
+        let result_buffer = &intermediate_buffers[round as usize % 2];
 
         for (coord, _, _) in result_buffer.iter_tiles() {
             target_layer.get_tile_or_allocate(coord);

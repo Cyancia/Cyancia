@@ -136,22 +136,31 @@ impl ToolFunction for BrushTool {
         // NOTE: We drop brush borrow here and re-scope below.
         drop(brush);
 
-        let bounds = {
-            let mut captured_bounds = None;
-            services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
+        let maybe_preview = services
+            .try_service_scope::<CurrentBrushPresetOperator, _>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
                 brush.update_stroke(params, tiles);
-                captured_bounds = brush.accumulated_pixel_bounds();
-            });
-            log::info!("Brush update took: {:?}", now.elapsed());
-            captured_bounds
-        };
+                brush.generate_preview(tiles)
+            })
+            .flatten();
 
-        if let Some(dirty_tiles) = bounds {
-            Task::done(BrushToolMessage::CanvasUpdateDuringStroke(canvas_id, dirty_tiles))
-        } else {
-            Task::none()
+        if let Some((bounds, preview)) = maybe_preview {
+            let overriders = services.service_mut::<LayerPreviewOverriders>();
+            overriders.insert_overrider(
+                active_layer,
+                PixelPreviewOverrider {
+                    texture: preview.texture().unwrap().as_ref().clone(),
+                    tile_info_buffer: preview.tile_info_buffer().unwrap().clone(),
+                },
+            );
+
+            CanvasUpdate::broadcast(CanvasUpdate {
+                id: canvas_id,
+                dirty_tiles: bounds,
+            });
         }
+
+        Task::none()
     }
 
     fn end(
@@ -187,12 +196,12 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let dirty_tiles =
-            services.try_service_scope::<CurrentBrushPresetOperator, Option<IRect>>(|brush, services| {
+        let dirty_tiles = services
+            .try_service_scope::<CurrentBrushPresetOperator, _>(|brush, services| {
                 let tiles = services.service::<GpuTileStorage>();
-                brush.end_stroke(final_input, tiles, active_layer);
-                brush.accumulated_pixel_bounds()
-            }).flatten();
+                brush.end_stroke(final_input, tiles, active_layer)
+            })
+            .flatten();
 
         let overriders = services.service_mut::<LayerPreviewOverriders>();
         overriders.remove_overrider(&active_layer);
@@ -202,39 +211,6 @@ impl ToolFunction for BrushTool {
                 id: canvas_id,
                 dirty_tiles,
             });
-        }
-
-        Task::none()
-    }
-
-    fn handle_message(
-        &mut self,
-        message: Self::Message,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        match message {
-            BrushToolMessage::CanvasUpdateDuringStroke(canvas_id, dirty_tiles) => {
-                let Some((_, active_layer)) = self.target_layer else {
-                    return Task::none();
-                };
-
-                // Update the preview overrider with the current intermediate buffer.
-                let updated = services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, _| {
-                    // stroke_buffer() returns the [DynamicLayerStorage; 2], pick the current round.
-                    let round = brush.stroke_round() as usize;
-                    if let Some(buf) = brush.stroke_buffer() {
-                        // We cannot construct PixelPreviewOverrider here because it needs
-                        // TextureView + Buffer (not Arc/Option). Leave preview update to a
-                        // future refactor when PixelPreviewOverrider accepts Arc<TextureView>.
-                        // TODO: wire up preview overrider once API alignment is sorted.
-                    }
-                });
-
-                CanvasUpdate::broadcast(CanvasUpdate {
-                    id: canvas_id,
-                    dirty_tiles,
-                });
-            }
         }
 
         Task::none()
