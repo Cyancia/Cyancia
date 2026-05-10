@@ -201,6 +201,7 @@ impl BrushPresetOperator {
             &self.queue,
             instance.stroke_postprocess_graphs(),
             tiles,
+            final_input.time,
         );
         renderer.copy_last_surface_to_layer(&self.device, &self.queue, tiles, target_layer);
         log::info!("Brush stroke postprocess and copy: {:?}", now.elapsed());
@@ -214,6 +215,7 @@ pub struct BrushPresetRenderer {
     intermediate_buffer: Option<[DynamicLayerStorage; 2]>,
     samples_buffer: DynamicBuffer<ComputedPenInput>,
     samples_offsets: Vec<u32>,
+    stroke_pp_data: DynamicBuffer<StrokePostprocessData>,
     dab_info_buffer: DynamicBuffer<DabInfo>,
     dab_info_offsets: Vec<u32>,
     dispatch_params: Vec<UVec3>,
@@ -254,6 +256,10 @@ impl BrushPresetRenderer {
             intermediate_buffer: None,
             samples_buffer: DynamicBuffer::new("samples buffer".into(), BufferUsages::STORAGE),
             samples_offsets: Vec::new(),
+            stroke_pp_data: DynamicBuffer::new(
+                "stroke postprocess data buffer".into(),
+                BufferUsages::STORAGE,
+            ),
             dab_info_buffer: DynamicBuffer::new("dab info buffer".into(), BufferUsages::STORAGE),
             dab_info_offsets: Vec::new(),
             dispatch_params: Vec::new(),
@@ -374,6 +380,7 @@ impl BrushPresetRenderer {
         queue: &Queue,
         graphs: &[Graph<BrushGraphPostprocessData>],
         tiles: &GpuTileStorage,
+        time: Time,
     ) {
         let Some(intermediate_buffers) = &self.intermediate_buffer else {
             return;
@@ -419,11 +426,19 @@ impl BrushPresetRenderer {
                 });
                 self.dab_info_buffer.write_buffer(device, queue);
 
+                self.stroke_pp_data.clear();
+                self.stroke_pp_data.push(&StrokePostprocessData {
+                    accumulated_pixel_bounds: self.accumulated_pixel_bounds,
+                    time,
+                });
+                self.stroke_pp_data.write_buffer(device, queue);
+
                 let size = bounds.size().as_uvec2();
                 self.accumulated_pixel_bounds = self.accumulated_pixel_bounds.union(bounds);
                 pipeline.dispatch(
                     device,
                     &mut pass,
+                    &self.stroke_pp_data,
                     target_layer.texture.as_ref(),
                     &target_layer.tile_info_buffer,
                     &self.dab_info_buffer,
@@ -502,6 +517,12 @@ pub struct ComputedPenInput {
     pub position: Vec2,
     pub draw_direction_vec: Vec2,
     pub draw_direction_angle: f32,
+    pub time: Time,
+}
+
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
+pub struct StrokePostprocessData {
+    pub accumulated_pixel_bounds: IRect,
     pub time: Time,
 }
 

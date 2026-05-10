@@ -20,7 +20,10 @@ use wgpu::{
     TextureView, TextureViewDimension,
 };
 
-use crate::render::{ComputedPenInput, DabInfo, EXTERNAL_VARIABLE_BASE_BINDING, StrokeResources};
+use crate::render::{
+    ComputedPenInput, DabInfo, EXTERNAL_VARIABLE_BASE_BINDING, StrokePostprocessData,
+    StrokeResources,
+};
 
 pub struct BrushMainPipeline {
     layout: BindGroupLayout,
@@ -88,6 +91,7 @@ impl BrushMainPipeline {
             target_layer_tile_info,
             intermediate_buffers,
             Some(samples),
+            None,
             dab_infos,
             true,
         );
@@ -103,6 +107,7 @@ impl BrushMainPipeline {
             target_layer_tile_info,
             intermediate_buffers,
             Some(samples),
+            None,
             dab_infos,
             false,
         );
@@ -191,6 +196,7 @@ impl BrushPostProcessPipeline {
         &self,
         device: &Device,
         pass: &mut ComputePass,
+        stroke_pp_data: &DynamicBuffer<StrokePostprocessData>,
         target_layer_texture: &TextureView,
         target_layer_tile_info: &Buffer,
         dab_infos: &DynamicBuffer<DabInfo>,
@@ -205,6 +211,7 @@ impl BrushPostProcessPipeline {
             target_layer_tile_info,
             intermediate_buffers,
             None,
+            Some(stroke_pp_data),
             dab_infos,
             *round % 2 == 0,
         );
@@ -231,6 +238,20 @@ fn bind_group_layout_entries(
     target_layer_format: TextureFormat,
 ) -> Vec<BindGroupLayoutEntry> {
     let mut entries = vec![
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: !is_postprocess,
+                min_binding_size: Some(if is_postprocess {
+                    StrokePostprocessData::min_size()
+                } else {
+                    ComputedPenInput::min_size()
+                }),
+            },
+            count: None,
+        },
         BindGroupLayoutEntry {
             binding: 1,
             visibility: ShaderStages::COMPUTE,
@@ -313,18 +334,7 @@ fn bind_group_layout_entries(
         },
     ];
     entries.extend(external_var);
-    if !is_postprocess {
-        entries.push(BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: true,
-                min_binding_size: Some(ComputedPenInput::min_size()),
-            },
-            count: None,
-        });
-    }
+    if !is_postprocess {}
     entries
 }
 
@@ -334,6 +344,7 @@ fn bind_group_entries<'a>(
     target_layer_tile_info: &'a Buffer,
     intermediate_buffers: &'a [DynamicLayerStorage],
     samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
+    stroke_pp_data: Option<&'a DynamicBuffer<StrokePostprocessData>>,
     dab_infos: &'a DynamicBuffer<DabInfo>,
     is_even: bool,
 ) -> Vec<BindGroupEntry<'a>> {
@@ -371,6 +382,11 @@ fn bind_group_entries<'a>(
         entries.push(BindGroupEntry {
             binding: 0,
             resource: samples.binding().unwrap(),
+        });
+    } else if let Some(stroke_pp_data) = stroke_pp_data {
+        entries.push(BindGroupEntry {
+            binding: 0,
+            resource: stroke_pp_data.binding().unwrap(),
         });
     }
 

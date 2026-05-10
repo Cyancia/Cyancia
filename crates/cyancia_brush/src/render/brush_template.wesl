@@ -1,7 +1,8 @@
 import package::image::image_tiling::{TileInfo, TILE_SIZE};
 import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
-import package::brush::brush_types::{StrokeInfo, DynamicTileInfo, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
+import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, DynamicTileInfo, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
+@if(POSTPROCESS) @group(0) @binding(0) var<storage> sample: StrokePostprocessData;
 @if(!POSTPROCESS) @group(0) @binding(0) var<storage> sample: ComputedPenInput;
 @group(0) @binding(1) var textures: texture_2d<f32>;
 @group(0) @binding(2) var<storage> texture_bounds: array<URect>;
