@@ -5,8 +5,3 @@ struct TileInfo {
     index: vec2i,
     origin: vec2i,
 }
-
-struct DynamicTileInfo {
-    n_tiles: atomic<u32>,
-    buf: array<TileInfo>,
-}

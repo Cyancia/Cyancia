@@ -15,11 +15,6 @@ struct StrokeInfo {
     total_dabs: u32,
 }
 
-struct DynamicTileInfo {
-    n_tiles: u32,
-    buf: array<TileInfo>,
-}
-
 struct OutputSamples {
     n_samples: u32,
     samples: array<ComputedPenInput>,

@@ -141,27 +141,18 @@ impl ImageCompositor {
 #[derive(Default)]
 pub struct LayerPreviewOverriders {
     overriders: HashMap<LayerId, Box<dyn Any + Send + Sync>>,
-    defaults: HashMap<LayerId, Box<dyn Any + Send + Sync>>,
 }
 
 impl LayerPreviewOverriders {
     pub fn new() -> Self {
         Self {
             overriders: HashMap::new(),
-            defaults: HashMap::new(),
         }
     }
 
-    pub fn get_overrider<T: Send + Sync + 'static>(&self, layer_id: &LayerId) -> &T {
-        self.overriders
-            .get(layer_id)
-            .unwrap_or_else(|| {
-                self.defaults
-                    .get(layer_id)
-                    .expect("default overrider not found")
-            })
-            .downcast_ref::<T>()
-            .expect("overrider of wrong type")
+    pub fn get_overrider<T: Send + Sync + 'static>(&self, layer_id: &LayerId) -> Option<&T> {
+        let overrider = self.overriders.get(layer_id)?;
+        overrider.downcast_ref::<T>()
     }
 
     pub fn insert_overrider<T: Send + Sync + 'static>(&mut self, layer_id: LayerId, overrider: T) {
@@ -170,10 +161,6 @@ impl LayerPreviewOverriders {
 
     pub fn remove_overrider(&mut self, layer_id: &LayerId) {
         self.overriders.remove(layer_id);
-    }
-
-    pub fn insert_default<T: Send + Sync + 'static>(&mut self, layer_id: LayerId, default: T) {
-        self.defaults.insert(layer_id, Box::new(default));
     }
 }
 
