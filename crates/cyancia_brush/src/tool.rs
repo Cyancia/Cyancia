@@ -18,6 +18,8 @@ use crate::{
     render::{BrushPresetOperator, Time},
 };
 
+const TIMESTAMP_MOD: i64 = 1_000_000;
+
 #[derive(Default)]
 pub struct BrushTool {
     stroke_begin: Option<DateTime<Utc>>,
@@ -50,8 +52,8 @@ impl ToolFunction for BrushTool {
         let params = RawPenInput {
             position,
             time: Time {
-                now: Utc::now().timestamp_micros() as f32 / 1_000_000.0,
-                stroke_begin: now.timestamp_micros() as f32 / 1_000_000.0,
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
             },
         };
 
@@ -90,8 +92,8 @@ impl ToolFunction for BrushTool {
         let params = RawPenInput {
             position,
             time: Time {
-                now: Utc::now().timestamp_micros() as f32 / 1_000_000.0,
-                stroke_begin: stroke_begin.timestamp_micros() as f32 / 1_000_000.0,
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
             },
         };
 
@@ -129,8 +131,8 @@ impl ToolFunction for BrushTool {
         let final_input = RawPenInput {
             position,
             time: Time {
-                now: Utc::now().timestamp_micros() as f32 / 1_000_000.0,
-                stroke_begin: stroke_begin.timestamp_micros() as f32 / 1_000_000.0,
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
             },
         };
 
