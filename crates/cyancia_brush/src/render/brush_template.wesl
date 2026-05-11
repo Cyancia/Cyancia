@@ -149,7 +149,7 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
 fn main(@builtin(global_invocation_id) id: vec3u) {
     let layer = id.z;
     let pixel_pos = vec2i(id.xy) + buffer_tile_info[layer].origin;
-    if any(pixel_pos <= dab_info.bound_min) || any(pixel_pos >= dab_info.bound_max) {
+    if any(pixel_pos < dab_info.bound_min) || any(pixel_pos >= dab_info.bound_max) {
         set_output_color(pixel_pos, current_input_color(pixel_pos));
         return;
     }
