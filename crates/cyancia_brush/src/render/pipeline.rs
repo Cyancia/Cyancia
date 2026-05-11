@@ -82,7 +82,6 @@ impl BrushMainPipeline {
         dab_info_offsets: &[u32],
         resources: &StrokeResources,
         intermediate_buffers: &[DynamicLayerStorage; 2],
-        params: &[UVec3],
         round: &mut u32,
     ) {
         let bind_group_entries_even = bind_group_entries(
@@ -117,11 +116,13 @@ impl BrushMainPipeline {
             entries: &bind_group_entries_odd,
         });
 
+        let n_tiles = intermediate_buffers[0].len();
+
         pass.push_debug_group("brush preset main");
         {
             pass.set_pipeline(&self.pipeline);
 
-            for (i, param) in params.iter().enumerate() {
+            for i in 0..samples_offsets.len() {
                 pass.push_debug_group(&format!("brush preset main dispatch {}", i));
                 pass.set_bind_group(
                     0,
@@ -132,7 +133,11 @@ impl BrushMainPipeline {
                     },
                     &[samples_offsets[i], dab_info_offsets[i]],
                 );
-                pass.dispatch_workgroups(param.x, param.y, param.z);
+                pass.dispatch_workgroups(
+                    GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                    GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                    n_tiles as u32,
+                );
                 pass.pop_debug_group();
                 *round += 1;
             }
@@ -141,7 +146,7 @@ impl BrushMainPipeline {
 
         log::info!(
             "Dispatched {} main passes, next round {}.",
-            params.len(),
+            samples_offsets.len(),
             round,
         );
     }
@@ -202,7 +207,6 @@ impl BrushPostProcessPipeline {
         dab_infos: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
         intermediate_buffers: &[DynamicLayerStorage; 2],
-        params: UVec3,
         round: &mut u32,
     ) {
         let bind_group_entries = bind_group_entries(
@@ -225,7 +229,11 @@ impl BrushPostProcessPipeline {
         {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            pass.dispatch_workgroups(params.x, params.y, params.z);
+            pass.dispatch_workgroups(
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                intermediate_buffers[0].len() as u32,
+            );
         }
         pass.pop_debug_group();
         *round += 1;

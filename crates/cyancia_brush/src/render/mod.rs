@@ -303,7 +303,6 @@ pub struct BrushPresetRenderer {
     stroke_pp_data: DynamicBuffer<StrokePostprocessData>,
     dab_info_buffer: DynamicBuffer<DabInfo>,
     dab_info_offsets: Vec<u32>,
-    dispatch_params: Vec<UVec3>,
 }
 
 impl BrushPresetRenderer {
@@ -344,7 +343,6 @@ impl BrushPresetRenderer {
             ),
             dab_info_buffer: DynamicBuffer::new("dab info buffer".into(), BufferUsages::STORAGE),
             dab_info_offsets: Vec::new(),
-            dispatch_params: Vec::new(),
         }
     }
 
@@ -368,7 +366,6 @@ impl BrushPresetRenderer {
         self.dab_info_buffer.clear();
         self.samples_offsets.clear();
         self.dab_info_offsets.clear();
-        self.dispatch_params.clear();
 
         for sample in pen_input {
             let output = main_graph
@@ -387,17 +384,11 @@ impl BrushPresetRenderer {
                 .push(self.samples_buffer.push(&sample) as u32);
 
             let size = bounds.size().as_uvec2();
-            self.dispatch_params
-                .push(UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1));
 
             intermediate_buffers[0].ensure_pixel_area(bounds);
             intermediate_buffers[1].ensure_pixel_area(bounds);
 
             *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
-        }
-
-        if self.dispatch_params.is_empty() {
-            return;
         }
 
         self.samples_buffer.write_buffer(device, queue);
@@ -425,7 +416,6 @@ impl BrushPresetRenderer {
                 &self.dab_info_offsets,
                 &self.resources,
                 &intermediate_buffers,
-                &self.dispatch_params,
                 round,
             );
         }
@@ -503,7 +493,6 @@ impl BrushPresetRenderer {
                     &self.dab_info_buffer,
                     &self.resources,
                     &intermediate_buffers,
-                    UVec3::new(size.x.div_ceil(16), size.y.div_ceil(16), 1),
                     round,
                 );
             }
