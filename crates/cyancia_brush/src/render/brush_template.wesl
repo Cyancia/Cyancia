@@ -2,8 +2,7 @@ import package::image::image_tiling::{TileInfo, TILE_SIZE};
 import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
 import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
-@if(POSTPROCESS) @group(0) @binding(0) var<storage> sample: StrokePostprocessData;
-@if(!POSTPROCESS) @group(0) @binding(0) var<storage> sample: ComputedPenInput;
+@group(0) @binding(0) var<storage> sample: GraphInput;
 @group(0) @binding(1) var textures: texture_2d<f32>;
 @group(0) @binding(2) var<storage> texture_bounds: array<URect>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
@@ -15,18 +14,15 @@ import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSa
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
-struct AtomicDispatchParams {
-    x: atomic<u32>,
-    y: atomic<u32>,
-    z: atomic<u32>,
-}
-
 struct Mask {
     bounds: Rect,
     value: f32,
 }
 
-fn main_graph(graph_input: ComputedPenInput, pixel_pos: vec2i, pixel_posf: vec2f) {
+@if(POSTPROCESS) alias GraphInput = StrokePostprocessData;
+@if(!POSTPROCESS) alias GraphInput = ComputedPenInput;
+
+fn main_graph(graph_input: GraphInput, pixel_pos: vec2i, pixel_posf: vec2f) {
     //CODEGENFLAG_COMPILED_GRAPH
 }
 
@@ -159,12 +155,5 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     }
     let pixel_posf = vec2f(pixel_pos);
 
-    @if(POSTPROCESS) {
-        main_graph(ComputedPenInput(), pixel_pos, pixel_posf);
-    }
-
-    @if(!POSTPROCESS) {
-        main_graph(sample, pixel_pos, pixel_posf);
-        // set_output_color(pixel_pos, current_input_color(pixel_pos) + vec4f(0.1));
-    }
+    main_graph(sample, pixel_pos, pixel_posf);
 }
