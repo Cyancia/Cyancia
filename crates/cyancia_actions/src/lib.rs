@@ -14,7 +14,7 @@ use crate::{
         BrushToolAction, CanvasToolSwitch, PanToolAction, RotateToolAction, ZoomToolAction,
     },
     file::OpenFileAction,
-    layer::{GroupActiveLayerAction, CreateNewLayerAction},
+    layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
 };
 
 pub mod actions_matcher;
@@ -34,6 +34,8 @@ impl Plugin for ActionPlugin {
             .add_action_function::<CanvasToolSwitch<BrushToolAction>>()
             .add_action_function::<OpenFileAction>()
             .add_action_function::<CreateNewLayerAction>()
+            .add_action_function::<MoveLayerUpAction>()
+            .add_action_function::<MoveLayerDownAction>()
             .add_action_function::<GroupActiveLayerAction>()
             .add_action_function::<OpenBrushEditorAction>();
     }

@@ -276,17 +276,21 @@ impl LayerStack {
         self.layers.get_mut(&layer_id)
     }
 
-    pub fn iter_layers_dfs_without_root(&self) -> impl Iterator<Item = (&LayerData, u32)> {
+    pub fn iter_layers_dfs_display_order_without_root(
+        &self,
+    ) -> impl Iterator<Item = (&LayerData, u32)> {
         let mut stack = self
             .root_node()
-            .children()
-            .iter()
+            .iter_children_display_order()
+            // Reverse the iterator since it's a stack.
+            .rev()
             .map(|child| (child, 0))
             .collect::<Vec<_>>();
         std::iter::from_fn(move || {
             let (node, depth) = stack.pop()?;
             stack.extend(
                 node.iter_children_display_order()
+                    .rev()
                     .map(|child| (child, depth + 1)),
             );
             Some((self.layers.get(&node.id())?, depth))
@@ -295,6 +299,16 @@ impl LayerStack {
 
     pub fn iter_layers(&self) -> impl Iterator<Item = &LayerData> {
         self.layers.values()
+    }
+
+    pub fn can_have_children_of(&self, parent_id: LayerId, child_id: LayerId) -> Option<bool> {
+        let parent_layer = self.get_layer(parent_id)?;
+        let child_layer = self.get_layer(child_id)?;
+        Some(
+            parent_layer
+                .data
+                .can_have_children_of(child_layer.data.as_ref().type_id()),
+        )
     }
 }
 
@@ -365,21 +379,37 @@ impl LayerStackNode {
         self.children.len()
     }
 
-    pub fn iter_children_composite_order(&self) -> impl Iterator<Item = &LayerStackNode> {
+    pub fn swap_children(&mut self, lhs: LayerId, rhs: LayerId) {
+        let Some(lhs_index) = self.children.iter().position(|child| child.id() == lhs) else {
+            return;
+        };
+
+        let Some(rhs_index) = self.children.iter().position(|child| child.id() == rhs) else {
+            return;
+        };
+
+        self.children.swap(lhs_index, rhs_index);
+    }
+
+    pub fn iter_children_composite_order(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &LayerStackNode> {
         self.children.iter()
     }
 
     pub fn iter_children_composite_order_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut LayerStackNode> {
+    ) -> impl DoubleEndedIterator<Item = &mut LayerStackNode> {
         self.children.iter_mut()
     }
 
-    pub fn iter_children_display_order(&self) -> impl Iterator<Item = &LayerStackNode> {
+    pub fn iter_children_display_order(&self) -> impl DoubleEndedIterator<Item = &LayerStackNode> {
         self.children.iter().rev()
     }
 
-    pub fn iter_children_display_order_mut(&mut self) -> impl Iterator<Item = &mut LayerStackNode> {
+    pub fn iter_children_display_order_mut(
+        &mut self,
+    ) -> impl DoubleEndedIterator<Item = &mut LayerStackNode> {
         self.children.iter_mut().rev()
     }
 
@@ -398,7 +428,59 @@ impl LayerStackNode {
         self.children.insert(index, child);
     }
 
-    pub fn insert_child_above(&mut self, sibling_id: LayerId, mut child: LayerStackNode) -> bool {
+    pub fn child_above(&self, sibling_id: LayerId) -> Option<&LayerStackNode> {
+        let index = self
+            .children
+            .iter()
+            .position(|child| child.id() == sibling_id)?;
+        if index + 1 < self.children.len() {
+            Some(&self.children[index + 1])
+        } else {
+            None
+        }
+    }
+
+    pub fn child_above_mut(&mut self, sibling_id: LayerId) -> Option<&mut LayerStackNode> {
+        let index = self
+            .children
+            .iter()
+            .position(|child| child.id() == sibling_id)?;
+        if index + 1 < self.children.len() {
+            Some(&mut self.children[index + 1])
+        } else {
+            None
+        }
+    }
+
+    pub fn child_below(&self, sibling_id: LayerId) -> Option<&LayerStackNode> {
+        let index = self
+            .children
+            .iter()
+            .position(|child| child.id() == sibling_id)?;
+        if index >= 1 {
+            Some(&self.children[index - 1])
+        } else {
+            None
+        }
+    }
+
+    pub fn child_below_mut(&mut self, sibling_id: LayerId) -> Option<&mut LayerStackNode> {
+        let index = self
+            .children
+            .iter()
+            .position(|child| child.id() == sibling_id)?;
+        if index >= 1 {
+            Some(&mut self.children[index - 1])
+        } else {
+            None
+        }
+    }
+
+    pub fn insert_child_above(
+        &mut self,
+        sibling_id: LayerId,
+        mut child: LayerStackNode,
+    ) -> Option<LayerStackNode> {
         if let Some(index) = self
             .children
             .iter()
@@ -406,13 +488,17 @@ impl LayerStackNode {
         {
             child.parent = Some(self.id);
             self.children.insert(index + 1, child);
-            true
+            None
         } else {
-            false
+            Some(child)
         }
     }
 
-    pub fn insert_child_below(&mut self, sibling_id: LayerId, mut child: LayerStackNode) -> bool {
+    pub fn insert_child_below(
+        &mut self,
+        sibling_id: LayerId,
+        mut child: LayerStackNode,
+    ) -> Option<LayerStackNode> {
         if let Some(index) = self
             .children
             .iter()
@@ -420,9 +506,9 @@ impl LayerStackNode {
         {
             child.parent = Some(self.id);
             self.children.insert(index, child);
-            true
+            None
         } else {
-            false
+            Some(child)
         }
     }
 

@@ -328,7 +328,7 @@ impl Dock<Theme, Renderer> for CurrentCanvasLayersDock {
             canvas
                 .image
                 .layer_stack()
-                .iter_layers_dfs_without_root()
+                .iter_layers_dfs_display_order_without_root()
                 .map(|(layer, depth)| {
                     LayerNodeWidget::new(layer)
                         .depth(depth)
@@ -349,7 +349,7 @@ impl Dock<Theme, Renderer> for CurrentCanvasLayersDock {
                 let Some((active_layer, _)) = canvas
                     .image
                     .layer_stack()
-                    .iter_layers_dfs_without_root()
+                    .iter_layers_dfs_display_order_without_root()
                     .nth(layer_index)
                 else {
                     return Task::none();
