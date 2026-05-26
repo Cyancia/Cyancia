@@ -3,7 +3,10 @@ use std::{any::Any, collections::HashMap};
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 
-use crate::graph::slot::{ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphValueType};
+use crate::graph::{
+    GraphData,
+    slot::{ErasedGraphValueType, GraphValueType},
+};
 
 #[derive(Default, Clone)]
 pub struct GraphTypeRegistry {
@@ -196,12 +199,16 @@ impl GraphLiteral {
         }
     }
 
-    pub fn to_code(&self) -> Option<String> {
-        self.ty.literal_to_code(&self.value)
+    pub fn set_boxed(&mut self, value: Box<dyn GraphLiteralValue>) {
+        if value.as_ref().type_id() == self.value.as_ref().type_id() {
+            self.value = value;
+        } else {
+            log::error!("Setting a Literal with a different type");
+        }
     }
 
-    pub fn update(&mut self, message: ErasedGraphLiteralUpdateMessage) {
-        self.ty.update_literal(&mut self.value, message);
+    pub fn to_code(&self) -> Option<String> {
+        self.ty.literal_to_code(&self.value)
     }
 
     pub fn try_write_into_shader_buffer(&self) -> Option<Vec<u8>> {

@@ -3,22 +3,16 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::anyhow;
 use cyancia_utils::wrapper;
 use dashmap::DashMap;
-use iced_core::{Color, Element, color};
-use iced_widget::{Column, column, pick_list};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    GraphRenderer, GraphTheme,
     graph::{
-        node::{
-            GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeInputsViewContext,
-            GraphNodeOutputsViewContext, GraphNodeUpdateContext,
-        },
-        slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
-        variable::GraphLiteral,
+        node::{GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError},
+        slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
+        variable::{GraphLiteral, GraphLiteralValue},
     },
     save::SerializableGraphLiteral,
 };
@@ -80,12 +74,12 @@ impl GraphExternalVariableStorage {
         self.contents.insert(var.id, var);
     }
 
-    pub fn update(&self, id: &ExternalVariableId, message: ErasedGraphLiteralUpdateMessage) {
+    pub fn update(&self, id: &ExternalVariableId, new_value: Box<dyn GraphLiteralValue>) {
         let Some(mut var) = self.contents.get_mut(id) else {
             return;
         };
 
-        var.value.update(message);
+        var.value.set_boxed(new_value);
     }
 
     pub fn remove(&self, id: &ExternalVariableId) {

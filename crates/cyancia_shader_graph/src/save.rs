@@ -4,6 +4,7 @@ use std::{
 };
 
 use cyancia_assets::{asset::Asset, loader::AssetSerializer};
+use gpui::Point;
 use serde::{Deserialize, Serialize};
 use toml::ser::Buffer;
 
@@ -181,6 +182,7 @@ impl<Data: GraphData> Graph<Data> {
                     id,
                     GraphInputSlotData {
                         node_id: ser_node.id,
+                        name: default.name,
                         data: GraphLiteral::new_boxed(
                             literal_value,
                             dyn_clone::clone_box(&**value_type_obj),
@@ -216,6 +218,7 @@ impl<Data: GraphData> Graph<Data> {
                     id,
                     GraphOutputSlotData {
                         node_id: ser_node.id,
+                        name: default.name,
                         data_ty: default.ty,
                         connected: HashSet::new(),
                     },
@@ -339,7 +342,7 @@ pub struct GraphNodeTypeId {
 pub struct SerializableNodeData {
     pub id: GraphNodeId,
     pub data: GraphNodeTypeId,
-    pub position: [f32; 2],
+    pub position: Point<f32>,
     pub inputs: Arc<[GraphInputSlotId]>,
     pub outputs: Arc<[GraphOutputSlotId]>,
     pub state: toml::Value,

@@ -3,16 +3,18 @@ use std::{collections::HashMap, sync::Arc};
 use bevy_math::Rect;
 use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
-use cyancia_widgets::spin_slider::SpinSlider;
 use glam::{Vec2, Vec4};
-use iced_core::{Color, Element, color};
-use iced_widget::{column, space};
+use gpui::{Rgba, rgb};
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{GraphRenderer, GraphTheme, graph::{slot::GraphValueType, texture::TextureId}};
+use crate::graph::{
+    GraphData,
+    slot::{GraphInlineLiteralRenderContext, GraphValueType},
+    texture::TextureId,
+};
 
 // TODO: Boolean and rectangle types
 
@@ -22,10 +24,8 @@ pub struct F32Type;
 impl GraphValueType for F32Type {
     type AssociatedLiteralType = f32;
 
-    type Message = f32;
-
-    fn color(&self) -> Color {
-        color!(0x0A9F8D)
+    fn color(&self) -> Rgba {
+        rgb(0x0A9F8D)
     }
 
     fn name(&self) -> &'static str {
@@ -49,17 +49,6 @@ impl GraphValueType for F32Type {
         Some(buf.into_inner())
     }
 
-    fn view_literal(
-        &self,
-        data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        SpinSlider::new(0.0..=1.0, *data, |x| x).step(0.01).into()
-    }
-
-    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
-        *data = message;
-    }
-
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(format!("{:.5}", data))
     }
@@ -77,10 +66,8 @@ pub enum Vec2FMessage {
 impl GraphValueType for Vec2FType {
     type AssociatedLiteralType = Vec2;
 
-    type Message = Vec2FMessage;
-
-    fn color(&self) -> Color {
-        color!(0x92E315)
+    fn color(&self) -> Rgba {
+        rgb(0x92E315)
     }
 
     fn name(&self) -> &'static str {
@@ -104,25 +91,6 @@ impl GraphValueType for Vec2FType {
         Some(buf.into_inner())
     }
 
-    fn view_literal(
-        &self,
-        data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        column![
-            SpinSlider::new(0.0..=1.0, data.x, |x| Vec2FMessage::X(x)).step(0.01),
-            SpinSlider::new(0.0..=1.0, data.y, |x| Vec2FMessage::Y(x)).step(0.01),
-        ]
-        .padding(2)
-        .into()
-    }
-
-    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
-        match message {
-            Vec2FMessage::X(x) => data.x = x,
-            Vec2FMessage::Y(y) => data.y = y,
-        }
-    }
-
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(format!("vec2f({:.5}, {:.5})", data.x, data.y))
     }
@@ -142,10 +110,8 @@ pub enum ColorMessage {
 impl GraphValueType for ColorType {
     type AssociatedLiteralType = Vec4;
 
-    type Message = ColorMessage;
-
-    fn color(&self) -> Color {
-        color!(0x8779f2)
+    fn color(&self) -> Rgba {
+        rgb(0x8779f2)
     }
 
     fn name(&self) -> &'static str {
@@ -167,29 +133,6 @@ impl GraphValueType for ColorType {
         let mut buf = DynamicBuffer::default();
         buf.push(literal);
         Some(buf.into_inner())
-    }
-
-    fn view_literal(
-        &self,
-        data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        column![
-            SpinSlider::new(0.0..=1.0, data.x, |x| ColorMessage::R(x)).step(0.01),
-            SpinSlider::new(0.0..=1.0, data.y, |x| ColorMessage::G(x)).step(0.01),
-            SpinSlider::new(0.0..=1.0, data.z, |x| ColorMessage::B(x)).step(0.01),
-            SpinSlider::new(0.0..=1.0, data.w, |x| ColorMessage::A(x)).step(0.01),
-        ]
-        .padding(2)
-        .into()
-    }
-
-    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
-        match message {
-            ColorMessage::R(r) => data.x = r,
-            ColorMessage::G(g) => data.y = g,
-            ColorMessage::B(b) => data.z = b,
-            ColorMessage::A(a) => data.w = a,
-        }
     }
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
@@ -225,10 +168,8 @@ impl TextureReference {
 impl GraphValueType for TextureType {
     type AssociatedLiteralType = TextureReference;
 
-    type Message = ();
-
-    fn color(&self) -> Color {
-        color!(0x8779f2)
+    fn color(&self) -> Rgba {
+        rgb(0x8779f2)
     }
 
     fn name(&self) -> &'static str {
@@ -250,15 +191,6 @@ impl GraphValueType for TextureType {
         None
     }
 
-    fn view_literal(
-        &self,
-        _data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        Element::new(space())
-    }
-
-    fn update_literal(&self, _data: &mut Self::AssociatedLiteralType, _message: Self::Message) {}
-
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(data.local_index.to_string())
     }
@@ -278,10 +210,8 @@ pub enum RectMessage {
 impl GraphValueType for RectType {
     type AssociatedLiteralType = Rect;
 
-    type Message = RectMessage;
-
-    fn color(&self) -> Color {
-        color!(0x8779f2)
+    fn color(&self) -> Rgba {
+        rgb(0x8779f2)
     }
 
     fn name(&self) -> &'static str {
@@ -303,29 +233,6 @@ impl GraphValueType for RectType {
         let mut buf = DynamicBuffer::default();
         buf.push(literal);
         Some(buf.into_inner())
-    }
-
-    fn view_literal(
-        &self,
-        data: &Self::AssociatedLiteralType,
-    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        column![
-            SpinSlider::new(0.0..=1.0, data.min.x, RectMessage::MinX).step(0.01),
-            SpinSlider::new(0.0..=1.0, data.min.y, RectMessage::MinY).step(0.01),
-            SpinSlider::new(0.0..=1.0, data.max.x, RectMessage::MaxX).step(0.01),
-            SpinSlider::new(0.0..=1.0, data.max.y, RectMessage::MaxY).step(0.01),
-        ]
-        .padding(2)
-        .into()
-    }
-
-    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
-        match message {
-            RectMessage::MinX(x) => data.min.x = x,
-            RectMessage::MinY(y) => data.min.y = y,
-            RectMessage::MaxX(x) => data.max.x = x,
-            RectMessage::MaxY(y) => data.max.y = y,
-        }
     }
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {

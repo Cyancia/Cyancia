@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use iced_core::Point;
+use gpui::Point;
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
 use uuid::Uuid;
@@ -55,7 +55,7 @@ impl<Data: GraphData> Graph<Data> {
 
     pub fn add_boxed_node(
         &mut self,
-        position: Point,
+        position: Point<f32>,
         node: Box<dyn ErasedGraphNode<Data>>,
     ) -> GraphNodeId {
         let node = StatefulGraphNode::new(node);
@@ -92,7 +92,7 @@ impl<Data: GraphData> Graph<Data> {
         node_id
     }
 
-    pub fn add_node<T: GraphNode<Data>>(&mut self, position: Point, node: T) -> GraphNodeId {
+    pub fn add_node<T: GraphNode<Data>>(&mut self, position: Point<f32>, node: T) -> GraphNodeId {
         self.add_boxed_node(position, Box::new(node))
     }
 
@@ -339,18 +339,10 @@ impl<Data: GraphData> Graph<Data> {
         self.cached_signature.write().replace(signature);
     }
 
-    pub fn update_node(&mut self, message: ErasedGraphNodeMessage) {
-        let Some(node) = self.nodes.get_mut(&message.id) else {
+    pub fn reconcile_node_slots(&mut self, node_id: GraphNodeId) {
+        let Some(node) = self.nodes.get_mut(&node_id) else {
             return;
         };
-
-        let node_id = message.id;
-        node.update(
-            message,
-            &mut self.slots,
-            &self.resources,
-            &self.type_registry,
-        );
 
         let new_inputs = node.data.create_inputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
@@ -599,6 +591,7 @@ fn create_input_slots(
             slot_id,
             GraphInputSlotData {
                 node_id,
+                name: slot.name,
                 data: slot.value,
                 connected: None,
             },
@@ -620,6 +613,7 @@ fn create_output_slots(
             slot_id,
             GraphOutputSlotData {
                 node_id,
+                name: slot.name,
                 data_ty: slot.ty,
                 connected: HashSet::new(),
             },

@@ -6,13 +6,13 @@ edition = "2024"
 [dependencies]
 uuid.workspace = true
 cyancia_utils.workspace = true
-iced_core.workspace = true
-iced_wgpu.workspace = true
+# iced_core.workspace = true
+# iced_wgpu.workspace = true
 log.workspace = true
 thiserror.workspace = true
-iced_widget.workspace = true
-iced_graphics.workspace = true
-cyancia_widgets.workspace = true
+# iced_widget.workspace = true
+# iced_graphics.workspace = true
+# cyancia_widgets.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 dyn-clone.workspace = true
@@ -23,10 +23,20 @@ glam.workspace = true
 parking_lot.workspace = true
 cyancia_assets.workspace = true
 parse-display.workspace = true
-cyancia_runtime.workspace = true
+# cyancia_runtime.workspace = true
 cyancia_render.workspace = true
 encase.workspace = true
 cyancia_math.workspace = true
 cyancia_shader_graph_derive.workspace = true
 dashmap.workspace = true
 bevy_math.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+schemars.workspace = true
+
+[dev-dependencies]
+gpui_platform.workspace = true
+
+[[example]]
+name = "editor_demo"
+path = "examples/editor_demo.rs"
