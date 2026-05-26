@@ -6,7 +6,10 @@ use gpui_component::menu::ContextMenuExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::graph::{Graph, GraphData, node::GraphNodeRegistry};
+use crate::graph::{
+    Graph, GraphData,
+    node::{GraphNode, GraphNodeId, GraphNodeRegistry},
+};
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 pub struct AddNodeAction {
@@ -41,12 +44,21 @@ impl<Data: GraphData> GraphEditor<Data> {
         let pos = Point::new(cursor.x.into(), cursor.y.into());
         self.graph.add_boxed_node(pos, node);
     }
+
+    pub fn get_node_state_mut<T: GraphNode<Data>>(
+        &mut self,
+        id: &GraphNodeId,
+    ) -> Option<&mut T::State> {
+        dbg!(std::any::type_name::<T>());
+        self.graph.nodes.get_mut(id)?.data.state_mut::<T>()
+    }
 }
 
 impl<Data: GraphData> Render for GraphEditor<Data> {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let nodes = self.graph.nodes.iter().map(|(id, node)| {
             let body = node.render(
+                *id,
                 &self.graph.slots,
                 &self.graph.resources,
                 &self.graph.type_registry,
@@ -60,11 +72,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                 .absolute()
                 .left(Pixels::from(node.position.x))
                 .top(Pixels::from(node.position.y))
-                .child(
-                    div()
-                        .bg(node.data.header_color())
-                        .child(node.data.name()),
-                )
+                .child(div().bg(node.data.header_color()).child(node.data.name()))
                 .child(body)
         });
 

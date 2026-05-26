@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap};
+use std::{any::Any, collections::{BTreeMap, HashMap}};
 
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
@@ -10,7 +10,7 @@ use crate::graph::{
 
 #[derive(Default, Clone)]
 pub struct GraphTypeRegistry {
-    types: HashMap<&'static str, Box<dyn ErasedGraphValueType>>,
+    types: BTreeMap<&'static str, Box<dyn ErasedGraphValueType>>,
     casters: HashMap<&'static str, HashMap<&'static str, Box<dyn ErasedGraphVariableCaster>>>,
 }
 
@@ -73,7 +73,7 @@ impl GraphTypeRegistry {
             .is_some()
     }
 
-    pub fn all_types(&self) -> &HashMap<&'static str, Box<dyn ErasedGraphValueType>> {
+    pub fn all_types(&self) -> &BTreeMap<&'static str, Box<dyn ErasedGraphValueType>> {
         &self.types
     }
 

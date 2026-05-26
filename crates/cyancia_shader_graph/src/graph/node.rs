@@ -246,6 +246,14 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         }
     }
 
+    pub fn state<T: GraphNode<Data>>(&self) -> Option<&T::State> {
+        self.state.downcast_ref()
+    }
+
+    pub fn state_mut<T: GraphNode<Data>>(&mut self) -> Option<&mut T::State> {
+        self.state.downcast_mut()
+    }
+
     pub fn name(&self) -> &'static str {
         self.data.name()
     }
@@ -339,6 +347,7 @@ pub struct GraphNodeData<Data: GraphData> {
 impl<Data: GraphData> GraphNodeData<Data> {
     pub fn render(
         &self,
+        node_id: GraphNodeId,
         graph_slots: &GraphSlots,
         resources: &GraphResources<Data>,
         type_registry: &GraphTypeRegistry,
@@ -346,6 +355,7 @@ impl<Data: GraphData> GraphNodeData<Data> {
         cx: &mut Context<'_, GraphEditor<Data>>,
     ) -> AnyElement {
         self.data.render(GraphNodeRenderContext {
+            node_id,
             inputs: &self.inputs,
             outputs: &self.outputs,
             graph_slots,
@@ -402,6 +412,7 @@ impl<Data: GraphData> GraphNodeUpdateSignatureContext<'_, Data> {
 }
 
 pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
+    pub node_id: GraphNodeId,
     pub inputs: &'a [GraphInputSlotId],
     pub outputs: &'a [GraphOutputSlotId],
     pub graph_slots: &'a GraphSlots,
@@ -412,6 +423,14 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
 }
 
 impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
+    pub fn render_all_slots_with_header(&self, header: impl IntoElement) -> AnyElement {
+        div()
+            .gap(px(5.0))
+            .child(header)
+            .child(self.render_all_slots())
+            .into_any_element()
+    }
+
     pub fn render_all_slots(&self) -> AnyElement {
         div()
             .gap(px(5.0))

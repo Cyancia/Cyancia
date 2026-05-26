@@ -1,7 +1,10 @@
 use cyancia_shader_graph::{
     editor::GraphEditor,
     graph::{Graph, GraphData, GraphResources},
-    wgsl_std::{builtin_nodes, builtin_types},
+    wgsl_std::{
+        builtin_nodes, builtin_types,
+        nodes::{GraphInputNode, GraphOutputNode},
+    },
 };
 use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div};
 use gpui_component::Root;
@@ -18,11 +21,14 @@ struct DemoEditor {
 
 impl DemoEditor {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut nodes = builtin_nodes();
+        nodes.register::<GraphInputNode>();
+        nodes.register::<GraphOutputNode>();
         Self {
             editor: cx.new(|_| {
                 GraphEditor::new(
                     Graph::new(GraphResources::default().into(), builtin_types().into()),
-                    builtin_nodes(),
+                    nodes.into(),
                 )
             }),
         }
