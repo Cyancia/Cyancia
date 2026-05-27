@@ -411,6 +411,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     .w(px(170.0))
                     .id(**id)
                     .absolute()
+                    .bg(cx.theme().background)
                     .left(Pixels::from(node.position.x))
                     .top(Pixels::from(node.position.y))
                     .border_2()
