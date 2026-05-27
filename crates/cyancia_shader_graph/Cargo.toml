@@ -36,6 +36,7 @@ schemars.workspace = true
 
 [dev-dependencies]
 gpui_platform.workspace = true
+gpui-component-assets.workspace = true
 
 [[example]]
 name = "editor_demo"

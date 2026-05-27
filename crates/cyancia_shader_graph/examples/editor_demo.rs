@@ -43,14 +43,16 @@ impl Render for DemoEditor {
 }
 
 fn main() {
-    application().run(|cx| {
-        gpui_component::init(cx);
-        cyancia_widgets::init(cx);
+    application()
+        .with_assets(gpui_component_assets::Assets)
+        .run(|cx| {
+            gpui_component::init(cx);
+            cyancia_widgets::init(cx);
 
-        cx.open_window(Default::default(), |window, cx| {
-            let editor = cx.new(|cx| DemoEditor::new(window, cx));
+            cx.open_window(Default::default(), |window, cx| {
+                let editor = cx.new(|cx| DemoEditor::new(window, cx));
 
-            cx.new(|cx| Root::new(editor, window, cx))
+                cx.new(|cx| Root::new(editor, window, cx))
+            });
         });
-    });
 }
