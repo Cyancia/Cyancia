@@ -51,7 +51,7 @@ pub struct GraphEditor<Data: GraphData> {
     graph: Graph<Data>,
     node_registry: GraphNodeRegistry<Data>,
 
-    node_drag_state: Option<NodeDragState>,
+    node_drag_state: Option<DragState>,
     marquee_state: Option<MarqueeState>,
     slot_connect_state: Option<SlotConnectState>,
     pan_state: Option<PanState>,
@@ -108,7 +108,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         let node_id = self.graph.add_boxed_node(pos, node);
         self.selected_nodes.clear();
         self.selected_nodes.insert(node_id);
-        self.node_drag_state = Some(NodeDragState {
+        self.node_drag_state = Some(DragState {
             cursor_origin: window.mouse_position(),
             node_origins: HashMap::from([(node_id, pos)]),
         });
@@ -242,7 +242,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             }
         }
 
-        self.node_drag_state = Some(NodeDragState {
+        self.node_drag_state = Some(DragState {
             cursor_origin: window.mouse_position(),
             node_origins: self
                 .selected_nodes
@@ -679,7 +679,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
     }
 }
 
-struct NodeDragState {
+struct DragState {
     cursor_origin: Point<Pixels>,
     node_origins: HashMap<GraphNodeId, Point<f32>>,
 }
@@ -696,8 +696,10 @@ impl MarqueeState {
         editor_bounds: Bounds<Pixels>,
         cursor_current: Point<Pixels>,
     ) -> Bounds<Pixels> {
-        let min = cursor_current.min(&self.cursor_origin) - editor_bounds.origin;
-        let max = cursor_current.max(&self.cursor_origin);
+        let origin = self.cursor_origin - editor_bounds.origin;
+        let current = cursor_current - editor_bounds.origin;
+        let min = current.min(&origin);
+        let max = current.max(&origin);
         Bounds::new(min, Size::new(max.x - min.x, max.y - min.y))
     }
 }
