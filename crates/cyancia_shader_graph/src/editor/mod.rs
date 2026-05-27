@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use gpui::{
     Action, Bounds, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, SharedString, Size, Styled,
-    Window, div, prelude::FluentBuilder, px,
+    MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point, Render, SharedString,
+    Size, Styled, Window, canvas, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
@@ -12,6 +12,7 @@ use serde::Deserialize;
 use crate::graph::{
     Graph, GraphData,
     node::{GraphNode, GraphNodeId, GraphNodeRegistry},
+    slot::{GraphInputSlotId, GraphOutputSlotId},
 };
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -22,10 +23,13 @@ pub struct AddNodeAction {
 pub struct GraphEditor<Data: GraphData> {
     graph: Graph<Data>,
     node_registry: GraphNodeRegistry<Data>,
-    drag_state: Option<DragState>,
+    node_drag_state: Option<DragState>,
     marquee_state: Option<MarqueeState>,
+    slot_connect_state: Option<SlotConnectState>,
     selected_nodes: HashSet<GraphNodeId>,
     node_bounds: HashMap<GraphNodeId, Bounds<Pixels>>,
+    input_slot_bounds: HashMap<GraphInputSlotId, Bounds<Pixels>>,
+    output_slot_bounds: HashMap<GraphOutputSlotId, Bounds<Pixels>>,
 }
 
 impl<Data: GraphData> GraphEditor<Data> {
@@ -33,10 +37,13 @@ impl<Data: GraphData> GraphEditor<Data> {
         Self {
             graph,
             node_registry,
-            drag_state: None,
+            node_drag_state: None,
             marquee_state: None,
+            slot_connect_state: None,
             selected_nodes: HashSet::new(),
             node_bounds: HashMap::new(),
+            input_slot_bounds: HashMap::new(),
+            output_slot_bounds: HashMap::new(),
         }
     }
 
@@ -62,22 +69,21 @@ impl<Data: GraphData> GraphEditor<Data> {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let marquee_mode = if event.modifiers.shift {
-            MarqueeMode::Add
-        } else {
-            MarqueeMode::Replace
-        };
-
-        if marquee_mode == MarqueeMode::Replace {
-            self.selected_nodes.clear();
+        self.slot_connect_start(event, window, cx);
+        if self.slot_connect_state.is_some() {
+            return;
         }
 
-        self.marquee_state = Some(MarqueeState {
-            cursor_origin: window.mouse_position(),
-            mode: marquee_mode,
-            originally_selected: self.selected_nodes.clone(),
-        });
-        self.drag_state = None;
+        self.node_drag_start(event, window, cx);
+        if self.node_drag_state.is_some() {
+            return;
+        }
+
+        self.marquee_start(event, window, cx);
+        if self.marquee_state.is_some() {
+            return;
+        }
+
         cx.notify();
     }
 
@@ -87,8 +93,10 @@ impl<Data: GraphData> GraphEditor<Data> {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.drag_state.is_some() {
+        if self.node_drag_state.is_some() {
             self.node_drag(event, window, cx);
+        } else if self.slot_connect_state.is_some() {
+            self.slot_connect_drag(event, window, cx);
         } else if self.marquee_state.is_some() {
             self.marquee_drag(event, window, cx);
         }
@@ -100,8 +108,12 @@ impl<Data: GraphData> GraphEditor<Data> {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.marquee_state.take().is_some() {
-            cx.notify();
+        if self.node_drag_state.is_some() {
+            self.node_drag_end(event, window, cx);
+        } else if self.slot_connect_state.is_some() {
+            self.slot_connect_end(event, window, cx);
+        } else if self.marquee_state.is_some() {
+            self.marquee_end(event, window, cx);
         }
     }
 
@@ -111,11 +123,35 @@ impl<Data: GraphData> GraphEditor<Data> {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if event.button != MouseButton::Left {
+        let mut node_id = None;
+        for id in self.graph.nodes.keys() {
+            let Some(bounds) = self.node_bounds.get(id) else {
+                continue;
+            };
+            if bounds.contains(&event.position) {
+                node_id = Some(*id);
+                break;
+            }
+        }
+        let Some(node_id) = node_id else {
             return;
+        };
+        dbg!(node_id);
+
+        if self.selected_nodes.is_empty() {
+            self.add_node_selection(node_id);
+        } else {
+            if event.modifiers.shift {
+                self.add_node_selection(node_id);
+            } else if event.modifiers.control {
+                self.toggle_node_selection(node_id);
+            } else if !self.selected_nodes.contains(&node_id) {
+                self.selected_nodes.clear();
+                self.add_node_selection(node_id);
+            }
         }
 
-        self.drag_state = Some(DragState {
+        self.node_drag_state = Some(DragState {
             cursor_origin: window.mouse_position(),
             node_origins: self
                 .selected_nodes
@@ -131,11 +167,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if event.pressed_button != Some(MouseButton::Left) {
-            return;
-        }
-
-        let Some(drag) = &mut self.drag_state else {
+        let Some(drag) = &mut self.node_drag_state else {
             return;
         };
 
@@ -150,6 +182,39 @@ impl<Data: GraphData> GraphEditor<Data> {
         }
 
         cx.notify();
+    }
+
+    pub fn node_drag_end(
+        &mut self,
+        event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.node_drag_state = None;
+        cx.notify();
+    }
+
+    pub fn marquee_start(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let marquee_mode = if event.modifiers.shift {
+            MarqueeMode::Add
+        } else {
+            MarqueeMode::Replace
+        };
+
+        if marquee_mode == MarqueeMode::Replace {
+            self.selected_nodes.clear();
+        }
+
+        self.marquee_state = Some(MarqueeState {
+            cursor_origin: window.mouse_position(),
+            mode: marquee_mode,
+            originally_selected: self.selected_nodes.clone(),
+        });
     }
 
     pub fn marquee_drag(
@@ -181,6 +246,115 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
+    pub fn marquee_end(
+        &mut self,
+        event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.marquee_state = None;
+        cx.notify();
+    }
+
+    pub fn slot_connect_start(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut start_slot = None;
+        for (id, bounds) in &self.input_slot_bounds {
+            if bounds.contains(&event.position) {
+                start_slot = Some(GraphSlotId::Input(*id));
+                break;
+            }
+        }
+        for (id, bounds) in &self.output_slot_bounds {
+            if bounds.contains(&event.position) {
+                start_slot = Some(GraphSlotId::Output(*id));
+                break;
+            }
+        }
+
+        let Some(mut start_slot) = start_slot else {
+            return;
+        };
+        dbg!(start_slot);
+
+        match start_slot {
+            GraphSlotId::Input(slot_id) => {
+                let Some(slot) = self.graph.slots.inputs.get_mut(&slot_id) else {
+                    return;
+                };
+
+                if let Some(connected) = slot.connected.take() {
+                    start_slot = GraphSlotId::Output(connected);
+                }
+            }
+            GraphSlotId::Output(slot_id) => {}
+        }
+
+        self.slot_connect_state = Some(SlotConnectState { start_slot });
+
+        cx.notify();
+    }
+
+    pub fn slot_connect_drag(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(slot_connect_state) = &self.slot_connect_state else {
+            return;
+        };
+
+        cx.notify();
+    }
+
+    pub fn slot_connect_end(
+        &mut self,
+        event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(slot_connect_state) = self.slot_connect_state.take() else {
+            return;
+        };
+
+        let mut end_slot = None;
+        for (slot_id, bounds) in &self.input_slot_bounds {
+            if bounds.contains(&event.position) {
+                end_slot = Some(GraphSlotId::Input(*slot_id));
+                break;
+            }
+        }
+        for (slot_id, bounds) in &self.output_slot_bounds {
+            if bounds.contains(&event.position) {
+                end_slot = Some(GraphSlotId::Output(*slot_id));
+                break;
+            }
+        }
+
+        let Some(end_slot) = end_slot else {
+            cx.notify();
+            return;
+        };
+        dbg!(end_slot);
+
+        match (slot_connect_state.start_slot, end_slot) {
+            (GraphSlotId::Input(to), GraphSlotId::Output(from)) => {
+                self.graph.connect_slots(from, to);
+            }
+            (GraphSlotId::Output(from), GraphSlotId::Input(to)) => {
+                self.graph.connect_slots(from, to);
+            }
+            _ => return,
+        }
+
+        cx.notify();
+    }
+
     pub fn get_node_state_mut<T: GraphNode<Data>>(
         &mut self,
         id: &GraphNodeId,
@@ -200,11 +374,21 @@ impl<Data: GraphData> GraphEditor<Data> {
             self.selected_nodes.insert(id);
         }
     }
+
+    pub fn add_input_slot_bounds(&mut self, id: GraphInputSlotId, bounds: Bounds<Pixels>) {
+        self.input_slot_bounds.insert(id, bounds);
+    }
+
+    pub fn add_output_slot_bounds(&mut self, id: GraphOutputSlotId, bounds: Bounds<Pixels>) {
+        self.output_slot_bounds.insert(id, bounds);
+    }
 }
 
 impl<Data: GraphData> Render for GraphEditor<Data> {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.node_bounds.clear();
+        // self.node_bounds.clear();
+        // self.input_slot_bounds.clear();
+        // self.output_slot_bounds.clear();
 
         let nodes = self
             .graph
@@ -232,30 +416,6 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     })
                     .child(div().bg(node.data.header_color()).child(node.data.name()))
                     .child(body)
-                    .on_mouse_down(MouseButton::Left, {
-                        let node_id = *id;
-                        let editor = cx.entity().downgrade();
-                        move |event, window, cx| {
-                            editor.update(cx, |editor, cx| {
-                                if editor.selected_nodes.is_empty() {
-                                    editor.add_node_selection(node_id);
-                                } else {
-                                    if event.modifiers.shift {
-                                        editor.add_node_selection(node_id);
-                                    } else if event.modifiers.control {
-                                        editor.toggle_node_selection(node_id);
-                                    } else if !editor.selected_nodes.contains(&node_id) {
-                                        editor.selected_nodes.clear();
-                                        editor.add_node_selection(node_id);
-                                    }
-                                }
-
-                                editor.node_drag_start(event, window, cx);
-
-                                cx.stop_propagation();
-                            });
-                        }
-                    })
                     .on_prepaint({
                         let node_id = *id;
                         let editor = cx.entity().downgrade();
@@ -287,6 +447,57 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                 )
             })
             .children(nodes)
+            .child(canvas(|_, _, _| {}, {
+                let connecting =
+                    self.slot_connect_state
+                        .iter()
+                        .filter_map(|st| match st.start_slot {
+                            GraphSlotId::Input(input_id) => {
+                                let bounds = self.input_slot_bounds.get(&input_id)?;
+                                let slot = self.graph.slots.inputs.get(&input_id)?;
+                                Some((
+                                    bounds.center(),
+                                    window.mouse_position(),
+                                    slot.data.ty().color(),
+                                ))
+                            }
+                            GraphSlotId::Output(output_id) => {
+                                let bounds = self.output_slot_bounds.get(&output_id)?;
+                                let slot = self.graph.slots.outputs.get(&output_id)?;
+                                Some((
+                                    bounds.center(),
+                                    window.mouse_position(),
+                                    slot.data_ty.color(),
+                                ))
+                            }
+                        });
+                let segments = self
+                    .graph
+                    .slots
+                    .inputs
+                    .iter()
+                    .filter_map(|(input_id, input)| {
+                        let output_id = &input.connected?;
+                        let from = self.input_slot_bounds.get(input_id)?;
+                        let to = self.output_slot_bounds.get(output_id)?;
+                        Some((from.center(), to.center(), input.data.ty().color()))
+                    })
+                    .chain(connecting)
+                    .collect::<Vec<_>>();
+
+                move |bounds, _, window, cx| {
+                    for (from, to, color) in segments {
+                        let mut builder = PathBuilder::stroke(px(2.0));
+
+                        builder.move_to(from);
+                        builder.line_to(to);
+
+                        if let Ok(path) = builder.build() {
+                            window.paint_path(path, color);
+                        }
+                    }
+                }
+            }))
             .on_action(cx.listener(Self::on_add_node_action))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_left_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
@@ -331,4 +542,15 @@ impl MarqueeState {
 enum MarqueeMode {
     Replace,
     Add,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SlotConnectState {
+    start_slot: GraphSlotId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum GraphSlotId {
+    Input(GraphInputSlotId),
+    Output(GraphOutputSlotId),
 }

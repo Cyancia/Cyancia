@@ -11,7 +11,7 @@ use gpui::{
     AnyElement, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Point,
     Rgba, Styled, Window, div, px,
 };
-use gpui_component::text;
+use gpui_component::{ElementExt, text};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -450,7 +450,6 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
     pub fn render_input_slot(&self, index: usize) -> Option<AnyElement> {
         let slot_id = *self.inputs.get(index)?;
         let slot = self.graph_slots.get_input(&slot_id)?;
-        let editor = self.cx.entity().downgrade();
 
         Some(
             div()
@@ -462,11 +461,13 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                         .w(px(10.0))
                         .h(px(10.0))
                         .rounded(px(5.0))
-                        .on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                            println!(
-                                "Mouse down on input slot {:?} of node {:?}",
-                                slot_id, editor
-                            );
+                        .on_prepaint({
+                            let editor = self.cx.entity().downgrade();
+                            move |bounds, window, cx| {
+                                editor.update(cx, |editor, cx| {
+                                    editor.add_input_slot_bounds(slot_id, bounds);
+                                });
+                            }
                         }),
                 )
                 .child(slot.name.clone())
@@ -477,7 +478,6 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
     pub fn render_output_slot(&self, index: usize) -> Option<AnyElement> {
         let slot_id = *self.outputs.get(index)?;
         let slot = self.graph_slots.get_output(&slot_id)?;
-        let editor = self.cx.entity().downgrade();
 
         Some(
             div()
@@ -490,11 +490,13 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                         .w(px(10.0))
                         .h(px(10.0))
                         .rounded(px(5.0))
-                        .on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                            println!(
-                                "Mouse down on output slot {:?} of node {:?}",
-                                slot_id, editor
-                            );
+                        .on_prepaint({
+                            let editor = self.cx.entity().downgrade();
+                            move |bounds, window, cx| {
+                                editor.update(cx, |editor, cx| {
+                                    editor.add_output_slot_bounds(slot_id, bounds);
+                                });
+                            }
                         }),
                 )
                 .into_any_element(),
