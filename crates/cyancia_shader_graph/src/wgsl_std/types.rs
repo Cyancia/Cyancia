@@ -4,7 +4,13 @@ use bevy_math::Rect;
 use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
 use glam::{Vec2, Vec4};
-use gpui::{Rgba, rgb};
+use gpui::{
+    AnyElement, AppContext, Context, ElementId, Entity, IntoElement, ParentElement, Rgba, div, rgb,
+};
+use gpui_component::{
+    Sizable,
+    input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
+};
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
@@ -12,8 +18,9 @@ use uuid::Uuid;
 
 use crate::graph::{
     GraphData,
-    slot::{GraphInlineLiteralRenderContext, GraphValueType},
+    slot::{GraphInlineLiteralRenderContext, GraphInputSlotId, GraphValueType},
     texture::TextureId,
+    variable::GraphLiteralValue,
 };
 
 // TODO: Boolean and rectangle types
@@ -51,6 +58,20 @@ impl GraphValueType for F32Type {
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(format!("{:.5}", data))
+    }
+
+    fn render_inline(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+        mut ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement {
+        let literal = *literal;
+        literal_number_input(
+            format!("slot-literal-{}", ctx.slot_id),
+            &mut ctx,
+            literal,
+            std::convert::identity,
+        )
     }
 }
 
@@ -93,6 +114,28 @@ impl GraphValueType for Vec2FType {
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(format!("vec2f({:.5}, {:.5})", data.x, data.y))
+    }
+
+    fn render_inline(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+        mut ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement {
+        let literal = *literal;
+        let x = literal_number_input(
+            format!("slot-literal-x-{}", ctx.slot_id),
+            &mut ctx,
+            literal.x,
+            move |val| literal.with_x(val),
+        );
+        let y = literal_number_input(
+            format!("slot-literal-y-{}", ctx.slot_id),
+            &mut ctx,
+            literal.y,
+            move |val| literal.with_y(val),
+        );
+
+        div().child(x).child(y).into_any_element()
     }
 }
 
@@ -140,6 +183,40 @@ impl GraphValueType for ColorType {
             "vec4f({:.5}, {:.5}, {:.5}, {:.5})",
             data.x, data.y, data.z, data.w
         ))
+    }
+
+    fn render_inline(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+        mut ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement {
+        let literal = *literal;
+        let r = literal_number_input(
+            format!("slot-literal-r-{}", ctx.slot_id),
+            &mut ctx,
+            literal.x,
+            move |val| literal.with_x(val),
+        );
+        let g = literal_number_input(
+            format!("slot-literal-g-{}", ctx.slot_id),
+            &mut ctx,
+            literal.y,
+            move |val| literal.with_y(val),
+        );
+        let b = literal_number_input(
+            format!("slot-literal-b-{}", ctx.slot_id),
+            &mut ctx,
+            literal.z,
+            move |val| literal.with_z(val),
+        );
+        let a = literal_number_input(
+            format!("slot-literal-a-{}", ctx.slot_id),
+            &mut ctx,
+            literal.w,
+            move |val| literal.with_w(val),
+        );
+
+        div().child(r).child(g).child(b).child(a).into_any_element()
     }
 }
 
@@ -194,6 +271,14 @@ impl GraphValueType for TextureType {
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(data.local_index.to_string())
     }
+
+    fn render_inline(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+        ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement {
+        div().into_any_element()
+    }
 }
 
 #[derive(Default, Clone)]
@@ -241,4 +326,117 @@ impl GraphValueType for RectType {
             data.min.x, data.min.y, data.max.x, data.max.y
         ))
     }
+
+    fn render_inline(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+        mut ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement {
+        let literal = *literal;
+        let minx = literal_number_input(
+            format!("slot-literal-minx-{}", ctx.slot_id),
+            &mut ctx,
+            literal.min.x,
+            move |val| Rect {
+                min: literal.min.with_x(val),
+                max: literal.max,
+            },
+        );
+        let miny = literal_number_input(
+            format!("slot-literal-miny-{}", ctx.slot_id),
+            &mut ctx,
+            literal.min.y,
+            move |val| Rect {
+                min: literal.min.with_y(val),
+                max: literal.max,
+            },
+        );
+        let maxx = literal_number_input(
+            format!("slot-literal-maxx-{}", ctx.slot_id),
+            &mut ctx,
+            literal.max.x,
+            move |val| Rect {
+                min: literal.min,
+                max: literal.max.with_x(val),
+            },
+        );
+        let maxy = literal_number_input(
+            format!("slot-literal-maxy-{}", ctx.slot_id),
+            &mut ctx,
+            literal.max.y,
+            move |val| Rect {
+                min: literal.min,
+                max: literal.max.with_y(val),
+            },
+        );
+
+        div()
+            .child(minx)
+            .child(miny)
+            .child(maxx)
+            .child(maxy)
+            .into_any_element()
+    }
+}
+
+fn literal_number_input<T: GraphLiteralValue>(
+    id: impl Into<ElementId>,
+    ctx: &mut GraphInlineLiteralRenderContext<'_>,
+    initial_value: f32,
+    updated_literal: impl Fn(f32) -> T + 'static,
+) -> AnyElement {
+    let input_state = ctx.window.use_keyed_state(
+        id,
+        ctx.cx,
+        |window, cx: &mut Context<Entity<InputState>>| {
+            let state = cx.new(|cx| {
+                let mut state = InputState::new(window, cx).mask_pattern(MaskPattern::Number {
+                    separator: None,
+                    fraction: Some(4),
+                });
+                state.set_value(format!("{:.4}", initial_value), window, cx);
+                state
+            });
+
+            cx.subscribe_in(&state, window, {
+                let on_update = ctx.on_update.clone();
+                move |state, _, event: &InputEvent, window, cx| match event {
+                    InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                        let value = state.read(cx).value();
+                        if let Ok(value) = value.parse::<f32>() {
+                            (on_update)(Box::new(updated_literal(value)), cx);
+                        }
+                    }
+                    InputEvent::Change | InputEvent::Focus => {}
+                }
+            })
+            .detach();
+            cx.subscribe_in(&state, window, {
+                let on_update = ctx.on_update.clone();
+                move |state, _, event: &NumberInputEvent, window, cx| match event {
+                    NumberInputEvent::Step(step) => {
+                        let delta = match step {
+                            StepAction::Increment => 0.1,
+                            StepAction::Decrement => -0.1,
+                        };
+                        let value = state.read(cx).value();
+                        let Ok(value) = value.parse::<f32>() else {
+                            return;
+                        };
+                        let value = value + delta;
+                        state.update(cx, |state, cx| {
+                            state.set_value(format!("{:.4}", value), window, cx);
+                        });
+                        (on_update)(Box::new(value), cx);
+                    }
+                }
+            })
+            .detach();
+
+            state
+        },
+    );
+
+    let input_state = input_state.read(ctx.cx);
+    NumberInput::new(input_state).small().into_any_element()
 }

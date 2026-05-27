@@ -10,11 +10,12 @@ use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::graph::{
+use crate::{graph::{
     Graph, GraphData,
     node::{GraphNode, GraphNodeId, GraphNodeRegistry},
     slot::{GraphInputSlotId, GraphOutputSlotId},
-};
+    variable::GraphLiteralValue,
+}, wgsl_std::types::F32Type};
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 pub struct AddNodeAction {
@@ -453,6 +454,14 @@ impl<Data: GraphData> GraphEditor<Data> {
 
     pub fn add_output_slot_pos(&mut self, id: GraphOutputSlotId, pos: Point<Pixels>) {
         self.output_slot_pos.insert(id, pos);
+    }
+
+    pub fn update_slot_value(&mut self, id: &GraphInputSlotId, value: Box<dyn GraphLiteralValue>) {
+        if let Some(slot) = self.graph.slots.inputs.get_mut(id) {
+            println!("Before: {:?}", slot.data.try_as_ref::<f32>());
+            slot.data.set_boxed(value);
+            println!("After: {:?}", slot.data.try_as_ref::<f32>());
+        }
     }
 }
 

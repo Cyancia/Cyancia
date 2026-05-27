@@ -2,6 +2,7 @@ use std::{
     any::Any,
     collections::{BTreeMap, HashMap, hash_map::Entry},
     convert::identity,
+    rc::Rc,
     sync::Arc,
 };
 
@@ -9,7 +10,7 @@ use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use gpui::{
     AnyElement, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Point,
-    Rgba, Styled, Window, div, px,
+    Rgba, Styled, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{ElementExt, text};
 use indexmap::IndexMap;
@@ -21,8 +22,9 @@ use crate::{
     graph::{
         GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
-            GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
-            GraphOutputSlotData, GraphOutputSlotId, GraphSlots, GraphValueType,
+            GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInlineLiteralRenderContext,
+            GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
+            GraphSlots, GraphValueType,
         },
         texture::{GraphTextureStorage, GraphTextureUsageRecorder},
         variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
@@ -423,7 +425,7 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
 }
 
 impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
-    pub fn render_all_slots_with_header(&self, header: impl IntoElement) -> AnyElement {
+    pub fn render_all_slots_with_header(&mut self, header: impl IntoElement) -> AnyElement {
         div()
             .gap(px(5.0))
             .child(header)
@@ -431,7 +433,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
             .into_any_element()
     }
 
-    pub fn render_all_slots(&self) -> AnyElement {
+    pub fn render_all_slots(&mut self) -> AnyElement {
         div()
             .gap(px(5.0))
             .child(
@@ -447,7 +449,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
             .into_any_element()
     }
 
-    pub fn render_input_slot(&self, index: usize) -> Option<AnyElement> {
+    pub fn render_input_slot(&mut self, index: usize) -> Option<AnyElement> {
         let slot_id = *self.inputs.get(index)?;
         let slot = self.graph_slots.get_input(&slot_id)?;
 
@@ -471,11 +473,27 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                         }),
                 )
                 .child(slot.name.clone())
+                .when(slot.connected.is_none(), |d| {
+                    let editor = self.cx.entity().downgrade();
+                    d.child(slot.data.ty().render_inline(
+                        slot.data.value(),
+                        GraphInlineLiteralRenderContext {
+                            slot_id,
+                            window: self.window,
+                            cx: self.cx,
+                            on_update: Rc::new(move |value, cx| {
+                                editor.update(cx, |editor, cx| {
+                                    editor.update_slot_value(&slot_id, value);
+                                });
+                            }),
+                        },
+                    ))
+                })
                 .into_any_element(),
         )
     }
 
-    pub fn render_output_slot(&self, index: usize) -> Option<AnyElement> {
+    pub fn render_output_slot(&mut self, index: usize) -> Option<AnyElement> {
         let slot_id = *self.outputs.get(index)?;
         let slot = self.graph_slots.get_output(&slot_id)?;
 

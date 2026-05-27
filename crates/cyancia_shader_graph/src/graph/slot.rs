@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
+    rc::Rc,
 };
 
 use cyancia_render::buffer::DynamicBuffer;
@@ -8,7 +9,7 @@ use cyancia_utils::wrapper;
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 use encase::{DynamicStorageBuffer, ShaderType, internal::WriteInto};
-use gpui::{AnyElement, Context, Hsla, Rgba, Window};
+use gpui::{AnyElement, App, Context, Hsla, Rgba, Window};
 use parse_display::Display;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use uuid::Uuid;
@@ -138,6 +139,11 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
         literal: &Self::AssociatedLiteralType,
     ) -> Option<Vec<u8>>;
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String>;
+    fn render_inline(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+        ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement;
     fn serialize_literal<'a>(
         &self,
         data: &Self::AssociatedLiteralType,
@@ -160,6 +166,11 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn try_write_into_shader_buffer(&self, literal: &Box<dyn GraphLiteralValue>)
     -> Option<Vec<u8>>;
     fn literal_to_code(&self, data: &Box<dyn GraphLiteralValue>) -> Option<String>;
+    fn render_inline(
+        &self,
+        literal: &Box<dyn GraphLiteralValue>,
+        ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement;
     fn serialize_literal<'a>(
         &self,
         data: &Box<dyn GraphLiteralValue>,
@@ -206,6 +217,17 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
         self.literal_to_code(literal)
     }
 
+    fn render_inline(
+        &self,
+        literal: &Box<dyn GraphLiteralValue>,
+        ctx: GraphInlineLiteralRenderContext<'_>,
+    ) -> AnyElement {
+        let literal = literal
+            .downcast_ref::<T::AssociatedLiteralType>()
+            .expect("Failed to downcast literal.");
+        self.render_inline(literal, ctx)
+    }
+
     fn serialize_literal<'a>(
         &self,
         data: &Box<dyn GraphLiteralValue>,
@@ -225,17 +247,9 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
     }
 }
 
-pub struct GraphInlineLiteralRenderContext<'a, 'app, Data: GraphData> {
-    pub node_id: GraphNodeId,
+pub struct GraphInlineLiteralRenderContext<'a> {
     pub slot_id: GraphInputSlotId,
     pub window: &'a mut Window,
-    pub cx: &'a mut Context<'app, GraphEditor<Data>>,
-}
-
-pub trait InlineRenderableGraphValueType<Data: GraphData>: GraphValueType {
-    fn render_inline(
-        &self,
-        literal: &Self::AssociatedLiteralType,
-        ctx: GraphInlineLiteralRenderContext<'_, '_, Data>,
-    ) -> AnyElement;
+    pub cx: &'a mut App,
+    pub on_update: Rc<dyn Fn(Box<dyn GraphLiteralValue>, &mut App)>,
 }

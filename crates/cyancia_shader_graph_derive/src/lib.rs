@@ -83,7 +83,7 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::create_outputs(self, ctx)
             }
 
-            fn render(&self, _state: &Self::State, ctx: #crate_path::graph::node::GraphNodeRenderContext<'_, '_, Data>) -> gpui::AnyElement {
+            fn render(&self, _state: &Self::State, mut ctx: #crate_path::graph::node::GraphNodeRenderContext<'_, '_, Data>) -> gpui::AnyElement {
                 ctx.render_all_slots()
             }
 

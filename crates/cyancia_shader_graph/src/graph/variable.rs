@@ -5,10 +5,11 @@ use std::{
 
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
+use gpui::AnyElement;
 
 use crate::graph::{
     GraphData,
-    slot::{ErasedGraphValueType, GraphValueType},
+    slot::{ErasedGraphValueType, GraphInlineLiteralRenderContext, GraphValueType},
 };
 
 #[derive(Default, Clone)]

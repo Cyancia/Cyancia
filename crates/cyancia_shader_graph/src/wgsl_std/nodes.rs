@@ -226,7 +226,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Result".into())]
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
@@ -632,7 +632,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         }
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
@@ -878,7 +878,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
         vec![GraphDefaultOutputSlot::new::<RectType>("Result".into())]
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
@@ -1565,7 +1565,7 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         vec![GraphDefaultOutputSlot::new::<TextureType>("Texture".into())]
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         todo!()
     }
 
@@ -1810,7 +1810,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             .collect()
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let all_refs = ctx
             .resources
@@ -1987,7 +1987,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         ctx.require_output_slot_as_graph_input(0, state.name.clone());
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let input_state = ctx
             .window
@@ -2126,7 +2126,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         ctx.require_input_slot_as_graph_output(0, state.name.clone());
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let input_state = ctx
             .window
@@ -2307,7 +2307,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         None
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let all_refs = ctx
             .resources
@@ -2429,7 +2429,7 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Y".into())]
     }
 
-    fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let edit_state: Entity<Entity<_>> =
             ctx.window
