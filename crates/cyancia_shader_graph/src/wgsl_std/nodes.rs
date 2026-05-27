@@ -10,9 +10,11 @@ use bevy_math::{Rect, VectorSpace};
 use cyancia_assets::asset::AssetHandle;
 use cyancia_math::curve::CubicCurve;
 use cyancia_utils::{count, wrapper};
+use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
 use gpui::{
-    AnyElement, AppContext, Entity, ParentElement, Rgba, SharedString, Styled, div, px, rgb, rgba,
+    AnyElement, AppContext, Canvas, Entity, ParentElement, Rgba, SharedString, Styled, div, px,
+    rgb, rgba,
 };
 use gpui_component::{
     IndexPath,
@@ -2428,7 +2430,38 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
     }
 
     fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
-        todo!()
+        let editor = ctx.cx.entity().downgrade();
+        let edit_state: Entity<Entity<_>> =
+            ctx.window
+                .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
+                    let state = cx.new(|cx| {
+                        CurveEditState::new(CubicCurve::new(state.control_points.clone()), cx)
+                    });
+
+                    cx.subscribe_in(
+                        &state,
+                        window,
+                        move |_, edit, event: &CurveEditEvent, window, cx| match event {
+                            CurveEditEvent::ControlPointsChanged => {
+                                editor.update(cx, |editor, cx| {
+                                    let edit = edit.read(cx);
+                                    let state =
+                                        editor.get_node_state_mut::<Self>(&ctx.node_id).unwrap();
+                                    state.control_points = edit.value().control_points().to_vec();
+                                    cx.notify();
+                                });
+                            }
+                        },
+                    )
+                    .detach();
+
+                    state
+                });
+
+        let state = edit_state.read(ctx.cx);
+        ctx.render_all_slots_with_header(
+            div().w_full().aspect_square().child(CurveEdit::new(state)),
+        )
     }
 
     // fn view_inputs(

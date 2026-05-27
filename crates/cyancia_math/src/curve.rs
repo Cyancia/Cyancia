@@ -1,5 +1,6 @@
 use glam::Vec2;
 
+#[derive(Debug, Clone)]
 pub struct CubicCurve {
     control_points: Vec<Vec2>,
     derivatives: Vec<f32>,
@@ -63,37 +64,12 @@ impl CubicCurve {
     }
 
     pub fn subdivide(&self, n: usize) -> Vec<Vec2> {
-        let pts = &self.control_points;
-        let ks = &self.derivatives;
-        let x_start = pts[0].x;
-        let x_end = pts[pts.len() - 1].x;
-        let inv_n = 1.0 / n as f32;
-        let x_span = x_end - x_start;
-
-        let mut seg = 1;
-        let mut result = Vec::with_capacity(n + 1);
-
-        for i in 0..=n {
-            let x = x_start + x_span * i as f32 * inv_n;
-
-            while seg < pts.len() - 1 && pts[seg].x < x {
-                seg += 1;
-            }
-
-            let dx = pts[seg].x - pts[seg - 1].x;
-            let t = (x - pts[seg - 1].x) / dx;
-            let dy = pts[seg].y - pts[seg - 1].y;
-
-            let a = ks[seg - 1] * dx - dy;
-            let b = -ks[seg] * dx + dy;
-
-            let y = (1.0 - t) * pts[seg - 1].y
-                + t * pts[seg].y
-                + t * (1.0 - t) * (a * (1.0 - t) + b * t);
-            result.push(Vec2::new(x, y).clamp(Vec2::ZERO, Vec2::ONE));
-        }
-
-        result
+        (0..=n)
+            .map(|i| {
+                let t = i as f32 / n as f32;
+                Vec2::new(t, self.sample(t))
+            })
+            .collect()
     }
 
     pub fn sample(&self, x: f32) -> f32 {
@@ -115,9 +91,8 @@ impl CubicCurve {
         let a = ks[i - 1] * dx - dy;
         let b = -ks[i] * dx + dy;
 
-        (1.0 - t) * pts[i - 1].y
-            + t * pts[i].y
-            + t * (1.0 - t) * (a * (1.0 - t) + b * t).clamp(0.0, 1.0)
+        ((1.0 - t) * pts[i - 1].y + t * pts[i].y + t * (1.0 - t) * (a * (1.0 - t) + b * t))
+            .clamp(0.0, 1.0)
     }
 
     pub fn control_points(&self) -> &[Vec2] {

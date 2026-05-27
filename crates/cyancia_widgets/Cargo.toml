@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 num-traits.workspace = true
-iced_core.workspace = true
-iced_widget.workspace = true
 bevy_math.workspace = true
-iced_graphics.workspace = true
 cyancia_math.workspace = true
+glam.workspace = true
+gpui.workspace = true
+refineable = { git = "https://github.com/zed-industries/zed" }

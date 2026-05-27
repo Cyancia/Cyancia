@@ -1,4 +1,7 @@
-use std::{any::Any, collections::{BTreeMap, HashMap}};
+use std::{
+    any::Any,
+    collections::{BTreeMap, HashMap},
+};
 
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;

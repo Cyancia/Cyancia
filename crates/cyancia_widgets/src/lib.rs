@@ -1,5 +1,7 @@
-pub mod circle;
+use gpui::App;
+
 pub mod curve_edit;
-pub mod drag_drop_column;
-pub mod drag_field;
-pub mod spin_slider;
+
+pub fn init(cx: &mut App) {
+    curve_edit::init(cx);
+}
