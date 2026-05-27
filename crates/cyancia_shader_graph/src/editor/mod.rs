@@ -458,9 +458,7 @@ impl<Data: GraphData> GraphEditor<Data> {
 
     pub fn update_slot_value(&mut self, id: &GraphInputSlotId, value: Box<dyn GraphLiteralValue>) {
         if let Some(slot) = self.graph.slots.inputs.get_mut(id) {
-            println!("Before: {:?}", slot.data.try_as_ref::<f32>());
             slot.data.set_boxed(value);
-            println!("After: {:?}", slot.data.try_as_ref::<f32>());
         }
     }
 }
