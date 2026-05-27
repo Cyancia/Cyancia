@@ -7,7 +7,7 @@ use cyancia_shader_graph::{
     },
 };
 use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div};
-use gpui_component::Root;
+use gpui_component::{ActiveTheme, Root};
 use gpui_platform::application;
 
 #[derive(Default, Clone)]

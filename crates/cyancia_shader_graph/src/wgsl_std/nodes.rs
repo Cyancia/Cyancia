@@ -13,11 +13,11 @@ use cyancia_utils::{count, wrapper};
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
 use gpui::{
-    AnyElement, AppContext, Canvas, Entity, ParentElement, Rgba, SharedString, Styled, div, px,
-    rgb, rgba,
+    AnyElement, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba, SharedString, Styled, div,
+    px, rgb, rgba,
 };
 use gpui_component::{
-    IndexPath,
+    IndexPath, Sizable,
     input::{Input, InputEvent, InputState},
     searchable_list::SearchableListItem,
     select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState},
@@ -48,6 +48,8 @@ use crate::{
 
 use crate::graph::node::GraphNodeRunError;
 use cyancia_shader_graph_derive::stateless;
+
+const NODE_HEADER_FIELD_GAP: Pixels = px(2.0);
 
 #[derive(Default, Clone)]
 pub struct ScalarMathNode;
@@ -226,7 +228,11 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Result".into())]
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
@@ -267,7 +273,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state))
+        ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
 
     fn generate_code(
@@ -632,7 +638,11 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         }
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
@@ -673,7 +683,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state))
+        ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
 
     fn generate_code(
@@ -878,7 +888,11 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
         vec![GraphDefaultOutputSlot::new::<RectType>("Result".into())]
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
@@ -919,7 +933,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state))
+        ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
 
     fn generate_code(
@@ -1565,7 +1579,11 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         vec![GraphDefaultOutputSlot::new::<TextureType>("Texture".into())]
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         todo!()
     }
 
@@ -1810,7 +1828,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             .collect()
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let all_refs = ctx
             .resources
@@ -1856,7 +1878,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state))
+        ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
 
     fn generate_code(
@@ -1987,7 +2009,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         ctx.require_output_slot_as_graph_input(0, state.name.clone());
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let input_state = ctx
             .window
@@ -2053,9 +2079,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         let (name_state, ty_state) = input_state.read(ctx.cx);
         ctx.render_all_slots_with_header(
             div()
-                .gap(px(2.0))
-                .child(Input::new(name_state))
-                .child(Select::new(&ty_state)),
+                .flex()
+                .flex_col()
+                .gap(NODE_HEADER_FIELD_GAP)
+                .child(Input::new(name_state).small())
+                .child(Select::new(&ty_state).small()),
         )
     }
 
@@ -2126,7 +2154,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         ctx.require_input_slot_as_graph_output(0, state.name.clone());
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let input_state = ctx
             .window
@@ -2192,9 +2224,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         let (name_state, ty_state) = input_state.read(ctx.cx);
         ctx.render_all_slots_with_header(
             div()
-                .gap(px(2.0))
-                .child(Input::new(name_state))
-                .child(Select::new(&ty_state)),
+                .flex()
+                .flex_col()
+                .gap(NODE_HEADER_FIELD_GAP)
+                .child(Input::new(name_state).small())
+                .child(Select::new(&ty_state).small()),
         )
     }
 
@@ -2307,7 +2341,11 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         None
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let all_refs = ctx
             .resources
@@ -2355,7 +2393,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state))
+        ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
 
     fn run(
@@ -2429,7 +2467,11 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Y".into())]
     }
 
-    fn render(&self, state: &Self::State, mut ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
+    fn render(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeRenderContext<'_, '_, Data>,
+    ) -> AnyElement {
         let editor = ctx.cx.entity().downgrade();
         let edit_state: Entity<Entity<_>> =
             ctx.window

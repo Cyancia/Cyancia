@@ -5,7 +5,8 @@ use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
 use glam::{Vec2, Vec4};
 use gpui::{
-    AnyElement, AppContext, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, rgb
+    AnyElement, AppContext, Context, ElementId, Entity, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Rgba, Styled, div, px, rgb,
 };
 use gpui_component::{
     Sizable,
@@ -23,7 +24,7 @@ use crate::graph::{
     variable::GraphLiteralValue,
 };
 
-// TODO: Boolean and rectangle types
+pub const MIN_INLINE_FLOAT_WIDTH: Pixels = px(120.0);
 
 #[derive(Default, Clone)]
 pub struct F32Type;
@@ -135,7 +136,7 @@ impl GraphValueType for Vec2FType {
             move |val| literal.with_y(val),
         );
 
-        div().child(x).child(y).into_any_element()
+        div().w_full().child(x).child(y).into_any_element()
     }
 }
 
@@ -216,7 +217,13 @@ impl GraphValueType for ColorType {
             move |val| literal.with_w(val),
         );
 
-        div().child(r).child(g).child(b).child(a).into_any_element()
+        div()
+            .w_full()
+            .child(r)
+            .child(g)
+            .child(b)
+            .child(a)
+            .into_any_element()
     }
 }
 
@@ -371,6 +378,7 @@ impl GraphValueType for RectType {
         );
 
         div()
+            .w_full()
             .child(minx)
             .child(miny)
             .child(maxx)
@@ -440,6 +448,7 @@ fn literal_number_input<T: GraphLiteralValue>(
     let input_state = input_state.read(ctx.cx);
     div()
         .w_full()
+        .min_w(MIN_INLINE_FLOAT_WIDTH)
         .child(NumberInput::new(input_state).small())
         .block_mouse_except_scroll()
         .into_any_element()

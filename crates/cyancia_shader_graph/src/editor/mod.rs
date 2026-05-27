@@ -27,6 +27,13 @@ pub struct AddNodeAction {
 
 pub const SLOT_HIT_TEST_RADIUS_SQUARED: f64 = 10.0 * 10.0;
 
+const MIN_NODE_WIDTH: Pixels = px(170.0);
+const NODE_RADIUS: Pixels = px(4.0);
+const NODE_HEADER_PADDING_X: Pixels = px(6.0);
+const NODE_HEADER_PADDING_Y: Pixels = px(3.0);
+const NODE_BODY_PADDING: Pixels = px(3.0);
+const CONNECTION_STROKE_WIDTH: Pixels = px(2.0);
+
 pub struct GraphEditor<Data: GraphData> {
     graph: Graph<Data>,
     node_registry: GraphNodeRegistry<Data>,
@@ -375,6 +382,8 @@ impl<Data: GraphData> GraphEditor<Data> {
             return;
         };
 
+        cx.notify();
+
         let mut end_slot = None;
         for (slot_id, pos) in &self.input_slot_pos {
             if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
@@ -392,7 +401,6 @@ impl<Data: GraphData> GraphEditor<Data> {
         }
 
         let Some(end_slot) = end_slot else {
-            cx.notify();
             return;
         };
         dbg!(end_slot);
@@ -406,8 +414,6 @@ impl<Data: GraphData> GraphEditor<Data> {
             }
             _ => return,
         }
-
-        cx.notify();
     }
 
     pub fn pan_start(
@@ -495,18 +501,34 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
             let position = node.position + self.transform.translation;
 
             let node = div()
-                .w(px(170.0))
                 .id(**id)
                 .absolute()
-                .bg(cx.theme().background)
+                .bg(cx.theme().group_box)
                 .left(px(position.x))
                 .top(px(position.y))
+                .min_w(MIN_NODE_WIDTH)
+                .rounded(NODE_RADIUS)
+                .shadow_md()
                 .border_2()
-                .when(self.selected_nodes.contains(id), |div| {
-                    div.border_color(cx.theme().foreground)
+                .when(self.selected_nodes.contains(id), |d| {
+                    d.border_color(cx.theme().foreground.opacity(0.5))
                 })
-                .child(div().bg(node.data.header_color()).child(node.data.name()))
-                .child(body)
+                .child(
+                    div()
+                        .w_full()
+                        .px(NODE_HEADER_PADDING_X)
+                        .py(NODE_HEADER_PADDING_Y)
+                        .bg(node.data.header_color())
+                        .rounded_t(NODE_RADIUS)
+                        .child(node.data.name()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .p(NODE_BODY_PADDING)
+                        .child(body),
+                )
                 .into_any_element();
 
             nodes.push(node);
@@ -517,6 +539,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
         div()
             .w_full()
             .h_full()
+            .bg(cx.theme().background)
             .when_some(self.marquee_state.as_ref(), |d, marquee| {
                 let marquee_bounds = marquee.bounds(window.mouse_position());
                 d.child(
@@ -526,28 +549,11 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         .top(marquee_bounds.origin.y)
                         .w(marquee_bounds.size.width)
                         .h(marquee_bounds.size.height)
-                        .bg(cx.theme().accent)
+                        .bg(cx.theme().foreground.opacity(0.32))
                         .border_2()
-                        .border_color(cx.theme().border),
+                        .border_color(cx.theme().foreground),
                 )
             })
-            .child(
-                div()
-                    .absolute()
-                    .size_full()
-                    .children(nodes)
-                    .on_children_prepainted({
-                        let editor = cx.entity().downgrade();
-                        move |bounds, _window, cx| {
-                            editor.update(cx, |editor, _cx| {
-                                editor.node_bounds.clear();
-                                for (node_id, bounds) in node_ids.iter().zip(bounds) {
-                                    editor.node_bounds.insert(*node_id, bounds);
-                                }
-                            });
-                        }
-                    }),
-            )
             .child(canvas(|_, _, _| {}, {
                 let connecting =
                     self.slot_connect_state
@@ -583,7 +589,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
 
                 move |bounds, _, window, cx| {
                     for (from, to, color) in segments {
-                        let mut builder = PathBuilder::stroke(px(2.0));
+                        let mut builder = PathBuilder::stroke(CONNECTION_STROKE_WIDTH);
 
                         builder.move_to(from);
                         builder.line_to(to);
@@ -594,6 +600,23 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     }
                 }
             }))
+            .child(
+                div()
+                    .absolute()
+                    .size_full()
+                    .children(nodes)
+                    .on_children_prepainted({
+                        let editor = cx.entity().downgrade();
+                        move |bounds, _window, cx| {
+                            editor.update(cx, |editor, _cx| {
+                                editor.node_bounds.clear();
+                                for (node_id, bounds) in node_ids.iter().zip(bounds) {
+                                    editor.node_bounds.insert(*node_id, bounds);
+                                }
+                            });
+                        }
+                    }),
+            )
             .on_action(cx.listener(Self::on_add_node_action))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_left_mouse_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_mouse_down))

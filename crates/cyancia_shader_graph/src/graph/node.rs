@@ -9,8 +9,8 @@ use std::{
 use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use gpui::{
-    AnyElement, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Point,
-    Rgba, Styled, Window, div, prelude::FluentBuilder, px,
+    AnyElement, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
+    Point, Rgba, Styled, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{ElementExt, text};
 use indexmap::IndexMap;
@@ -424,10 +424,19 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
     pub cx: &'a mut Context<'app, GraphEditor<Data>>,
 }
 
+const NODE_HEADER_GAP: Pixels = px(2.0);
+const SLOT_SECTION_GAP: Pixels = px(2.0);
+const SLOT_ROW_GAP: Pixels = px(3.0);
+const SLOT_STACK_GAP: Pixels = px(1.0);
+const SLOT_DOT_SIZE: Pixels = px(10.0);
+const SLOT_DOT_RADIUS: Pixels = px(5.0);
+
 impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
     pub fn render_all_slots_with_header(&mut self, header: impl IntoElement) -> AnyElement {
         div()
-            .gap(px(5.0))
+            .flex()
+            .flex_col()
+            .gap(NODE_HEADER_GAP)
             .child(div().w_full().child(header).block_mouse_except_scroll())
             .child(self.render_all_slots())
             .into_any_element()
@@ -435,15 +444,21 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
 
     pub fn render_all_slots(&mut self) -> AnyElement {
         div()
-            .gap(px(5.0))
+            .flex()
+            .flex_col()
+            .gap(SLOT_SECTION_GAP)
             .child(
                 div()
-                    .gap(px(2.0))
+                    .flex()
+                    .flex_col()
+                    .gap(SLOT_STACK_GAP)
                     .children((0..self.inputs.len()).map(|i| self.render_input_slot(i).unwrap())),
             )
             .child(
                 div()
-                    .gap(px(2.0))
+                    .flex()
+                    .flex_col()
+                    .gap(SLOT_STACK_GAP)
                     .children((0..self.outputs.len()).map(|i| self.render_output_slot(i).unwrap())),
             )
             .into_any_element()
@@ -457,12 +472,14 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
             div()
                 .id(*slot_id)
                 .flex()
+                .items_center()
+                .gap(SLOT_ROW_GAP)
                 .child(
                     div()
                         .bg(slot.data.ty().color())
-                        .w(px(10.0))
-                        .h(px(10.0))
-                        .rounded(px(5.0))
+                        .min_w(SLOT_DOT_SIZE)
+                        .min_h(SLOT_DOT_SIZE)
+                        .rounded(SLOT_DOT_RADIUS)
                         .on_prepaint({
                             let editor = self.cx.entity().downgrade();
                             move |bounds, window, cx| {
@@ -472,7 +489,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                             }
                         }),
                 )
-                .child(slot.name.clone())
+                .child(div().text_sm().child(slot.name.clone()))
                 .when(slot.connected.is_none(), |d| {
                     let editor = self.cx.entity().downgrade();
                     d.child(slot.data.ty().render_inline(
@@ -501,13 +518,16 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
             div()
                 .id(*slot_id)
                 .flex()
-                .child(slot.name.clone())
+                .items_center()
+                .justify_end()
+                .gap(SLOT_ROW_GAP)
+                .child(div().text_sm().child(slot.name.clone()))
                 .child(
                     div()
                         .bg(slot.data_ty.color())
-                        .w(px(10.0))
-                        .h(px(10.0))
-                        .rounded(px(5.0))
+                        .min_w(SLOT_DOT_SIZE)
+                        .min_h(SLOT_DOT_SIZE)
+                        .rounded(SLOT_DOT_RADIUS)
                         .on_prepaint({
                             let editor = self.cx.entity().downgrade();
                             move |bounds, window, cx| {
