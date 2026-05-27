@@ -51,12 +51,13 @@ pub struct GraphEditor<Data: GraphData> {
     graph: Graph<Data>,
     node_registry: GraphNodeRegistry<Data>,
 
-    node_drag_state: Option<DragState>,
+    node_drag_state: Option<NodeDragState>,
     marquee_state: Option<MarqueeState>,
     slot_connect_state: Option<SlotConnectState>,
     pan_state: Option<PanState>,
 
     transform: ViewTransform,
+    editor_bounds: Bounds<Pixels>,
     selected_nodes: HashSet<GraphNodeId>,
     node_bounds: HashMap<GraphNodeId, Bounds<Pixels>>,
     input_slot_pos: HashMap<GraphInputSlotId, Point<Pixels>>,
@@ -81,6 +82,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             pan_state: None,
 
             transform: ViewTransform::default(),
+            editor_bounds: Bounds::default(),
             selected_nodes: HashSet::new(),
             node_bounds: HashMap::new(),
             input_slot_pos: HashMap::new(),
@@ -101,9 +103,16 @@ impl<Data: GraphData> GraphEditor<Data> {
             return;
         };
 
-        let cursor = window.mouse_position();
+        let cursor = window.mouse_position() - self.editor_bounds.origin;
         let pos = Point::new(cursor.x.into(), cursor.y.into());
-        self.graph.add_boxed_node(pos, node);
+        let node_id = self.graph.add_boxed_node(pos, node);
+        self.selected_nodes.clear();
+        self.selected_nodes.insert(node_id);
+        self.node_drag_state = Some(NodeDragState {
+            cursor_origin: window.mouse_position(),
+            node_origins: HashMap::from([(node_id, pos)]),
+        });
+        cx.notify();
     }
 
     pub fn on_delete_selected_node_action(
@@ -233,7 +242,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             }
         }
 
-        self.node_drag_state = Some(DragState {
+        self.node_drag_state = Some(NodeDragState {
             cursor_origin: window.mouse_position(),
             node_origins: self
                 .selected_nodes
@@ -311,7 +320,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             return;
         };
 
-        let marquee_bounds = marquee.bounds(window.mouse_position());
+        let marquee_bounds = marquee.bounds(self.editor_bounds, window.mouse_position());
         let mut selected_nodes = match marquee.mode {
             MarqueeMode::Replace => HashSet::new(),
             MarqueeMode::Add => marquee.originally_selected.clone(),
@@ -564,7 +573,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
             .track_focus(&self.focus_handle)
             .bg(cx.theme().background)
             .when_some(self.marquee_state.as_ref(), |d, marquee| {
-                let marquee_bounds = marquee.bounds(window.mouse_position());
+                let marquee_bounds = marquee.bounds(self.editor_bounds, window.mouse_position());
                 d.child(
                     div()
                         .absolute()
@@ -644,6 +653,15 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_left_mouse_up))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_middle_mouse_up))
+            .on_prepaint({
+                let editor = cx.entity().downgrade();
+
+                move |bounds, window, cx| {
+                    editor.update(cx, |editor, cx| {
+                        editor.editor_bounds = bounds;
+                    });
+                }
+            })
             .context_menu(move |menu, window, cx| {
                 let all_nodes = all_nodes.clone();
                 menu.submenu("Add Node", window, cx, move |mut menu, window, cx| {
@@ -661,7 +679,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
     }
 }
 
-struct DragState {
+struct NodeDragState {
     cursor_origin: Point<Pixels>,
     node_origins: HashMap<GraphNodeId, Point<f32>>,
 }
@@ -673,8 +691,12 @@ struct MarqueeState {
 }
 
 impl MarqueeState {
-    fn bounds(&self, cursor_current: Point<Pixels>) -> Bounds<Pixels> {
-        let min = cursor_current.min(&self.cursor_origin);
+    fn bounds(
+        &self,
+        editor_bounds: Bounds<Pixels>,
+        cursor_current: Point<Pixels>,
+    ) -> Bounds<Pixels> {
+        let min = cursor_current.min(&self.cursor_origin) - editor_bounds.origin;
         let max = cursor_current.max(&self.cursor_origin);
         Bounds::new(min, Size::new(max.x - min.x, max.y - min.y))
     }
