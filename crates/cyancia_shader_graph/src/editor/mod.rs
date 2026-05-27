@@ -2,20 +2,23 @@ use std::collections::{HashMap, HashSet};
 
 use cyancia_math::point::PointExt;
 use gpui::{
-    Action, Bounds, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point, Render, SharedString,
-    Size, Styled, Window, canvas, div, prelude::FluentBuilder, px,
+    Action, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point,
+    Render, SharedString, Size, Styled, Window, canvas, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{graph::{
-    Graph, GraphData,
-    node::{GraphNode, GraphNodeId, GraphNodeRegistry},
-    slot::{GraphInputSlotId, GraphOutputSlotId},
-    variable::GraphLiteralValue,
-}, wgsl_std::types::F32Type};
+use crate::{
+    graph::{
+        Graph, GraphData,
+        node::{GraphNode, GraphNodeId, GraphNodeRegistry},
+        slot::{GraphInputSlotId, GraphOutputSlotId},
+        variable::GraphLiteralValue,
+    },
+    wgsl_std::types::F32Type,
+};
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 pub struct AddNodeAction {
@@ -38,10 +41,16 @@ pub struct GraphEditor<Data: GraphData> {
     node_bounds: HashMap<GraphNodeId, Bounds<Pixels>>,
     input_slot_pos: HashMap<GraphInputSlotId, Point<Pixels>>,
     output_slot_pos: HashMap<GraphOutputSlotId, Point<Pixels>>,
+
+    focus_handle: FocusHandle,
 }
 
 impl<Data: GraphData> GraphEditor<Data> {
-    pub fn new(graph: Graph<Data>, node_registry: GraphNodeRegistry<Data>) -> Self {
+    pub fn new(
+        graph: Graph<Data>,
+        node_registry: GraphNodeRegistry<Data>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self {
             graph,
             node_registry,
@@ -56,6 +65,8 @@ impl<Data: GraphData> GraphEditor<Data> {
             node_bounds: HashMap::new(),
             input_slot_pos: HashMap::new(),
             output_slot_pos: HashMap::new(),
+
+            focus_handle: cx.focus_handle(),
         }
     }
 
@@ -196,6 +207,7 @@ impl<Data: GraphData> GraphEditor<Data> {
                 .filter_map(|id| Some((id.clone(), self.graph.get_node(id)?.position)))
                 .collect(),
         });
+        self.focus_handle.focus(window, cx);
     }
 
     pub fn node_drag(
@@ -252,6 +264,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             mode: marquee_mode,
             originally_selected: self.selected_nodes.clone(),
         });
+        self.focus_handle.focus(window, cx);
     }
 
     pub fn marquee_drag(
@@ -335,6 +348,7 @@ impl<Data: GraphData> GraphEditor<Data> {
 
         self.slot_connect_state = Some(SlotConnectState { start_slot });
 
+        self.focus_handle.focus(window, cx);
         cx.notify();
     }
 
@@ -406,6 +420,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             cursor_origin: event.position,
             original_translation: self.transform.translation,
         });
+        self.focus_handle.focus(window, cx);
     }
 
     pub fn pan_drag(

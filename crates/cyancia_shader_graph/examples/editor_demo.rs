@@ -25,10 +25,11 @@ impl DemoEditor {
         nodes.register::<GraphInputNode>();
         nodes.register::<GraphOutputNode>();
         Self {
-            editor: cx.new(|_| {
+            editor: cx.new(|cx| {
                 GraphEditor::new(
                     Graph::new(GraphResources::default().into(), builtin_types().into()),
                     nodes.into(),
+                    cx,
                 )
             }),
         }
