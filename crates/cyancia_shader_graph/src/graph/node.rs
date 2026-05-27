@@ -465,7 +465,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                             let editor = self.cx.entity().downgrade();
                             move |bounds, window, cx| {
                                 editor.update(cx, |editor, cx| {
-                                    editor.add_input_slot_bounds(slot_id, bounds);
+                                    editor.add_input_slot_pos(slot_id, bounds.center());
                                 });
                             }
                         }),
@@ -494,7 +494,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                             let editor = self.cx.entity().downgrade();
                             move |bounds, window, cx| {
                                 editor.update(cx, |editor, cx| {
-                                    editor.add_output_slot_bounds(slot_id, bounds);
+                                    editor.add_output_slot_pos(slot_id, bounds.center());
                                 });
                             }
                         }),

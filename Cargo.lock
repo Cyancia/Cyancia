@@ -1750,6 +1750,7 @@ version = "0.1.0"
 dependencies = [
  "bevy_math",
  "glam 0.30.10",
+ "gpui",
 ]
 
 [[package]]

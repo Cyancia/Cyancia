@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use cyancia_math::point::PointExt;
 use gpui::{
     Action, Bounds, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point, Render, SharedString,
@@ -20,6 +21,8 @@ pub struct AddNodeAction {
     pub name: SharedString,
 }
 
+pub const SLOT_HIT_TEST_RADIUS: f64 = 10.0;
+
 pub struct GraphEditor<Data: GraphData> {
     graph: Graph<Data>,
     node_registry: GraphNodeRegistry<Data>,
@@ -28,8 +31,8 @@ pub struct GraphEditor<Data: GraphData> {
     slot_connect_state: Option<SlotConnectState>,
     selected_nodes: HashSet<GraphNodeId>,
     node_bounds: HashMap<GraphNodeId, Bounds<Pixels>>,
-    input_slot_bounds: HashMap<GraphInputSlotId, Bounds<Pixels>>,
-    output_slot_bounds: HashMap<GraphOutputSlotId, Bounds<Pixels>>,
+    input_slot_pos: HashMap<GraphInputSlotId, Point<Pixels>>,
+    output_slot_pos: HashMap<GraphOutputSlotId, Point<Pixels>>,
 }
 
 impl<Data: GraphData> GraphEditor<Data> {
@@ -42,8 +45,8 @@ impl<Data: GraphData> GraphEditor<Data> {
             slot_connect_state: None,
             selected_nodes: HashSet::new(),
             node_bounds: HashMap::new(),
-            input_slot_bounds: HashMap::new(),
-            output_slot_bounds: HashMap::new(),
+            input_slot_pos: HashMap::new(),
+            output_slot_pos: HashMap::new(),
         }
     }
 
@@ -263,14 +266,14 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx: &mut Context<Self>,
     ) {
         let mut start_slot = None;
-        for (id, bounds) in &self.input_slot_bounds {
-            if bounds.contains(&event.position) {
+        for (id, pos) in &self.input_slot_pos {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
                 start_slot = Some(GraphSlotId::Input(*id));
                 break;
             }
         }
-        for (id, bounds) in &self.output_slot_bounds {
-            if bounds.contains(&event.position) {
+        for (id, pos) in &self.output_slot_pos {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
                 start_slot = Some(GraphSlotId::Output(*id));
                 break;
             }
@@ -323,14 +326,14 @@ impl<Data: GraphData> GraphEditor<Data> {
         };
 
         let mut end_slot = None;
-        for (slot_id, bounds) in &self.input_slot_bounds {
-            if bounds.contains(&event.position) {
+        for (slot_id, pos) in &self.input_slot_pos {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
                 end_slot = Some(GraphSlotId::Input(*slot_id));
                 break;
             }
         }
-        for (slot_id, bounds) in &self.output_slot_bounds {
-            if bounds.contains(&event.position) {
+        for (slot_id, pos) in &self.output_slot_pos {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
                 end_slot = Some(GraphSlotId::Output(*slot_id));
                 break;
             }
@@ -375,12 +378,12 @@ impl<Data: GraphData> GraphEditor<Data> {
         }
     }
 
-    pub fn add_input_slot_bounds(&mut self, id: GraphInputSlotId, bounds: Bounds<Pixels>) {
-        self.input_slot_bounds.insert(id, bounds);
+    pub fn add_input_slot_pos(&mut self, id: GraphInputSlotId, pos: Point<Pixels>) {
+        self.input_slot_pos.insert(id, pos);
     }
 
-    pub fn add_output_slot_bounds(&mut self, id: GraphOutputSlotId, bounds: Bounds<Pixels>) {
-        self.output_slot_bounds.insert(id, bounds);
+    pub fn add_output_slot_pos(&mut self, id: GraphOutputSlotId, pos: Point<Pixels>) {
+        self.output_slot_pos.insert(id, pos);
     }
 }
 
@@ -453,22 +456,14 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         .iter()
                         .filter_map(|st| match st.start_slot {
                             GraphSlotId::Input(input_id) => {
-                                let bounds = self.input_slot_bounds.get(&input_id)?;
+                                let pos = self.input_slot_pos.get(&input_id)?;
                                 let slot = self.graph.slots.inputs.get(&input_id)?;
-                                Some((
-                                    bounds.center(),
-                                    window.mouse_position(),
-                                    slot.data.ty().color(),
-                                ))
+                                Some((*pos, window.mouse_position(), slot.data.ty().color()))
                             }
                             GraphSlotId::Output(output_id) => {
-                                let bounds = self.output_slot_bounds.get(&output_id)?;
+                                let pos = self.output_slot_pos.get(&output_id)?;
                                 let slot = self.graph.slots.outputs.get(&output_id)?;
-                                Some((
-                                    bounds.center(),
-                                    window.mouse_position(),
-                                    slot.data_ty.color(),
-                                ))
+                                Some((*pos, window.mouse_position(), slot.data_ty.color()))
                             }
                         });
                 let segments = self
@@ -478,9 +473,9 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     .iter()
                     .filter_map(|(input_id, input)| {
                         let output_id = &input.connected?;
-                        let from = self.input_slot_bounds.get(input_id)?;
-                        let to = self.output_slot_bounds.get(output_id)?;
-                        Some((from.center(), to.center(), input.data.ty().color()))
+                        let from = self.input_slot_pos.get(input_id)?;
+                        let to = self.output_slot_pos.get(output_id)?;
+                        Some((*from, *to, input.data.ty().color()))
                     })
                     .chain(connecting)
                     .collect::<Vec<_>>();

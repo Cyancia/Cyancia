@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 glam.workspace = true
+gpui.workspace = true
 bevy_math.workspace = true
