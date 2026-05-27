@@ -6,7 +6,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point, Render, SharedString,
     Size, Styled, Window, canvas, div, prelude::FluentBuilder, px,
 };
-use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
+use gpui_component::{ActiveTheme, menu::ContextMenuExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -458,49 +458,41 @@ impl<Data: GraphData> GraphEditor<Data> {
 
 impl<Data: GraphData> Render for GraphEditor<Data> {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // self.node_bounds.clear();
-        // self.input_slot_bounds.clear();
-        // self.output_slot_bounds.clear();
+        // self.input_slot_pos.clear();
+        // self.output_slot_pos.clear();
 
-        let nodes = self
-            .graph
-            .nodes
-            .iter()
-            .map(|(id, node)| {
-                let body = node.render(
-                    *id,
-                    &self.graph.slots,
-                    &self.graph.resources,
-                    &self.graph.type_registry,
-                    window,
-                    cx,
-                );
-                let position = node.position + self.transform.translation;
+        let mut nodes = Vec::with_capacity(self.graph.nodes.len());
+        let mut node_ids = Vec::with_capacity(self.graph.nodes.len());
 
-                div()
-                    .w(px(170.0))
-                    .id(**id)
-                    .absolute()
-                    .bg(cx.theme().background)
-                    .left(px(position.x))
-                    .top(px(position.y))
-                    .border_2()
-                    .when(self.selected_nodes.contains(id), |div| {
-                        div.border_color(cx.theme().foreground)
-                    })
-                    .child(div().bg(node.data.header_color()).child(node.data.name()))
-                    .child(body)
-                    .on_prepaint({
-                        let node_id = *id;
-                        let editor = cx.entity().downgrade();
-                        move |bounds, window, cx| {
-                            editor.update(cx, |editor, cx| {
-                                editor.node_bounds.insert(node_id, bounds);
-                            });
-                        }
-                    })
-            })
-            .collect::<Vec<_>>();
+        for (id, node) in &self.graph.nodes {
+            let body = node.render(
+                *id,
+                &self.graph.slots,
+                &self.graph.resources,
+                &self.graph.type_registry,
+                window,
+                cx,
+            );
+            let position = node.position + self.transform.translation;
+
+            let node = div()
+                .w(px(170.0))
+                .id(**id)
+                .absolute()
+                .bg(cx.theme().background)
+                .left(px(position.x))
+                .top(px(position.y))
+                .border_2()
+                .when(self.selected_nodes.contains(id), |div| {
+                    div.border_color(cx.theme().foreground)
+                })
+                .child(div().bg(node.data.header_color()).child(node.data.name()))
+                .child(body)
+                .into_any_element();
+
+            nodes.push(node);
+            node_ids.push(*id);
+        }
 
         let all_nodes = self.node_registry.all().keys().cloned().collect::<Vec<_>>();
         div()
@@ -520,7 +512,23 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         .border_color(cx.theme().border),
                 )
             })
-            .children(nodes)
+            .child(
+                div()
+                    .absolute()
+                    .size_full()
+                    .children(nodes)
+                    .on_children_prepainted({
+                        let editor = cx.entity().downgrade();
+                        move |bounds, _window, cx| {
+                            editor.update(cx, |editor, _cx| {
+                                editor.node_bounds.clear();
+                                for (node_id, bounds) in node_ids.iter().zip(bounds) {
+                                    editor.node_bounds.insert(*node_id, bounds);
+                                }
+                            });
+                        }
+                    }),
+            )
             .child(canvas(|_, _, _| {}, {
                 let connecting =
                     self.slot_connect_state
