@@ -18,8 +18,6 @@ const DEFAULT_ID: &str = "curve-edit-widget";
 const KEY_CONTEXT: &str = "CurveEditWidget";
 const MIN_POINT_GAP: f32 = 0.001;
 
-// TODO: Clean up and fix delete not working.
-
 actions!(curve_edit, [DeleteSelectedControlPoint]);
 
 pub(crate) fn init(cx: &mut App) {
@@ -218,6 +216,7 @@ impl RenderOnce for CurveEdit {
                 id: self.id,
                 state: self.state.clone(),
                 style: self.style,
+                is_focusing: state.focus_handle.is_focused(window),
             })
     }
 }
@@ -226,6 +225,7 @@ struct CurveEditCanvas {
     id: ElementId,
     state: Entity<CurveEditState>,
     style: CurveEditStyle,
+    is_focusing: bool,
 }
 
 impl IntoElement for CurveEditCanvas {
@@ -316,7 +316,7 @@ impl Element for CurveEditCanvas {
                     self.paint_control_point(
                         bounds,
                         pt,
-                        state.selected_index == Some(idx),
+                        state.selected_index == Some(idx) && self.is_focusing,
                         &palette,
                         window,
                     );
@@ -499,7 +499,11 @@ impl CurveEditCanvas {
         });
 
         let state = self.state.clone();
-        window.on_mouse_event(move |ev: &MouseMoveEvent, _phase, window, cx| {
+        window.on_mouse_event(move |ev: &MouseMoveEvent, phase, window, cx| {
+            if !phase.bubble() || !bounds.contains(&ev.position) {
+                return;
+            }
+
             state.update(cx, |state, cx| {
                 let Some(idx) = state.drag_index else {
                     return;
