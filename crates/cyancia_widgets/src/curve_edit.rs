@@ -7,11 +7,11 @@ use std::{
 use cyancia_math::curve::CubicCurve;
 use glam::Vec2;
 use gpui::{
-    App, Bounds, ContentMask, Context, Element, ElementId, Entity, EventEmitter, FocusHandle,
-    GlobalElementId, HitboxBehavior, Hsla, InspectorElementId, InteractiveElement, IntoElement,
-    KeyBinding, KeyDownEvent, LayoutId, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, PathBuilder, Pixels, Point, RenderOnce, Style, Styled, Window, actions, div,
-    fill, hsla, point, px, relative, size,
+    App, BorderStyle, Bounds, ContentMask, Context, Corners, Element, ElementId, Entity,
+    EventEmitter, FocusHandle, GlobalElementId, HitboxBehavior, Hsla, InspectorElementId,
+    InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, PathBuilder, Pixels, Point, RenderOnce,
+    Style, Styled, Window, actions, div, fill, hsla, outline, point, px, relative, size,
 };
 
 const DEFAULT_ID: &str = "curve-edit-widget";
@@ -409,29 +409,17 @@ impl CurveEditCanvas {
     ) {
         let s = normalized_to_screen(pt, bounds);
         let r = self.style.control_point_radius;
+        let bounds = Bounds {
+            origin: point(s.x - r, s.y - r),
+            size: size(r * 2., r * 2.),
+        };
         if selected {
-            window.paint_quad(fill(
-                Bounds {
-                    origin: point(s.x - r, s.y - r),
-                    size: size(r * 2., r * 2.),
-                },
-                palette.selected_control_point,
-            ));
+            window.paint_quad(fill(bounds, palette.selected_control_point));
         } else {
-            let mut b = PathBuilder::stroke(self.style.control_point_stroke_width);
-            let steps = 12u32;
-            for i in 0..=steps {
-                let a = i as f32 / steps as f32 * std::f32::consts::TAU;
-                let p = point(s.x + r * a.cos(), s.y + r * a.sin());
-                if i == 0 {
-                    b.move_to(p);
-                } else {
-                    b.line_to(p);
-                }
-            }
-            if let Ok(path) = b.build() {
-                window.paint_path(path, palette.control_point);
-            }
+            window.paint_quad(PaintQuad {
+                corner_radii: Corners::all(r),
+                ..outline(bounds, palette.control_point, BorderStyle::Solid)
+            });
         }
     }
 
