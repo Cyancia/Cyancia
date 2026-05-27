@@ -7,3 +7,6 @@ edition = "2024"
 cyancia_utils_derive.workspace = true
 dyn-clone.workspace = true
 downcast-rs.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+bevy_color.workspace = true

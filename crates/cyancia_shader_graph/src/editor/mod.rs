@@ -511,14 +511,14 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                 .shadow_md()
                 .border_2()
                 .when(self.selected_nodes.contains(id), |d| {
-                    d.border_color(cx.theme().foreground.opacity(0.5))
+                    d.border_color(cx.theme().foreground)
                 })
                 .child(
                     div()
                         .w_full()
                         .px(NODE_HEADER_PADDING_X)
                         .py(NODE_HEADER_PADDING_Y)
-                        .bg(node.data.header_color())
+                        .bg(node.data.header_color(cx))
                         .rounded_t(NODE_RADIUS)
                         .child(node.data.name()),
                 )
@@ -549,21 +549,18 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                 )
             })
             .child(canvas(|_, _, _| {}, {
-                let connecting =
-                    self.slot_connect_state
-                        .iter()
-                        .filter_map(|st| match st.start_slot {
-                            GraphSlotId::Input(input_id) => {
-                                let pos = self.input_slot_pos.get(&input_id)?;
-                                let slot = self.graph.slots.inputs.get(&input_id)?;
-                                Some((*pos, window.mouse_position(), slot.data.ty().color()))
-                            }
-                            GraphSlotId::Output(output_id) => {
-                                let pos = self.output_slot_pos.get(&output_id)?;
-                                let slot = self.graph.slots.outputs.get(&output_id)?;
-                                Some((*pos, window.mouse_position(), slot.data_ty.color()))
-                            }
-                        });
+                let connecting = self.slot_connect_state.and_then(|st| match st.start_slot {
+                    GraphSlotId::Input(input_id) => {
+                        let pos = self.input_slot_pos.get(&input_id)?;
+                        let slot = self.graph.slots.inputs.get(&input_id)?;
+                        Some((*pos, window.mouse_position(), slot.data.ty().color(cx)))
+                    }
+                    GraphSlotId::Output(output_id) => {
+                        let pos = self.output_slot_pos.get(&output_id)?;
+                        let slot = self.graph.slots.outputs.get(&output_id)?;
+                        Some((*pos, window.mouse_position(), slot.data_ty.color(cx)))
+                    }
+                });
                 let segments = self
                     .graph
                     .slots
@@ -573,7 +570,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         let output_id = &input.connected?;
                         let from = self.input_slot_pos.get(input_id)?;
                         let to = self.output_slot_pos.get(output_id)?;
-                        Some((*from, *to, input.data.ty().color()))
+                        Some((*from, *to, input.data.ty().color(cx)))
                     })
                     .chain(connecting)
                     .collect::<Vec<_>>();

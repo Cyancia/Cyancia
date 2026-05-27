@@ -9,8 +9,8 @@ use std::{
 use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use gpui::{
-    AnyElement, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
-    Point, Rgba, Styled, Window, div, prelude::FluentBuilder, px,
+    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Pixels, Point, Rgba, Styled, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{ElementExt, text};
 use indexmap::IndexMap;
@@ -41,7 +41,7 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     type State: Send + Sync + 'static + GraphSerializable;
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Self::State;
-    fn header_color(&self) -> Rgba;
+    fn header_color(&self, cx: &mut App) -> Rgba;
     fn create_inputs(
         &self,
         state: &Self::State,
@@ -92,7 +92,7 @@ pub struct ErasedGraphNodeMessage {
 pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Box<dyn Any + Send + Sync>;
-    fn header_color(&self) -> Rgba;
+    fn header_color(&self, cx: &mut App) -> Rgba;
     fn create_inputs(
         &self,
         state: &Box<dyn Any + Send + Sync>,
@@ -145,8 +145,8 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
         Box::new(self.default_state())
     }
 
-    fn header_color(&self) -> Rgba {
-        self.header_color()
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        self.header_color(cx)
     }
 
     fn create_inputs(
@@ -260,8 +260,8 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         self.data.name()
     }
 
-    pub fn header_color(&self) -> Rgba {
-        self.data.header_color()
+    pub fn header_color(&self, cx: &mut App) -> Rgba {
+        self.data.header_color(cx)
     }
 
     pub fn render(&self, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement {
@@ -320,7 +320,7 @@ pub struct StatelessState {
 
 pub trait StatelessCommonGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
-    fn header_color(&self) -> Rgba;
+    fn header_color(&self, cx: &mut App) -> Rgba;
     fn create_inputs(
         &self,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
@@ -476,7 +476,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                 .gap(SLOT_ROW_GAP)
                 .child(
                     div()
-                        .bg(slot.data.ty().color())
+                        .bg(slot.data.ty().color(self.cx))
                         .min_w(SLOT_DOT_SIZE)
                         .min_h(SLOT_DOT_SIZE)
                         .rounded(SLOT_DOT_RADIUS)
@@ -524,7 +524,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                 .child(div().text_sm().child(slot.name.clone()))
                 .child(
                     div()
-                        .bg(slot.data_ty.color())
+                        .bg(slot.data_ty.color(self.cx))
                         .min_w(SLOT_DOT_SIZE)
                         .min_h(SLOT_DOT_SIZE)
                         .rounded(SLOT_DOT_RADIUS)

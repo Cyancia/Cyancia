@@ -2,15 +2,15 @@ use std::{collections::HashMap, sync::Arc};
 
 use bevy_math::Rect;
 use cyancia_render::buffer::DynamicBuffer;
-use cyancia_utils::wrapper;
+use cyancia_utils::{random_oklch, wrapper};
 use glam::{Vec2, Vec4};
 use gpui::{
-    AnyElement, AppContext, Context, ElementId, Entity, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Rgba, Styled, div, px, rgb,
+    div, px, rgb, AnyElement, App, AppContext, Context, ElementId, Entity, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Rgba, Styled,
 };
 use gpui_component::{
-    Sizable,
     input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
+    Sizable,
 };
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -18,10 +18,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::graph::{
-    GraphData,
     slot::{GraphInlineLiteralRenderContext, GraphInputSlotId, GraphValueType},
     texture::TextureId,
     variable::GraphLiteralValue,
+    GraphData,
 };
 
 pub const MIN_INLINE_FLOAT_WIDTH: Pixels = px(120.0);
@@ -32,8 +32,8 @@ pub struct F32Type;
 impl GraphValueType for F32Type {
     type AssociatedLiteralType = f32;
 
-    fn color(&self) -> Rgba {
-        rgb(0x0A9F8D)
+    fn color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(F32Type, cx)
     }
 
     fn name(&self) -> &'static str {
@@ -88,8 +88,8 @@ pub enum Vec2FMessage {
 impl GraphValueType for Vec2FType {
     type AssociatedLiteralType = Vec2;
 
-    fn color(&self) -> Rgba {
-        rgb(0x92E315)
+    fn color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(Vec2FType, cx)
     }
 
     fn name(&self) -> &'static str {
@@ -154,8 +154,8 @@ pub enum ColorMessage {
 impl GraphValueType for ColorType {
     type AssociatedLiteralType = Vec4;
 
-    fn color(&self) -> Rgba {
-        rgb(0x8779f2)
+    fn color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(ColorType, cx)
     }
 
     fn name(&self) -> &'static str {
@@ -252,8 +252,8 @@ impl TextureReference {
 impl GraphValueType for TextureType {
     type AssociatedLiteralType = TextureReference;
 
-    fn color(&self) -> Rgba {
-        rgb(0x8779f2)
+    fn color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(TextureType, cx)
     }
 
     fn name(&self) -> &'static str {
@@ -302,8 +302,8 @@ pub enum RectMessage {
 impl GraphValueType for RectType {
     type AssociatedLiteralType = Rect;
 
-    fn color(&self) -> Rgba {
-        rgb(0x8779f2)
+    fn color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(RectType, cx)
     }
 
     fn name(&self) -> &'static str {

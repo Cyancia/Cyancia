@@ -1,37 +1,36 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc,
         atomic::{AtomicU32, Ordering},
+        Arc,
     },
 };
 
 use bevy_math::{Rect, VectorSpace};
 use cyancia_assets::asset::AssetHandle;
 use cyancia_math::curve::CubicCurve;
-use cyancia_utils::{count, wrapper};
+use cyancia_utils::{count, random_oklch, themed_color::themed_oklch, wrapper};
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
 use gpui::{
-    AnyElement, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba, SharedString, Styled, div,
-    px, rgb, rgba,
+    div, px, rgb, rgba, AnyElement, App, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba,
+    SharedString, Styled,
 };
 use gpui_component::{
-    IndexPath, Sizable,
     input::{Input, InputEvent, InputState},
     searchable_list::SearchableListItem,
     select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState},
+    IndexPath, Sizable,
 };
-use indexmap::{IndexMap, map::Entry};
+use indexmap::{map::Entry, IndexMap};
 use parking_lot::{RwLock, RwLockReadGuard};
 use parse_display::Display;
-use serde::{Deserialize, Serialize, de::value};
+use serde::{de::value, Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     graph::{
-        Graph, GraphData, GraphVarIdentGenerator,
-        external::{ExternalVariableId, generate_external_variable_name},
+        external::{generate_external_variable_name, ExternalVariableId},
         function::GraphFunctionId,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
@@ -41,6 +40,7 @@ use crate::{
         slot::{ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot},
         texture::TextureId,
         variable::GraphTypeRegistry,
+        Graph, GraphData, GraphVarIdentGenerator,
     },
     save::GraphSerializable,
     wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
@@ -154,8 +154,8 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         ScalarMathNodeMode::Add
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x90be6d)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(ScalarMathNode, cx)
     }
 
     fn create_inputs(
@@ -494,8 +494,8 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         VectorMathNodeMode::Add
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x79caf2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(VectorMathNode, cx)
     }
 
     fn create_inputs(
@@ -859,8 +859,8 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
         RectMathNodeMode::Union
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x0e8638)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(RectMathNode, cx)
     }
 
     fn create_inputs(
@@ -1055,8 +1055,8 @@ impl<Data: GraphDataWithTime> StatelessCommonGraphNode<Data> for TimeNode {
         "Time"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xf28482)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(TimeNode, cx)
     }
 
     fn create_inputs(
@@ -1110,8 +1110,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
         "Clamp"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x4cc9a3)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(ClampNode, cx)
     }
 
     fn create_inputs(
@@ -1165,8 +1165,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
         "Step"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x9379f2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(StepNode, cx)
     }
 
     fn create_inputs(
@@ -1217,8 +1217,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
         "Smooth Step"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xe09d45)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(SmoothStepNode, cx)
     }
 
     fn create_inputs(
@@ -1273,8 +1273,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
         "Split Components"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x65b1c9)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(SplitComponentsNode, cx)
     }
 
     fn create_inputs(
@@ -1328,8 +1328,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
         "Combine Components"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xf279a5)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(CombineComponentsNode, cx)
     }
 
     fn create_inputs(
@@ -1380,8 +1380,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
         "Combine Color Components"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xae79f2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(CombineColorComponentsNode, cx)
     }
 
     fn create_inputs(
@@ -1438,8 +1438,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
         "Split Color Components"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xa3f279)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(SplitColorComponentsNode, cx)
     }
 
     fn create_inputs(
@@ -1506,8 +1506,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for GetPixelColorNode {
         "Get Pixel Color"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xf279d1)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(GetPixelColorNode, cx)
     }
 
     fn create_inputs(
@@ -1557,8 +1557,8 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         TextureId::NULL
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xbd79f2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(TextureNode, cx)
     }
 
     fn create_inputs(
@@ -1669,8 +1669,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
         "Color Mix"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x79caf2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(ColorMixNode, cx)
     }
 
     fn create_inputs(
@@ -1724,8 +1724,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
         "Texture Size"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xf2ab79)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(TextureSizeNode, cx)
     }
 
     fn create_inputs(
@@ -1819,8 +1819,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         GraphFunctionNodeState { id: None }
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0xb379f2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(GraphFunctionNode, cx)
     }
 
     fn create_inputs(
@@ -2019,8 +2019,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         GraphInputNodeState::default()
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x79f2c1)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(GraphInputNode, cx)
     }
 
     fn create_inputs(
@@ -2162,8 +2162,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         GraphOutputNodeState::default()
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x79f2c1)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(GraphOutputNode, cx)
     }
 
     fn create_inputs(
@@ -2316,8 +2316,8 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         "External Variable"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x79c9f2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(ExternalVariableNode, cx)
     }
 
     fn create_inputs(
@@ -2499,8 +2499,8 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         Default::default()
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x799af2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(CurveNode, cx)
     }
 
     fn create_inputs(
@@ -2671,8 +2671,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
         "Random Number"
     }
 
-    fn header_color(&self) -> Rgba {
-        rgb(0x79edf2)
+    fn header_color(&self, cx: &mut App) -> Rgba {
+        random_oklch!(RandomNode, cx)
     }
 
     fn create_inputs(
