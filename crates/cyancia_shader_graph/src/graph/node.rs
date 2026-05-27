@@ -437,7 +437,12 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
             .flex()
             .flex_col()
             .gap(NODE_HEADER_GAP)
-            .child(div().w_full().child(header).block_mouse_except_scroll())
+            .child(
+                div()
+                    .w_full()
+                    .child(header)
+                    .on_any_mouse_down(|_, _, cx| cx.stop_propagation()),
+            )
             .child(self.render_all_slots())
             .into_any_element()
     }

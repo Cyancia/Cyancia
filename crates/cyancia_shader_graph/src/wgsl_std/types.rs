@@ -5,12 +5,12 @@ use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::{random_oklch, wrapper};
 use glam::{Vec2, Vec4};
 use gpui::{
-    div, px, rgb, AnyElement, App, AppContext, Context, ElementId, Entity, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Rgba, Styled,
+    AnyElement, App, AppContext, Context, ElementId, Entity, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Rgba, Styled, div, px, rgb,
 };
 use gpui_component::{
-    input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
     Sizable,
+    input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
 };
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -18,10 +18,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::graph::{
+    GraphData,
     slot::{GraphInlineLiteralRenderContext, GraphInputSlotId, GraphValueType},
     texture::TextureId,
     variable::GraphLiteralValue,
-    GraphData,
 };
 
 pub const MIN_INLINE_FLOAT_WIDTH: Pixels = px(120.0);
@@ -450,6 +450,6 @@ fn literal_number_input<T: GraphLiteralValue>(
         .w_full()
         .min_w(MIN_INLINE_FLOAT_WIDTH)
         .child(NumberInput::new(input_state).small())
-        .block_mouse_except_scroll()
+        .on_any_mouse_down(|_, _, cx| cx.stop_propagation())
         .into_any_element()
 }
