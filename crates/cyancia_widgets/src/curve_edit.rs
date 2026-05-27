@@ -494,6 +494,7 @@ impl CurveEditCanvas {
                 state.drag_index = Some(index);
                 window.refresh();
                 cx.emit(CurveEditEvent::ControlPointsChanged);
+                cx.stop_propagation();
             });
         });
 
@@ -522,14 +523,16 @@ impl CurveEditCanvas {
 
                 state.curve = CubicCurve::new(control_points);
                 cx.emit(CurveEditEvent::ControlPointsChanged);
+                cx.stop_propagation();
             });
         });
 
         let state = self.state.clone();
         window.on_mouse_event(move |_ev: &MouseUpEvent, _phase, window, cx| {
-            state.update(cx, |state, _| {
+            state.update(cx, |state, cx| {
                 if state.drag_index.take().is_some() {
                     window.refresh();
+                    cx.stop_propagation();
                 }
             });
         });
