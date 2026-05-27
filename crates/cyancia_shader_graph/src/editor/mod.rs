@@ -3,9 +3,9 @@ use std::collections::{HashMap, HashSet};
 use cyancia_math::point::PointExt;
 use gpui::{
     Action, App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, KeyBinding,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels,
-    Point, Render, SharedString, Size, Styled, Window, actions, canvas, div,
-    prelude::FluentBuilder, px,
+    LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    PathBuilder, Pixels, Point, Render, SharedString, Size, Styled, Window, actions, canvas, div,
+    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, solid_background,
 };
 use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
@@ -591,12 +591,20 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     GraphSlotId::Input(input_id) => {
                         let pos = self.input_slot_pos.get(&input_id)?;
                         let slot = self.graph.slots.inputs.get(&input_id)?;
-                        Some((*pos, window.mouse_position(), slot.data.ty().color(cx)))
+                        Some((
+                            *pos,
+                            window.mouse_position(),
+                            solid_background(slot.data.ty().color(cx)),
+                        ))
                     }
                     GraphSlotId::Output(output_id) => {
                         let pos = self.output_slot_pos.get(&output_id)?;
                         let slot = self.graph.slots.outputs.get(&output_id)?;
-                        Some((*pos, window.mouse_position(), slot.data_ty.color(cx)))
+                        Some((
+                            *pos,
+                            window.mouse_position(),
+                            solid_background(slot.data_ty.color(cx)),
+                        ))
                     }
                 });
                 let segments = self
@@ -608,7 +616,22 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         let output_id = &input.connected?;
                         let from = self.input_slot_pos.get(input_id)?;
                         let to = self.output_slot_pos.get(output_id)?;
-                        Some((*from, *to, input.data.ty().color(cx)))
+                        let from_slot = self.graph.slots.inputs.get(input_id)?;
+                        let to_slot = self.graph.slots.outputs.get(output_id)?;
+                        let color = if from_slot.data.ty().name() != to_slot.data_ty.name() {
+                            let from_color = from_slot.data.ty().color(cx);
+                            let to_color = to_slot.data_ty.color(cx);
+                            let d = *to - *from;
+                            let angle = d.y.as_f32().atan2(d.x.as_f32());
+                            linear_gradient(
+                                angle.to_degrees(),
+                                linear_color_stop(from_color, 0.0),
+                                linear_color_stop(to_color, 1.0),
+                            )
+                        } else {
+                            solid_background(input.data.ty().color(cx))
+                        };
+                        Some((*from, *to, color))
                     })
                     .chain(connecting)
                     .collect::<Vec<_>>();
