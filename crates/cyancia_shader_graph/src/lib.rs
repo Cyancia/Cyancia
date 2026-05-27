@@ -1,4 +1,5 @@
 use cyancia_assets::AssetAppExt;
+use gpui::App;
 
 use crate::save::SerializableGraphFunctionSerializer;
 
@@ -9,6 +10,10 @@ pub mod wgsl_std;
 
 pub type GraphSerializer<'a> = toml::Serializer<'a>;
 pub type GraphDeserializer<'a> = toml::de::Deserializer<'a>;
+
+pub fn init(cx: &mut App) {
+    editor::init(cx);
+}
 
 // pub struct ShaderGraphPlugin;
 

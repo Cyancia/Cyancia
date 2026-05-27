@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use cyancia_math::point::PointExt;
 use gpui::{
-    Action, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point,
-    Render, SharedString, Size, Styled, Window, canvas, div, prelude::FluentBuilder, px,
+    Action, App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, KeyBinding,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels,
+    Point, Render, SharedString, Size, Styled, Window, actions, canvas, div,
+    prelude::FluentBuilder, px,
 };
 use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
@@ -23,6 +24,18 @@ use crate::{
 #[derive(Action, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 pub struct AddNodeAction {
     pub name: SharedString,
+}
+
+actions!(graph_editor, [DeleteSelectedNodeAction]);
+
+pub const GRAPH_EDITOR_CONTEXT: &'static str = "graph_editor";
+
+pub(crate) fn init(cx: &mut App) {
+    cx.bind_keys([KeyBinding::new(
+        "delete",
+        DeleteSelectedNodeAction,
+        Some(GRAPH_EDITOR_CONTEXT),
+    )]);
 }
 
 pub const SLOT_HIT_TEST_RADIUS_SQUARED: f64 = 10.0 * 10.0;
@@ -91,6 +104,20 @@ impl<Data: GraphData> GraphEditor<Data> {
         let cursor = window.mouse_position();
         let pos = Point::new(cursor.x.into(), cursor.y.into());
         self.graph.add_boxed_node(pos, node);
+    }
+
+    pub fn on_delete_selected_node_action(
+        &mut self,
+        event: &DeleteSelectedNodeAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for node_id in self.selected_nodes.drain() {
+            self.graph.delete_node(&node_id);
+            dbg!(&node_id);
+        }
+        dbg!();
+        cx.notify();
     }
 
     pub fn on_left_mouse_down(
@@ -533,6 +560,8 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
         div()
             .w_full()
             .h_full()
+            .key_context(GRAPH_EDITOR_CONTEXT)
+            .track_focus(&self.focus_handle)
             .bg(cx.theme().background)
             .when_some(self.marquee_state.as_ref(), |d, marquee| {
                 let marquee_bounds = marquee.bounds(window.mouse_position());
@@ -609,6 +638,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     }),
             )
             .on_action(cx.listener(Self::on_add_node_action))
+            .on_action(cx.listener(Self::on_delete_selected_node_action))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_left_mouse_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))

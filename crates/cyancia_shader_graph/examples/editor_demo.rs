@@ -158,6 +158,7 @@ fn main() {
             gpui_component::init(cx);
             load_theme(cx);
             cyancia_widgets::init(cx);
+            cyancia_shader_graph::init(cx);
 
             cx.open_window(
                 WindowOptions {
