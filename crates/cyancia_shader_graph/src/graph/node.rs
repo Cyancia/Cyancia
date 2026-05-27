@@ -428,7 +428,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
     pub fn render_all_slots_with_header(&mut self, header: impl IntoElement) -> AnyElement {
         div()
             .gap(px(5.0))
-            .child(header)
+            .child(div().w_full().child(header).block_mouse_except_scroll())
             .child(self.render_all_slots())
             .into_any_element()
     }

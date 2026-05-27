@@ -5,7 +5,7 @@ use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
 use glam::{Vec2, Vec4};
 use gpui::{
-    AnyElement, AppContext, Context, ElementId, Entity, IntoElement, ParentElement, Rgba, div, rgb,
+    AnyElement, AppContext, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, rgb
 };
 use gpui_component::{
     Sizable,
@@ -438,5 +438,9 @@ fn literal_number_input<T: GraphLiteralValue>(
     );
 
     let input_state = input_state.read(ctx.cx);
-    NumberInput::new(input_state).small().into_any_element()
+    div()
+        .w_full()
+        .child(NumberInput::new(input_state).small())
+        .block_mouse_except_scroll()
+        .into_any_element()
 }
