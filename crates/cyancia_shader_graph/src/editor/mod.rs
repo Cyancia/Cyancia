@@ -26,9 +26,13 @@ pub const SLOT_HIT_TEST_RADIUS_SQUARED: f64 = 10.0 * 10.0;
 pub struct GraphEditor<Data: GraphData> {
     graph: Graph<Data>,
     node_registry: GraphNodeRegistry<Data>,
+
     node_drag_state: Option<DragState>,
     marquee_state: Option<MarqueeState>,
     slot_connect_state: Option<SlotConnectState>,
+    pan_state: Option<PanState>,
+
+    transform: ViewTransform,
     selected_nodes: HashSet<GraphNodeId>,
     node_bounds: HashMap<GraphNodeId, Bounds<Pixels>>,
     input_slot_pos: HashMap<GraphInputSlotId, Point<Pixels>>,
@@ -40,9 +44,13 @@ impl<Data: GraphData> GraphEditor<Data> {
         Self {
             graph,
             node_registry,
+
             node_drag_state: None,
             marquee_state: None,
             slot_connect_state: None,
+            pan_state: None,
+
+            transform: ViewTransform::default(),
             selected_nodes: HashSet::new(),
             node_bounds: HashMap::new(),
             input_slot_pos: HashMap::new(),
@@ -90,6 +98,29 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
+    pub fn on_middle_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.pan_start(event, window, cx);
+        if self.pan_state.is_some() {
+            return;
+        }
+    }
+
+    pub fn on_middle_mouse_up(
+        &mut self,
+        event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pan_state.is_some() {
+            self.pan_end(event, window, cx);
+        }
+    }
+
     pub fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
@@ -102,6 +133,8 @@ impl<Data: GraphData> GraphEditor<Data> {
             self.slot_connect_drag(event, window, cx);
         } else if self.marquee_state.is_some() {
             self.marquee_drag(event, window, cx);
+        } else if self.pan_state.is_some() {
+            self.pan_drag(event, window, cx);
         }
     }
 
@@ -362,6 +395,38 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
+    pub fn pan_start(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.pan_state = Some(PanState {
+            cursor_origin: event.position,
+            original_translation: self.transform.translation,
+        });
+    }
+
+    pub fn pan_drag(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pan_state) = &mut self.pan_state else {
+            return;
+        };
+
+        let offset = event.position - pan_state.cursor_origin;
+        self.transform.translation =
+            pan_state.original_translation + Point::new(offset.x.into(), offset.y.into());
+        cx.notify();
+    }
+
+    pub fn pan_end(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.pan_state = None;
+    }
+
     pub fn get_node_state_mut<T: GraphNode<Data>>(
         &mut self,
         id: &GraphNodeId,
@@ -410,14 +475,15 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     window,
                     cx,
                 );
+                let position = node.position + self.transform.translation;
 
                 div()
                     .w(px(170.0))
                     .id(**id)
                     .absolute()
                     .bg(cx.theme().background)
-                    .left(Pixels::from(node.position.x))
-                    .top(Pixels::from(node.position.y))
+                    .left(px(position.x))
+                    .top(px(position.y))
                     .border_2()
                     .when(self.selected_nodes.contains(id), |div| {
                         div.border_color(cx.theme().foreground)
@@ -500,8 +566,10 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
             }))
             .on_action(cx.listener(Self::on_add_node_action))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_left_mouse_down))
+            .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_left_mouse_up))
+            .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_middle_mouse_up))
             .context_menu(move |menu, window, cx| {
                 let all_nodes = all_nodes.clone();
                 menu.submenu("Add Node", window, cx, move |mut menu, window, cx| {
@@ -553,4 +621,14 @@ struct SlotConnectState {
 enum GraphSlotId {
     Input(GraphInputSlotId),
     Output(GraphOutputSlotId),
+}
+
+struct PanState {
+    cursor_origin: Point<Pixels>,
+    original_translation: Point<f32>,
+}
+
+#[derive(Default)]
+struct ViewTransform {
+    translation: Point<f32>,
 }
