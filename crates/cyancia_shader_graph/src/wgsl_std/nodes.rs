@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU32, Ordering},
         Arc,
+        atomic::{AtomicU32, Ordering},
     },
 };
 
@@ -13,24 +13,25 @@ use cyancia_utils::{count, wrapper};
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
 use gpui::{
-    div, px, rgb, rgba, AnyElement, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba,
-    SharedString, Styled,
+    AnyElement, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba, SharedString, Styled, div,
+    px, rgb, rgba,
 };
 use gpui_component::{
+    IndexPath, Sizable,
     input::{Input, InputEvent, InputState},
     searchable_list::SearchableListItem,
     select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState},
-    IndexPath, Sizable,
 };
-use indexmap::{map::Entry, IndexMap};
+use indexmap::{IndexMap, map::Entry};
 use parking_lot::{RwLock, RwLockReadGuard};
 use parse_display::Display;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::value};
 use uuid::Uuid;
 
 use crate::{
     graph::{
-        external::{generate_external_variable_name, ExternalVariableId},
+        Graph, GraphData, GraphVarIdentGenerator,
+        external::{ExternalVariableId, generate_external_variable_name},
         function::GraphFunctionId,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
@@ -40,7 +41,6 @@ use crate::{
         slot::{ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot},
         texture::TextureId,
         variable::GraphTypeRegistry,
-        Graph, GraphData, GraphVarIdentGenerator,
     },
     save::GraphSerializable,
     wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
@@ -1546,11 +1546,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for GetPixelColorNode {
 #[derive(Default, Clone)]
 pub struct TextureNode;
 
-#[derive(Clone)]
-pub enum TextureNodeMessage {
-    TextureChanged(TextureId),
-}
-
 impl<Data: GraphData> GraphNode<Data> for TextureNode {
     type State = TextureId;
 
@@ -1587,7 +1582,53 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        todo!()
+        let node_id = ctx.node_id;
+        let editor = ctx.cx.entity().downgrade();
+        let all_textures = ctx
+            .resources
+            .textures
+            .all()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let selected = all_textures
+            .iter()
+            .position(|r| r.external_id == *state)
+            .map(IndexPath::new);
+
+        let select_state = ctx
+            .window
+            .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
+                let select_state =
+                    cx.new(|cx| SelectState::new(all_textures.clone(), selected, window, cx));
+
+                cx.subscribe_in(
+                    &select_state,
+                    window,
+                    move |state, _, event: &SelectEvent<_>, window, cx| match event {
+                        SelectEvent::Confirm(val) => {
+                            if let Some(val) = val {
+                                editor.update(cx, |editor, cx| {
+                                    editor.update_node_state::<Self>(node_id, |state| {
+                                        *state = *val;
+                                    });
+                                });
+                            }
+                        }
+                    },
+                )
+                .detach();
+
+                select_state
+            });
+
+        let select_state = select_state.read(ctx.cx).clone();
+        select_state.update(ctx.cx, |state, cx| {
+            state.set_items(all_textures, ctx.window, cx);
+            state.set_selected_index(selected, ctx.window, cx);
+        });
+
+        ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
 
     fn generate_code(
@@ -2373,7 +2414,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
-                let state = cx.new(|cx| SelectState::new(all_refs, selected, window, cx));
+                let state = cx.new(|cx| SelectState::new(all_refs.clone(), selected, window, cx));
 
                 let node_id = ctx.node_id;
                 cx.subscribe_in(
@@ -2399,7 +2440,11 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
                 state
             });
 
-        let select_state = select_state.read(ctx.cx);
+        let select_state = select_state.read(ctx.cx).clone();
+        select_state.update(ctx.cx, |state, cx| {
+            state.set_items(all_refs, ctx.window, cx);
+            state.set_selected_index(selected, ctx.window, cx);
+        });
         ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
 

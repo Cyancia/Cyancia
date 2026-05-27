@@ -113,7 +113,7 @@ fn menu_bar_init(cx: &mut App) -> Entity<AppMenuBar> {
     menu_bar
 }
 
-// Themes copied from gpui-component
+// Stole from gpui-component
 fn embedded_themes() -> HashMap<&'static str, &'static str> {
     let mut themes = HashMap::new();
 

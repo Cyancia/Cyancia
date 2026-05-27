@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use cyancia_assets::asset::AssetHandle;
 use cyancia_render::texture::Image;
 use cyancia_utils::wrapper;
+use gpui::SharedString;
+use gpui_component::searchable_list::SearchableListItem;
 use indexmap::IndexMap;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
@@ -26,15 +28,15 @@ pub struct TextureObject {
     pub handle: AssetHandle<Image>,
 }
 
-impl PartialEq for TextureObject {
-    fn eq(&self, other: &Self) -> bool {
-        self.external_id == other.external_id
-    }
-}
+impl SearchableListItem for TextureObject {
+    type Value = TextureId;
 
-impl ToString for TextureObject {
-    fn to_string(&self) -> String {
-        self.name.clone()
+    fn title(&self) -> SharedString {
+        self.name.clone().into()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.external_id
     }
 }
 
