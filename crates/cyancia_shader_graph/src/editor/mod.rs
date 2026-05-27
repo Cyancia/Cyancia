@@ -6,7 +6,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point, Render, SharedString,
     Size, Styled, Window, canvas, div, prelude::FluentBuilder, px,
 };
-use gpui_component::{ActiveTheme, menu::ContextMenuExt};
+use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -458,9 +458,6 @@ impl<Data: GraphData> GraphEditor<Data> {
 
 impl<Data: GraphData> Render for GraphEditor<Data> {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // self.input_slot_pos.clear();
-        // self.output_slot_pos.clear();
-
         let mut nodes = Vec::with_capacity(self.graph.nodes.len());
         let mut node_ids = Vec::with_capacity(self.graph.nodes.len());
 
@@ -558,6 +555,9 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     })
                     .chain(connecting)
                     .collect::<Vec<_>>();
+
+                self.input_slot_pos.clear();
+                self.output_slot_pos.clear();
 
                 move |bounds, _, window, cx| {
                     for (from, to, color) in segments {
