@@ -189,6 +189,21 @@ impl<Data: GraphData> Graph<Data> {
         }
     }
 
+    pub fn update_node_state<T: GraphNode<Data>>(
+        &mut self,
+        node_id: GraphNodeId,
+        mut f: impl FnOnce(&mut T::State),
+    ) {
+        if let Some(state) = self
+            .nodes
+            .get_mut(&node_id)
+            .and_then(|n| n.data.state_mut::<T>())
+        {
+            f(state);
+            self.reconcile_node_slots(node_id);
+        }
+    }
+
     pub fn invalidate_cache(&self) {
         self.cached_run_order.write().take();
         self.cached_signature.write().take();

@@ -449,12 +449,12 @@ impl<Data: GraphData> GraphEditor<Data> {
         self.pan_state = None;
     }
 
-    pub fn get_node_state_mut<T: GraphNode<Data>>(
+    pub fn update_node_state<T: GraphNode<Data>>(
         &mut self,
-        id: &GraphNodeId,
-    ) -> Option<&mut T::State> {
-        dbg!(std::any::type_name::<T>());
-        self.graph.nodes.get_mut(id)?.data.state_mut::<T>()
+        id: GraphNodeId,
+        f: impl FnOnce(&mut T::State),
+    ) {
+        self.graph.update_node_state::<T>(id, f);
     }
 
     pub fn add_node_selection(&mut self, id: GraphNodeId) {
@@ -522,13 +522,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         .rounded_t(NODE_RADIUS)
                         .child(node.data.name()),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .p(NODE_BODY_PADDING)
-                        .child(body),
-                )
+                .child(div().flex().flex_col().p(NODE_BODY_PADDING).child(body))
                 .into_any_element();
 
             nodes.push(node);
