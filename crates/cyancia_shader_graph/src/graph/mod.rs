@@ -359,60 +359,113 @@ impl<Data: GraphData> Graph<Data> {
             return;
         };
 
-        let new_inputs = node.data.create_inputs(GraphNodeCreateSlotsContext {
+        let new_input_defs = node.data.create_inputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
             type_registry: &self.type_registry,
         });
-        let new_outputs = node.data.create_outputs(GraphNodeCreateSlotsContext {
+        let mut new_input_ids = Vec::with_capacity(new_input_defs.len());
+        let mut old_input_ids = node.inputs.to_vec();
+        for new_input_def in new_input_defs {
+            let mut inherited = false;
+
+            for i in 0..old_input_ids.len() {
+                let old_input_id = old_input_ids[i];
+                let Some(old_input_slot) = self.slots.inputs.get_mut(&old_input_id) else {
+                    continue;
+                };
+
+                if old_input_slot.name == new_input_def.name
+                    && old_input_slot.data.ty().name() == new_input_def.value.ty().name()
+                {
+                    new_input_ids.push(old_input_id);
+                    old_input_ids.swap_remove(i);
+                    inherited = true;
+                    break;
+                }
+            }
+
+            if inherited {
+                continue;
+            }
+
+            let new_input_id = GraphInputSlotId::new(Uuid::new_v4());
+            let new_input_slot = GraphInputSlotData {
+                node_id,
+                name: new_input_def.name,
+                data: new_input_def.value,
+                connected: None,
+            };
+            self.slots.inputs.insert(new_input_id, new_input_slot);
+            new_input_ids.push(new_input_id);
+        }
+
+        for old_input_id in old_input_ids {
+            let Some(old_input) = self.slots.inputs.remove(&old_input_id) else {
+                continue;
+            };
+
+            if let Some(connected) = old_input
+                .connected
+                .and_then(|id| self.slots.outputs.get_mut(&id))
+            {
+                connected.connected.remove(&old_input_id);
+            }
+        }
+
+        let new_output_defs = node.data.create_outputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
             type_registry: &self.type_registry,
         });
+        let mut new_output_ids = Vec::with_capacity(new_output_defs.len());
+        let mut old_output_ids = node.outputs.to_vec();
+        for new_output_def in new_output_defs {
+            let mut inherited = false;
 
-        if new_inputs.len() == node.inputs.len() {
-            let mut inputs_changed = false;
-            for (input_slot_id, new_input_slot) in node.inputs.iter().zip(new_inputs) {
-                let Some(input_slot) = self.slots.inputs.get_mut(input_slot_id) else {
+            for i in 0..old_output_ids.len() {
+                let old_output_id = old_output_ids[i];
+                let Some(old_output_slot) = self.slots.outputs.get_mut(&old_output_id) else {
                     continue;
                 };
 
-                if input_slot.data.ty().name() != new_input_slot.value.ty().name() {
-                    input_slot.data = new_input_slot.value;
-                    inputs_changed = true;
+                if old_output_slot.name == new_output_def.name
+                    && old_output_slot.data_ty.name() == new_output_def.ty.name()
+                {
+                    new_output_ids.push(old_output_id);
+                    old_output_ids.swap_remove(i);
+                    inherited = true;
+                    break;
                 }
             }
 
-            if inputs_changed {
-                disconnect_all_inputs(&mut self.slots, &node.inputs);
-                self.cached_run_order.write().take();
+            if inherited {
+                continue;
             }
-        } else {
-            delete_all_inputs(&mut self.slots, &node.inputs);
-            node.inputs = create_input_slots(&mut self.slots, node_id, new_inputs).into();
-            self.cached_run_order.write().take();
+
+            let new_output_id = GraphOutputSlotId::new(Uuid::new_v4());
+            let new_output_slot = GraphOutputSlotData {
+                node_id,
+                name: new_output_def.name,
+                data_ty: new_output_def.ty,
+                connected: HashSet::new(),
+            };
+            self.slots.outputs.insert(new_output_id, new_output_slot);
+            new_output_ids.push(new_output_id);
         }
 
-        if new_outputs.len() == node.outputs.len() {
-            let mut outputs_changed = false;
-            for (output_slot_id, new_output_slot) in node.outputs.iter().zip(new_outputs) {
-                let Some(output_slot) = self.slots.outputs.get_mut(output_slot_id) else {
-                    continue;
-                };
+        for old_output_id in old_output_ids {
+            let Some(old_output) = self.slots.outputs.remove(&old_output_id) else {
+                continue;
+            };
 
-                if output_slot.data_ty.name() != new_output_slot.ty.name() {
-                    output_slot.data_ty = new_output_slot.ty;
-                    outputs_changed = true;
+            for connected_id in old_output.connected {
+                if let Some(connected) = self.slots.inputs.get_mut(&connected_id) {
+                    connected.connected = None;
                 }
             }
-
-            if outputs_changed {
-                disconnect_all_outputs(&mut self.slots, &node.outputs);
-                self.cached_run_order.write().take();
-            }
-        } else {
-            delete_all_outputs(&mut self.slots, &node.outputs);
-            node.outputs = create_output_slots(&mut self.slots, node_id, new_outputs).into();
-            self.cached_run_order.write().take();
         }
+
+        node.inputs = new_input_ids.into();
+        node.outputs = new_output_ids.into();
     }
 
     pub fn signature(&self) -> GraphSignature {
