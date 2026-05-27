@@ -21,7 +21,7 @@ pub struct AddNodeAction {
     pub name: SharedString,
 }
 
-pub const SLOT_HIT_TEST_RADIUS: f64 = 10.0;
+pub const SLOT_HIT_TEST_RADIUS_SQUARED: f64 = 10.0 * 10.0;
 
 pub struct GraphEditor<Data: GraphData> {
     graph: Graph<Data>,
@@ -267,13 +267,15 @@ impl<Data: GraphData> GraphEditor<Data> {
     ) {
         let mut start_slot = None;
         for (id, pos) in &self.input_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
+            {
                 start_slot = Some(GraphSlotId::Input(*id));
                 break;
             }
         }
         for (id, pos) in &self.output_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
+            {
                 start_slot = Some(GraphSlotId::Output(*id));
                 break;
             }
@@ -327,13 +329,15 @@ impl<Data: GraphData> GraphEditor<Data> {
 
         let mut end_slot = None;
         for (slot_id, pos) in &self.input_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
+            {
                 end_slot = Some(GraphSlotId::Input(*slot_id));
                 break;
             }
         }
         for (slot_id, pos) in &self.output_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS {
+            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
+            {
                 end_slot = Some(GraphSlotId::Output(*slot_id));
                 break;
             }
