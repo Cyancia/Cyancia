@@ -1,11 +1,13 @@
-use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_math::number::AngleDifference;
-use cyancia_runtime::{Runtime, Services};
 use cyancia_tools::{ToolFunction, ToolId};
 use glam::Vec2;
-use iced_runtime::Task;
+use gpui::{px, App, MouseDownEvent, MouseMoveEvent, Pixels, Point};
 
-use crate::{CanvasManager, control::CanvasTransform};
+use crate::{control::CanvasTransform, CanvasManager};
+
+fn mouse_position(position: Point<Pixels>) -> Vec2 {
+    Vec2::new(position.x / px(1.), position.y / px(1.))
+}
 
 #[derive(Default)]
 pub struct PanTool {
@@ -14,41 +16,26 @@ pub struct PanTool {
 }
 
 impl ToolFunction for PanTool {
-    type Message = ();
-
     fn id() -> ToolId {
         ToolId::new("pan_tool")
     }
 
-    fn begin(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return Task::none();
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+        let Some(canvas) = cx.global::<CanvasManager>().current() else {
+            return;
         };
 
-        self.start_pos = Vec2::new(mouse.position.x, mouse.position.y);
+        self.start_pos = mouse_position(mouse.position);
         self.original_transform = canvas.transform.clone();
-        Task::none()
     }
 
-    fn update(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
-            return Task::none();
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
+        let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
+            return;
         };
 
-        let delta = Vec2::new(mouse.position.x, mouse.position.y) - self.start_pos;
+        let delta = mouse_position(mouse.position) - self.start_pos;
         canvas.transform = self.original_transform.clone().translated(delta);
-
-        Task::none()
     }
 }
 
@@ -60,48 +47,32 @@ pub struct RotateTool {
 }
 
 impl ToolFunction for RotateTool {
-    type Message = ();
-
     fn id() -> ToolId {
         ToolId::new("rotate_tool")
     }
 
-    fn begin(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return Task::none();
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+        let Some(canvas) = cx.global::<CanvasManager>().current() else {
+            return;
         };
 
         self.center = canvas.transform.widget_bounds.size() * 0.5;
-        let t = self.center - Vec2::new(mouse.position.x, mouse.position.y);
+        let t = self.center - mouse_position(mouse.position);
         self.initial_angle = t.y.atan2(t.x);
         self.original_transform = canvas.transform.clone();
-
-        Task::none()
     }
 
-    fn update(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
-            return Task::none();
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
+        let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
+            return;
         };
 
-        let t = self.center - Vec2::new(mouse.position.x, mouse.position.y);
+        let t = self.center - mouse_position(mouse.position);
         let cur_angle = t.y.atan2(t.x);
         canvas.transform = self
             .original_transform
             .clone()
             .rotated_around(cur_angle.angle_difference(self.initial_angle), self.center);
-
-        Task::none()
     }
 }
 
@@ -112,45 +83,29 @@ pub struct ZoomTool {
 }
 
 impl ToolFunction for ZoomTool {
-    type Message = ();
-
     fn id() -> ToolId {
         ToolId::new("zoom_tool")
     }
 
-    fn begin(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return Task::none();
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+        let Some(canvas) = cx.global::<CanvasManager>().current() else {
+            return;
         };
 
-        self.start_pos = Vec2::new(mouse.position.x, mouse.position.y);
+        self.start_pos = mouse_position(mouse.position);
         self.original_transform = canvas.transform.clone();
-
-        Task::none()
     }
 
-    fn update(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
-            return Task::none();
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
+        let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
+            return;
         };
 
-        let d = mouse.position.y - self.start_pos.y;
+        let d = mouse_position(mouse.position).y - self.start_pos.y;
         let f = d / self.original_transform.widget_bounds.size().y + 1.0;
         canvas.transform = self
             .original_transform
             .clone()
             .scaled_around(f, self.start_pos);
-
-        Task::none()
     }
 }

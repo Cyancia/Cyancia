@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use cyancia_runtime::{
-    Services,
-    service::{FromServices, RenderContext, Service},
-};
 use cyancia_utils::include_shader;
 use futures::executor::block_on;
+use gpui::{App, Global};
 use wgpu::{
     Adapter, AddressMode, Backends, Device, Features, FilterMode, Instance, Limits, Queue, Sampler,
     SamplerDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource, VertexState,
 };
+
+use crate::render_context::RenderContext;
 
 #[derive(Debug)]
 pub struct GlobalSamplers {
@@ -19,16 +18,14 @@ pub struct GlobalSamplers {
     linear_wrap: Arc<Sampler>,
 }
 
-impl Service for GlobalSamplers {}
-
-impl FromServices for GlobalSamplers {
-    fn from_services(services: &Services) -> Self {
-        let render_context = services.service::<RenderContext>();
-        Self::new(&render_context.device)
-    }
-}
+impl Global for GlobalSamplers {}
 
 impl GlobalSamplers {
+    pub fn from_app(app: &App) -> Self {
+        let render_context = app.global::<RenderContext>();
+        Self::new(&render_context.device)
+    }
+
     pub fn new(device: &Device) -> Self {
         let nearest_clamp = device.create_sampler(&SamplerDescriptor {
             label: Some("nearest clamp sampler"),
@@ -104,16 +101,14 @@ pub struct FullscreenVertex {
     shader: ShaderModule,
 }
 
-impl Service for FullscreenVertex {}
-
-impl FromServices for FullscreenVertex {
-    fn from_services(services: &Services) -> Self {
-        let render_context = services.service::<RenderContext>();
-        Self::new(&render_context.device)
-    }
-}
+impl Global for FullscreenVertex {}
 
 impl FullscreenVertex {
+    pub fn from_app(cx: &App) -> Self {
+        let render_context = cx.global::<RenderContext>();
+        Self::new(&render_context.device)
+    }
+
     pub fn new(device: &Device) -> Self {
         let fullscreen_vertex = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fullscreen vertex shader"),

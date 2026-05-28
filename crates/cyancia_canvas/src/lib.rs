@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use bevy_math::IRect;
 use cyancia_image::{CImage, layer::LayerId};
-use cyancia_runtime::{Application, Runtime, Services, plugin::Plugin, service::Service};
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_utils::wrapper;
+use gpui::{App, Global};
 use parking_lot::RwLock;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
@@ -68,16 +68,23 @@ impl CCanvas {
     }
 }
 
-pub struct CanvasPlugin;
-
-impl Plugin for CanvasPlugin {
-    fn build(&self, app: &mut Application) {
-        app.add_service::<CanvasManager>()
-            .add_tool_function::<PanTool>()
-            .add_tool_function::<RotateTool>()
-            .add_tool_function::<ZoomTool>();
-    }
+pub fn init(cx: &mut App) {
+    cx.set_global(CanvasManager::default());
+    cx.add_tool_function::<PanTool>();
+    cx.add_tool_function::<RotateTool>();
+    cx.add_tool_function::<ZoomTool>();
 }
+
+// pub struct CanvasPlugin;
+
+// impl Plugin for CanvasPlugin {
+//     fn build(&self, app: &mut Application) {
+//         app.add_service::<CanvasManager>()
+//             .add_tool_function::<PanTool>()
+//             .add_tool_function::<RotateTool>()
+//             .add_tool_function::<ZoomTool>();
+//     }
+// }
 
 #[derive(Default)]
 pub struct CanvasManager {
@@ -85,7 +92,7 @@ pub struct CanvasManager {
     current_canvas: Option<usize>,
 }
 
-impl Service for CanvasManager {}
+impl Global for CanvasManager {}
 
 impl CanvasManager {
     pub fn add_canvas(&mut self, canvas: CCanvas) {

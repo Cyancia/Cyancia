@@ -1872,6 +1872,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_canvas"
+version = "0.1.0"
+dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "cyancia_assets",
+ "cyancia_image",
+ "cyancia_math",
+ "cyancia_render",
+ "cyancia_tools",
+ "cyancia_utils",
+ "encase",
+ "glam 0.30.10",
+ "gpui",
+ "image",
+ "log",
+ "parking_lot",
+ "parse-display",
+ "serde",
+ "uuid",
+ "wesl",
+ "wgpu 27.0.1",
+]
+
+[[package]]
 name = "cyancia_image"
 version = "0.1.0"
 dependencies = [
@@ -1916,14 +1941,12 @@ dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "bytemuck",
  "cyancia_assets",
- "cyancia_runtime",
  "cyancia_utils",
  "encase",
  "futures",
- "iced_renderer",
- "iced_wgpu",
- "iced_widget",
+ "gpui",
  "image",
+ "log",
  "parse-display",
  "serde",
  "thiserror 2.0.18",
@@ -3946,17 +3969,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iced_renderer"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-dependencies = [
- "iced_graphics",
- "iced_wgpu",
- "log",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "iced_runtime"
 version = "0.14.0"
 source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
@@ -3986,19 +3998,6 @@ dependencies = [
  "rustc-hash 2.1.2",
  "thiserror 2.0.18",
  "wgpu 27.0.1",
-]
-
-[[package]]
-name = "iced_widget"
-version = "0.14.2"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-dependencies = [
- "iced_renderer",
- "log",
- "num-traits",
- "rustc-hash 2.1.2",
- "thiserror 2.0.18",
- "unicode-segmentation",
 ]
 
 [[package]]
@@ -11008,6 +11007,16 @@ version = "0.14.0"
 source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
 
 [[patch.unused]]
+name = "iced_renderer"
+version = "0.14.0"
+source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
+
+[[patch.unused]]
 name = "iced_selector"
 version = "0.14.0"
+source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
+
+[[patch.unused]]
+name = "iced_widget"
+version = "0.14.2"
 source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"

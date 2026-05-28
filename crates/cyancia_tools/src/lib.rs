@@ -24,13 +24,12 @@ pub fn init(cx: &mut App) {
 // }
 
 pub trait ToolsAppExt {
-    fn add_tool_function<T: ToolFunction + Default>(&mut self) -> &mut Self;
+    fn add_tool_function<T: ToolFunction + Default>(&mut self);
 }
 
 impl ToolsAppExt for App {
-    fn add_tool_function<T: ToolFunction + Default>(&mut self) -> &mut Self {
+    fn add_tool_function<T: ToolFunction + Default>(&mut self) {
         self.global_mut::<ToolFunctionRegistry>().register::<T>();
-        self
     }
 }
 

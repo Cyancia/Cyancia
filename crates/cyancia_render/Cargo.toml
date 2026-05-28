@@ -8,11 +8,7 @@ wgpu.workspace = true
 cyancia_utils.workspace = true
 wesl.workspace = true
 encase.workspace = true
-iced_wgpu.workspace = true
-iced_widget.workspace = true
-cyancia_runtime.workspace = true
 futures.workspace = true
-iced_renderer.workspace = true
 serde.workspace = true
 parse-display.workspace = true
 anyhow.workspace = true
@@ -23,6 +19,8 @@ zip.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 bytemuck.workspace = true
+gpui.workspace = true
+log.workspace = true
 
 [build-dependencies]
 wesl.workspace = true
