@@ -7,7 +7,7 @@ members = [
     # "crates/cyancia_runtime_derive",
     # "crates/cyancia_canvas",
     # "crates/cyancia_graph",
-    # "crates/cyancia_image",
+    "crates/cyancia_image",
     # "crates/cyancia_input",
     "crates/cyancia_math",
     "crates/cyancia_render",

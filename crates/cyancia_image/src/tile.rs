@@ -7,14 +7,9 @@ use std::{
 
 use bevy_math::IRect;
 use cyancia_render::buffer::BufferVec;
-use cyancia_runtime::{
-    Services,
-    service::{FromServices, RenderContext, Service},
-};
 use dashmap::{DashMap, DashSet, Entry};
 use encase::ShaderType;
 use glam::{IVec2, Mat3, UVec2};
-use iced_core::Rectangle;
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use indexmap::{IndexMap, IndexSet};
 use palette::{LinSrgba, Srgb, Srgba};
@@ -49,15 +44,15 @@ impl std::fmt::Debug for GpuTileStorage {
     }
 }
 
-impl Service for GpuTileStorage {}
+// impl Service for GpuTileStorage {}
 
-impl FromServices for GpuTileStorage {
-    fn from_services(services: &Services) -> Self {
-        Self {
-            inner: Arc::new(GpuTileStorageInner::from_services(services)),
-        }
-    }
-}
+// impl FromServices for GpuTileStorage {
+//     fn from_services(services: &Services) -> Self {
+//         Self {
+//             inner: Arc::new(GpuTileStorageInner::from_services(services)),
+//         }
+//     }
+// }
 
 impl Deref for GpuTileStorage {
     type Target = GpuTileStorageInner;
@@ -118,12 +113,12 @@ pub struct GpuTileStorageInner {
 
 // impl Service for GpuTileStorageInner {}
 
-impl FromServices for GpuTileStorageInner {
-    fn from_services(services: &Services) -> Self {
-        let render_context = services.service::<RenderContext>();
-        Self::new(render_context.device.clone(), render_context.queue.clone())
-    }
-}
+// impl FromServices for GpuTileStorageInner {
+//     fn from_services(services: &Services) -> Self {
+//         let render_context = services.service::<RenderContext>();
+//         Self::new(render_context.device.clone(), render_context.queue.clone())
+//     }
+// }
 
 impl GpuTileStorageInner {
     pub const TILE_SIZE: u32 = 256;

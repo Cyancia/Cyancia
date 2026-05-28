@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 dashmap.workspace = true
 cyancia_utils.workspace = true
-iced_core.workspace = true
 glam.workspace = true
 parking_lot.workspace = true
 wgpu.workspace = true
@@ -17,7 +16,7 @@ log.workspace = true
 palette.workspace = true
 rayon.workspace = true
 half.workspace = true
-cyancia_runtime.workspace = true
+# cyancia_runtime.workspace = true
 bevy_math.workspace = true
 wesl.workspace = true
 parse-display.workspace = true

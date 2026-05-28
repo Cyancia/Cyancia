@@ -5,7 +5,6 @@ use std::{
 };
 
 use bevy_math::IRect;
-use cyancia_runtime::{Services, service::Service};
 use dyn_clone::DynClone;
 use encase::ShaderType;
 use glam::{IVec2, UVec2, UVec3};
@@ -166,7 +165,7 @@ impl LayerPreviewOverriders {
     }
 }
 
-impl Service for LayerPreviewOverriders {}
+// impl Service for LayerPreviewOverriders {}
 
 pub struct PixelPreviewOverrider {
     pub texture: TextureView,
