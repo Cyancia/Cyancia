@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{ItemImpl, parse_macro_input};
+use syn::{parse_macro_input, ItemImpl};
 
 #[proc_macro_attribute]
 pub fn stateless(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -83,7 +83,11 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::create_outputs(self, ctx)
             }
 
-            fn render(&self, _state: &Self::State, mut ctx: #crate_path::graph::node::GraphNodeRenderContext<'_, '_, Data>) -> gpui::AnyElement {
+            fn render(
+                &self,
+                _state: &Self::State,
+                mut ctx: #crate_path::graph::node::GraphNodeRenderContext<'_, '_, #data_ty>,
+            ) -> gpui::AnyElement {
                 ctx.render_all_slots()
             }
 

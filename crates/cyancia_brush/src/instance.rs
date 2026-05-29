@@ -19,9 +19,8 @@ use cyancia_shader_graph::{
         },
         function::{GraphFunction, GraphFunctionStorage},
         node::GraphNodeRegistry,
-        slot::ErasedGraphLiteralUpdateMessage,
         texture::{GraphTextureStorage, GraphTextureUsageRecorder, TextureId},
-        variable::{GraphLiteral, GraphTypeRegistry},
+        variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry},
     },
     save::{
         GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
@@ -287,6 +286,18 @@ impl BrushPresetInstance {
         &mut self.stroke_postprocess_graphs
     }
 
+    pub fn stroke_postprocess_graph(&self, index: usize) -> &Graph<BrushGraphPostprocessData> {
+        &self.stroke_postprocess_graphs[index]
+    }
+
+    pub fn stroke_postprocess_graph_mut(
+        &mut self,
+        index: usize,
+    ) -> &mut Graph<BrushGraphPostprocessData> {
+        self.increment_runtime_revision();
+        &mut self.stroke_postprocess_graphs[index]
+    }
+
     pub fn metadata(&self) -> &BrushPresetMetadata {
         &self.metadata
     }
@@ -313,9 +324,9 @@ impl BrushPresetInstance {
     pub fn update_external_var(
         &self,
         id: &ExternalVariableId,
-        msg: ErasedGraphLiteralUpdateMessage,
+        new_value: Box<dyn GraphLiteralValue>,
     ) {
-        self.external_vars.update(&id, msg);
+        self.external_vars.update(id, new_value);
     }
 
     pub fn remove_external_var(&mut self, id: &ExternalVariableId) {

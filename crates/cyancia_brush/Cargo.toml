@@ -5,12 +5,8 @@ edition = "2024"
 
 [dependencies]
 cyancia_shader_graph.workspace = true
-iced_widget.workspace = true
-iced_core.workspace = true
-iced_runtime.workspace = true
 glam.workspace = true
 wesl.workspace = true
-iced_futures.workspace = true
 rfd.workspace = true
 cyancia_assets.workspace = true
 thiserror.workspace = true
@@ -19,12 +15,9 @@ image.workspace = true
 toml.workspace = true
 wgpu.workspace = true
 bytemuck.workspace = true
-iced_wgpu.workspace = true
 serde.workspace = true
 cyancia_render.workspace = true
 log.workspace = true
-cyancia_runtime.workspace = true
-cyancia_input.workspace = true
 cyancia_actions.workspace = true
 encase.workspace = true
 cyancia_image.workspace = true
@@ -37,13 +30,12 @@ cyancia_canvas.workspace = true
 bevy_math.workspace = true
 cyancia_utils.workspace = true
 cyancia_widgets.workspace = true
-cyancia_shader_graph_derive.workspace = true
 ringbuffer.workspace = true
 cyancia_math.workspace = true
-iced_aw.workspace = true
 futures.workspace = true
 chrono.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
 
-[build-dependencies]
-wesl.workspace = true
-cyancia_image.workspace = true
+[dev-dependencies]
+gpui_platform.workspace = true

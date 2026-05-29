@@ -16,7 +16,6 @@ use cyancia_image::{
         TileIndex,
     },
 };
-use cyancia_input::mouse::PressedMouseState;
 use cyancia_math::number::LerpAngle;
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},

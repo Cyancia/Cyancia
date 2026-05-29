@@ -14,7 +14,7 @@ use cyancia_assets::{
         standard::StandardAssetBundle,
     },
     index_db::AssetFilter,
-    loader::{AssetSerializer, AssetSerializerRegistry, AssetSerializerRegistryBuilder},
+    loader::{AssetRegistryBuilder, AssetSerializer, AssetSerializerRegistry},
     store::AssetRegistry,
     tag::{Tag, TagSerializer},
 };
@@ -243,12 +243,12 @@ fn test() {
         fs::remove_file(&local_manifest_path).unwrap();
     }
 
-    let mut serializers = AssetSerializerRegistryBuilder::default();
-    serializers.add_serializer::<TestAssetSerializer>();
-    serializers.add_serializer::<TagSerializer>();
+    let mut builder = AssetRegistryBuilder::default();
+    builder.set_root(assets_root.clone());
+    builder.add_serializer::<TestAssetSerializer>();
+    builder.add_serializer::<TagSerializer>();
 
-    let mut registry =
-        AssetRegistry::new(&assets_root, serializers.consume_and_build().into()).unwrap();
+    let mut registry = builder.build();
 
     registry.add_bundle(local_bundle).unwrap();
     registry
@@ -397,12 +397,12 @@ fn test() {
     TagSerializer.write(&offline_tag, &mut tag_content).unwrap();
     fs::write(&local_tag_path, tag_content).unwrap();
 
-    let mut serializers = AssetSerializerRegistryBuilder::default();
-    serializers.add_serializer::<TestAssetSerializer>();
-    serializers.add_serializer::<TagSerializer>();
+    let mut builder = AssetRegistryBuilder::default();
+    builder.add_serializer::<TestAssetSerializer>();
+    builder.add_serializer::<TagSerializer>();
+    builder.set_root(assets_root.clone());
 
-    let mut restarted_registry =
-        AssetRegistry::new(&assets_root, serializers.consume_and_build().into()).unwrap();
+    let mut restarted_registry = builder.build();
 
     restarted_registry
         .add_bundle(StandardAssetBundle::new(&bundle_path).unwrap())

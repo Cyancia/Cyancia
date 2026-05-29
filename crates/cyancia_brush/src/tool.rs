@@ -2,20 +2,18 @@ use std::collections::VecDeque;
 
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
-use cyancia_assets::store::AssetRegistry;
+use cyancia_assets::{AssetAppExt, store::AssetRegistry};
 use cyancia_canvas::{CCanvas, CanvasId, CanvasManager, event::CanvasUpdate};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,
     tile::GpuTileStorage,
 };
-use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_math::number::LerpAngle;
-use cyancia_runtime::{Services, event::Event, service::Service};
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use glam::{FloatExt, Vec2};
-use iced_runtime::Task;
+use gpui::{App, BorrowAppContext, Global, MouseDownEvent, MouseMoveEvent, MouseUpEvent};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
@@ -37,32 +35,25 @@ pub enum BrushToolMessage {
 }
 
 impl ToolFunction for BrushTool {
-    type Message = BrushToolMessage;
-
     fn id() -> ToolId {
         ToolId::new("brush_tool")
     }
 
-    fn begin(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
-        let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return Task::none();
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+        let Some(canvas) = cx.global::<CanvasManager>().current() else {
+            return;
         };
 
         let Some(position) = canvas
             .transform
-            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
+            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
         else {
-            return Task::none();
+            return;
         };
         let active_layer = canvas.image.active_layer;
         if !canvas.image.active_layer_data().can_contain_pixels() {
             log::warn!("Unable to paint to the active layer which cannot contain pixels.");
-            return Task::none();
+            return;
         }
 
         let now = Utc::now();
@@ -77,43 +68,35 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let success =
-            services.try_service_scope::<CurrentBrushPresetOperator, ()>(|brush, services| {
-                let tiles = services.service::<GpuTileStorage>();
-                let assets = services.service::<AssetRegistry>();
-                brush.begin_stroke(params, tiles, assets, active_layer);
-            });
-
-        if success.is_none() {
+        if !cx.has_global::<CurrentBrushPresetOperator>() {
             log::error!("No current brush preset operator found.");
+            return;
         }
 
-        Task::none()
+        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            let tiles = cx.global::<GpuTileStorage>();
+            brush.begin_stroke(params, tiles, cx.assets(), active_layer);
+        });
     }
 
-    fn update(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
         let Some((canvas_id, active_layer)) = self.target_layer else {
-            return Task::none();
+            return;
         };
 
-        let Some(canvas) = services.service::<CanvasManager>().get(&canvas_id) else {
-            return Task::none();
+        let Some(canvas) = cx.global::<CanvasManager>().get(&canvas_id) else {
+            return;
         };
         let Some(position) = canvas
             .transform
-            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
+            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
         else {
-            return Task::none();
+            return;
         };
 
         let Some(stroke_begin) = self.stroke_begin else {
             log::error!("Stroke update called without a stroke begin time.");
-            return Task::none();
+            return;
         };
 
         let params = RawPenInput {
@@ -124,28 +107,20 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let Some(brush) = services.get_service_mut::<CurrentBrushPresetOperator>() else {
-            log::error!("No current brush preset operator found.");
-            return Task::none();
-        };
-
         let now = std::time::Instant::now();
-        // update_stroke needs GpuTileStorage — split borrow via a workaround:
-        // We take the tiles reference separately. Since services holds both, we call
-        // update_stroke through try_service_scope instead.
-        // NOTE: We drop brush borrow here and re-scope below.
-        drop(brush);
 
-        let maybe_preview = services
-            .try_service_scope::<CurrentBrushPresetOperator, _>(|brush, services| {
-                let tiles = services.service::<GpuTileStorage>();
-                brush.update_stroke(params, tiles);
-                brush.generate_preview(tiles)
-            })
-            .flatten();
+        if !cx.has_global::<CurrentBrushPresetOperator>() {
+            return;
+        }
+
+        let maybe_preview = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            let tiles = cx.global::<GpuTileStorage>();
+            brush.update_stroke(params, tiles);
+            brush.generate_preview(tiles)
+        });
 
         if let Some((bounds, preview)) = maybe_preview {
-            let overriders = services.service_mut::<LayerPreviewOverriders>();
+            let overriders = cx.global_mut::<LayerPreviewOverriders>();
             overriders.insert_overrider(
                 active_layer,
                 PixelPreviewOverrider {
@@ -154,38 +129,32 @@ impl ToolFunction for BrushTool {
                 },
             );
 
-            CanvasUpdate::broadcast(CanvasUpdate {
-                id: canvas_id,
-                dirty_tiles: bounds,
-            });
+            // TODO Broadcast update event
+            // CanvasUpdate::broadcast(CanvasUpdate {
+            //     id: canvas_id,
+            //     dirty_tiles: bounds,
+            // });
         }
-
-        Task::none()
     }
 
-    fn end(
-        &mut self,
-        keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
-    ) -> Task<Self::Message> {
+    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App) {
         let Some((canvas_id, active_layer)) = self.target_layer.take() else {
-            return Task::none();
+            return;
         };
 
-        let Some(canvas) = services.service::<CanvasManager>().get(&canvas_id) else {
-            return Task::none();
+        let Some(canvas) = cx.global::<CanvasManager>().get(&canvas_id) else {
+            return;
         };
         let Some(position) = canvas
             .transform
-            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
+            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
         else {
-            return Task::none();
+            return;
         };
 
         let Some(stroke_begin) = self.stroke_begin.take() else {
             log::error!("Stroke end called without a stroke begin time.");
-            return Task::none();
+            return;
         };
 
         let final_input = RawPenInput {
@@ -196,24 +165,21 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let dirty_tiles = services
-            .try_service_scope::<CurrentBrushPresetOperator, _>(|brush, services| {
-                let tiles = services.service::<GpuTileStorage>();
-                brush.end_stroke(final_input, tiles, active_layer)
-            })
-            .flatten();
+        let dirty_tiles = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            let tiles = cx.global::<GpuTileStorage>();
+            brush.end_stroke(final_input, tiles, active_layer)
+        });
 
-        let overriders = services.service_mut::<LayerPreviewOverriders>();
+        let overriders = cx.global_mut::<LayerPreviewOverriders>();
         overriders.remove_overrider(&active_layer);
 
         if let Some(dirty_tiles) = dirty_tiles {
-            CanvasUpdate::broadcast(CanvasUpdate {
-                id: canvas_id,
-                dirty_tiles,
-            });
+            // TODO:
+            // CanvasUpdate::broadcast(CanvasUpdate {
+            //     id: canvas_id,
+            //     dirty_tiles,
+            // });
         }
-
-        Task::none()
     }
 }
 
@@ -221,4 +187,4 @@ wrapper! {
     pub mut CurrentBrushPresetOperator : BrushPresetOperator
 }
 
-impl Service for CurrentBrushPresetOperator {}
+impl Global for CurrentBrushPresetOperator {}

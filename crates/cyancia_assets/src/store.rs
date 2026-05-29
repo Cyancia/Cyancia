@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use cyancia_runtime::service::Service;
+use gpui::Global;
 
 use crate::{
     asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset, UntypedAssetId},
@@ -27,7 +27,7 @@ pub struct AssetRegistry {
     index_db: Arc<AssetIndexDb>,
 }
 
-impl Service for AssetRegistry {}
+impl Global for AssetRegistry {}
 
 impl AssetRegistry {
     pub fn new(

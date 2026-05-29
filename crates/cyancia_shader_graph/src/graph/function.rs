@@ -1,11 +1,15 @@
 use std::collections::HashMap;
 
+use cyancia_assets::asset::AssetId;
 use cyancia_utils::wrapper;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::graph::{Graph, GraphData};
+use crate::{
+    graph::{Graph, GraphData},
+    save::SerializableGraphFunction,
+};
 
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
@@ -14,6 +18,7 @@ wrapper! {
 }
 
 pub struct GraphFunction<Data: GraphData> {
+    pub asset_id: Option<AssetId<SerializableGraphFunction>>,
     pub id: GraphFunctionId,
     pub name: String,
     pub graph: Graph<Data>,

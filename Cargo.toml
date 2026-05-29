@@ -3,6 +3,7 @@ members = [
     "crates/cyancia_actions",
     # "crates/cyancia_app",
     "crates/cyancia_assets",
+    "crates/cyancia_brush",
     # "crates/cyancia_runtime",
     # "crates/cyancia_runtime_derive",
     "crates/cyancia_canvas",
@@ -43,27 +44,6 @@ cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
 cyancia_dock = { version = "0.1.0", path = "crates/cyancia_dock" }
 cyancia_platform = { version = "0.1.0", path = "crates/cyancia_platform" }
 
-iced = { version = "0.14", features = [
-    "debug",
-    "canvas",
-    "selector",
-    "smol",
-] }
-iced_beacon = { version = "0.14" }
-iced_core = { version = "0.14" }
-iced_debug = { version = "0.14" }
-iced_devtools = { version = "0.14" }
-iced_futures = { version = "0.14", features = ["smol"] }
-iced_graphics = { version = "0.14", features = ["geometry"] }
-iced_highlighter = { version = "0.14" }
-iced_program = { version = "0.14" }
-iced_renderer = { version = "0.14" }
-iced_runtime = { version = "0.14" }
-iced_selector = { version = "0.14" }
-iced_wgpu = { version = "0.14", features = ["geometry"] }
-iced_widget = { version = "0.14", features = ["wgpu"] }
-iced_winit = { version = "0.14" }
-iced_aw = { version = "0.13", features = ["context_menu"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 syn = "2"
 quote = "1"

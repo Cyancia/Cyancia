@@ -32,6 +32,8 @@ use crate::{
     save::GraphSerializable,
 };
 
+pub use cyancia_shader_graph_derive::stateless;
+
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     pub GraphNodeId : Uuid

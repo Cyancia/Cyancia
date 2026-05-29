@@ -1,11 +1,11 @@
 use std::{path::PathBuf, sync::Arc};
 
-use cyancia_runtime::{Application, Runtime, plugin::Plugin};
 use futures::executor::block_on;
+use gpui::App;
 
 use crate::{
     bundle::ErasedAssetBundle,
-    loader::{AssetSerializer, AssetSerializerRegistry, AssetSerializerRegistryBuilder},
+    loader::{AssetRegistryBuilder, AssetSerializer, AssetSerializerRegistry},
     store::AssetRegistry,
 };
 
@@ -17,40 +17,27 @@ pub mod loader;
 pub mod store;
 pub mod tag;
 
-pub struct AssetsPlugin {
-    pub asset_root: PathBuf,
-    pub bundles: Vec<Arc<dyn ErasedAssetBundle>>,
+pub fn init(cx: &mut App) {
+    cx.set_global(AssetRegistryBuilder::default());
 }
 
-impl Plugin for AssetsPlugin {
-    fn build(&self, app: &mut Application) {
-        app.add_service::<AssetSerializerRegistryBuilder>();
-    }
-
-    fn finish(&self, app: &mut Application) {
-        let mut rt = app.runtime_mut();
-        let builder = rt
-            .services_mut()
-            .service_mut::<AssetSerializerRegistryBuilder>();
-        let serializers = builder.consume_and_build();
-        let mut registry = AssetRegistry::new(&self.asset_root, serializers.into()).unwrap();
-        for bundle in self.bundles.clone() {
-            registry.add_erased_bundle(bundle).unwrap();
-        }
-        rt.add_service_instance(registry);
-    }
+pub fn finish(cx: &mut App) {
+    let builder = cx.remove_global::<AssetRegistryBuilder>();
+    cx.set_global(builder.build());
 }
 
 pub trait AssetAppExt {
-    fn add_asset_serializer<A: AssetSerializer + Default>(&mut self) -> &mut Self;
+    fn add_asset_serializer<A: AssetSerializer + Default>(&mut self);
+    fn assets(&self) -> &AssetRegistry;
 }
 
-impl AssetAppExt for Application {
-    fn add_asset_serializer<A: AssetSerializer + Default>(&mut self) -> &mut Self {
-        self.runtime_mut()
-            .services_mut()
-            .service_mut::<AssetSerializerRegistryBuilder>()
+impl AssetAppExt for App {
+    fn add_asset_serializer<A: AssetSerializer + Default>(&mut self) {
+        self.global_mut::<AssetRegistryBuilder>()
             .add_serializer::<A>();
-        self
+    }
+
+    fn assets(&self) -> &AssetRegistry {
+        self.global::<AssetRegistry>()
     }
 }

@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use cyancia_assets::{asset::Asset, loader::AssetSerializer};
+use cyancia_assets::{
+    asset::{Asset, AssetId},
+    loader::AssetSerializer,
+};
 use gpui::Point;
 use serde::{Deserialize, Serialize};
 use toml::ser::Buffer;
@@ -459,6 +462,7 @@ impl SerializableGraphFunction {
 
     pub fn deserialize_func<Data: crate::graph::GraphData>(
         &self,
+        asset_id: Option<AssetId<SerializableGraphFunction>>,
         type_registry: Arc<GraphTypeRegistry>,
         node_registry: &GraphNodeRegistry<Data>,
     ) -> (Option<GraphFunction<Data>>, Vec<GraphDeserializeError>) {
@@ -475,6 +479,7 @@ impl SerializableGraphFunction {
             Graph::from_serialized(&self.graph, resources, type_registry, node_registry);
 
         let func = maybe_graph.map(|graph| GraphFunction {
+            asset_id,
             id: self.id,
             name: self.name.clone(),
             graph,

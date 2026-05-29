@@ -1,31 +1,48 @@
-use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::Read,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use cyancia_runtime::service::Service;
+use gpui::Global;
 
 use crate::{
     asset::{Asset, ErasedAsset},
+    bundle::ErasedAssetBundle,
     error::{AssetError, AssetResult},
+    store::AssetRegistry,
 };
 
 #[derive(Default)]
-pub struct AssetSerializerRegistryBuilder {
+pub struct AssetRegistryBuilder {
+    root: PathBuf,
+    bundles: Vec<Arc<dyn ErasedAssetBundle>>,
     serializers: HashMap<&'static str, Box<dyn ErasedAssetSerializer>>,
 }
 
-impl Service for AssetSerializerRegistryBuilder {}
+impl Global for AssetRegistryBuilder {}
 
-impl AssetSerializerRegistryBuilder {
+impl AssetRegistryBuilder {
+    pub fn set_root(&mut self, root: PathBuf) {
+        self.root = root;
+    }
+
     pub fn add_serializer<L: AssetSerializer + Default>(&mut self) {
         let loader = Box::new(L::default());
         self.serializers.insert(L::file_extension(), loader);
     }
 
-    pub fn consume_and_build(&mut self) -> AssetSerializerRegistry {
-        let mut registry = AssetSerializerRegistry::new();
-        for (ext, loader) in self.serializers.drain() {
-            registry.serializers.insert(ext, Arc::from(loader));
+    pub fn add_bundle(&mut self, bundle: Arc<dyn ErasedAssetBundle>) {
+        self.bundles.push(bundle);
+    }
+
+    pub fn build(self) -> AssetRegistry {
+        let mut serializers = AssetSerializerRegistry::new();
+        for (ext, loader) in self.serializers {
+            serializers.serializers.insert(ext, Arc::from(loader));
         }
-        registry
+        AssetRegistry::new(&self.root, serializers.into()).unwrap()
     }
 }
 
@@ -33,7 +50,7 @@ pub struct AssetSerializerRegistry {
     serializers: HashMap<&'static str, Arc<dyn ErasedAssetSerializer>>,
 }
 
-impl Service for AssetSerializerRegistry {}
+impl Global for AssetSerializerRegistry {}
 
 impl AssetSerializerRegistry {
     pub fn new() -> Self {
