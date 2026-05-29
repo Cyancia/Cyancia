@@ -12,6 +12,7 @@ use crate::main_view::MainView;
 
 mod dock;
 mod main_view;
+mod theme;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -35,6 +36,7 @@ fn main() {
             cyancia_canvas::init(cx);
             cyancia_image::init(cx);
             cyancia_shader_graph::init(cx);
+            theme::init(cx);
 
             {
                 cx.add_asset_bundle(Arc::new(AssetDirectory::new("assets/builtin_assets")));
@@ -55,6 +57,7 @@ fn main() {
 
             cyancia_assets::finish(cx);
             cyancia_actions::finish(cx);
+            theme::finish(cx);
 
             cx.open_window(
                 WindowOptions {

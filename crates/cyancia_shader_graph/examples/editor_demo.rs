@@ -128,27 +128,27 @@ fn menu_bar_init(cx: &mut App) -> Entity<AppMenuBar> {
 fn embedded_themes() -> HashMap<&'static str, &'static str> {
     let mut themes = HashMap::new();
 
-    themes.insert("adventure", include_str!("themes/adventure.json"));
-    themes.insert("alduin", include_str!("themes/alduin.json"));
-    themes.insert("asciinema", include_str!("themes/asciinema.json"));
-    themes.insert("ayu", include_str!("themes/ayu.json"));
-    themes.insert("catppuccin", include_str!("themes/catppuccin.json"));
-    themes.insert("everforest", include_str!("themes/everforest.json"));
-    themes.insert("fahrenheit", include_str!("themes/fahrenheit.json"));
-    themes.insert("flexoki", include_str!("themes/flexoki.json"));
-    themes.insert("gruvbox", include_str!("themes/gruvbox.json"));
-    themes.insert("harper", include_str!("themes/harper.json"));
-    themes.insert("hybrid", include_str!("themes/hybrid.json"));
-    themes.insert("jellybeans", include_str!("themes/jellybeans.json"));
-    themes.insert("kibble", include_str!("themes/kibble.json"));
-    themes.insert("macos-classic", include_str!("themes/macos-classic.json"));
-    themes.insert("matrix", include_str!("themes/matrix.json"));
-    themes.insert("mellifluous", include_str!("themes/mellifluous.json"));
-    themes.insert("molokai", include_str!("themes/molokai.json"));
-    themes.insert("solarized", include_str!("themes/solarized.json"));
-    themes.insert("spaceduck", include_str!("themes/spaceduck.json"));
-    themes.insert("tokyonight", include_str!("themes/tokyonight.json"));
-    themes.insert("twilight", include_str!("themes/twilight.json"));
+    themes.insert("adventure", include_str!("../../../assets/builtin_assets/themes/adventure.theme"));
+    themes.insert("alduin", include_str!("../../../assets/builtin_assets/themes/alduin.theme"));
+    themes.insert("asciinema", include_str!("../../../assets/builtin_assets/themes/asciinema.theme"));
+    themes.insert("ayu", include_str!("../../../assets/builtin_assets/themes/ayu.theme"));
+    themes.insert("catppuccin", include_str!("../../../assets/builtin_assets/themes/catppuccin.theme"));
+    themes.insert("everforest", include_str!("../../../assets/builtin_assets/themes/everforest.theme"));
+    themes.insert("fahrenheit", include_str!("../../../assets/builtin_assets/themes/fahrenheit.theme"));
+    themes.insert("flexoki", include_str!("../../../assets/builtin_assets/themes/flexoki.theme"));
+    themes.insert("gruvbox", include_str!("../../../assets/builtin_assets/themes/gruvbox.theme"));
+    themes.insert("harper", include_str!("../../../assets/builtin_assets/themes/harper.theme"));
+    themes.insert("hybrid", include_str!("../../../assets/builtin_assets/themes/hybrid.theme"));
+    themes.insert("jellybeans", include_str!("../../../assets/builtin_assets/themes/jellybeans.theme"));
+    themes.insert("kibble", include_str!("../../../assets/builtin_assets/themes/kibble.theme"));
+    themes.insert("macos-classic", include_str!("../../../assets/builtin_assets/themes/macos-classic.theme"));
+    themes.insert("matrix", include_str!("../../../assets/builtin_assets/themes/matrix.theme"));
+    themes.insert("mellifluous", include_str!("../../../assets/builtin_assets/themes/mellifluous.theme"));
+    themes.insert("molokai", include_str!("../../../assets/builtin_assets/themes/molokai.theme"));
+    themes.insert("solarized", include_str!("../../../assets/builtin_assets/themes/solarized.theme"));
+    themes.insert("spaceduck", include_str!("../../../assets/builtin_assets/themes/spaceduck.theme"));
+    themes.insert("tokyonight", include_str!("../../../assets/builtin_assets/themes/tokyonight.theme"));
+    themes.insert("twilight", include_str!("../../../assets/builtin_assets/themes/twilight.theme"));
 
     themes
 }

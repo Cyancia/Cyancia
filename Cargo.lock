@@ -1722,6 +1722,7 @@ dependencies = [
  "log",
  "parking_lot",
  "rfd",
+ "thiserror 2.0.18",
  "tracing-subscriber",
  "uuid",
  "wgpu 27.0.1",

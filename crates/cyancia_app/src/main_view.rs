@@ -1,6 +1,7 @@
 use std::{any::Any, fmt::Debug, sync::Arc};
 
 use cyancia_actions::ActionFunctionRegistry;
+use cyancia_assets::AssetAppExt;
 use cyancia_canvas::{
     CCanvas, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
@@ -15,14 +16,21 @@ use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
 
 use glam::UVec2;
 use gpui::{
-    App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, WeakEntity,
-    Window, div,
+    App, AppContext, Context, Entity, IntoElement, Menu, MenuItem, ParentElement, Render, Styled,
+    WeakEntity, Window, div,
 };
-use gpui_component::dock::{DockArea, DockItem, DockState, PanelView};
+use gpui_component::{
+    ActiveTheme, GlobalState, Theme, ThemeRegistry, TitleBar,
+    dock::{DockArea, DockItem, DockState, PanelView},
+    menu::AppMenuBar,
+};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use crate::dock::{FiltersDock, LayersDock, ToolOptionsDock};
+use crate::{
+    dock::{FiltersDock, LayersDock, ToolOptionsDock},
+    theme::{SwitchThemeAction, ThemeAsset},
+};
 
 fn default_dock_layout(
     dock_area: &WeakEntity<DockArea>,
@@ -47,6 +55,7 @@ fn default_dock_layout(
 }
 
 pub struct MainView {
+    menu_bar: Entity<AppMenuBar>,
     dock_area: Entity<DockArea>,
 }
 
@@ -62,15 +71,66 @@ impl MainView {
             );
         });
 
+        let menu_bar = AppMenuBar::new(cx);
+        update_menu_bar(&menu_bar, cx);
+        cx.observe_global::<Theme>({
+            let menu_bar = menu_bar.clone();
+            move |theme, cx| {
+                update_menu_bar(&menu_bar, cx);
+            }
+        })
+        .detach();
+
         Self {
+            menu_bar,
             dock_area: dock_area_entity,
         }
     }
 }
 
+fn update_menu_bar(menu_bar: &Entity<AppMenuBar>, cx: &mut App) {
+    cx.set_menus(build_menu_bar(cx));
+    let menus = build_menu_bar(cx).into_iter().map(|m| m.owned()).collect();
+    GlobalState::global_mut(cx).set_app_menus(menus);
+    menu_bar.update(cx, |menu_bar, cx| {
+        menu_bar.reload(cx);
+    });
+}
+
+fn build_menu_bar(cx: &App) -> Vec<Menu> {
+    let current_theme = cx.theme().theme_name();
+    let themes = ThemeRegistry::global(cx)
+        .sorted_themes()
+        .into_iter()
+        .map(|theme| {
+            MenuItem::action(
+                theme.name.clone(),
+                SwitchThemeAction {
+                    theme: theme.name.clone(),
+                },
+            )
+            .checked(&theme.name == current_theme)
+        })
+        .collect::<Vec<_>>();
+
+    vec![Menu {
+        name: "Window".into(),
+        items: vec![MenuItem::Submenu(Menu {
+            name: "Themes".into(),
+            items: themes,
+            disabled: false,
+        })],
+        disabled: false,
+    }]
+}
+
 impl Render for MainView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().w_full().h_full().child(self.dock_area.clone())
+        div()
+            .w_full()
+            .h_full()
+            .child(TitleBar::new().child(self.menu_bar.clone()))
+            .child(self.dock_area.clone())
     }
 }
 
