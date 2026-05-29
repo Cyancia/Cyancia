@@ -3,6 +3,7 @@ use std::sync::Arc;
 use cyancia_assets::{
     AssetAppExt,
     bundle::{directory::AssetDirectory, standard::StandardAssetBundle},
+    loader::AssetRegistryBuilder,
 };
 use gpui::{AppContext, WindowOptions};
 use gpui_component::Root;
@@ -23,7 +24,17 @@ fn main() {
         .with_assets(gpui_component_assets::Assets)
         .run(|cx| {
             gpui_component::init(cx);
+
             cyancia_assets::init(cx);
+            cx.global_mut::<AssetRegistryBuilder>()
+                .set_root("assets".into());
+            cyancia_render::init(cx);
+            cyancia_actions::init(cx);
+            cyancia_tools::init(cx);
+            cyancia_brush::init(cx);
+            cyancia_canvas::init(cx);
+            cyancia_image::init(cx);
+            cyancia_shader_graph::init(cx);
 
             {
                 cx.add_asset_bundle(Arc::new(AssetDirectory::new("assets/builtin_assets")));
@@ -43,12 +54,7 @@ fn main() {
             }
 
             cyancia_assets::finish(cx);
-            cyancia_actions::init(cx);
-            cyancia_brush::init(cx);
-            cyancia_canvas::init(cx);
-            cyancia_image::init(cx);
-            cyancia_render::init(cx);
-            cyancia_shader_graph::init(cx);
+            cyancia_actions::finish(cx);
 
             cx.open_window(
                 WindowOptions {

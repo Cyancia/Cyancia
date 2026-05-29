@@ -181,6 +181,10 @@ pub fn scan_bundle_assets(
 
     for (id, path) in &manifest {
         let Ok(serializer) = serializers.get_for_path(path) else {
+            log::warn!(
+                "Skipped loading asset at {} because of unknown extension.",
+                path.display(),
+            );
             continue;
         };
         assets.push(AssetMetadata {
@@ -260,10 +264,18 @@ fn scan_modified_assets_dfs(
             );
         } else if path.is_file() {
             let Some(revision) = parse_revision_from_path(&path) else {
+                log::warn!(
+                    "Skipped loading modified asset at {} because it does not have a revision.",
+                    path.display(),
+                );
                 continue;
             };
 
             let Ok(serializer) = serializers.get_for_path(&path) else {
+                log::warn!(
+                    "Skipped loading modified asset at {} because of unknown extension.",
+                    path.display(),
+                );
                 continue;
             };
             let modified_path = path

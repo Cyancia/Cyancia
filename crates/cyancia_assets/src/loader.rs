@@ -42,7 +42,11 @@ impl AssetRegistryBuilder {
         for (ext, loader) in self.serializers {
             serializers.serializers.insert(ext, Arc::from(loader));
         }
-        AssetRegistry::new(&self.root, serializers.into()).unwrap()
+        let mut registry = AssetRegistry::new(&self.root, serializers.into()).unwrap();
+        for bundle in self.bundles {
+            registry.add_erased_bundle(bundle);
+        }
+        registry
     }
 }
 

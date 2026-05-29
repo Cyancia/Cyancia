@@ -1,5 +1,6 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
+use cyancia_assets::AssetAppExt;
 use gpui::{Action, App, DummyKeyboardMapper, Global, KeyBinding, KeyBindingContextPredicate};
 use serde::de::DeserializeOwned;
 
@@ -11,7 +12,7 @@ use crate::{
     },
     file::OpenFileAction,
     layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
-    manifest::KeyBindingDefManifest,
+    manifest::{KeyBindingDefManifest, KeyBindingDefManifestLoader},
 };
 
 pub mod brush;
@@ -39,6 +40,7 @@ pub mod manifest;
 // }
 
 pub fn init(cx: &mut App) {
+    cx.add_asset_serializer::<KeyBindingDefManifestLoader>();
     cx.set_global(ActionFunctionRegistry::default());
     cx.add_action_function::<SwitchToPanToolAction>();
     cx.add_action_function::<SwitchToRotateToolAction>();
@@ -50,9 +52,18 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<MoveLayerDownAction>();
     cx.add_action_function::<GroupActiveLayerAction>();
     cx.add_action_function::<OpenBrushEditorAction>();
+}
 
-    let manifest: KeyBindingDefManifest = todo!();
-    let functions: ActionFunctionRegistry = todo!();
+pub fn finish(cx: &mut App) {
+    let manifests = cx
+        .assets()
+        .all_handles_of::<KeyBindingDefManifest>()
+        .unwrap();
+    let functions = cx.global::<ActionFunctionRegistry>();
+
+    // TODO Use the first manifest currently. In the future, this should be confuguable.
+    let manifest_handle = manifests.get(0).expect("No keybinding manifest available");
+    let manifest = manifest_handle.get().unwrap();
     let key_bindings = manifest
         .actions
         .iter()

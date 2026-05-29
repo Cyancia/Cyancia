@@ -1,0 +1,49 @@
+{
+  "name": "Default Key Bindings",
+  "actions": [
+    {
+      "shortcut": "h",
+      "action_name": "SwitchToPanToolAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "r",
+      "action_name": "SwitchToRotateToolAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "z",
+      "action_name": "SwitchToZoomToolAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-o",
+      "action_name": "OpenFileAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "f5",
+      "action_name": "OpenBrushEditorAction"
+    },
+    {
+      "shortcut": "ctrl-shift-n",
+      "action_name": "CreateNewLayerAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-g",
+      "action_name": "GroupActiveLayerAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-shift-up",
+      "action_name": "MoveLayerUpAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-shift-down",
+      "action_name": "MoveLayerDownAction",
+      "context": "main_view"
+    }
+  ]
+}
