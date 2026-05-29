@@ -39,6 +39,7 @@ pub mod manifest;
 // }
 
 pub fn init(cx: &mut App) {
+    cx.set_global(ActionFunctionRegistry::default());
     cx.add_action_function::<SwitchToPanToolAction>();
     cx.add_action_function::<SwitchToRotateToolAction>();
     cx.add_action_function::<SwitchToZoomToolAction>();

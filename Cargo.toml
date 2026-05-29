@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/cyancia_actions",
-    # "crates/cyancia_app",
+    "crates/cyancia_app",
     "crates/cyancia_assets",
     "crates/cyancia_brush",
     # "crates/cyancia_runtime",

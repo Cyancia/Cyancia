@@ -4,33 +4,29 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced.workspace = true
 cyancia_canvas.workspace = true
 log.workspace = true
 cyancia_assets.workspace = true
-cyancia_input.workspace = true
 futures.workspace = true
 tracing-subscriber.workspace = true
-iced_wgpu.workspace = true
 parking_lot.workspace = true
-iced_core.workspace = true
 rfd.workspace = true
 cyancia_image.workspace = true
 image.workspace = true
 glam.workspace = true
 cyancia_tools.workspace = true
-cyancia_runtime.workspace = true
 uuid.workspace = true
-iced_runtime.workspace = true
 cyancia_actions.workspace = true
 wgpu.workspace = true
 cyancia_render.workspace = true
-iced_futures.workspace = true
 cyancia_brush.workspace = true
 cyancia_shader_graph.workspace = true
-cyancia_dock.workspace = true
 bevy_math.workspace = true
 cyancia_widgets.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
 
 [build-dependencies]
 fs_extra.workspace = true

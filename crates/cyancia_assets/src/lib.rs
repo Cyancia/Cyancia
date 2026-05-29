@@ -4,7 +4,7 @@ use futures::executor::block_on;
 use gpui::App;
 
 use crate::{
-    bundle::ErasedAssetBundle,
+    bundle::{AssetBundle, ErasedAssetBundle},
     loader::{AssetRegistryBuilder, AssetSerializer, AssetSerializerRegistry},
     store::AssetRegistry,
 };
@@ -28,6 +28,7 @@ pub fn finish(cx: &mut App) {
 
 pub trait AssetAppExt {
     fn add_asset_serializer<A: AssetSerializer + Default>(&mut self);
+    fn add_asset_bundle(&mut self, bundle: Arc<dyn ErasedAssetBundle>);
     fn assets(&self) -> &AssetRegistry;
 }
 
@@ -35,6 +36,10 @@ impl AssetAppExt for App {
     fn add_asset_serializer<A: AssetSerializer + Default>(&mut self) {
         self.global_mut::<AssetRegistryBuilder>()
             .add_serializer::<A>();
+    }
+
+    fn add_asset_bundle(&mut self, bundle: Arc<dyn ErasedAssetBundle>) {
+        self.global_mut::<AssetRegistryBuilder>().add_bundle(bundle);
     }
 
     fn assets(&self) -> &AssetRegistry {
