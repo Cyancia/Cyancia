@@ -58,8 +58,18 @@ impl<Data: GraphData> Graph<Data> {
         position: Point<f32>,
         node: Box<dyn ErasedGraphNode<Data>>,
     ) -> GraphNodeId {
-        let node = StatefulGraphNode::new(node);
         let node_id = GraphNodeId::new(Uuid::new_v4());
+        self.insert_boxed_node(node_id, position, node);
+        node_id
+    }
+
+    pub fn insert_boxed_node(
+        &mut self,
+        node_id: GraphNodeId,
+        position: Point<f32>,
+        node: Box<dyn ErasedGraphNode<Data>>,
+    ) {
+        let node = StatefulGraphNode::new(node);
         let inputs = create_input_slots(
             &mut self.slots,
             node_id,
@@ -89,7 +99,6 @@ impl<Data: GraphData> Graph<Data> {
             },
         );
         self.invalidate_cache();
-        node_id
     }
 
     pub fn add_node<T: GraphNode<Data>>(&mut self, position: Point<f32>, node: T) -> GraphNodeId {

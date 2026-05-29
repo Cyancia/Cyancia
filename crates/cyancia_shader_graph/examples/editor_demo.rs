@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cyancia_shader_graph::{
-    editor::GraphEditor,
+    editor::{GraphEditSink, GraphEditor},
     graph::{Graph, GraphData, GraphResources},
     wgsl_std::{
         builtin_nodes, builtin_types,
@@ -25,6 +25,7 @@ impl GraphData for DemoData {}
 struct DemoEditor {
     menu_bar: Entity<AppMenuBar>,
     editor: Entity<GraphEditor<DemoData>>,
+    graph: Graph<DemoData>,
 }
 
 impl DemoEditor {
@@ -34,24 +35,32 @@ impl DemoEditor {
         nodes.register::<GraphOutputNode>();
         Self {
             menu_bar: menu_bar_init(cx),
-            editor: cx.new(|cx| {
-                GraphEditor::new(
-                    Graph::new(GraphResources::default().into(), builtin_types().into()),
-                    nodes.into(),
-                    cx,
-                )
-            }),
+            editor: cx.new(|cx| GraphEditor::new(nodes.into(), cx)),
+            graph: Graph::new(GraphResources::default().into(), builtin_types().into()),
         }
     }
 }
 
 impl Render for DemoEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let parent = cx.entity().downgrade();
+        let edits = GraphEditSink::new(move |edit, cx| {
+            parent
+                .update(cx, |editor, cx| {
+                    edit.apply(&mut editor.graph);
+                    cx.notify();
+                })
+                .ok();
+        });
+        let editor = self.editor.update(cx, |editor, cx| {
+            editor.render_graph(&self.graph, edits, window, cx)
+        });
+
         div()
             .w_full()
             .h_full()
             .child(TitleBar::new().child(self.menu_bar.clone()))
-            .child(self.editor.clone())
+            .child(editor)
     }
 }
 

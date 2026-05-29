@@ -1,25 +1,135 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use cyancia_math::point::PointExt;
 use gpui::{
-    Action, App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, KeyBinding,
-    LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    PathBuilder, Pixels, Point, Render, SharedString, Size, Styled, Window, actions, canvas, div,
-    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, solid_background,
+    Action, AnyElement, App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
+    KeyBinding, LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, PathBuilder, Pixels, Point, SharedString, Size, Styled, Window, actions, canvas,
+    div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, solid_background,
 };
 use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{
-    graph::{
-        Graph, GraphData,
-        node::{GraphNode, GraphNodeId, GraphNodeRegistry},
-        slot::{GraphInputSlotId, GraphOutputSlotId},
-        variable::GraphLiteralValue,
-    },
-    wgsl_std::types::F32Type,
+use crate::graph::{
+    Graph, GraphData,
+    node::{ErasedGraphNode, GraphNode, GraphNodeId, GraphNodeRegistry},
+    slot::{GraphInputSlotId, GraphOutputSlotId},
+    variable::GraphLiteralValue,
 };
+use uuid::Uuid;
+
+pub struct GraphEdit<Data: GraphData>(Box<dyn FnOnce(&mut Graph<Data>)>);
+
+impl<Data: GraphData> GraphEdit<Data> {
+    pub fn apply(self, graph: &mut Graph<Data>) {
+        (self.0)(graph);
+    }
+}
+
+pub struct GraphEditSink<Data: GraphData> {
+    apply: Rc<dyn Fn(GraphEdit<Data>, &mut App)>,
+}
+
+impl<Data: GraphData> Clone for GraphEditSink<Data> {
+    fn clone(&self) -> Self {
+        Self {
+            apply: self.apply.clone(),
+        }
+    }
+}
+
+impl<Data: GraphData> GraphEditSink<Data> {
+    pub fn new(apply: impl Fn(GraphEdit<Data>, &mut App) + 'static) -> Self {
+        Self {
+            apply: Rc::new(apply),
+        }
+    }
+
+    pub fn insert_boxed_node(
+        &self,
+        id: GraphNodeId,
+        pos: Point<f32>,
+        node: Box<dyn ErasedGraphNode<Data>>,
+        cx: &mut App,
+    ) {
+        (self.apply)(
+            GraphEdit(Box::new(move |graph| {
+                graph.insert_boxed_node(id, pos, node);
+            })),
+            cx,
+        );
+    }
+
+    pub fn delete_node(&self, id: GraphNodeId, cx: &mut App) {
+        (self.apply)(
+            GraphEdit(Box::new(move |graph| {
+                graph.delete_node(&id);
+            })),
+            cx,
+        );
+    }
+
+    pub fn move_node(&self, id: GraphNodeId, position: Point<f32>, cx: &mut App) {
+        (self.apply)(
+            GraphEdit(Box::new(move |graph| {
+                if let Some(node) = graph.get_node_mut(&id) {
+                    node.position = position;
+                }
+            })),
+            cx,
+        );
+    }
+
+    pub fn disconnect_slot(&self, id: GraphInputSlotId, cx: &mut App) {
+        (self.apply)(
+            GraphEdit(Box::new(move |graph| {
+                graph.disconnect_slot(id);
+            })),
+            cx,
+        );
+    }
+
+    pub fn connect_slots(&self, from: GraphOutputSlotId, to: GraphInputSlotId, cx: &mut App) {
+        (self.apply)(
+            GraphEdit(Box::new(move |graph| {
+                graph.connect_slots(from, to);
+            })),
+            cx,
+        );
+    }
+
+    pub fn update_node_state<T: GraphNode<Data>, F>(&self, id: GraphNodeId, f: F, cx: &mut App)
+    where
+        F: FnOnce(&mut T::State) + 'static,
+    {
+        (self.apply)(
+            GraphEdit(Box::new(move |graph| {
+                graph.update_node_state::<T>(id, f);
+            })),
+            cx,
+        );
+    }
+
+    pub fn update_slot_value(
+        &self,
+        id: GraphInputSlotId,
+        value: Box<dyn GraphLiteralValue>,
+        cx: &mut App,
+    ) {
+        (self.apply)(
+            GraphEdit(Box::new(move |graph| {
+                if let Some(slot) = graph.slots.inputs.get_mut(&id) {
+                    slot.data.set_boxed(value);
+                }
+            })),
+            cx,
+        );
+    }
+}
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 pub struct AddNodeAction {
@@ -48,7 +158,6 @@ const NODE_BODY_PADDING: Pixels = px(3.0);
 const CONNECTION_STROKE_WIDTH: Pixels = px(2.0);
 
 pub struct GraphEditor<Data: GraphData> {
-    graph: Graph<Data>,
     node_registry: GraphNodeRegistry<Data>,
 
     node_drag_state: Option<DragState>,
@@ -59,7 +168,9 @@ pub struct GraphEditor<Data: GraphData> {
     transform: ViewTransform,
     editor_bounds: Bounds<Pixels>,
     selected_nodes: HashSet<GraphNodeId>,
+    node_positions: HashMap<GraphNodeId, Point<f32>>,
     node_bounds: HashMap<GraphNodeId, Bounds<Pixels>>,
+    input_slot_connections: HashMap<GraphInputSlotId, Option<GraphOutputSlotId>>,
     input_slot_pos: HashMap<GraphInputSlotId, Point<Pixels>>,
     output_slot_pos: HashMap<GraphOutputSlotId, Point<Pixels>>,
 
@@ -67,13 +178,8 @@ pub struct GraphEditor<Data: GraphData> {
 }
 
 impl<Data: GraphData> GraphEditor<Data> {
-    pub fn new(
-        graph: Graph<Data>,
-        node_registry: GraphNodeRegistry<Data>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(node_registry: GraphNodeRegistry<Data>, cx: &mut Context<Self>) -> Self {
         Self {
-            graph,
             node_registry,
 
             node_drag_state: None,
@@ -84,7 +190,9 @@ impl<Data: GraphData> GraphEditor<Data> {
             transform: ViewTransform::default(),
             editor_bounds: Bounds::default(),
             selected_nodes: HashSet::new(),
+            node_positions: HashMap::new(),
             node_bounds: HashMap::new(),
+            input_slot_connections: HashMap::new(),
             input_slot_pos: HashMap::new(),
             output_slot_pos: HashMap::new(),
 
@@ -95,6 +203,7 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn on_add_node_action(
         &mut self,
         event: &AddNodeAction,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -105,7 +214,8 @@ impl<Data: GraphData> GraphEditor<Data> {
 
         let cursor = window.mouse_position() - self.editor_bounds.origin;
         let pos = Point::new(cursor.x.into(), cursor.y.into());
-        let node_id = self.graph.add_boxed_node(pos, node);
+        let node_id = GraphNodeId::new(Uuid::new_v4());
+        edits.insert_boxed_node(node_id, pos, node, cx);
         self.selected_nodes.clear();
         self.selected_nodes.insert(node_id);
         self.node_drag_state = Some(DragState {
@@ -118,24 +228,24 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn on_delete_selected_node_action(
         &mut self,
         event: &DeleteSelectedNodeAction,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         for node_id in self.selected_nodes.drain() {
-            self.graph.delete_node(&node_id);
-            dbg!(&node_id);
+            edits.delete_node(node_id, cx);
         }
-        dbg!();
         cx.notify();
     }
 
     pub fn on_left_mouse_down(
         &mut self,
         event: &MouseDownEvent,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.slot_connect_start(event, window, cx);
+        self.slot_connect_start(event, edits, window, cx);
         if self.slot_connect_state.is_some() {
             return;
         }
@@ -179,11 +289,12 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.node_drag_state.is_some() {
-            self.node_drag(event, window, cx);
+            self.node_drag(event, edits, window, cx);
         } else if self.slot_connect_state.is_some() {
             self.slot_connect_drag(event, window, cx);
         } else if self.marquee_state.is_some() {
@@ -196,13 +307,14 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn on_left_mouse_up(
         &mut self,
         event: &MouseUpEvent,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.node_drag_state.is_some() {
             self.node_drag_end(event, window, cx);
         } else if self.slot_connect_state.is_some() {
-            self.slot_connect_end(event, window, cx);
+            self.slot_connect_end(event, edits, window, cx);
         } else if self.marquee_state.is_some() {
             self.marquee_end(event, window, cx);
         }
@@ -215,7 +327,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx: &mut Context<Self>,
     ) {
         let mut node_id = None;
-        for id in self.graph.nodes.keys() {
+        for id in self.node_positions.keys() {
             let Some(bounds) = self.node_bounds.get(id) else {
                 continue;
             };
@@ -227,7 +339,6 @@ impl<Data: GraphData> GraphEditor<Data> {
         let Some(node_id) = node_id else {
             return;
         };
-        dbg!(node_id);
 
         if self.selected_nodes.is_empty() {
             self.add_node_selection(node_id);
@@ -247,7 +358,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             node_origins: self
                 .selected_nodes
                 .iter()
-                .filter_map(|id| Some((id.clone(), self.graph.get_node(id)?.position)))
+                .filter_map(|id| Some((*id, *self.node_positions.get(id)?)))
                 .collect(),
         });
         self.focus_handle.focus(window, cx);
@@ -256,6 +367,7 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn node_drag(
         &mut self,
         event: &MouseMoveEvent,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -268,9 +380,8 @@ impl<Data: GraphData> GraphEditor<Data> {
 
         for (id, origin) in &drag.node_origins {
             let pos = *origin + node_offset;
-            if let Some(node) = self.graph.get_node_mut(id) {
-                node.position = pos;
-            }
+            edits.move_node(*id, pos, cx);
+            self.node_positions.insert(*id, pos);
         }
 
         cx.notify();
@@ -352,6 +463,7 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn slot_connect_start(
         &mut self,
         event: &MouseDownEvent,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -374,15 +486,13 @@ impl<Data: GraphData> GraphEditor<Data> {
         let Some(mut start_slot) = start_slot else {
             return;
         };
-        dbg!(start_slot);
 
         match start_slot {
             GraphSlotId::Input(slot_id) => {
-                let Some(slot) = self.graph.slots.inputs.get_mut(&slot_id) else {
-                    return;
-                };
-
-                if let Some(connected) = slot.connected.take() {
+                if let Some(connected) =
+                    self.input_slot_connections.get(&slot_id).copied().flatten()
+                {
+                    edits.disconnect_slot(slot_id, cx);
                     start_slot = GraphSlotId::Output(connected);
                 }
             }
@@ -411,6 +521,7 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn slot_connect_end(
         &mut self,
         event: &MouseUpEvent,
+        edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -439,14 +550,13 @@ impl<Data: GraphData> GraphEditor<Data> {
         let Some(end_slot) = end_slot else {
             return;
         };
-        dbg!(end_slot);
 
         match (slot_connect_state.start_slot, end_slot) {
             (GraphSlotId::Input(to), GraphSlotId::Output(from)) => {
-                self.graph.connect_slots(from, to);
+                edits.connect_slots(from, to, cx);
             }
             (GraphSlotId::Output(from), GraphSlotId::Input(to)) => {
-                self.graph.connect_slots(from, to);
+                edits.connect_slots(from, to, cx);
             }
             _ => return,
         }
@@ -485,14 +595,6 @@ impl<Data: GraphData> GraphEditor<Data> {
         self.pan_state = None;
     }
 
-    pub fn update_node_state<T: GraphNode<Data>>(
-        &mut self,
-        id: GraphNodeId,
-        f: impl FnOnce(&mut T::State),
-    ) {
-        self.graph.update_node_state::<T>(id, f);
-    }
-
     pub fn add_node_selection(&mut self, id: GraphNodeId) {
         self.selected_nodes.insert(id);
     }
@@ -512,25 +614,38 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn add_output_slot_pos(&mut self, id: GraphOutputSlotId, pos: Point<Pixels>) {
         self.output_slot_pos.insert(id, pos);
     }
-
-    pub fn update_slot_value(&mut self, id: &GraphInputSlotId, value: Box<dyn GraphLiteralValue>) {
-        if let Some(slot) = self.graph.slots.inputs.get_mut(id) {
-            slot.data.set_boxed(value);
-        }
-    }
 }
 
-impl<Data: GraphData> Render for GraphEditor<Data> {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut nodes = Vec::with_capacity(self.graph.nodes.len());
-        let mut node_ids = Vec::with_capacity(self.graph.nodes.len());
+impl<Data: GraphData> GraphEditor<Data> {
+    pub fn render_graph(
+        &mut self,
+        graph: &Graph<Data>,
+        edits: GraphEditSink<Data>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.node_positions = graph
+            .nodes
+            .iter()
+            .map(|(id, node)| (*id, node.position))
+            .collect();
+        self.input_slot_connections = graph
+            .slots
+            .inputs
+            .iter()
+            .map(|(id, slot)| (*id, slot.connected))
+            .collect();
 
-        for (id, node) in &self.graph.nodes {
+        let mut nodes = Vec::with_capacity(graph.nodes.len());
+        let mut node_ids = Vec::with_capacity(graph.nodes.len());
+
+        for (id, node) in &graph.nodes {
             let body = node.render(
                 *id,
-                &self.graph.slots,
-                &self.graph.resources,
-                &self.graph.type_registry,
+                &graph.slots,
+                &graph.resources,
+                &graph.type_registry,
+                edits.clone(),
                 window,
                 cx,
             );
@@ -590,7 +705,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                 let connecting = self.slot_connect_state.and_then(|st| match st.start_slot {
                     GraphSlotId::Input(input_id) => {
                         let pos = self.input_slot_pos.get(&input_id)?;
-                        let slot = self.graph.slots.inputs.get(&input_id)?;
+                        let slot = graph.slots.inputs.get(&input_id)?;
                         Some((
                             *pos,
                             window.mouse_position(),
@@ -599,7 +714,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     }
                     GraphSlotId::Output(output_id) => {
                         let pos = self.output_slot_pos.get(&output_id)?;
-                        let slot = self.graph.slots.outputs.get(&output_id)?;
+                        let slot = graph.slots.outputs.get(&output_id)?;
                         Some((
                             *pos,
                             window.mouse_position(),
@@ -607,8 +722,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         ))
                     }
                 });
-                let segments = self
-                    .graph
+                let segments = graph
                     .slots
                     .inputs
                     .iter()
@@ -616,8 +730,8 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         let output_id = &input.connected?;
                         let from = self.input_slot_pos.get(input_id)?;
                         let to = self.output_slot_pos.get(output_id)?;
-                        let from_slot = self.graph.slots.inputs.get(input_id)?;
-                        let to_slot = self.graph.slots.outputs.get(output_id)?;
+                        let from_slot = graph.slots.inputs.get(input_id)?;
+                        let to_slot = graph.slots.outputs.get(output_id)?;
                         let color = if from_slot.data.ty().name() != to_slot.data_ty.name() {
                             let from_color = from_slot.data.ty().color(cx);
                             let to_color = to_slot.data_ty.color(cx);
@@ -669,12 +783,41 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                         }
                     }),
             )
-            .on_action(cx.listener(Self::on_add_node_action))
-            .on_action(cx.listener(Self::on_delete_selected_node_action))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_left_mouse_down))
+            .on_action(cx.listener({
+                let edits = edits.clone();
+                move |editor, event, window, cx| {
+                    editor.on_add_node_action(event, &edits, window, cx)
+                }
+            }))
+            .on_action(cx.listener({
+                let edits = edits.clone();
+                move |editor, event, window, cx| {
+                    editor.on_delete_selected_node_action(event, &edits, window, cx)
+                }
+            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener({
+                    let edits = edits.clone();
+                    move |editor, event, window, cx| {
+                        editor.on_left_mouse_down(event, &edits, window, cx)
+                    }
+                }),
+            )
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_mouse_down))
-            .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_left_mouse_up))
+            .on_mouse_move(cx.listener({
+                let edits = edits.clone();
+                move |editor, event, window, cx| editor.on_mouse_move(event, &edits, window, cx)
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener({
+                    let edits = edits.clone();
+                    move |editor, event, window, cx| {
+                        editor.on_left_mouse_up(event, &edits, window, cx)
+                    }
+                }),
+            )
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_middle_mouse_up))
             .on_prepaint({
                 let editor = cx.entity().downgrade();
@@ -699,6 +842,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     menu
                 })
             })
+            .into_any_element()
     }
 }
 

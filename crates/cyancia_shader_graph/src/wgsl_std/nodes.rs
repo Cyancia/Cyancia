@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU32, Ordering},
         Arc,
+        atomic::{AtomicU32, Ordering},
     },
 };
 
@@ -13,24 +13,25 @@ use cyancia_utils::{count, random_oklch, themed_color::themed_oklch, wrapper};
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
 use gpui::{
-    div, px, rgb, rgba, AnyElement, App, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba,
-    SharedString, Styled,
+    AnyElement, App, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba, SharedString, Styled,
+    div, px, rgb, rgba,
 };
 use gpui_component::{
+    IndexPath, Sizable,
     input::{Input, InputEvent, InputState},
     searchable_list::SearchableListItem,
     select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState},
-    IndexPath, Sizable,
 };
-use indexmap::{map::Entry, IndexMap};
+use indexmap::{IndexMap, map::Entry};
 use parking_lot::{RwLock, RwLockReadGuard};
 use parse_display::Display;
-use serde::{de::value, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::value};
 use uuid::Uuid;
 
 use crate::{
     graph::{
-        external::{generate_external_variable_name, ExternalVariableId},
+        Graph, GraphData, GraphVarIdentGenerator,
+        external::{ExternalVariableId, generate_external_variable_name},
         function::GraphFunctionId,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
@@ -40,7 +41,6 @@ use crate::{
         slot::{ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot},
         texture::TextureId,
         variable::GraphTypeRegistry,
-        Graph, GraphData, GraphVarIdentGenerator,
     },
     save::GraphSerializable,
     wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
@@ -233,7 +233,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -259,11 +259,14 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
                           window,
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            editor.update(cx, |editor, cx| {
-                                editor.update_node_state::<Self>(node_id, |state| {
-                                    *state = *val;
-                                });
-                            });
+                            let val = *val;
+                            edits.update_node_state::<Self, _>(
+                                node_id,
+                                move |state| {
+                                    *state = val;
+                                },
+                                cx,
+                            );
                         }
                         _ => {}
                     },
@@ -644,7 +647,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -670,11 +673,14 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
                           window,
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            editor.update(cx, |editor, cx| {
-                                editor.update_node_state::<Self>(node_id, |state| {
-                                    *state = *val;
-                                });
-                            });
+                            let val = *val;
+                            edits.update_node_state::<Self, _>(
+                                node_id,
+                                move |state| {
+                                    *state = val;
+                                },
+                                cx,
+                            );
                         }
                         _ => {}
                     },
@@ -895,7 +901,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -921,11 +927,14 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
                           window,
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            editor.update(cx, |editor, cx| {
-                                editor.update_node_state::<Self>(node_id, |state| {
-                                    *state = *val;
-                                });
-                            });
+                            let val = *val;
+                            edits.update_node_state::<Self, _>(
+                                node_id,
+                                move |state| {
+                                    *state = val;
+                                },
+                                cx,
+                            );
                         }
 
                         _ => {}
@@ -1583,7 +1592,7 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
         let node_id = ctx.node_id;
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let all_textures = ctx
             .resources
             .textures
@@ -1608,11 +1617,14 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
                     move |state, _, event: &SelectEvent<_>, window, cx| match event {
                         SelectEvent::Confirm(val) => {
                             if let Some(val) = val {
-                                editor.update(cx, |editor, cx| {
-                                    editor.update_node_state::<Self>(node_id, |state| {
-                                        *state = *val;
-                                    });
-                                });
+                                let val = *val;
+                                edits.update_node_state::<Self, _>(
+                                    node_id,
+                                    move |state| {
+                                        *state = val;
+                                    },
+                                    cx,
+                                );
                             }
                         }
                     },
@@ -1877,7 +1889,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let all_refs = ctx
             .resources
             .functions
@@ -1908,11 +1920,14 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
                           window,
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            editor.update(cx, |editor, cx| {
-                                editor.update_node_state::<Self>(node_id, |state| {
-                                    state.id = Some(*val);
-                                });
-                            });
+                            let val = *val;
+                            edits.update_node_state::<Self, _>(
+                                node_id,
+                                move |state| {
+                                    state.id = Some(val);
+                                },
+                                cx,
+                            );
                         }
                         _ => {}
                     },
@@ -2059,7 +2074,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let input_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -2085,18 +2100,20 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
 
                 let node_id = ctx.node_id;
                 {
-                    let editor = editor.clone();
+                    let edits = edits.clone();
                     cx.subscribe_in(
                         &name_state,
                         window,
                         move |state, input, event: &InputEvent, window, cx| match event {
                             InputEvent::PressEnter { .. } | InputEvent::Blur => {
                                 let name = input.read(cx).value();
-                                editor.update(cx, |editor, cx| {
-                                    editor.update_node_state::<Self>(node_id, |state| {
+                                edits.update_node_state::<Self, _>(
+                                    node_id,
+                                    move |state| {
                                         state.name = name.into();
-                                    });
-                                });
+                                    },
+                                    cx,
+                                );
                             }
                             InputEvent::Change | InputEvent::Focus => {}
                         },
@@ -2108,11 +2125,14 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
                     window,
                     move |state, select, event: &SelectEvent<_>, window, cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            editor.update(cx, |editor, cx| {
-                                editor.update_node_state::<Self>(node_id, |state| {
-                                    state.ty = Some(*val);
-                                });
-                            });
+                            let val = *val;
+                            edits.update_node_state::<Self, _>(
+                                node_id,
+                                move |state| {
+                                    state.ty = Some(val);
+                                },
+                                cx,
+                            );
                         }
                         _ => {}
                     },
@@ -2205,7 +2225,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let input_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -2231,18 +2251,20 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
 
                 let node_id = ctx.node_id;
                 {
-                    let editor = editor.clone();
+                    let edits = edits.clone();
                     cx.subscribe_in(
                         &name_state,
                         window,
                         move |state, input, event: &InputEvent, window, cx| match event {
                             InputEvent::PressEnter { .. } | InputEvent::Blur => {
                                 let name = input.read(cx).value();
-                                editor.update(cx, |editor, cx| {
-                                    editor.update_node_state::<Self>(node_id, |state| {
+                                edits.update_node_state::<Self, _>(
+                                    node_id,
+                                    move |state| {
                                         state.name = name.into();
-                                    });
-                                });
+                                    },
+                                    cx,
+                                );
                             }
                             InputEvent::Change | InputEvent::Focus => {}
                         },
@@ -2254,11 +2276,14 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
                     window,
                     move |state, select, event: &SelectEvent<_>, window, cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            editor.update(cx, |editor, cx| {
-                                editor.update_node_state::<Self>(node_id, |state| {
-                                    state.ty = Some(*val);
-                                });
-                            });
+                            let val = *val;
+                            edits.update_node_state::<Self, _>(
+                                node_id,
+                                move |state| {
+                                    state.ty = Some(val);
+                                },
+                                cx,
+                            );
                         }
                         _ => {}
                     },
@@ -2393,7 +2418,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let all_refs = ctx
             .resources
             .external_vars
@@ -2426,11 +2451,14 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
                           window,
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            editor.update(cx, |editor, cx| {
-                                editor.update_node_state::<Self>(node_id, |state| {
-                                    *state = Some(*val);
-                                });
-                            });
+                            let val = *val;
+                            edits.update_node_state::<Self, _>(
+                                node_id,
+                                move |state| {
+                                    *state = Some(val);
+                                },
+                                cx,
+                            );
                         }
                         _ => {}
                     },
@@ -2524,7 +2552,7 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let editor = ctx.cx.entity().downgrade();
+        let edits = ctx.edits.clone();
         let edit_state: Entity<Entity<_>> =
             ctx.window
                 .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -2537,14 +2565,15 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
                         window,
                         move |_, edit, event: &CurveEditEvent, window, cx| match event {
                             CurveEditEvent::ControlPointsChanged => {
-                                editor.update(cx, |editor, cx| {
-                                    let edit = edit.read(cx);
-                                    editor.update_node_state::<Self>(ctx.node_id, |state| {
-                                        state.control_points =
-                                            edit.value().control_points().to_vec();
-                                    });
-                                    cx.notify();
-                                });
+                                let edit = edit.read(cx);
+                                let control_points = edit.value().control_points().to_vec();
+                                edits.update_node_state::<Self, _>(
+                                    ctx.node_id,
+                                    move |state| {
+                                        state.control_points = control_points;
+                                    },
+                                    cx,
+                                );
                             }
                         },
                     )

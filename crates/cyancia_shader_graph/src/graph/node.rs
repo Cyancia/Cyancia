@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    editor::GraphEditor,
+    editor::{GraphEditSink, GraphEditor},
     graph::{
         GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
@@ -353,6 +353,7 @@ impl<Data: GraphData> GraphNodeData<Data> {
         graph_slots: &GraphSlots,
         resources: &GraphResources<Data>,
         type_registry: &GraphTypeRegistry,
+        edits: GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<'_, GraphEditor<Data>>,
     ) -> AnyElement {
@@ -363,6 +364,7 @@ impl<Data: GraphData> GraphNodeData<Data> {
             graph_slots,
             resources,
             type_registry,
+            edits,
             window,
             cx,
         })
@@ -420,6 +422,7 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
     pub graph_slots: &'a GraphSlots,
     pub resources: &'a GraphResources<Data>,
     pub type_registry: &'a GraphTypeRegistry,
+    pub edits: GraphEditSink<Data>,
     pub window: &'a mut Window,
     pub cx: &'a mut Context<'app, GraphEditor<Data>>,
 }
@@ -496,7 +499,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                 )
                 .child(div().text_sm().child(slot.name.clone()))
                 .when(slot.connected.is_none(), |d| {
-                    let editor = self.cx.entity().downgrade();
+                    let edits = self.edits.clone();
                     d.child(slot.data.ty().render_inline(
                         slot.data.value(),
                         GraphInlineLiteralRenderContext {
@@ -504,9 +507,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                             window: self.window,
                             cx: self.cx,
                             on_update: Rc::new(move |value, cx| {
-                                editor.update(cx, |editor, cx| {
-                                    editor.update_slot_value(&slot_id, value);
-                                });
+                                edits.update_slot_value(slot_id, value, cx);
                             }),
                         },
                     ))
