@@ -5,20 +5,20 @@ use std::{
 
 use cyancia_math::point::PointExt;
 use gpui::{
-    Action, AnyElement, App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
-    KeyBinding, LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, PathBuilder, Pixels, Point, SharedString, Size, Styled, Window, actions, canvas,
-    div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, solid_background,
+    actions, canvas, div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px,
+    solid_background, Action, AnyElement, App, Bounds, Context, FocusHandle, InteractiveElement,
+    IntoElement, KeyBinding, LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, PathBuilder, Pixels, Point, SharedString, Size, Styled, Window,
 };
-use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
+use gpui_component::{menu::ContextMenuExt, ActiveTheme, ElementExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::graph::{
-    Graph, GraphData,
     node::{ErasedGraphNode, GraphNode, GraphNodeId, GraphNodeRegistry},
     slot::{GraphInputSlotId, GraphOutputSlotId},
     variable::GraphLiteralValue,
+    Graph, GraphData,
 };
 use uuid::Uuid;
 
@@ -157,9 +157,7 @@ const NODE_HEADER_PADDING_Y: Pixels = px(3.0);
 const NODE_BODY_PADDING: Pixels = px(3.0);
 const CONNECTION_STROKE_WIDTH: Pixels = px(2.0);
 
-pub struct GraphEditor<Data: GraphData> {
-    node_registry: GraphNodeRegistry<Data>,
-
+pub struct GraphEditor {
     node_drag_state: Option<DragState>,
     marquee_state: Option<MarqueeState>,
     slot_connect_state: Option<SlotConnectState>,
@@ -177,11 +175,9 @@ pub struct GraphEditor<Data: GraphData> {
     focus_handle: FocusHandle,
 }
 
-impl<Data: GraphData> GraphEditor<Data> {
-    pub fn new(node_registry: GraphNodeRegistry<Data>, cx: &mut Context<Self>) -> Self {
+impl GraphEditor {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
-            node_registry,
-
             node_drag_state: None,
             marquee_state: None,
             slot_connect_state: None,
@@ -200,14 +196,15 @@ impl<Data: GraphData> GraphEditor<Data> {
         }
     }
 
-    pub fn on_add_node_action(
+    pub fn on_add_node_action<Data: GraphData>(
         &mut self,
+        node_registry: &GraphNodeRegistry<Data>,
         event: &AddNodeAction,
         edits: &GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(node) = self.node_registry.get(&event.name) else {
+        let Some(node) = node_registry.get(&event.name) else {
             log::error!("Node type '{}' not found in registry", event.name);
             return;
         };
@@ -225,7 +222,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
-    pub fn on_delete_selected_node_action(
+    pub fn on_delete_selected_node_action<Data: GraphData>(
         &mut self,
         event: &DeleteSelectedNodeAction,
         edits: &GraphEditSink<Data>,
@@ -238,7 +235,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
-    pub fn on_left_mouse_down(
+    pub fn on_left_mouse_down<Data: GraphData>(
         &mut self,
         event: &MouseDownEvent,
         edits: &GraphEditSink<Data>,
@@ -286,7 +283,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         }
     }
 
-    pub fn on_mouse_move(
+    pub fn on_mouse_move<Data: GraphData>(
         &mut self,
         event: &MouseMoveEvent,
         edits: &GraphEditSink<Data>,
@@ -304,7 +301,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         }
     }
 
-    pub fn on_left_mouse_up(
+    pub fn on_left_mouse_up<Data: GraphData>(
         &mut self,
         event: &MouseUpEvent,
         edits: &GraphEditSink<Data>,
@@ -364,7 +361,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         self.focus_handle.focus(window, cx);
     }
 
-    pub fn node_drag(
+    pub fn node_drag<Data: GraphData>(
         &mut self,
         event: &MouseMoveEvent,
         edits: &GraphEditSink<Data>,
@@ -460,7 +457,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
-    pub fn slot_connect_start(
+    pub fn slot_connect_start<Data: GraphData>(
         &mut self,
         event: &MouseDownEvent,
         edits: &GraphEditSink<Data>,
@@ -518,7 +515,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
-    pub fn slot_connect_end(
+    pub fn slot_connect_end<Data: GraphData>(
         &mut self,
         event: &MouseUpEvent,
         edits: &GraphEditSink<Data>,
@@ -616,10 +613,11 @@ impl<Data: GraphData> GraphEditor<Data> {
     }
 }
 
-impl<Data: GraphData> GraphEditor<Data> {
-    pub fn render_graph(
+impl GraphEditor {
+    pub fn render_graph<Data: GraphData>(
         &mut self,
         graph: &Graph<Data>,
+        node_registry: &GraphNodeRegistry<Data>,
         edits: GraphEditSink<Data>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -680,7 +678,8 @@ impl<Data: GraphData> GraphEditor<Data> {
             node_ids.push(*id);
         }
 
-        let all_nodes = self.node_registry.all().keys().cloned().collect::<Vec<_>>();
+        let all_nodes = node_registry.all().keys().cloned().collect::<Vec<_>>();
+        let node_registry = (*node_registry).clone();
         div()
             .w_full()
             .h_full()
@@ -786,7 +785,7 @@ impl<Data: GraphData> GraphEditor<Data> {
             .on_action(cx.listener({
                 let edits = edits.clone();
                 move |editor, event, window, cx| {
-                    editor.on_add_node_action(event, &edits, window, cx)
+                    editor.on_add_node_action(&node_registry, event, &edits, window, cx)
                 }
             }))
             .on_action(cx.listener({

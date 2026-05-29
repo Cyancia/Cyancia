@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::{BTreeMap, HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, BTreeMap, HashMap},
     convert::identity,
     rc::Rc,
     sync::Arc,
@@ -9,10 +9,10 @@ use std::{
 use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use gpui::{
-    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Pixels, Point, Rgba, Styled, Window, div, prelude::FluentBuilder, px,
+    div, prelude::FluentBuilder, px, AnyElement, App, Context, Hsla, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, Pixels, Point, Rgba, Styled, Window,
 };
-use gpui_component::{ElementExt, text};
+use gpui_component::{text, ElementExt};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -20,7 +20,6 @@ use uuid::Uuid;
 use crate::{
     editor::{GraphEditSink, GraphEditor},
     graph::{
-        GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
             GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInlineLiteralRenderContext,
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
@@ -28,6 +27,7 @@ use crate::{
         },
         texture::{GraphTextureStorage, GraphTextureUsageRecorder},
         variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
+        GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
     },
     save::GraphSerializable,
 };
@@ -355,7 +355,7 @@ impl<Data: GraphData> GraphNodeData<Data> {
         type_registry: &GraphTypeRegistry,
         edits: GraphEditSink<Data>,
         window: &mut Window,
-        cx: &mut Context<'_, GraphEditor<Data>>,
+        cx: &mut Context<'_, GraphEditor>,
     ) -> AnyElement {
         self.data.render(GraphNodeRenderContext {
             node_id,
@@ -424,7 +424,7 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
     pub type_registry: &'a GraphTypeRegistry,
     pub edits: GraphEditSink<Data>,
     pub window: &'a mut Window,
-    pub cx: &'a mut Context<'app, GraphEditor<Data>>,
+    pub cx: &'a mut Context<'app, GraphEditor>,
 }
 
 const NODE_HEADER_GAP: Pixels = px(2.0);
@@ -788,9 +788,17 @@ impl std::fmt::Display for ContextualGraphNodeRunError {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct GraphNodeRegistry<Data: GraphData> {
     nodes: BTreeMap<&'static str, Box<dyn ErasedGraphNode<Data>>>,
+}
+
+impl<Data: GraphData> Clone for GraphNodeRegistry<Data> {
+    fn clone(&self) -> Self {
+        Self {
+            nodes: self.nodes.clone(),
+        }
+    }
 }
 
 impl<Data: GraphData> GraphNodeRegistry<Data> {

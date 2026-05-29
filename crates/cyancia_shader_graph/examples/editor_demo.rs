@@ -2,18 +2,18 @@ use std::collections::HashMap;
 
 use cyancia_shader_graph::{
     editor::{GraphEditSink, GraphEditor},
-    graph::{Graph, GraphData, GraphResources},
+    graph::{node::GraphNodeRegistry, Graph, GraphData, GraphResources},
     wgsl_std::{
         builtin_nodes, builtin_types,
         nodes::{GraphInputNode, GraphOutputNode},
     },
 };
 use gpui::{
-    Action, App, AppContext, Context, Entity, IntoElement, Menu, MenuItem, ParentElement, Render,
-    SharedString, Styled, Window, WindowOptions, div,
+    div, Action, App, AppContext, Context, Entity, IntoElement, Menu, MenuItem, ParentElement,
+    Render, SharedString, Styled, Window, WindowOptions,
 };
 use gpui_component::{
-    ActiveTheme, GlobalState, Root, Theme, ThemeMode, ThemeRegistry, TitleBar, menu::AppMenuBar,
+    menu::AppMenuBar, ActiveTheme, GlobalState, Root, Theme, ThemeMode, ThemeRegistry, TitleBar,
 };
 use gpui_platform::application;
 
@@ -24,8 +24,9 @@ impl GraphData for DemoData {}
 
 struct DemoEditor {
     menu_bar: Entity<AppMenuBar>,
-    editor: Entity<GraphEditor<DemoData>>,
+    editor: Entity<GraphEditor>,
     graph: Graph<DemoData>,
+    node_registry: GraphNodeRegistry<DemoData>,
 }
 
 impl DemoEditor {
@@ -35,8 +36,9 @@ impl DemoEditor {
         nodes.register::<GraphOutputNode>();
         Self {
             menu_bar: menu_bar_init(cx),
-            editor: cx.new(|cx| GraphEditor::new(nodes.into(), cx)),
+            editor: cx.new(|cx| GraphEditor::new(cx)),
             graph: Graph::new(GraphResources::default().into(), builtin_types().into()),
+            node_registry: nodes.into(),
         }
     }
 }
@@ -53,7 +55,7 @@ impl Render for DemoEditor {
                 .ok();
         });
         let editor = self.editor.update(cx, |editor, cx| {
-            editor.render_graph(&self.graph, edits, window, cx)
+            editor.render_graph(&self.graph, &self.node_registry, edits, window, cx)
         });
 
         div()
