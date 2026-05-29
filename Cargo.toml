@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    # "crates/cyancia_actions",
+    "crates/cyancia_actions",
     # "crates/cyancia_app",
     "crates/cyancia_assets",
     # "crates/cyancia_runtime",
@@ -122,6 +122,7 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "
 schemars = "1"
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
 bevy_color = "0.18"
+serde_json = "1"
 
 [patch.crates-io]
 naga = { git = "https://github.com/gfx-rs/wgpu", rev = "7a2afeb014cb30a976059717c4ae7c85f01d858e", package = "naga" }

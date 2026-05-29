@@ -16,7 +16,6 @@ log.workspace = true
 palette.workspace = true
 rayon.workspace = true
 half.workspace = true
-# cyancia_runtime.workspace = true
 bevy_math.workspace = true
 wesl.workspace = true
 parse-display.workspace = true
@@ -27,6 +26,7 @@ indexmap.workspace = true
 cyancia_shader_graph.workspace = true
 cyancia_widgets.workspace = true
 dyn-clone.workspace = true
+gpui.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

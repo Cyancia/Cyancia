@@ -3,6 +3,7 @@ wesl::wesl_pkg!(pub image);
 use std::path::Path;
 
 use glam::UVec2;
+use gpui::App;
 // TODO move CImage to another place to avoid this.
 extern crate image as imagers;
 
@@ -21,6 +22,11 @@ pub mod layer;
 pub mod texel;
 pub mod tile;
 pub mod widget;
+
+pub fn init(cx: &mut App) {
+    cx.set_global(GpuTileStorage::from_app(cx));
+    cx.set_global(LayerPreviewOverriders::default());
+}
 
 // pub struct ImagePlugin;
 

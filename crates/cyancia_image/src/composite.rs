@@ -8,6 +8,7 @@ use bevy_math::IRect;
 use dyn_clone::DynClone;
 use encase::ShaderType;
 use glam::{IVec2, UVec2, UVec3};
+use gpui::Global;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
@@ -165,7 +166,7 @@ impl LayerPreviewOverriders {
     }
 }
 
-// impl Service for LayerPreviewOverriders {}
+impl Global for LayerPreviewOverriders {}
 
 pub struct PixelPreviewOverrider {
     pub texture: TextureView,

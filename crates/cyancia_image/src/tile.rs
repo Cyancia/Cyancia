@@ -6,10 +6,11 @@ use std::{
 };
 
 use bevy_math::IRect;
-use cyancia_render::buffer::BufferVec;
+use cyancia_render::{buffer::BufferVec, render_context::RenderContext};
 use dashmap::{DashMap, DashSet, Entry};
 use encase::ShaderType;
 use glam::{IVec2, Mat3, UVec2};
+use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use indexmap::{IndexMap, IndexSet};
 use palette::{LinSrgba, Srgb, Srgba};
@@ -44,15 +45,23 @@ impl std::fmt::Debug for GpuTileStorage {
     }
 }
 
-// impl Service for GpuTileStorage {}
+impl Global for GpuTileStorage {}
 
-// impl FromServices for GpuTileStorage {
-//     fn from_services(services: &Services) -> Self {
-//         Self {
-//             inner: Arc::new(GpuTileStorageInner::from_services(services)),
-//         }
-//     }
-// }
+impl GpuTileStorage {
+    pub fn from_app(cx: &App) -> Self {
+        let render_context = cx.global::<RenderContext>();
+        Self::new(&render_context.device, &render_context.queue)
+    }
+
+    pub fn new(device: &Device, queue: &Queue) -> Self {
+        Self {
+            inner: Arc::new(GpuTileStorageInner::new(
+                device.clone().into(),
+                queue.clone().into(),
+            )),
+        }
+    }
+}
 
 impl Deref for GpuTileStorage {
     type Target = GpuTileStorageInner;
@@ -110,15 +119,6 @@ pub struct GpuTileStorageInner {
     dummy_layers: HashMap<TexelType, DynamicLayerStorage>,
     layers: DashMap<LayerId, DynamicLayerStorage>,
 }
-
-// impl Service for GpuTileStorageInner {}
-
-// impl FromServices for GpuTileStorageInner {
-//     fn from_services(services: &Services) -> Self {
-//         let render_context = services.service::<RenderContext>();
-//         Self::new(render_context.device.clone(), render_context.queue.clone())
-//     }
-// }
 
 impl GpuTileStorageInner {
     pub const TILE_SIZE: u32 = 256;

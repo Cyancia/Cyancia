@@ -6,25 +6,21 @@ use cyancia_image::{
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
 };
-use cyancia_input::action::ActionId;
-use cyancia_runtime::Services;
-use iced_runtime::Task;
+use gpui::{App, actions};
 
 use crate::ActionFunction;
 
-#[derive(Default)]
-pub struct CreateNewLayerAction;
+actions!([
+    CreateNewLayerAction,
+    GroupActiveLayerAction,
+    MoveLayerUpAction,
+    MoveLayerDownAction
+]);
 
 impl ActionFunction for CreateNewLayerAction {
-    type Message = ();
-
-    fn id(&self) -> ActionId {
-        ActionId::new("create_new_layer_action".into())
-    }
-
-    fn trigger(&self, services: &mut Services) -> Task<()> {
-        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
-            return Task::none();
+    fn trigger(&self, cx: &mut App) {
+        let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
+            return;
         };
 
         // TODO: Check if this type of layer can be created under the current layer.
@@ -48,7 +44,7 @@ impl ActionFunction for CreateNewLayerAction {
             .layer_stack_mut()
             .insert_isolated_layer(new_layer);
 
-        let tiles = services.service::<GpuTileStorage>();
+        let tiles = cx.global::<GpuTileStorage>();
         tiles.declare_layer(
             new_layer_id,
             GpuLayerInfo {
@@ -61,24 +57,13 @@ impl ActionFunction for CreateNewLayerAction {
             new_layer_id,
             parent
         );
-
-        Task::none()
     }
 }
 
-#[derive(Default)]
-pub struct GroupActiveLayerAction;
-
 impl ActionFunction for GroupActiveLayerAction {
-    type Message = ();
-
-    fn id(&self) -> ActionId {
-        ActionId::new("group_active_layer_action".into())
-    }
-
-    fn trigger(&self, services: &mut Services) -> Task<()> {
-        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
-            return Task::none();
+    fn trigger(&self, cx: &mut App) {
+        let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
+            return;
         };
 
         let group_name = canvas.image.next_name_of_layer("Group".to_string());
@@ -107,24 +92,13 @@ impl ActionFunction for GroupActiveLayerAction {
             .image
             .layer_stack_mut()
             .insert_isolated_layer(group_layer);
-
-        Task::none()
     }
 }
 
-#[derive(Default)]
-pub struct MoveLayerUpAction;
-
 impl ActionFunction for MoveLayerUpAction {
-    type Message = ();
-
-    fn id(&self) -> ActionId {
-        ActionId::new("move_layer_up_action".into())
-    }
-
-    fn trigger(&self, services: &mut Services) -> Task<Self::Message> {
-        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
-            return Task::none();
+    fn trigger(&self, cx: &mut App) {
+        let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
+            return;
         };
 
         let active_layer_id = canvas.image.active_layer;
@@ -193,24 +167,13 @@ impl ActionFunction for MoveLayerUpAction {
             active_layer_parent_parent_node
                 .insert_child_above(active_layer_parent, active_layer_node);
         }
-
-        Task::none()
     }
 }
 
-#[derive(Default)]
-pub struct MoveLayerDownAction;
-
 impl ActionFunction for MoveLayerDownAction {
-    type Message = ();
-
-    fn id(&self) -> ActionId {
-        ActionId::new("move_layer_down_action".into())
-    }
-
-    fn trigger(&self, services: &mut Services) -> Task<Self::Message> {
-        let Some(canvas) = services.service_mut::<CanvasManager>().current_mut() else {
-            return Task::none();
+    fn trigger(&self, cx: &mut App) {
+        let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
+            return;
         };
 
         let active_layer_id = canvas.image.active_layer;
@@ -279,7 +242,5 @@ impl ActionFunction for MoveLayerDownAction {
             active_layer_parent_parent_node
                 .insert_child_below(active_layer_parent, active_layer_node);
         }
-
-        Task::none()
     }
 }

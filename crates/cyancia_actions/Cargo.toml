@@ -5,8 +5,6 @@ edition = "2024"
 
 [dependencies]
 parking_lot.workspace = true
-cyancia_input.workspace = true
-iced_core.workspace = true
 cyancia_canvas.workspace = true
 rfd.workspace = true
 futures.workspace = true
@@ -15,7 +13,15 @@ image.workspace = true
 glam.workspace = true
 log.workspace = true
 cyancia_tools.workspace = true
-iced_runtime.workspace = true
-cyancia_runtime.workspace = true
 async-trait.workspace = true
 uuid.workspace = true
+gpui.workspace = true
+schemars.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+parse-display.workspace = true
+cyancia_utils.workspace = true
+cyancia_assets.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+serde_json.workspace = true
