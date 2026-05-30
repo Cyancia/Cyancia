@@ -32,8 +32,8 @@ use cyancia_shader_graph::{
     },
 };
 use gpui::{
-    Action, App, AppContext, Axis, Context, Entity, IntoElement, KeyBinding, ParentElement, Render,
-    Styled, Window, actions, div, px, relative,
+    Action, App, AppContext, Axis, Context, Entity, InteractiveElement, IntoElement, KeyBinding,
+    ParentElement, Render, Styled, Window, actions, div, px, relative,
 };
 use gpui_component::{
     IconName, Selectable, Sizable,
@@ -939,6 +939,8 @@ impl Render for BrushEditor {
         };
 
         h_flex()
+            .key_context(BRUSH_EDITOR_CONTEXT)
+            .on_action(cx.listener(Self::on_save_current_item_action))
             .p_1()
             .size_full()
             .overflow_hidden()
