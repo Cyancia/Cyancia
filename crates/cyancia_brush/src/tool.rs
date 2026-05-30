@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
 use cyancia_assets::{AssetAppExt, store::AssetRegistry};
-use cyancia_canvas::{CCanvas, CanvasId, CanvasManager, event::CanvasUpdated};
+use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasId, CanvasManager, event::CanvasUpdated};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,
@@ -40,7 +40,7 @@ impl ToolFunction for BrushTool {
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
-        let Some(canvas) = cx.global::<CanvasManager>().current() else {
+        let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
 
@@ -84,9 +84,11 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let Some(canvas) = cx.global::<CanvasManager>().get(&canvas_id) else {
+        let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
+        assert_eq!(canvas.id(), canvas_id);
+
         let Some(position) = canvas
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
@@ -142,9 +144,11 @@ impl ToolFunction for BrushTool {
             return;
         };
 
-        let Some(canvas) = cx.global::<CanvasManager>().get(&canvas_id) else {
+        let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
+        assert_eq!(canvas.id(), canvas_id);
+
         let Some(position) = canvas
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))

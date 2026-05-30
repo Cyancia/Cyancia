@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, sync::Arc, time::Instant};
 
-use cyancia_canvas::CanvasManager;
+use cyancia_canvas::{CanvasAppExt, CanvasManager};
 use cyancia_tools::{ToolId, ToolProxies};
 use gpui::{Action, App, BorrowAppContext, actions};
 use schemars::JsonSchema;
@@ -29,8 +29,7 @@ canvas_tool_action!(SwitchToZoomToolAction, "zoom_tool");
 canvas_tool_action!(SwitchToBrushToolAction, "brush_tool");
 
 fn trigger_tool_switch(tool_id: ToolId, cx: &mut App) {
-    let canvases = cx.global::<CanvasManager>();
-    let Some(canvas) = canvases.current() else {
+    let Some(canvas) = cx.read_current_canvas() else {
         return;
     };
     let canvas_tool_proxy_id = canvas.tool_proxy_id();

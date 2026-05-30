@@ -11,14 +11,14 @@ use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
 use glam::{IVec2, UVec2};
 use gpui::{
     App, BorrowAppContext, Context, InteractiveElement, IntoElement, MouseButton, ObjectFit,
-    ParentElement, Render, RenderImage, RenderOnce, Styled, StyledImage, Window, div, img,
-    prelude::FluentBuilder,
+    ParentElement, Render, RenderImage, RenderOnce, Styled, StyledImage, WeakEntity, Window, div,
+    img, prelude::FluentBuilder,
 };
 use gpui_component::ElementExt;
 use wgpu::{Device, PollType};
 
 use crate::{
-    CanvasId, CanvasManager,
+    CCanvas, CanvasAppExt, CanvasId, CanvasManager,
     event::CanvasUpdated,
     render::{CanvasRenderer, CanvasUniform},
 };
@@ -26,6 +26,7 @@ use crate::{
 pub struct CanvasWidget {
     canvas_id: CanvasId,
     tool_proxy_id: ToolProxyId,
+    canvas: WeakEntity<CCanvas>,
     renderer: CanvasRenderer,
     latest_image: Option<Arc<RenderImage>>,
     output_size: UVec2,
@@ -37,26 +38,17 @@ impl CanvasWidget {
     pub fn new(
         canvas_id: CanvasId,
         tool_proxy_id: ToolProxyId,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Self> {
-        let canvas_manager = cx.global::<CanvasManager>();
-        let canvas = canvas_manager.get(&canvas_id)?;
+        let canvas_entity = cx.canvas(&canvas_id)?;
+        let canvas = canvas_entity.upgrade()?.read(cx);
         let render_context = cx.global::<RenderContext>();
         let renderer = CanvasRenderer::new(&render_context.device, canvas.image.texel_type());
-
-        let canvas_events = canvas_manager.events().clone();
-        cx.subscribe_in(&canvas_events, window, {
-            move |widget, _, event: &CanvasUpdated, window, cx| {
-                widget.recomposite(cx, Some(event.dirty_tiles));
-                widget.rerender(cx);
-            }
-        })
-        .detach();
 
         Some(Self {
             canvas_id,
             tool_proxy_id,
+            canvas: canvas_entity,
             renderer,
             latest_image: None,
             output_size: UVec2::ZERO,
@@ -66,34 +58,33 @@ impl CanvasWidget {
     }
 
     pub fn recomposite(&mut self, cx: &mut Context<Self>, dirty_tiles: Option<IRect>) {
-        cx.update_global::<CanvasManager, _>(|canvsa_manager, cx| {
-            cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
-                let Some(canvas) = canvsa_manager.get_mut(&self.canvas_id) else {
-                    return;
-                };
-                let tiles = cx.global::<GpuTileStorage>();
-                let render_context = cx.global::<RenderContext>();
-                self.compositor.create_cache(
-                    overriders,
-                    &canvas.image,
-                    tiles,
-                    &render_context.device,
-                    &render_context.queue,
-                );
-                self.compositor.composite(
-                    overriders,
-                    dirty_tiles.unwrap_or_else(|| {
-                        GpuTileStorageInner::pixel_rect_to_tile(IRect {
-                            min: IVec2::ZERO,
-                            max: canvas.image.size().as_ivec2(),
-                        })
-                    }),
-                    &canvas.image,
-                    tiles,
-                    &render_context.device,
-                    &render_context.queue,
-                );
-            });
+        cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
+            self.canvas
+                .update(cx, |canvas, cx| {
+                    let tiles = cx.global::<GpuTileStorage>();
+                    let render_context = cx.global::<RenderContext>();
+                    self.compositor.create_cache(
+                        overriders,
+                        &canvas.image,
+                        tiles,
+                        &render_context.device,
+                        &render_context.queue,
+                    );
+                    self.compositor.composite(
+                        overriders,
+                        dirty_tiles.unwrap_or_else(|| {
+                            GpuTileStorageInner::pixel_rect_to_tile(IRect {
+                                min: IVec2::ZERO,
+                                max: canvas.image.size().as_ivec2(),
+                            })
+                        }),
+                        &canvas.image,
+                        tiles,
+                        &render_context.device,
+                        &render_context.queue,
+                    );
+                })
+                .ok();
         });
     }
 
@@ -102,7 +93,7 @@ impl CanvasWidget {
             return;
         }
 
-        let Some(canvas) = cx.global::<CanvasManager>().get(&self.canvas_id) else {
+        let Some(canvas) = self.canvas.upgrade().map(|c| c.read(cx)) else {
             return;
         };
         if self.output_size == UVec2::ZERO {

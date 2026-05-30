@@ -2,7 +2,7 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use cyancia_brush::tool::BrushTool;
 use cyancia_canvas::{
-    CCanvas, CanvasEvents, CanvasId, CanvasManager,
+    CCanvas, CanvasAppExt, CanvasCreateAndRemove, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
     render::CanvasRenderer,
 };
@@ -98,7 +98,7 @@ impl MainView {
         })
         .detach();
 
-        let canvas_events = cx.global::<CanvasManager>().events().clone();
+        let canvas_events = cx.canvas_create_and_remove_event_entity();
         cx.subscribe_in(&canvas_events, window, Self::on_canvas_created)
             .detach();
         let focus_handle = cx.focus_handle();
@@ -113,16 +113,14 @@ impl MainView {
 
     fn on_canvas_created(
         &mut self,
-        _: &Entity<CanvasEvents>,
+        _: &Entity<CanvasCreateAndRemove>,
         event: &CanvasCreated,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let canvas_manager = cx.global_mut::<CanvasManager>();
-        let Some(canvas) = canvas_manager.get(&event.id) else {
+        let Some(canvas) = cx.read_canvas(&event.id) else {
             return;
         };
-
         let canvas_id = canvas.id();
         let tool_proxy_id = canvas.tool_proxy_id();
 

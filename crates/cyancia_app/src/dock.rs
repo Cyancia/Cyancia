@@ -2,7 +2,7 @@ use std::{rc::Rc, sync::Arc, time::Duration};
 
 use bevy_math::{IRect, Rect};
 use cyancia_canvas::{
-    CanvasEvents, CanvasId, CanvasManager,
+    CanvasAppExt, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasUpdated},
     tools::PanTool,
     widget::CanvasWidget,
@@ -84,8 +84,7 @@ impl CanvasDock {
                 .switch_tool(PanTool::id(), cx);
         });
 
-        let canvas_state =
-            cx.new(|cx| CanvasWidget::new(canvas_id, tool_proxy_id, window, cx).unwrap());
+        let canvas_state = cx.new(|cx| CanvasWidget::new(canvas_id, tool_proxy_id, cx).unwrap());
 
         canvas_state.update(cx, |widget, cx| {
             widget.recomposite(cx, None);
@@ -156,16 +155,12 @@ fn on_event(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let Some(canvas) = cx.global_mut::<CanvasManager>().current_mut() else {
-        return;
-    };
-
-    match event {
+    cx.update_current_canvas(|canvas, cx| match event {
         LayerStackEvent::LayerSelected(layer_id) => {
             canvas.image.active_layer = *layer_id;
-            cx.notify(dock.entity_id());
+            cx.notify();
         }
-    }
+    });
 }
 
 impl EventEmitter<PanelEvent> for CurrentCanvasLayersDock {}
@@ -188,14 +183,11 @@ impl Panel for CurrentCanvasLayersDock {
 
 impl Render for CurrentCanvasLayersDock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        cx.update_global::<CanvasManager, _>(|canvas_manager, cx| {
-            let Some(canvas) = canvas_manager.current() else {
-                return div().into_any_element();
-            };
-
+        cx.update_current_canvas(|canvas, cx| {
             self.widget
                 .render_layer_stack(&canvas.image, cx)
                 .into_any_element()
         })
+        .unwrap_or_else(|| div().into_any_element())
     }
 }
