@@ -8,6 +8,7 @@ use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use glam::UVec2;
 use image::DynamicImage;
+use parse_display::Display;
 use uuid::Uuid;
 use wgpu::{Buffer, ComputePass, Device, Queue, TextureFormat, TextureView};
 
@@ -37,7 +38,7 @@ impl LayerNameGenerator {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
     pub LayerId : Uuid
 }
 

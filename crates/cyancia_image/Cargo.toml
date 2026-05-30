@@ -27,6 +27,7 @@ cyancia_shader_graph.workspace = true
 cyancia_widgets.workspace = true
 dyn-clone.workspace = true
 gpui.workspace = true
+gpui-component.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

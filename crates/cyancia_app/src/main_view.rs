@@ -23,7 +23,7 @@ use gpui_component::{
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use crate::dock::{CanvasDock, FiltersDock, LayersDock, ToolOptionsDock};
+use crate::dock::{CanvasDock, CurrentCanvasLayersDock, FiltersDock, LayersDock, ToolOptionsDock};
 
 fn default_dock_layout(
     dock_area: &WeakEntity<DockArea>,
@@ -36,6 +36,7 @@ fn default_dock_layout(
                 Arc::new(cx.new(LayersDock::new)),
                 Arc::new(cx.new(FiltersDock::new)),
                 Arc::new(cx.new(ToolOptionsDock::new)),
+                Arc::new(cx.new(|cx| CurrentCanvasLayersDock::new(window, cx))),
             ],
             dock_area,
             window,

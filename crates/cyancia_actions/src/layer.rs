@@ -43,6 +43,7 @@ impl ActionFunction for CreateNewLayerAction {
             .image
             .layer_stack_mut()
             .insert_isolated_layer(new_layer);
+        cx.refresh_windows();
 
         let tiles = cx.global::<GpuTileStorage>();
         tiles.declare_layer(

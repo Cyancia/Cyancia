@@ -1837,6 +1837,7 @@ dependencies = [
  "encase",
  "glam",
  "gpui",
+ "gpui-component",
  "half",
  "image",
  "indexmap",
