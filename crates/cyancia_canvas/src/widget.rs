@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bevy_math::IRect;
+use bevy_math::{IRect, Rect};
 use cyancia_image::{
     composite::{ImageCompositor, LayerPreviewOverriders},
     texel::TexelType,
@@ -8,11 +8,11 @@ use cyancia_image::{
 };
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
-use glam::{IVec2, UVec2};
+use glam::{IVec2, UVec2, Vec2};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, InteractiveElement, IntoElement, MouseButton,
     ObjectFit, ParentElement, Render, RenderImage, RenderOnce, Styled, StyledImage, WeakEntity,
-    Window, div, img, prelude::FluentBuilder,
+    Window, div, img, prelude::FluentBuilder, px,
 };
 use gpui_component::ElementExt;
 use wgpu::{Device, PollType};
@@ -184,6 +184,28 @@ impl Render for CanvasWidget {
                             UVec2::new(pixels.width.into(), pixels.height.into()),
                             cx,
                         );
+
+                        let Ok(last_rect) = this
+                            .canvas
+                            .read_with(cx, |canvas, cx| canvas.transform.widget_bounds)
+                        else {
+                            return;
+                        };
+
+                        let min = Vec2::new(bounds.origin.x.into(), bounds.origin.y.into());
+                        let max = Vec2::new(
+                            (bounds.origin.x + bounds.size.width).into(),
+                            (bounds.origin.y + bounds.size.height).into(),
+                        );
+                        let widget_bounds = Rect { min, max };
+
+                        if last_rect != widget_bounds {
+                            this.canvas
+                                .update(cx, |canvas, cx| {
+                                    canvas.transform.widget_bounds = widget_bounds;
+                                })
+                                .ok();
+                        }
                     });
                 }
             })
