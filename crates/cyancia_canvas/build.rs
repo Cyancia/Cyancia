@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rerun-if-changed=src/shaders");
+
     let mut shaders = wesl::Wesl::new("src/shaders");
     shaders
         .add_package(&cyancia_image::image::PACKAGE)
