@@ -5,20 +5,20 @@ use std::{
 
 use cyancia_math::point::PointExt;
 use gpui::{
-    actions, canvas, div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px,
-    solid_background, Action, AnyElement, App, Bounds, Context, FocusHandle, InteractiveElement,
-    IntoElement, KeyBinding, LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, PathBuilder, Pixels, Point, SharedString, Size, Styled, Window,
+    Action, AnyElement, App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
+    KeyBinding, LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, PathBuilder, Pixels, Point, SharedString, Size, Styled, Window, actions, canvas,
+    div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, solid_background,
 };
-use gpui_component::{menu::ContextMenuExt, ActiveTheme, ElementExt};
+use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::graph::{
+    Graph, GraphData,
     node::{ErasedGraphNode, GraphNode, GraphNodeId, GraphNodeRegistry},
     slot::{GraphInputSlotId, GraphOutputSlotId},
     variable::GraphLiteralValue,
-    Graph, GraphData,
 };
 use uuid::Uuid;
 
@@ -323,12 +323,13 @@ impl GraphEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let cursor_position = event.position - self.editor_bounds.origin;
         let mut node_id = None;
         for id in self.node_positions.keys() {
             let Some(bounds) = self.node_bounds.get(id) else {
                 continue;
             };
-            if bounds.contains(&event.position) {
+            if bounds.contains(&cursor_position) {
                 node_id = Some(*id);
                 break;
             }
@@ -464,17 +465,16 @@ impl GraphEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let cursor_pos = event.position - self.editor_bounds.origin;
         let mut start_slot = None;
         for (id, pos) in &self.input_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
-            {
+            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 start_slot = Some(GraphSlotId::Input(*id));
                 break;
             }
         }
         for (id, pos) in &self.output_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
-            {
+            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 start_slot = Some(GraphSlotId::Output(*id));
                 break;
             }
@@ -528,17 +528,16 @@ impl GraphEditor {
 
         cx.notify();
 
+        let cursor_pos = event.position - self.editor_bounds.origin;
         let mut end_slot = None;
         for (slot_id, pos) in &self.input_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
-            {
+            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 end_slot = Some(GraphSlotId::Input(*slot_id));
                 break;
             }
         }
         for (slot_id, pos) in &self.output_slot_pos {
-            if event.position.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED
-            {
+            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 end_slot = Some(GraphSlotId::Output(*slot_id));
                 break;
             }
@@ -605,11 +604,13 @@ impl GraphEditor {
     }
 
     pub fn add_input_slot_pos(&mut self, id: GraphInputSlotId, pos: Point<Pixels>) {
-        self.input_slot_pos.insert(id, pos);
+        self.input_slot_pos
+            .insert(id, pos - self.editor_bounds.origin);
     }
 
     pub fn add_output_slot_pos(&mut self, id: GraphOutputSlotId, pos: Point<Pixels>) {
-        self.output_slot_pos.insert(id, pos);
+        self.output_slot_pos
+            .insert(id, pos - self.editor_bounds.origin);
     }
 }
 
@@ -706,7 +707,7 @@ impl GraphEditor {
                         let pos = self.input_slot_pos.get(&input_id)?;
                         let slot = graph.slots.inputs.get(&input_id)?;
                         Some((
-                            *pos,
+                            *pos + self.editor_bounds.origin,
                             window.mouse_position(),
                             solid_background(slot.data.ty().color(cx)),
                         ))
@@ -715,7 +716,7 @@ impl GraphEditor {
                         let pos = self.output_slot_pos.get(&output_id)?;
                         let slot = graph.slots.outputs.get(&output_id)?;
                         Some((
-                            *pos,
+                            *pos + self.editor_bounds.origin,
                             window.mouse_position(),
                             solid_background(slot.data_ty.color(cx)),
                         ))
@@ -744,7 +745,11 @@ impl GraphEditor {
                         } else {
                             solid_background(input.data.ty().color(cx))
                         };
-                        Some((*from, *to, color))
+                        Some((
+                            *from + self.editor_bounds.origin,
+                            *to + self.editor_bounds.origin,
+                            color,
+                        ))
                     })
                     .chain(connecting)
                     .collect::<Vec<_>>();
@@ -773,12 +778,20 @@ impl GraphEditor {
                     .on_children_prepainted({
                         let editor = cx.entity().downgrade();
                         move |bounds, _window, cx| {
-                            editor.update(cx, |editor, _cx| {
-                                editor.node_bounds.clear();
-                                for (node_id, bounds) in node_ids.iter().zip(bounds) {
-                                    editor.node_bounds.insert(*node_id, bounds);
-                                }
-                            });
+                            editor
+                                .update(cx, |editor, _cx| {
+                                    editor.node_bounds.clear();
+                                    for (node_id, bounds) in node_ids.iter().zip(bounds) {
+                                        editor.node_bounds.insert(
+                                            *node_id,
+                                            Bounds::new(
+                                                bounds.origin - editor.editor_bounds.origin,
+                                                bounds.size,
+                                            ),
+                                        );
+                                    }
+                                })
+                                .ok();
                         }
                     }),
             )
@@ -822,9 +835,11 @@ impl GraphEditor {
                 let editor = cx.entity().downgrade();
 
                 move |bounds, window, cx| {
-                    editor.update(cx, |editor, cx| {
-                        editor.editor_bounds = bounds;
-                    });
+                    editor
+                        .update(cx, |editor, cx| {
+                            editor.editor_bounds = bounds;
+                        })
+                        .ok();
                 }
             })
             .context_menu(move |menu, window, cx| {
