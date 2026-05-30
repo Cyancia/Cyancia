@@ -10,9 +10,9 @@ use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
 use glam::{IVec2, UVec2};
 use gpui::{
-    App, BorrowAppContext, Context, InteractiveElement, IntoElement, MouseButton, ObjectFit,
-    ParentElement, Render, RenderImage, RenderOnce, Styled, StyledImage, WeakEntity, Window, div,
-    img, prelude::FluentBuilder,
+    App, AppContext, BorrowAppContext, Context, InteractiveElement, IntoElement, MouseButton,
+    ObjectFit, ParentElement, Render, RenderImage, RenderOnce, Styled, StyledImage, WeakEntity,
+    Window, div, img, prelude::FluentBuilder,
 };
 use gpui_component::ElementExt;
 use wgpu::{Device, PollType};
@@ -130,14 +130,19 @@ impl CanvasWidget {
             .draw(&render_context.device, &render_context.queue);
 
         let device = render_context.device.clone();
-        cx.spawn(async move |this, cx| {
+        let render_task = cx.background_spawn(async move {
             device
                 .poll(PollType::Wait {
                     submission_index: Some(submission_index),
                     timeout: None,
                 })
                 .unwrap();
-            let result = rx.await;
+
+            rx.await
+        });
+
+        cx.spawn(async move |this, cx| {
+            let result = render_task.await;
             let _ = this.update(cx, |this, cx| {
                 this.ongoing_render = false;
                 if let Ok(result) = result {
