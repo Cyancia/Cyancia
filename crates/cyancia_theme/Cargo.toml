@@ -1,0 +1,10 @@
+[package]
+name = "cyancia_theme"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cyancia_assets.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+thiserror.workspace = true

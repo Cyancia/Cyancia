@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use cyancia_view::{ViewAppExt, ViewId};
 use gpui::{Action, App};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -11,7 +12,6 @@ pub struct OpenBrushEditorAction;
 
 impl ActionFunction for OpenBrushEditorAction {
     fn trigger(&self, cx: &mut App) {
-        // TODO Open brush editor
-        todo!()
+        cx.open_view(ViewId::new("brush_editor"));
     }
 }

@@ -28,6 +28,9 @@ gpui_platform.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
 thiserror.workspace = true
+cyancia_theme.workspace = true
+cyancia_view.workspace = true
+anyhow.workspace = true
 
 [build-dependencies]
 fs_extra.workspace = true

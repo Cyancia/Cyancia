@@ -5,14 +5,15 @@ use cyancia_assets::{
     bundle::{directory::AssetDirectory, standard::StandardAssetBundle},
     loader::AssetRegistryBuilder,
 };
+use cyancia_view::{View, ViewAppExt, ViewManager};
 use gpui::{AppContext, WindowOptions};
 use gpui_component::Root;
 
-use crate::main_view::MainView;
+use crate::{brush_editor_view::BrushEditorView, main_view::MainView};
 
+mod brush_editor_view;
 mod dock;
 mod main_view;
-mod theme;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -36,7 +37,8 @@ fn main() {
             cyancia_canvas::init(cx);
             cyancia_image::init(cx);
             cyancia_shader_graph::init(cx);
-            theme::init(cx);
+            cyancia_theme::init(cx);
+            cyancia_view::init(cx);
 
             {
                 cx.add_asset_bundle(Arc::new(AssetDirectory::new("assets/builtin_assets")));
@@ -57,18 +59,10 @@ fn main() {
 
             cyancia_assets::finish(cx);
             cyancia_actions::finish(cx);
-            theme::finish(cx);
+            cyancia_theme::finish(cx);
 
-            let _ = cx.open_window(
-                WindowOptions {
-                    titlebar: None,
-                    ..Default::default()
-                },
-                |window, cx| {
-                    let main_view = cx.new(|cx| MainView::new(window, cx));
-
-                    cx.new(|cx| Root::new(main_view, window, cx))
-                },
-            );
+            cx.register_view::<MainView>();
+            cx.register_view::<BrushEditorView>();
+            cx.open_view(MainView::id());
         });
 }

@@ -1,37 +1,29 @@
 use std::{any::Any, fmt::Debug, sync::Arc};
 
-use cyancia_actions::ActionFunctionRegistry;
-use cyancia_assets::AssetAppExt;
 use cyancia_brush::tool::BrushTool;
 use cyancia_canvas::{
     CCanvas, CanvasEvents, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
     render::CanvasRenderer,
 };
-use cyancia_image::{
-    CImage,
-    texel::TexelType,
-    tile::{GpuLayerInfo, GpuTileStorage, GpuTileStorageInner},
-};
+use cyancia_theme::{SwitchThemeAction, ThemeAsset};
 use cyancia_tools::{ToolFunction, ToolId, ToolProxies, ToolProxy};
-
+use cyancia_view::{View, ViewId};
 use glam::UVec2;
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, FocusHandle, InteractiveElement,
-    IntoElement, Menu, MenuItem, ParentElement, Render, Styled, WeakEntity, Window, div,
+    IntoElement, Menu, MenuItem, ParentElement, Render, Styled, WeakEntity, Window, WindowHandle,
+    WindowOptions, div,
 };
 use gpui_component::{
-    ActiveTheme, GlobalState, Theme, ThemeRegistry, TitleBar,
+    ActiveTheme, GlobalState, Root, Theme, ThemeRegistry, TitleBar,
     dock::{DockArea, DockItem, DockPlacement, DockState, PanelView},
     menu::AppMenuBar,
 };
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use crate::{
-    dock::{CanvasDock, FiltersDock, LayersDock, ToolOptionsDock},
-    theme::{SwitchThemeAction, ThemeAsset},
-};
+use crate::dock::{CanvasDock, FiltersDock, LayersDock, ToolOptionsDock};
 
 fn default_dock_layout(
     dock_area: &WeakEntity<DockArea>,
@@ -61,6 +53,26 @@ pub struct MainView {
     menu_bar: Entity<AppMenuBar>,
     dock_area: Entity<DockArea>,
     focus_handle: FocusHandle,
+}
+
+impl View for MainView {
+    fn id() -> ViewId {
+        ViewId::new("main_view")
+    }
+
+    fn open(cx: &mut App) -> anyhow::Result<WindowHandle<Root>> {
+        cx.open_window(
+            WindowOptions {
+                titlebar: None,
+                ..Default::default()
+            },
+            |window, cx| {
+                let main_view = cx.new(|cx| MainView::new(window, cx));
+                let root_view = cx.new(|cx| Root::new(main_view, window, cx));
+                root_view
+            },
+        )
+    }
 }
 
 impl MainView {

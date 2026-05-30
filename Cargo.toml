@@ -14,9 +14,11 @@ members = [
     "crates/cyancia_render",
     "crates/cyancia_shader_graph",
     "crates/cyancia_shader_graph_derive",
+    "crates/cyancia_theme",
     "crates/cyancia_tools",
     "crates/cyancia_utils",
     "crates/cyancia_utils_derive",
+    "crates/cyancia_view",
     "crates/cyancia_widgets",
     # "crates/cyancia_dock",
     # "crates/cyancia_platform",
@@ -43,6 +45,8 @@ cyancia_runtime = { version = "0.1.0", path = "crates/cyancia_runtime" }
 cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
 cyancia_dock = { version = "0.1.0", path = "crates/cyancia_dock" }
 cyancia_platform = { version = "0.1.0", path = "crates/cyancia_platform" }
+cyancia_view = { version = "0.1.0", path = "crates/cyancia_view" }
+cyancia_theme = { version = "0.1.0", path = "crates/cyancia_theme" }
 
 uuid = { version = "1", features = ["v4", "serde"] }
 syn = "2"

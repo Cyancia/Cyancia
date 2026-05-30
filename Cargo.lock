@@ -1681,6 +1681,7 @@ dependencies = [
  "cyancia_image",
  "cyancia_tools",
  "cyancia_utils",
+ "cyancia_view",
  "futures",
  "glam",
  "gpui",
@@ -1701,6 +1702,7 @@ dependencies = [
 name = "cyancia_app"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "cyancia_actions",
  "cyancia_assets",
@@ -1709,7 +1711,9 @@ dependencies = [
  "cyancia_image",
  "cyancia_render",
  "cyancia_shader_graph",
+ "cyancia_theme",
  "cyancia_tools",
+ "cyancia_view",
  "cyancia_widgets",
  "fs_extra",
  "futures",
@@ -1921,6 +1925,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_theme"
+version = "0.1.0"
+dependencies = [
+ "cyancia_assets",
+ "gpui",
+ "gpui-component",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "cyancia_tools"
 version = "0.1.0"
 dependencies = [
@@ -1953,6 +1967,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "cyancia_view"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cyancia_utils",
+ "gpui",
+ "gpui-component",
+ "gpui_platform",
+ "log",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
