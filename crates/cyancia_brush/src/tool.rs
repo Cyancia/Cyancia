@@ -13,7 +13,9 @@ use cyancia_math::number::LerpAngle;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use glam::{FloatExt, Vec2};
-use gpui::{App, BorrowAppContext, Global, MouseDownEvent, MouseMoveEvent, MouseUpEvent};
+use gpui::{
+    App, BorrowAppContext, Global, MouseDownEvent, MouseMoveEvent, MouseUpEvent, WeakEntity,
+};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
@@ -26,12 +28,8 @@ const TIMESTAMP_MOD: i64 = 1_000_000;
 
 #[derive(Default)]
 pub struct BrushTool {
-    target_layer: Option<(CanvasId, LayerId)>,
+    target_layer: Option<(WeakEntity<CCanvas>, LayerId)>,
     stroke_begin: Option<DateTime<Utc>>,
-}
-
-pub enum BrushToolMessage {
-    CanvasUpdateDuringStroke(CanvasId, IRect),
 }
 
 impl ToolFunction for BrushTool {
@@ -40,7 +38,12 @@ impl ToolFunction for BrushTool {
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
-        let Some(canvas) = cx.read_current_canvas() else {
+        let Some(canvas_entity) = cx.current_canvas() else {
+            dbg!();
+            return;
+        };
+        let Some(canvas) = canvas_entity.upgrade().map(|c| c.read(cx)) else {
+            dbg!();
             return;
         };
 
@@ -58,7 +61,7 @@ impl ToolFunction for BrushTool {
 
         let now = Utc::now();
         self.stroke_begin = Some(now);
-        self.target_layer = Some((canvas.id(), active_layer));
+        self.target_layer = Some((canvas_entity, active_layer));
 
         let params = RawPenInput {
             position,
@@ -74,20 +77,27 @@ impl ToolFunction for BrushTool {
         }
 
         cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            let Some(brush) = brush.as_mut() else {
+                dbg!();
+                return;
+            };
             let tiles = cx.global::<GpuTileStorage>();
             brush.begin_stroke(params, tiles, cx.assets(), active_layer);
         });
     }
 
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
-        let Some((canvas_id, active_layer)) = self.target_layer else {
+        dbg!();
+        let Some((canvas_entity, active_layer)) = &self.target_layer else {
+            dbg!();
             return;
         };
 
-        let Some(canvas) = cx.read_current_canvas() else {
+        let Some(canvas_entity) = canvas_entity.upgrade() else {
+            dbg!();
             return;
         };
-        assert_eq!(canvas.id(), canvas_id);
+        let canvas = canvas_entity.read(cx);
 
         let Some(position) = canvas
             .transform
@@ -109,45 +119,48 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let now = std::time::Instant::now();
-
-        if !cx.has_global::<CurrentBrushPresetOperator>() {
-            return;
-        }
-
         let maybe_preview = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            dbg!();
+            let Some(brush) = brush.as_mut() else {
+                dbg!();
+                return None;
+            };
             let tiles = cx.global::<GpuTileStorage>();
+            let now = std::time::Instant::now();
             brush.update_stroke(params, tiles);
-            brush.generate_preview(tiles)
+            let preview = brush.generate_preview(tiles);
+            log::info!("Brush stroke update took {:?}", now.elapsed());
+
+            preview
         });
 
         if let Some((bounds, preview)) = maybe_preview {
             let overriders = cx.global_mut::<LayerPreviewOverriders>();
             overriders.insert_overrider(
-                active_layer,
+                *active_layer,
                 PixelPreviewOverrider {
                     texture: preview.texture().unwrap().as_ref().clone(),
                     tile_info_buffer: preview.tile_info_buffer().unwrap().clone(),
                 },
             );
 
-            // TODO Broadcast update event
-            // CanvasUpdate::broadcast(CanvasUpdate {
-            //     id: canvas_id,
-            //     dirty_tiles: bounds,
-            // });
+            canvas_entity.update(cx, |canvas, cx| {
+                cx.emit(CanvasUpdated {
+                    dirty_tiles: bounds,
+                });
+            });
         }
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App) {
-        let Some((canvas_id, active_layer)) = self.target_layer.take() else {
+        let Some((canvas_entity, active_layer)) = self.target_layer.take() else {
             return;
         };
 
-        let Some(canvas) = cx.read_current_canvas() else {
+        let Some(canvas_entity) = canvas_entity.upgrade() else {
             return;
         };
-        assert_eq!(canvas.id(), canvas_id);
+        let canvas = canvas_entity.read(cx);
 
         let Some(position) = canvas
             .transform
@@ -170,6 +183,9 @@ impl ToolFunction for BrushTool {
         };
 
         let dirty_tiles = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            let Some(brush) = brush.as_mut() else {
+                return None;
+            };
             let tiles = cx.global::<GpuTileStorage>();
             brush.end_stroke(final_input, tiles, active_layer)
         });
@@ -178,17 +194,15 @@ impl ToolFunction for BrushTool {
         overriders.remove_overrider(&active_layer);
 
         if let Some(dirty_tiles) = dirty_tiles {
-            // TODO:
-            // CanvasUpdate::broadcast(CanvasUpdate {
-            //     id: canvas_id,
-            //     dirty_tiles,
-            // });
+            canvas_entity.update(cx, |canvas, cx| {
+                cx.emit(CanvasUpdated { dirty_tiles });
+            });
         }
     }
 }
 
 wrapper! {
-    pub mut CurrentBrushPresetOperator : BrushPresetOperator
+    pub mut CurrentBrushPresetOperator : Option<BrushPresetOperator>
 }
 
 impl Global for CurrentBrushPresetOperator {}

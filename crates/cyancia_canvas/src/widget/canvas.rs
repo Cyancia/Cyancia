@@ -38,17 +38,27 @@ impl CanvasWidget {
     pub fn new(
         canvas_id: CanvasId,
         tool_proxy_id: ToolProxyId,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Self> {
-        let canvas_entity = cx.canvas(&canvas_id)?;
-        let canvas = canvas_entity.upgrade()?.read(cx);
+        let canvas_entity = cx.canvas(&canvas_id)?.upgrade()?;
+        let canvas = canvas_entity.read(cx);
         let render_context = cx.global::<RenderContext>();
         let renderer = CanvasRenderer::new(&render_context.device, canvas.image.texel_type());
+
+        cx.subscribe_in(
+            &canvas_entity,
+            window,
+            |widget, canvas, event: &CanvasUpdated, window, cx| {
+                widget.recomposite(cx, Some(event.dirty_tiles));
+            },
+        )
+        .detach();
 
         Some(Self {
             canvas_id,
             tool_proxy_id,
-            canvas: canvas_entity,
+            canvas: canvas_entity.downgrade(),
             renderer,
             latest_image: None,
             output_size: UVec2::ZERO,

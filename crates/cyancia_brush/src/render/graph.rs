@@ -920,16 +920,10 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
     }
 
     fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let sample_position = ctx.get_input_value::<Vec2FType>(0)?;
         let center = ctx.get_input_value::<Vec2FType>(1)?;
         let radii = ctx.get_input_value::<Vec2FType>(2)?;
-        let offset = (sample_position - center) / radii;
-        let value = if offset.length_squared() <= 1.0 {
-            1.0
-        } else {
-            0.0
-        };
-        ctx.set_output_value::<F32Type>(0, value)?;
+
+        // Mask value in slot 0 is not evaluated on cpu.
         ctx.set_output_value::<RectType>(
             1,
             Rect {

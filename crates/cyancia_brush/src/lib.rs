@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use cyancia_actions::ActionAppExt;
 use cyancia_assets::AssetAppExt;
 use cyancia_tools::ToolsAppExt;
 use gpui::App;
+use parking_lot::Mutex;
 
-use crate::{asset::BrushPresetSerializer, tool::BrushTool};
+use crate::{asset::{BrushPreset, BrushPresetSerializer}, instance::BrushPresetInstance, render::BrushPresetOperator, tool::{BrushTool, CurrentBrushPresetOperator}};
 
 pub mod asset;
 pub mod editor;
@@ -16,6 +19,7 @@ pub mod widget;
 pub fn init(cx: &mut App) {
     cx.add_asset_serializer::<BrushPresetSerializer>();
     cx.add_tool_function::<BrushTool>();
+    cx.set_global(CurrentBrushPresetOperator::new(None));
 
     editor::init(cx);
 }

@@ -17,6 +17,11 @@
       "context": "main_view"
     },
     {
+      "shortcut": "b",
+      "action_name": "SwitchToBrushToolAction",
+      "context": "main_view"
+    },
+    {
       "shortcut": "ctrl-o",
       "action_name": "OpenFileAction",
       "context": "main_view"

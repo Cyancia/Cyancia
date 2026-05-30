@@ -206,11 +206,13 @@ impl BrushEditor {
 
                     let device = cx.global::<RenderContext>().device.clone();
                     let queue = cx.global::<RenderContext>().queue.clone();
-                    cx.set_global(CurrentBrushPresetOperator::new(BrushPresetOperator::new(
-                        instance,
-                        device,
-                        queue,
-                        InputProcessor::default(),
+                    cx.set_global(CurrentBrushPresetOperator::new(Some(
+                        BrushPresetOperator::new(
+                            instance,
+                            device,
+                            queue,
+                            InputProcessor::default(),
+                        ),
                     )));
                 }
                 ListEvent::Cancel => {}
@@ -390,11 +392,13 @@ impl BrushEditor {
 
                 let device = cx.global::<RenderContext>().device.clone();
                 let queue = cx.global::<RenderContext>().queue.clone();
-                cx.set_global(CurrentBrushPresetOperator::new(BrushPresetOperator::new(
-                    brush.instance.clone(),
-                    device,
-                    queue,
-                    InputProcessor::default(),
+                cx.set_global(CurrentBrushPresetOperator::new(Some(
+                    BrushPresetOperator::new(
+                        brush.instance.clone(),
+                        device,
+                        queue,
+                        InputProcessor::default(),
+                    ),
                 )));
             }
             Selected::Function(func) => {
