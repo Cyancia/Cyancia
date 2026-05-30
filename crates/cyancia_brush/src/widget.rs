@@ -1,9 +1,9 @@
 use cyancia_assets::{asset::AssetHandle, store::AssetRegistry};
 use cyancia_shader_graph::save::SerializableGraphFunction;
-use gpui::{App, Context, ElementId, IntoElement, Render, RenderOnce, Window};
+use gpui::{App, Context, IntoElement, ParentElement, RenderOnce, Window};
 use gpui_component::{
-    IndexPath, Selectable,
     list::{ListDelegate, ListItem, ListState},
+    IndexPath, Selectable,
 };
 
 use crate::asset::BrushPreset;
@@ -38,7 +38,14 @@ impl Selectable for BrushPresetListItem {
 
 impl RenderOnce for BrushPresetListItem {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let Ok(brush) = self.handle.get() else {
+            return self
+                .base
+                .child(format!("Unable to load brush {}", self.handle.id()));
+        };
         self.base
+            .selected(self.is_selected)
+            .child(brush.metadata.name.clone())
     }
 }
 
@@ -120,7 +127,15 @@ impl Selectable for BrushFunctionItem {
 
 impl RenderOnce for BrushFunctionItem {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let Ok(func) = self.handle.get() else {
+            return self.base.child(format!(
+                "Unable to load brush function {}",
+                self.handle.id()
+            ));
+        };
         self.base
+            .selected(self.is_selected)
+            .child(func.name.clone())
     }
 }
 

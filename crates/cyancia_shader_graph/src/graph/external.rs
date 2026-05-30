@@ -74,6 +74,12 @@ impl GraphExternalVariableStorage {
         self.contents.insert(var.id, var);
     }
 
+    pub fn rename(&self, id: &ExternalVariableId, new_name: String) {
+        if let Some(mut var) = self.contents.get_mut(id) {
+            var.name = new_name;
+        }
+    }
+
     pub fn update(&self, id: &ExternalVariableId, new_value: Box<dyn GraphLiteralValue>) {
         let Some(mut var) = self.contents.get_mut(id) else {
             return;

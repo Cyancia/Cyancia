@@ -321,6 +321,11 @@ impl BrushPresetInstance {
         self.external_vars.insert(var);
     }
 
+    pub fn rename_external_var(&mut self, id: &ExternalVariableId, new_name: String) {
+        self.increment_runtime_revision();
+        self.external_vars.rename(id, new_name);
+    }
+
     pub fn update_external_var(
         &self,
         id: &ExternalVariableId,
