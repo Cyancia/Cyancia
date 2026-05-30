@@ -22,7 +22,7 @@ pub mod texture_atlas;
 pub fn init(cx: &mut App) {
     cx.set_global(RenderContext::request_new());
     cx.set_global(GlobalSamplers::from_app(&cx));
-    // cx.add_asset_serializer::<ImageSerializer>();
+    cx.add_asset_serializer::<ImageSerializer>();
     cx.set_global(FullscreenVertex::from_app(&cx));
 }
 

@@ -13,6 +13,7 @@ pub type GraphDeserializer<'a> = toml::de::Deserializer<'a>;
 
 pub fn init(cx: &mut App) {
     editor::init(cx);
+    cx.add_asset_serializer::<SerializableGraphFunctionSerializer>();
 }
 
 // pub struct ShaderGraphPlugin;
