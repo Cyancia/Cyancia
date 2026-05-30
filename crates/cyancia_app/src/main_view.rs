@@ -2,8 +2,9 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use cyancia_actions::ActionFunctionRegistry;
 use cyancia_assets::AssetAppExt;
+use cyancia_brush::tool::BrushTool;
 use cyancia_canvas::{
-    CCanvas, CanvasId, CanvasManager,
+    CCanvas, CanvasEvents, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
     render::CanvasRenderer,
 };
@@ -12,23 +13,23 @@ use cyancia_image::{
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
+use cyancia_tools::{ToolFunction, ToolId, ToolProxies, ToolProxy};
 
 use glam::UVec2;
 use gpui::{
-    App, AppContext, Context, Entity, IntoElement, Menu, MenuItem, ParentElement, Render, Styled,
-    WeakEntity, Window, div,
+    App, AppContext, BorrowAppContext, Context, Entity, FocusHandle, InteractiveElement,
+    IntoElement, Menu, MenuItem, ParentElement, Render, Styled, WeakEntity, Window, div,
 };
 use gpui_component::{
     ActiveTheme, GlobalState, Theme, ThemeRegistry, TitleBar,
-    dock::{DockArea, DockItem, DockState, PanelView},
+    dock::{DockArea, DockItem, DockPlacement, DockState, PanelView},
     menu::AppMenuBar,
 };
 use parking_lot::Mutex;
 use uuid::Uuid;
 
 use crate::{
-    dock::{FiltersDock, LayersDock, ToolOptionsDock},
+    dock::{CanvasDock, FiltersDock, LayersDock, ToolOptionsDock},
     theme::{SwitchThemeAction, ThemeAsset},
 };
 
@@ -54,9 +55,12 @@ fn default_dock_layout(
     )
 }
 
+pub const MAIN_VIEW_CONTEXT: &'static str = "main_view";
+
 pub struct MainView {
     menu_bar: Entity<AppMenuBar>,
     dock_area: Entity<DockArea>,
+    focus_handle: FocusHandle,
 }
 
 impl MainView {
@@ -81,10 +85,52 @@ impl MainView {
         })
         .detach();
 
+        let canvas_events = cx.global::<CanvasManager>().events().clone();
+        cx.subscribe_in(&canvas_events, window, Self::on_canvas_created)
+            .detach();
+        let focus_handle = cx.focus_handle();
+        focus_handle.focus(window, cx);
+
         Self {
             menu_bar,
             dock_area: dock_area_entity,
+            focus_handle,
         }
+    }
+
+    fn on_canvas_created(
+        &mut self,
+        _: &Entity<CanvasEvents>,
+        event: &CanvasCreated,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let canvas_manager = cx.global_mut::<CanvasManager>();
+        let Some(canvas) = canvas_manager.get(&event.id) else {
+            return;
+        };
+
+        let canvas_events = canvas_manager.events().clone();
+        let canvas_id = canvas.id();
+        let tool_proxy_id = canvas.tool_proxy_id();
+
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            tool_proxies
+                .get_mut(&tool_proxy_id)
+                .switch_tool(BrushTool::id(), cx);
+        });
+
+        self.dock_area.update(cx, |dock_area, cx| {
+            dock_area.add_panel(
+                Arc::new(cx.new(|cx| {
+                    CanvasDock::new(canvas_id, tool_proxy_id, canvas_events, window, cx)
+                })),
+                DockPlacement::Center,
+                None,
+                window,
+                cx,
+            );
+        });
     }
 }
 
@@ -127,6 +173,8 @@ fn build_menu_bar(cx: &App) -> Vec<Menu> {
 impl Render for MainView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .track_focus(&self.focus_handle)
+            .key_context(MAIN_VIEW_CONTEXT)
             .w_full()
             .h_full()
             .child(TitleBar::new().child(self.menu_bar.clone()))

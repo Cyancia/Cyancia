@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    num::NonZeroU32,
-    sync::{Arc, mpsc::Receiver},
-};
+use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
 
 use bevy_math::IRect;
 use cyancia_image::{
@@ -32,7 +28,7 @@ use wgpu::{
     Operations, PipelineLayoutDescriptor, PollType, Queue, RenderPassColorAttachment,
     RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType,
     SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
-    StoreOp, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
+    StoreOp, SubmissionIndex, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
     TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
     TextureView, TextureViewDescriptor, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
@@ -43,7 +39,7 @@ use crate::{CCanvas, CanvasId, control::CanvasTransform};
 
 /// When rendering canvas, we need to first compose all tiles onto a temporary surface.
 /// This surface will be used as storage texture and float sampled texture.
-pub const INTERMEDIATE_BUFFER_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
+pub const INTERMEDIATE_BUFFER_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
 #[derive(Debug)]
 pub struct CanvasRenderer {
@@ -67,6 +63,14 @@ impl CanvasRenderer {
     }
 
     pub fn resize_output_buffer(&mut self, device: &Device, size: UVec2) {
+        if self
+            .buffer
+            .as_ref()
+            .is_some_and(|(t, _)| t.texture().width() == size.x && t.texture().height() == size.y)
+        {
+            return;
+        }
+
         let format = INTERMEDIATE_BUFFER_FORMAT;
 
         let texel_size = format.block_copy_size(None).unwrap();
@@ -87,7 +91,8 @@ impl CanvasRenderer {
             format,
             usage: TextureUsages::RENDER_ATTACHMENT
                 | TextureUsages::STORAGE_BINDING
-                | TextureUsages::TEXTURE_BINDING,
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
 
@@ -125,7 +130,14 @@ impl CanvasRenderer {
         // self.present_pipeline.prepare(&device, buffer);
     }
 
-    pub fn draw(&self, device: &Device, queue: &Queue) -> Receiver<Arc<RenderImage>> {
+    pub fn draw(
+        &self,
+        device: &Device,
+        queue: &Queue,
+    ) -> (
+        SubmissionIndex,
+        futures::channel::oneshot::Receiver<Arc<RenderImage>>,
+    ) {
         let mut ec = device.create_command_encoder(&Default::default());
         self.render_pipeline.draw(&mut ec);
         let (texture, buffer) = self.buffer.as_ref().expect("buffer not initialized");
@@ -146,25 +158,28 @@ impl CanvasRenderer {
             texture_size,
         );
 
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = futures::channel::oneshot::channel();
         let mapped_buffer = buffer.clone();
+        let submission_index = queue.submit([ec.finish()]);
+
         buffer.slice(..).map_async(MapMode::Read, move |result| {
             result.unwrap();
 
             let buffer_slice = mapped_buffer.slice(..);
             let mapped = buffer_slice.get_mapped_range();
-            let render_image = RenderImage::new([Frame::new(
+            // We are treating this texture as bgra texture in shader, so we can
+            // convert it to RenderImage directly. See canvas_render.wesl
+            let image =
                 RgbaImage::from_raw(texture_size.width, texture_size.height, mapped.to_vec())
-                    .unwrap(),
-            )]);
+                    .unwrap();
+            let render_image = RenderImage::new([Frame::new(image)]);
+            drop(mapped);
             mapped_buffer.unmap();
 
             tx.send(Arc::new(render_image)).unwrap();
         });
 
-        queue.submit([ec.finish()]);
-
-        rx
+        (submission_index, rx)
     }
 }
 

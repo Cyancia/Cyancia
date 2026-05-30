@@ -13,7 +13,7 @@ pub struct CanvasRemoved {
 }
 
 #[derive(Debug, Clone)]
-pub struct CanvasUpdate {
+pub struct CanvasUpdated {
     pub id: CanvasId,
     pub dirty_tiles: IRect,
 }

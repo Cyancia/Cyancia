@@ -1,95 +1,231 @@
-// pub struct CanvasWidget<'a, Message> {
-//     pub is_focusing: bool,
-//     pub canvas: &'a CCanvas,
-//     pub tile_storage: GpuTileStorage,
-//     pub on_focus: Box<dyn Fn(Point) -> Message>,
-//     pub on_mouse_event: Box<dyn Fn(mouse::Event) -> Message>,
-//     pub on_widget_rect_change: Box<dyn Fn(Rect) -> Message>,
-// }
+use std::sync::Arc;
 
-// impl<'a, Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidget<'a, Message> {
-//     fn size(&self) -> Size<Length> {
-//         Size::new(Length::Fill, Length::Fill)
-//     }
+use bevy_math::IRect;
+use cyancia_image::{
+    composite::{ImageCompositor, LayerPreviewOverriders},
+    texel::TexelType,
+    tile::{GpuTileStorage, GpuTileStorageInner},
+};
+use cyancia_render::render_context::RenderContext;
+use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
+use glam::{IVec2, UVec2};
+use gpui::{
+    App, BorrowAppContext, Context, InteractiveElement, IntoElement, MouseButton, ObjectFit,
+    ParentElement, Render, RenderImage, RenderOnce, Styled, StyledImage, Window, div, img,
+    prelude::FluentBuilder,
+};
+use gpui_component::ElementExt;
+use wgpu::{Device, PollType};
 
-//     fn layout(
-//         &mut self,
-//         tree: &mut Tree,
-//         renderer: &iced_wgpu::Renderer,
-//         limits: &Limits,
-//     ) -> layout::Node {
-//         layout::atomic(limits, Length::Fill, Length::Fill)
-//     }
+use crate::{
+    CanvasId, CanvasManager,
+    event::CanvasUpdated,
+    render::{CanvasRenderer, CanvasUniform},
+};
 
-//     fn update(
-//         &mut self,
-//         tree: &mut Tree,
-//         event: &Event,
-//         layout: Layout<'_>,
-//         cursor: mouse::Cursor,
-//         renderer: &iced_wgpu::Renderer,
-//         clipboard: &mut dyn Clipboard,
-//         shell: &mut Shell<'_, Message>,
-//         viewport: &Rectangle,
-//     ) {
-//         let bounds = layout.bounds();
-//         let widget_rect = Rect {
-//             min: Vec2::new(bounds.x, bounds.y),
-//             max: Vec2::new(bounds.x + bounds.width, bounds.y + bounds.height),
-//         };
-//         if widget_rect != self.canvas.transform.widget_bounds {
-//             shell.publish((self.on_widget_rect_change)(widget_rect));
-//         }
+pub struct CanvasWidget {
+    canvas_id: CanvasId,
+    tool_proxy_id: ToolProxyId,
+    renderer: CanvasRenderer,
+    latest_image: Option<Arc<RenderImage>>,
+    output_size: UVec2,
+    ongoing_render: bool,
+    compositor: ImageCompositor,
+}
 
-//         match event {
-//             Event::Mouse(event) => {
-//                 if self.is_focusing {
-//                     shell.publish((self.on_mouse_event)(event.clone()));
-//                     shell.capture_event();
-//                 } else if let mouse::Event::ButtonPressed(mouse::Button::Left) = event
-//                     && let Some(cursor_pos) = cursor.position_over(bounds)
-//                 {
-//                     shell.publish((self.on_focus)(cursor_pos));
-//                     shell.publish((self.on_mouse_event)(event.clone()));
-//                     shell.capture_event();
-//                 }
-//             }
-//             _ => {}
-//         }
-//     }
+impl CanvasWidget {
+    pub fn new(
+        canvas_id: CanvasId,
+        tool_proxy_id: ToolProxyId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Self> {
+        let canvas_manager = cx.global::<CanvasManager>();
+        let canvas = canvas_manager.get(&canvas_id)?;
+        let render_context = cx.global::<RenderContext>();
+        let renderer = CanvasRenderer::new(&render_context.device, canvas.image.texel_type());
 
-//     fn draw(
-//         &self,
-//         tree: &Tree,
-//         renderer: &mut iced_wgpu::Renderer,
-//         theme: &Theme,
-//         style: &renderer::Style,
-//         layout: Layout<'_>,
-//         cursor: mouse::Cursor,
-//         viewport: &Rectangle,
-//     ) {
-//         renderer.draw_primitive(
-//             layout.bounds(),
-//             CanvasPrimitive {
-//                 image_size: self.canvas.image.size(),
-//                 root_layer: self.canvas.image.root_id(),
-//                 transform: self.canvas.transform.clone(),
-//                 tile_storage: self.tile_storage.clone(),
-//             },
-//         );
-//     }
-// }
+        let canvas_events = canvas_manager.events().clone();
+        cx.subscribe_in(&canvas_events, window, {
+            move |widget, _, event: &CanvasUpdated, window, cx| {
+                widget.recomposite(cx, Some(event.dirty_tiles));
+                widget.rerender(cx);
+            }
+        })
+        .detach();
 
-// impl<'a, Message, Theme> From<CanvasWidget<'a, Message>>
-//     for Element<'a, Message, Theme, iced_wgpu::Renderer>
-// where
-//     Message: 'a,
-// {
-//     fn from(canvas: CanvasWidget<'a, Message>) -> Self {
-//         Element::new(canvas)
-//     }
-// }
+        Some(Self {
+            canvas_id,
+            tool_proxy_id,
+            renderer,
+            latest_image: None,
+            output_size: UVec2::ZERO,
+            ongoing_render: false,
+            compositor: ImageCompositor::new(),
+        })
+    }
 
-pub struct Canvas {
+    pub fn recomposite(&mut self, cx: &mut Context<Self>, dirty_tiles: Option<IRect>) {
+        cx.update_global::<CanvasManager, _>(|canvsa_manager, cx| {
+            cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
+                let Some(canvas) = canvsa_manager.get_mut(&self.canvas_id) else {
+                    return;
+                };
+                let tiles = cx.global::<GpuTileStorage>();
+                let render_context = cx.global::<RenderContext>();
+                self.compositor.create_cache(
+                    overriders,
+                    &canvas.image,
+                    tiles,
+                    &render_context.device,
+                    &render_context.queue,
+                );
+                self.compositor.composite(
+                    overriders,
+                    dirty_tiles.unwrap_or_else(|| {
+                        GpuTileStorageInner::pixel_rect_to_tile(IRect {
+                            min: IVec2::ZERO,
+                            max: canvas.image.size().as_ivec2(),
+                        })
+                    }),
+                    &canvas.image,
+                    tiles,
+                    &render_context.device,
+                    &render_context.queue,
+                );
+            });
+        });
+    }
 
+    pub fn rerender(&mut self, cx: &mut Context<Self>) {
+        if self.ongoing_render {
+            return;
+        }
+
+        let Some(canvas) = cx.global::<CanvasManager>().get(&self.canvas_id) else {
+            return;
+        };
+        if self.output_size == UVec2::ZERO {
+            return;
+        }
+
+        self.ongoing_render = true;
+
+        let render_context = cx.global::<RenderContext>();
+        let tiles = cx.global::<GpuTileStorage>();
+        let canvas_transform = canvas.transform.pixel_to_widget;
+        let pixel_rect = GpuTileStorageInner::tile_rect_to_pixel(IRect {
+            min: IVec2::ZERO,
+            max: canvas.image.size().as_ivec2(),
+        });
+
+        self.renderer
+            .resize_output_buffer(&render_context.device, self.output_size);
+        self.renderer.prepare(
+            &render_context.device,
+            &render_context.queue,
+            CanvasUniform {
+                transform: canvas_transform,
+                inv_transform: canvas_transform.inverse(),
+                size: self.output_size,
+                total_tile_count: pixel_rect.size().as_uvec2(),
+                tile_size: GpuTileStorageInner::TILE_SIZE,
+            },
+            tiles,
+            canvas.image.root_id(),
+        );
+        let (submission_index, rx) = self
+            .renderer
+            .draw(&render_context.device, &render_context.queue);
+
+        let device = render_context.device.clone();
+        cx.spawn(async move |this, cx| {
+            device
+                .poll(PollType::Wait {
+                    submission_index: Some(submission_index),
+                    timeout: None,
+                })
+                .unwrap();
+            let result = rx.await;
+            let _ = this.update(cx, |this, cx| {
+                this.ongoing_render = false;
+                if let Ok(result) = result {
+                    this.latest_image = Some(result);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub fn update_output_size(&mut self, size: UVec2, cx: &mut Context<Self>) {
+        if self.output_size == size {
+            return;
+        }
+        self.output_size = size;
+        self.rerender(cx);
+    }
+
+    pub fn update_tool_proxy(&self, cx: &mut App, f: impl FnOnce(&mut ToolProxy, &mut App)) {
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            let tool_proxy = tool_proxies.get_mut(&self.tool_proxy_id);
+            f(tool_proxy, cx);
+        });
+    }
+}
+
+impl Render for CanvasWidget {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .w_full()
+            .h_full()
+            .on_prepaint({
+                let this = cx.entity().downgrade();
+                move |bounds, window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        let pixels = bounds.size;
+                        this.update_output_size(
+                            UVec2::new(pixels.width.into(), pixels.height.into()),
+                            cx,
+                        );
+                    });
+                }
+            })
+            .when_some(self.latest_image.clone(), |d, i| {
+                d.child(
+                    img(i)
+                        .w_full()
+                        .h_full()
+                        .overflow_hidden()
+                        .object_fit(ObjectFit::None),
+                )
+            })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|widget, event, window, cx| {
+                    widget.update_tool_proxy(cx, |tool_proxy, cx| {
+                        tool_proxy.mouse_pressed(event, cx);
+                    });
+                    widget.rerender(cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_move(cx.listener(|widget, event, window, cx| {
+                widget.update_tool_proxy(cx, |tool_proxy, cx| {
+                    tool_proxy.mouse_moved(event, cx);
+                });
+                widget.rerender(cx);
+                cx.stop_propagation();
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|widget, event, window, cx| {
+                    widget.update_tool_proxy(cx, |tool_proxy, cx| {
+                        tool_proxy.mouse_released(event, cx);
+                    });
+                    widget.rerender(cx);
+                    cx.stop_propagation();
+                }),
+            )
+    }
 }

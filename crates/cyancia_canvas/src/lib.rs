@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use bevy_math::IRect;
-use cyancia_image::{CImage, layer::LayerId};
+use cyancia_image::{CImage, layer::LayerId, tile::GpuTileStorageInner};
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_utils::wrapper;
-use gpui::{App, Global};
+use glam::IVec2;
+use gpui::{App, AppContext, Entity, EventEmitter, Global};
 use parking_lot::RwLock;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     control::CanvasTransform,
+    event::{CanvasCreated, CanvasRemoved, CanvasUpdated},
     render::CanvasRenderer,
     tools::{PanTool, RotateTool, ZoomTool},
 };
@@ -69,35 +71,53 @@ impl CCanvas {
 }
 
 pub fn init(cx: &mut App) {
-    cx.set_global(CanvasManager::default());
+    let canvas_manager = CanvasManager::new(cx);
+    cx.set_global(canvas_manager);
     cx.add_tool_function::<PanTool>();
     cx.add_tool_function::<RotateTool>();
     cx.add_tool_function::<ZoomTool>();
 }
 
-// pub struct CanvasPlugin;
-
-// impl Plugin for CanvasPlugin {
-//     fn build(&self, app: &mut Application) {
-//         app.add_service::<CanvasManager>()
-//             .add_tool_function::<PanTool>()
-//             .add_tool_function::<RotateTool>()
-//             .add_tool_function::<ZoomTool>();
-//     }
-// }
-
-#[derive(Default)]
 pub struct CanvasManager {
     canvases: Vec<CCanvas>,
     current_canvas: Option<usize>,
+    events: Entity<CanvasEvents>,
 }
+
+pub struct CanvasEvents;
+
+impl EventEmitter<CanvasCreated> for CanvasEvents {}
+
+impl EventEmitter<CanvasRemoved> for CanvasEvents {}
+
+impl EventEmitter<CanvasUpdated> for CanvasEvents {}
 
 impl Global for CanvasManager {}
 
 impl CanvasManager {
-    pub fn add_canvas(&mut self, canvas: CCanvas) {
+    pub fn new(cx: &mut App) -> Self {
+        Self {
+            canvases: Vec::new(),
+            current_canvas: None,
+            events: cx.new(|cx| CanvasEvents),
+        }
+    }
+
+    pub fn add_canvas(&mut self, canvas: CCanvas, cx: &mut App) {
         self.current_canvas = Some(self.canvases.len());
+        let id = canvas.id;
+        let size = canvas.image.size();
         self.canvases.push(canvas);
+        self.events.update(cx, move |_, cx| {
+            cx.emit(CanvasCreated { id });
+            cx.emit(CanvasUpdated {
+                id,
+                dirty_tiles: GpuTileStorageInner::pixel_rect_to_tile(IRect {
+                    min: IVec2::ZERO,
+                    max: size.as_ivec2(),
+                }),
+            });
+        });
     }
 
     pub fn get(&self, id: &CanvasId) -> Option<&CCanvas> {
@@ -124,5 +144,9 @@ impl CanvasManager {
 
     pub fn set_current(&mut self, id: CanvasId) {
         self.current_canvas = self.canvases.iter().position(|c| c.id == id);
+    }
+
+    pub fn events(&self) -> &Entity<CanvasEvents> {
+        &self.events
     }
 }

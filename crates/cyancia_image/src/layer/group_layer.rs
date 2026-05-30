@@ -306,6 +306,7 @@ impl Layer for GroupLayer {
         pass.set_pipeline(&cache.pipeline);
         pass.set_bind_group(0, bind_group, &[]);
         pass.dispatch_workgroups(workgroup_count.x, workgroup_count.y, workgroup_count.z);
+        dbg!();
     }
 }
 

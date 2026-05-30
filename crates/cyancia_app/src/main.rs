@@ -59,7 +59,7 @@ fn main() {
             cyancia_actions::finish(cx);
             theme::finish(cx);
 
-            cx.open_window(
+            let _ = cx.open_window(
                 WindowOptions {
                     titlebar: None,
                     ..Default::default()

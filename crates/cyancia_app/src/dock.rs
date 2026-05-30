@@ -1,8 +1,25 @@
 use std::{sync::Arc, time::Duration};
 
 use bevy_math::{IRect, Rect};
-use gpui::{App, Context, EventEmitter, FocusHandle, Focusable, IntoElement, Render, Window};
+use cyancia_canvas::{
+    CanvasEvents, CanvasId, CanvasManager,
+    event::{CanvasCreated, CanvasUpdated},
+    widget::CanvasWidget,
+};
+use cyancia_image::{
+    composite::{ImageCompositor, LayerPreviewOverriders},
+    tile::{GpuTileStorage, GpuTileStorageInner},
+};
+use cyancia_render::render_context::RenderContext;
+use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
+use glam::IVec2;
+use gpui::{
+    App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
+    SharedString, Styled, Window, div,
+};
 use gpui_component::dock::{Panel, PanelEvent};
+use image::imageops;
 use parking_lot::Mutex;
 
 macro_rules! test_dummy_dock {
@@ -45,9 +62,65 @@ test_dummy_dock!(LayersDock);
 test_dummy_dock!(FiltersDock);
 test_dummy_dock!(ToolOptionsDock);
 
-// pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
-//     format!("canvas_dock_{}", canvas)
-// }
+pub struct CanvasDock {
+    canvas: CanvasId,
+    tool_proxy: ToolProxyId,
+    focus_handle: FocusHandle,
+    canvas_state: Entity<CanvasWidget>,
+}
+
+impl CanvasDock {
+    pub fn new(
+        canvas_id: CanvasId,
+        tool_proxy_id: ToolProxyId,
+        events: Entity<CanvasEvents>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let canvas_state =
+            cx.new(|cx| CanvasWidget::new(canvas_id, tool_proxy_id, window, cx).unwrap());
+
+        canvas_state.update(cx, |widget, cx| {
+            widget.recomposite(cx, None);
+        });
+
+        Self {
+            canvas: canvas_id,
+            tool_proxy: tool_proxy_id,
+            focus_handle: cx.focus_handle(),
+            canvas_state,
+        }
+    }
+}
+
+impl EventEmitter<PanelEvent> for CanvasDock {}
+
+impl Focusable for CanvasDock {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Panel for CanvasDock {
+    fn panel_name(&self) -> &'static str {
+        construct_canvas_dock_id(self.canvas).leak()
+    }
+
+    fn tab_name(&self, cx: &App) -> Option<SharedString> {
+        // TODO Record the filename of an image and display it
+        Some(format!("Canvas {}", self.canvas).into())
+    }
+}
+
+pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
+    format!("canvas_dock_{}", canvas)
+}
+
+impl Render for CanvasDock {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.canvas_state.clone()
+    }
+}
 
 // pub struct CanvasDock {
 //     canvas: CanvasId,

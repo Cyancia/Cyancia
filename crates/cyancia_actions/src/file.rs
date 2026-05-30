@@ -67,14 +67,11 @@ impl ActionFunction for OpenFileAction {
             });
 
             cx.update_global::<CanvasManager, _>(|canvas_manager, cx| {
-                canvas_manager.add_canvas(canvas);
+                canvas_manager.add_canvas(canvas, cx);
             });
 
             // TODO switch tool in non async environment
             // tool_proxy.switch_tool(ToolId::new("pan_tool".into()), cx);
-
-            // TODO Broadcast canvas created
-            todo!()
         })
         .detach();
     }

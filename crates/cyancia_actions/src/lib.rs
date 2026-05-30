@@ -64,6 +64,11 @@ pub fn finish(cx: &mut App) {
     // TODO Use the first manifest currently. In the future, this should be confuguable.
     let manifest_handle = manifests.get(0).expect("No keybinding manifest available");
     let manifest = manifest_handle.get().unwrap();
+    log::info!(
+        "Loading {} key bindings from manifest {}",
+        manifest.actions.len(),
+        manifest.name
+    );
     let key_bindings = manifest
         .actions
         .iter()
@@ -102,7 +107,9 @@ pub fn finish(cx: &mut App) {
                 );
                 None
             }
-        });
+        })
+        .collect::<Vec<_>>();
+    cx.bind_keys(key_bindings);
 }
 
 pub trait ActionAppExt {
@@ -113,6 +120,7 @@ impl ActionAppExt for App {
     fn add_action_function<A: ActionFunction>(&mut self) {
         self.global_mut::<ActionFunctionRegistry>().register::<A>();
         self.on_action::<A>(|f, cx| {
+            log::info!("Action triggered from keymap: {}", f.name());
             f.trigger(cx);
         });
     }

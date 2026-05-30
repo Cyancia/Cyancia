@@ -22,6 +22,8 @@ cyancia_tools.workspace = true
 parse-display.workspace = true
 gpui.workspace = true
 image.workspace = true
+gpui-component.workspace = true
+futures.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

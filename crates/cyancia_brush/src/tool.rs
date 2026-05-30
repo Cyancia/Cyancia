@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
 use cyancia_assets::{AssetAppExt, store::AssetRegistry};
-use cyancia_canvas::{CCanvas, CanvasId, CanvasManager, event::CanvasUpdate};
+use cyancia_canvas::{CCanvas, CanvasId, CanvasManager, event::CanvasUpdated};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,

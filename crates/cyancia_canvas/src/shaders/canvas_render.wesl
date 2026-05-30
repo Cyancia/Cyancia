@@ -13,7 +13,8 @@ struct Canvas {
 @group(0) @binding(0) var tiles: texture_storage_2d_array<r32uint, read>;
 @group(0) @binding(1) var<storage> tile_info: array<TileInfo>;
 @group(0) @binding(2) var<uniform> canvas: Canvas;
-@group(0) @binding(3) var output: texture_storage_2d<rgba16float, write>;
+// This is actually a bgra texture. Swap channels before writing to it.
+@group(0) @binding(3) var output: texture_storage_2d<rgba8unorm, write>;
 
 const BACKGROUND_COLOR: vec4f = vec4f(0.5, 0.5, 0.5, 1.0);
 
@@ -33,12 +34,16 @@ fn tile_checkerboard_pattern(pos: vec2u) -> vec4f {
 fn convert_pixel_to_tile_index(pixel: vec2i) -> vec3u {
     for (var i = 0u; i < arrayLength(&tile_info); i = i + 1u) {
         let info = tile_info[i];
-        if (pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
-            pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE)) {
+        if pixel.x >= info.origin.x && pixel.x < info.origin.x + i32(TILE_SIZE) &&
+            pixel.y >= info.origin.y && pixel.y < info.origin.y + i32(TILE_SIZE) {
             return vec3u(vec2u(pixel - info.origin), i);
         }
     }
     return vec3u(0xffffffffu, 0, 0);
+}
+
+fn write_pixel(pixel_pos: vec2u, color: vec4f) {
+    textureStore(output, pixel_pos, color.bgra);
 }
 
 @compute
@@ -47,7 +52,7 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
     let pixel_pos = index.xy;
     let canvas_pos = canvas.inverse_transform * vec3f(vec2f(pixel_pos), 1.0);
     if any(canvas_pos < vec3f(0.0)) || any(canvas_pos.xy >= vec2f(canvas.size)) {
-        textureStore(output, vec2u(pixel_pos), BACKGROUND_COLOR);
+        write_pixel(pixel_pos, BACKGROUND_COLOR);
         return;
     }
 
@@ -58,5 +63,6 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
         color = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles, tile_index.xy, tile_index.z));
     }
 
-    textureStore(output, vec2u(pixel_pos), mix(checkerboard_pattern(vec2u(canvas_pos.xy)), color, color.a) * tile_checkerboard_pattern(vec2u(canvas_pos.xy)));
+    color = mix(checkerboard_pattern(vec2u(canvas_pos.xy)), color, color.a) * tile_checkerboard_pattern(vec2u(canvas_pos.xy));
+    write_pixel(pixel_pos, color);
 }
