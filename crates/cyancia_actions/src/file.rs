@@ -48,9 +48,10 @@ impl ActionFunction for OpenFileAction {
 
             let image = CImage::from_layer(UVec2::new(width, height), layer);
 
-            let mut tool_proxy = ToolProxy::new();
-            let tool_proxy_id =
-                cx.update_global::<ToolProxies, _>(|tool_proxies, cx| tool_proxies.add(tool_proxy));
+            let tool_proxy_id = cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+                // Tool switch is handled in canvas dock, which is outside of async environment.
+                tool_proxies.add(ToolProxy::new())
+            });
             let canvas = CCanvas::new(image, tool_proxy_id);
 
             // TODO this should not be done here
@@ -69,9 +70,6 @@ impl ActionFunction for OpenFileAction {
             cx.update_global::<CanvasManager, _>(|canvas_manager, cx| {
                 canvas_manager.add_canvas(canvas, cx);
             });
-
-            // TODO switch tool in non async environment
-            // tool_proxy.switch_tool(ToolId::new("pan_tool".into()), cx);
         })
         .detach();
     }

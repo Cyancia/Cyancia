@@ -4,6 +4,7 @@ use bevy_math::{IRect, Rect};
 use cyancia_canvas::{
     CanvasEvents, CanvasId, CanvasManager,
     event::{CanvasCreated, CanvasUpdated},
+    tools::PanTool,
     widget::CanvasWidget,
 };
 use cyancia_image::{
@@ -11,7 +12,7 @@ use cyancia_image::{
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_render::render_context::RenderContext;
-use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
+use cyancia_tools::{ToolFunction, ToolProxies, ToolProxy, ToolProxyId};
 use glam::IVec2;
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
@@ -73,10 +74,15 @@ impl CanvasDock {
     pub fn new(
         canvas_id: CanvasId,
         tool_proxy_id: ToolProxyId,
-        events: Entity<CanvasEvents>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            tool_proxies
+                .get_mut(&tool_proxy_id)
+                .switch_tool(PanTool::id(), cx);
+        });
+
         let canvas_state =
             cx.new(|cx| CanvasWidget::new(canvas_id, tool_proxy_id, window, cx).unwrap());
 

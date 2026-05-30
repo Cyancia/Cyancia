@@ -110,7 +110,6 @@ impl MainView {
             return;
         };
 
-        let canvas_events = canvas_manager.events().clone();
         let canvas_id = canvas.id();
         let tool_proxy_id = canvas.tool_proxy_id();
 
@@ -122,9 +121,7 @@ impl MainView {
 
         self.dock_area.update(cx, |dock_area, cx| {
             dock_area.add_panel(
-                Arc::new(cx.new(|cx| {
-                    CanvasDock::new(canvas_id, tool_proxy_id, canvas_events, window, cx)
-                })),
+                Arc::new(cx.new(|cx| CanvasDock::new(canvas_id, tool_proxy_id, window, cx))),
                 DockPlacement::Center,
                 None,
                 window,
