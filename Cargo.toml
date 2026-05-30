@@ -4,12 +4,8 @@ members = [
     "crates/cyancia_app",
     "crates/cyancia_assets",
     "crates/cyancia_brush",
-    # "crates/cyancia_runtime",
-    # "crates/cyancia_runtime_derive",
     "crates/cyancia_canvas",
-    # "crates/cyancia_graph",
     "crates/cyancia_image",
-    # "crates/cyancia_input",
     "crates/cyancia_math",
     "crates/cyancia_render",
     "crates/cyancia_shader_graph",
@@ -20,18 +16,13 @@ members = [
     "crates/cyancia_utils_derive",
     "crates/cyancia_view",
     "crates/cyancia_widgets",
-    # "crates/cyancia_dock",
-    # "crates/cyancia_platform",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-cyancia_graph = { version = "0.1.0", path = "crates/cyancia_graph" }
-cyancia_runtime_derive = { version = "0.1.0", path = "crates/cyancia_runtime_derive" }
 cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
 cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
 cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
-cyancia_input = { version = "0.1.0", path = "crates/cyancia_input" }
 cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
 cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
 cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
@@ -41,10 +32,7 @@ cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
 cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
 cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
 cyancia_shader_graph_derive = { version = "0.1.0", path = "crates/cyancia_shader_graph_derive" }
-cyancia_runtime = { version = "0.1.0", path = "crates/cyancia_runtime" }
 cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
-cyancia_dock = { version = "0.1.0", path = "crates/cyancia_dock" }
-cyancia_platform = { version = "0.1.0", path = "crates/cyancia_platform" }
 cyancia_view = { version = "0.1.0", path = "crates/cyancia_view" }
 cyancia_theme = { version = "0.1.0", path = "crates/cyancia_theme" }
 
@@ -107,37 +95,3 @@ schemars = "1"
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
 bevy_color = "0.18"
 serde_json = "1"
-
-[patch.crates-io]
-naga = { git = "https://github.com/gfx-rs/wgpu", rev = "7a2afeb014cb30a976059717c4ae7c85f01d858e", package = "naga" }
-iced = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_beacon = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_core = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_debug = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_devtools = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_futures = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_graphics = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_highlighter = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_program = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_renderer = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_runtime = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_selector = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_wgpu = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_widget = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-iced_winit = { git = "https://github.com/443eb9/iced.git", branch = "0.14" }
-
-# iced = { path = "D:/iced_fork" }
-# iced_beacon = { path = "D:/iced_fork/beacon" }
-# iced_core = { path = "D:/iced_fork/core" }
-# iced_debug = { path = "D:/iced_fork/debug" }
-# iced_devtools = { path = "D:/iced_fork/devtools" }
-# iced_futures = { path = "D:/iced_fork/futures" }
-# iced_graphics = { path = "D:/iced_fork/graphics" }
-# iced_highlighter = { path = "D:/iced_fork/highlighter" }
-# iced_program = { path = "D:/iced_fork/program" }
-# iced_renderer = { path = "D:/iced_fork/renderer" }
-# iced_runtime = { path = "D:/iced_fork/runtime" }
-# iced_selector = { path = "D:/iced_fork/selector" }
-# iced_wgpu = { path = "D:/iced_fork/wgpu" }
-# iced_widget = { path = "D:/iced_fork/widget" }
-# iced_winit = { path = "D:/iced_fork/winit" }

@@ -4795,8 +4795,9 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "27.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=7a2afeb014cb30a976059717c4ae7c85f01d858e#7a2afeb014cb30a976059717c4ae7c85f01d858e"
+version = "27.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "066cf25f0e8b11ee0df221219010f213ad429855f57c494f995590c861a9a7d8"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -8537,7 +8538,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "js-sys",
  "log",
- "naga 27.0.0",
+ "naga 27.0.3",
  "parking_lot",
  "portable-atomic",
  "profiling",
@@ -8597,7 +8598,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
  "log",
- "naga 27.0.0",
+ "naga 27.0.3",
  "once_cell",
  "parking_lot",
  "portable-atomic",
@@ -8724,7 +8725,7 @@ dependencies = [
  "libloading",
  "log",
  "metal 0.32.0",
- "naga 27.0.0",
+ "naga 27.0.3",
  "ndk-sys",
  "objc",
  "once_cell",
@@ -10139,78 +10140,3 @@ dependencies = [
  "syn",
  "winnow 1.0.3",
 ]
-
-[[patch.unused]]
-name = "iced"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_beacon"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_core"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_debug"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_devtools"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_futures"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_graphics"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_highlighter"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_program"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_renderer"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_runtime"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_selector"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_wgpu"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_widget"
-version = "0.14.2"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
-
-[[patch.unused]]
-name = "iced_winit"
-version = "0.14.0"
-source = "git+https://github.com/443eb9/iced.git?branch=0.14#fb05143b11fd6763efeff20e52fd9db491b5aff6"
