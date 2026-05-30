@@ -210,7 +210,7 @@ impl GraphEditor {
         };
 
         let cursor = window.mouse_position() - self.editor_bounds.origin;
-        let pos = Point::new(cursor.x.into(), cursor.y.into());
+        let pos = Point::new(cursor.x.into(), cursor.y.into()) - self.transform.translation;
         let node_id = GraphNodeId::new(Uuid::new_v4());
         edits.insert_boxed_node(node_id, pos, node, cx);
         self.selected_nodes.clear();
