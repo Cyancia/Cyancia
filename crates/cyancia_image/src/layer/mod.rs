@@ -251,6 +251,10 @@ impl LayerStack {
         self.layers.insert(layer.id, layer);
     }
 
+    pub fn len(&self) -> usize {
+        self.layers.len()
+    }
+
     pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<(LayerData, LayerStackNode)> {
         let node = self.find_node(layer_id)?;
         let parent = self.find_node_mut(node.parent()?)?;

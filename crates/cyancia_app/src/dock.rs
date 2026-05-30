@@ -2,15 +2,14 @@ use std::{rc::Rc, sync::Arc, time::Duration};
 
 use bevy_math::{IRect, Rect};
 use cyancia_canvas::{
-    CanvasAppExt, CanvasId, CanvasManager,
-    event::{CanvasCreated, CanvasUpdated},
+    CanvasAppExt, CanvasId, CanvasManager, GlobalCanvasEvents,
+    event::{CanvasCreated, CanvasUpdated, CurrentCanvasChanged},
     tools::PanTool,
-    widget::CanvasWidget,
+    widget::{canvas::CanvasWidget, layer_stack::LayerStackWidget},
 };
 use cyancia_image::{
     composite::{ImageCompositor, LayerPreviewOverriders},
     tile::{GpuTileStorage, GpuTileStorageInner},
-    widget::{LayerStackEvent, LayerStackWidget},
 };
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolProxies, ToolProxy, ToolProxyId};
@@ -129,38 +128,29 @@ impl Render for CanvasDock {
 }
 
 pub struct CurrentCanvasLayersDock {
-    widget: LayerStackWidget,
+    widget: Option<Entity<LayerStackWidget>>,
     focus_handle: FocusHandle,
 }
 
 impl CurrentCanvasLayersDock {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let dock = cx.entity().downgrade();
-        let widget = LayerStackWidget::new(
-            window,
-            cx,
-            Rc::new(move |event, window, cx| on_event(&dock, event, window, cx)),
-        );
         let focus_handle = cx.focus_handle();
+        cx.subscribe_in(
+            &cx.global_canvas_events_entity(),
+            window,
+            |dock, _, _: &CurrentCanvasChanged, window, cx| {
+                if let Some(canvas) = cx.current_canvas().and_then(|e| e.upgrade()) {
+                    dock.widget = Some(cx.new(|cx| LayerStackWidget::new(canvas, window, cx)));
+                }
+            },
+        )
+        .detach();
+
         Self {
-            widget,
+            widget: None,
             focus_handle,
         }
     }
-}
-
-fn on_event(
-    dock: &WeakEntity<CurrentCanvasLayersDock>,
-    event: &LayerStackEvent,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    cx.update_current_canvas(|canvas, cx| match event {
-        LayerStackEvent::LayerSelected(layer_id) => {
-            canvas.image.active_layer = *layer_id;
-            cx.notify();
-        }
-    });
 }
 
 impl EventEmitter<PanelEvent> for CurrentCanvasLayersDock {}
@@ -183,11 +173,9 @@ impl Panel for CurrentCanvasLayersDock {
 
 impl Render for CurrentCanvasLayersDock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        cx.update_current_canvas(|canvas, cx| {
-            self.widget
-                .render_layer_stack(&canvas.image, cx)
-                .into_any_element()
-        })
-        .unwrap_or_else(|| div().into_any_element())
+        self.widget
+            .as_ref()
+            .map(|w| w.clone().into_any_element())
+            .unwrap_or_else(|| div().into_any_element())
     }
 }

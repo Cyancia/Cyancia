@@ -1,9 +1,10 @@
 use std::rc::Rc;
 
+use cyancia_image::layer::LayerId;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement,
-    Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    prelude::FluentBuilder, px,
+    Pixels, Point, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, WeakEntity, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
     ActiveTheme, h_flex,
@@ -12,36 +13,44 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::{
-    CImage,
-    layer::{LayerId, LayerStack},
-};
-
-pub enum LayerStackEvent {
-    LayerSelected(LayerId),
-}
+use crate::{CCanvas, event::CanvasLayerStackUpdated};
 
 pub struct LayerStackWidget {
+    canvas: WeakEntity<CCanvas>,
     rename_input_state: Entity<InputState>,
     renaming_layer: Option<LayerId>,
-    on_event: Rc<dyn Fn(&LayerStackEvent, &mut Window, &mut App)>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl LayerStackWidget {
-    pub fn new(
-        window: &mut Window,
-        cx: &mut App,
-        on_event: Rc<dyn Fn(&LayerStackEvent, &mut Window, &mut App)>,
-    ) -> Self {
+    pub fn new(canvas: Entity<CCanvas>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let subscriptions = vec![cx.subscribe_in(
+            &canvas,
+            window,
+            |widget, canvas, _: &CanvasLayerStackUpdated, window, cx| {
+                cx.notify();
+            },
+        )];
+
         Self {
             rename_input_state: cx.new(|cx| InputState::new(window, cx)),
             renaming_layer: None,
-            on_event,
+            canvas: canvas.downgrade(),
+            _subscriptions: subscriptions,
         }
     }
+}
 
-    pub fn render_layer_stack(&self, image: &CImage, cx: &mut App) -> impl IntoElement {
-        let layers = image
+impl Render for LayerStackWidget {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(canvas_entity) = self.canvas.upgrade() else {
+            return div().into_any_element();
+        };
+
+        let canvas = canvas_entity.read(cx);
+
+        let layers = canvas
+            .image
             .layer_stack()
             .iter_layers_dfs_display_order_without_root()
             .map(|(layer, depth)| {
@@ -49,7 +58,7 @@ impl LayerStackWidget {
                 h_flex()
                     .pl(px(20.0 * depth as f32))
                     .h(px(40.0))
-                    .when(image.active_layer == layer.id(), |d| {
+                    .when(canvas.image.active_layer == layer.id(), |d| {
                         d.bg(cx.theme().accent)
                     })
                     .id(format!("layer-{}", layer.id()))
@@ -62,10 +71,15 @@ impl LayerStackWidget {
                         cx.new(|cx| info.clone().with_position(position))
                     })
                     .on_click({
-                        let on_event = self.on_event.clone();
+                        let canvas_entity = canvas_entity.downgrade();
                         let layer_id = layer.id();
                         move |_, window, cx| {
-                            on_event(&LayerStackEvent::LayerSelected(layer_id), window, cx);
+                            canvas_entity
+                                .update(cx, |canvas, cx| {
+                                    canvas.image.active_layer = layer_id;
+                                    cx.emit(CanvasLayerStackUpdated {});
+                                })
+                                .ok();
                         }
                     })
             });
@@ -75,6 +89,7 @@ impl LayerStackWidget {
             .h_full()
             .overflow_scrollbar()
             .children(layers)
+            .into_any_element()
     }
 }
 

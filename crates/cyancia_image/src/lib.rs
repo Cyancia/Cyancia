@@ -21,21 +21,11 @@ pub mod dynamic_intermediate_buffer;
 pub mod layer;
 pub mod texel;
 pub mod tile;
-pub mod widget;
 
 pub fn init(cx: &mut App) {
     cx.set_global(GpuTileStorage::from_app(cx));
     cx.set_global(LayerPreviewOverriders::default());
 }
-
-// pub struct ImagePlugin;
-
-// impl Plugin for ImagePlugin {
-//     fn build(&self, app: &mut Application) {
-//         app.add_service::<GpuTileStorage>()
-//             .add_service::<LayerPreviewOverriders>();
-//     }
-// }
 
 #[derive(Debug)]
 pub struct CImage {

@@ -13,7 +13,9 @@ use uuid::Uuid;
 
 use crate::{
     control::CanvasTransform,
-    event::{CanvasCreated, CanvasRemoved, CanvasUpdated},
+    event::{
+        CanvasCreated, CanvasLayerStackUpdated, CanvasRemoved, CanvasUpdated, CurrentCanvasChanged,
+    },
     render::CanvasRenderer,
     tools::{PanTool, RotateTool, ZoomTool},
 };
@@ -70,6 +72,10 @@ impl CCanvas {
     }
 }
 
+impl EventEmitter<CanvasUpdated> for CCanvas {}
+
+impl EventEmitter<CanvasLayerStackUpdated> for CCanvas {}
+
 pub fn init(cx: &mut App) {
     let cm = CanvasManager::new(cx);
     cx.set_global(cm);
@@ -81,7 +87,7 @@ pub fn init(cx: &mut App) {
 pub trait CanvasAppExt {
     fn add_canvas(&mut self, canvas: CCanvas, cx: &mut App);
     fn remove_canvas(&mut self, id: &CanvasId, cx: &mut App);
-    fn canvas_create_and_remove_event_entity(&self) -> Entity<CanvasCreateAndRemove>;
+    fn global_canvas_events_entity(&self) -> Entity<GlobalCanvasEvents>;
     fn current_canvas(&self) -> Option<WeakEntity<CCanvas>>;
     fn read_current_canvas(&self) -> Option<&CCanvas>;
     fn update_current_canvas<R>(
@@ -107,7 +113,7 @@ impl CanvasAppExt for App {
         self.update_global::<CanvasManager, _>(|cm, cx| cm.remove_canvas(id, cx));
     }
 
-    fn canvas_create_and_remove_event_entity(&self) -> Entity<CanvasCreateAndRemove> {
+    fn global_canvas_events_entity(&self) -> Entity<GlobalCanvasEvents> {
         self.global::<CanvasManager>().event_emitter()
     }
 
@@ -143,20 +149,22 @@ impl CanvasAppExt for App {
     }
 
     fn set_current_canvas(&mut self, id: CanvasId) {
-        self.global_mut::<CanvasManager>().set_current(id);
+        self.update_global::<CanvasManager, _>(|cm, cx| cm.set_current(id, cx));
     }
 }
 
-pub struct CanvasCreateAndRemove;
+pub struct GlobalCanvasEvents;
 
-impl EventEmitter<CanvasCreated> for CanvasCreateAndRemove {}
+impl EventEmitter<CanvasCreated> for GlobalCanvasEvents {}
 
-impl EventEmitter<CanvasRemoved> for CanvasCreateAndRemove {}
+impl EventEmitter<CanvasRemoved> for GlobalCanvasEvents {}
+
+impl EventEmitter<CurrentCanvasChanged> for GlobalCanvasEvents {}
 
 pub struct CanvasManager {
     canvases: HashMap<CanvasId, Entity<CCanvas>>,
     current_canvas: Option<CanvasId>,
-    event_emitter: Entity<CanvasCreateAndRemove>,
+    event_emitter: Entity<GlobalCanvasEvents>,
 }
 
 impl Global for CanvasManager {}
@@ -166,22 +174,35 @@ impl CanvasManager {
         Self {
             canvases: HashMap::new(),
             current_canvas: None,
-            event_emitter: cx.new(|_| CanvasCreateAndRemove),
+            event_emitter: cx.new(|_| GlobalCanvasEvents),
         }
     }
 
     pub fn add_canvas(&mut self, canvas: CCanvas, cx: &mut App) {
         let id = canvas.id;
-        self.current_canvas = Some(id);
+        let old = self.current_canvas.replace(id);
         self.canvases.insert(id, cx.new(|_| canvas));
-        self.event_emitter
-            .update(cx, |_, cx| cx.emit(CanvasCreated { id }));
+        self.event_emitter.update(cx, |_, cx| {
+            cx.emit(CanvasCreated { id });
+            cx.emit(CurrentCanvasChanged {
+                from: old,
+                to: Some(id),
+            });
+        });
     }
 
     pub fn remove_canvas(&mut self, id: &CanvasId, cx: &mut App) {
         if let Some(_) = self.canvases.remove(id) {
-            self.event_emitter
-                .update(cx, |_, cx| cx.emit(CanvasRemoved { id: *id }));
+            if self.current_canvas.as_ref() == Some(id) {
+                self.current_canvas = self.canvases.keys().next().copied();
+            }
+            self.event_emitter.update(cx, |_, cx| {
+                cx.emit(CanvasRemoved { id: *id });
+                cx.emit(CurrentCanvasChanged {
+                    from: Some(*id),
+                    to: self.current_canvas.as_ref().copied(),
+                });
+            });
         }
     }
 
@@ -227,11 +248,17 @@ impl CanvasManager {
         self.current_canvas
     }
 
-    pub fn set_current(&mut self, id: CanvasId) {
-        self.current_canvas = Some(id);
+    pub fn set_current(&mut self, id: CanvasId, cx: &mut App) {
+        let old = self.current_canvas.replace(id);
+        self.event_emitter.update(cx, |_, cx| {
+            cx.emit(CurrentCanvasChanged {
+                from: old,
+                to: Some(id),
+            });
+        });
     }
 
-    pub fn event_emitter(&self) -> Entity<CanvasCreateAndRemove> {
+    pub fn event_emitter(&self) -> Entity<GlobalCanvasEvents> {
         self.event_emitter.clone()
     }
 }

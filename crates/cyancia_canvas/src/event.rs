@@ -8,12 +8,20 @@ pub struct CanvasCreated {
 }
 
 #[derive(Debug, Clone)]
+pub struct CurrentCanvasChanged {
+    pub from: Option<CanvasId>,
+    pub to: Option<CanvasId>,
+}
+
+#[derive(Debug, Clone)]
 pub struct CanvasRemoved {
     pub id: CanvasId,
 }
 
 #[derive(Debug, Clone)]
 pub struct CanvasUpdated {
-    pub id: CanvasId,
     pub dirty_tiles: IRect,
 }
+
+#[derive(Debug, Clone)]
+pub struct CanvasLayerStackUpdated {}
