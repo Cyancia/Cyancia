@@ -11,8 +11,8 @@ use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
 use glam::{IVec2, UVec2, Vec2};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, InteractiveElement, IntoElement, MouseButton,
-    ObjectFit, ParentElement, Render, RenderImage, RenderOnce, Styled, StyledImage, WeakEntity,
-    Window, div, img, prelude::FluentBuilder, px,
+    MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage, RenderOnce,
+    Styled, StyledImage, WeakEntity, Window, canvas, div, img, prelude::FluentBuilder, px,
 };
 use gpui_component::ElementExt;
 use wgpu::{Device, PollType};
@@ -171,17 +171,12 @@ impl CanvasWidget {
         self.output_size = size;
         self.rerender(cx);
     }
-
-    pub fn update_tool_proxy(&self, cx: &mut App, f: impl FnOnce(&mut ToolProxy, &mut App)) {
-        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
-            let tool_proxy = tool_proxies.get_mut(&self.tool_proxy_id);
-            f(tool_proxy, cx);
-        });
-    }
 }
 
 impl Render for CanvasWidget {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tool_proxy_id = self.tool_proxy_id;
+
         div()
             .w_full()
             .h_full()
@@ -228,32 +223,63 @@ impl Render for CanvasWidget {
                         .object_fit(ObjectFit::None),
                 )
             })
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|widget, event, window, cx| {
-                    widget.update_tool_proxy(cx, |tool_proxy, cx| {
+            .child(
+                canvas(|_, _, _| {}, {
+                    let widget = cx.entity().downgrade();
+                    move |_, _, window, cx| {
+                        window.on_mouse_event({
+                            let widget = widget.clone();
+                            move |event: &MouseMoveEvent, phase, window, cx| {
+                                if !phase.capture() {
+                                    return;
+                                }
+
+                                update_tool_proxy(cx, &widget, tool_proxy_id, |tool_proxy, cx| {
+                                    tool_proxy.mouse_moved(event, cx);
+                                });
+                            }
+                        });
+
+                        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                            if !phase.capture() || event.button != MouseButton::Left {
+                                return;
+                            }
+
+                            update_tool_proxy(cx, &widget, tool_proxy_id, |tool_proxy, cx| {
+                                tool_proxy.mouse_released(event, cx);
+                            });
+                        });
+                    }
+                })
+                .absolute()
+                .size_full(),
+            )
+            .on_mouse_down(MouseButton::Left, {
+                let widget = cx.entity().downgrade();
+                move |event, window, cx| {
+                    update_tool_proxy(cx, &widget, tool_proxy_id, |tool_proxy, cx| {
                         tool_proxy.mouse_pressed(event, cx);
                     });
-                    widget.rerender(cx);
                     cx.stop_propagation();
-                }),
-            )
-            .on_mouse_move(cx.listener(|widget, event, window, cx| {
-                widget.update_tool_proxy(cx, |tool_proxy, cx| {
-                    tool_proxy.mouse_moved(event, cx);
-                });
-                widget.rerender(cx);
-                cx.stop_propagation();
-            }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|widget, event, window, cx| {
-                    widget.update_tool_proxy(cx, |tool_proxy, cx| {
-                        tool_proxy.mouse_released(event, cx);
-                    });
-                    widget.rerender(cx);
-                    cx.stop_propagation();
-                }),
-            )
+                }
+            })
     }
+}
+
+fn update_tool_proxy(
+    cx: &mut App,
+    widget: &WeakEntity<CanvasWidget>,
+    tool_proxy_id: ToolProxyId,
+    f: impl FnOnce(&mut ToolProxy, &mut App),
+) {
+    cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+        let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
+        f(tool_proxy, cx);
+    });
+
+    widget
+        .update(cx, |widget, cx| {
+            widget.rerender(cx);
+        })
+        .ok();
 }

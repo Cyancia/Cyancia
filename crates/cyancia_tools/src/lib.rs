@@ -113,6 +113,7 @@ struct State {
     current: ToolId,
     last_switch: Instant,
     current_function: Box<dyn ErasedToolFunction>,
+    is_updating: bool,
 }
 
 pub struct ToolProxy {
@@ -143,6 +144,7 @@ impl ToolProxy {
                 current: tool,
                 last_switch: Instant::now(),
                 current_function: f,
+                is_updating: false,
             });
         } else {
             log::error!(
@@ -153,31 +155,34 @@ impl ToolProxy {
     }
 
     pub fn mouse_pressed(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
-        if let Some((id, f)) = self.current_function() {
-            f.begin(mouse, cx);
+        if let Some(state) = self.state.as_mut() {
+            if state.is_updating {
+                return;
+            }
+            state.is_updating = true;
+            state.current_function.begin(mouse, cx);
         }
     }
 
     pub fn mouse_moved(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
-        if let Some((id, f)) = self.current_function() {
-            if mouse.pressed_button.is_some() {
-                f.update(mouse, cx);
+        if let Some(state) = self.state.as_mut() {
+            if state.is_updating {
+                state.current_function.update(mouse, cx);
             } else {
-                f.hover(mouse, cx);
+                state.current_function.hover(mouse, cx);
             }
         }
     }
 
     pub fn mouse_released(&mut self, mouse: &MouseUpEvent, cx: &mut App) {
-        if let Some((id, f)) = self.current_function() {
-            f.end(mouse, cx);
-        }
-    }
+        if let Some(state) = self.state.as_mut() {
+            if !state.is_updating {
+                return;
+            }
 
-    fn current_function(&mut self) -> Option<(ToolId, &mut Box<dyn ErasedToolFunction>)> {
-        self.state
-            .as_mut()
-            .map(|st| (st.current, &mut st.current_function))
+            state.is_updating = false;
+            state.current_function.end(mouse, cx);
+        }
     }
 }
 
