@@ -115,7 +115,7 @@ impl ImageCompositor {
             image.layer_stack().root_node(),
             tiles,
         );
-        log::info!("Blend dispatched in {:?}", now.elapsed());
+        log::debug!("Blend dispatched in {:?}", now.elapsed());
 
         drop(pass);
 
