@@ -17,6 +17,17 @@ use wgpu::PollType;
 
 use crate::{CCanvas, CanvasAppExt, CanvasId, event::CanvasUpdated, render::CanvasRenderer};
 
+// TODO: So, this is weird.
+//       For the brush tool, when a stroke is in progress, it's preview should be generated and
+//       in recomposite function, it will produce the correct output image, with the half-done
+//       stroke. The problem is that, gpui is not rerendering the element. So the rendered image
+//       cannot be output on time.
+//       I have tried numerous ways to fix this but none of them success.
+//       It's even more confusing when I found that, after commenting out the dirty rect check at
+//       the beginning of recomposite function, the pan tool is still able to work correctly, while
+//       the brush tool is not. All of them is recompositing the entire image on tool update.
+//       So probably, wait for gpui use wgpu on windows, so we can draw the texture directly onto
+//       the window surface, and that might fixes.
 pub struct CanvasWidget {
     canvas_id: CanvasId,
     tool_proxy_id: ToolProxyId,
@@ -50,10 +61,7 @@ impl CanvasWidget {
             window,
             |widget, _canvas, event: &CanvasUpdated, window, cx| {
                 widget.dirty_tiles = widget.dirty_tiles.union(event.dirty_tiles);
-                cx.defer_in(window, |widget, window, cx| {
-                    widget.request_rerender(cx);
-                    cx.notify();
-                });
+                cx.notify();
             },
         )
         .detach();
@@ -156,7 +164,7 @@ impl CanvasWidget {
                     this.latest_image = Some(result);
                 }
 
-                log::info!("Image rendered");
+                // log::info!("Image rendered");
                 cx.notify();
             })
             .ok();
@@ -235,7 +243,7 @@ impl Render for CanvasWidget {
                                     0,
                                     false,
                                 );
-                                log::info!("Image painted");
+                                // log::info!("Image painted");
                             }
 
                             window.on_mouse_event({
