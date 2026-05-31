@@ -43,7 +43,7 @@ use gpui_component::{
     h_flex,
     input::{Input, InputEvent, InputState},
     list::{List, ListDelegate, ListEvent, ListState},
-    menu::{DropdownMenu, PopupMenuItem},
+    menu::{ContextMenuExt, DropdownMenu, PopupMenuItem},
     scroll::ScrollableElement,
     select::{SearchableVec, Select, SelectState},
     v_flex,
@@ -637,16 +637,11 @@ impl Render for BrushEditor {
                                         id
                                     ))
                                     .icon(IconName::Check)
-                                    .on_click({
-                                        let editor = cx.entity().downgrade();
-                                        move |_, _window, cx| {
-                                            editor
-                                                .update(cx, |editor, cx| {
-                                                    editor.confirm_external_var_rename(id, cx);
-                                                })
-                                                .ok();
-                                        }
-                                    }),
+                                    .on_click(cx.listener(
+                                        move |editor, _, window, cx| {
+                                            editor.confirm_external_var_rename(id, cx);
+                                        },
+                                    )),
                                 )
                                 .child(
                                     Button::new(format!(
@@ -654,16 +649,11 @@ impl Render for BrushEditor {
                                         id
                                     ))
                                     .icon(IconName::Close)
-                                    .on_click({
-                                        let editor = cx.entity().downgrade();
-                                        move |_, _window, cx| {
-                                            editor
-                                                .update(cx, |editor, _| {
-                                                    editor.renaming_ext_var = None;
-                                                })
-                                                .ok();
-                                        }
-                                    }),
+                                    .on_click(cx.listener(
+                                        move |editor, _, window, cx| {
+                                            editor.renaming_ext_var = None;
+                                        },
+                                    )),
                                 )
                                 .into_any_element()
                         } else {
@@ -858,6 +848,27 @@ impl Render for BrushEditor {
                                                 BrushPresetGraph::StrokePostprocess { index };
                                         }
                                     }))
+                                    .context_menu({
+                                        let editor = cx.entity().downgrade();
+                                        move |menu, window, cx| {
+                                            menu.item(PopupMenuItem::new("Remove").on_click({
+                                                let editor = editor.upgrade().unwrap();
+                                                move |_, _, cx| {
+                                                    editor.update(cx, |editor, cx| {
+                                                        let Some(Selected::Brush(brush)) =
+                                                            &mut editor.selected
+                                                        else {
+                                                            return;
+                                                        };
+                                                        brush
+                                                            .instance
+                                                            .write()
+                                                            .remove_stroke_postprocess_graph(index);
+                                                    });
+                                                }
+                                            }))
+                                        }
+                                    })
                             }),
                         )
                         .child(

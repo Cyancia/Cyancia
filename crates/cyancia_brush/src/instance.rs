@@ -259,6 +259,11 @@ impl BrushPresetInstance {
         self.stroke_postprocess_graphs.len() - 1
     }
 
+    pub fn remove_stroke_postprocess_graph(&mut self, index: usize) {
+        self.increment_runtime_revision();
+        self.stroke_postprocess_graphs.remove(index);
+    }
+
     pub fn required_spacing_graph(&self) -> &Graph<BrushGraphData> {
         &self.required_spacing_graph
     }
