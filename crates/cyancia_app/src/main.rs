@@ -16,6 +16,14 @@ mod dock;
 mod main_view;
 
 fn main() {
+    #[cfg(debug_assertions)]
+    unsafe {
+        // On windows platforms, if we enable direct composition, renderdoc will failed to launch it.
+        // Not sure why this would happen, probably because we are using wgpu inside a gpui app.
+        // TODO: Try this after gpui is using wgpu for rendering on windows as well.
+        std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1");
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter("info,wgpu_hal=warn,iced_winit=warn,iced_wgpu=warn")
         .init();
