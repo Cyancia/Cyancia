@@ -156,6 +156,7 @@ impl CanvasWidget {
                     this.latest_image = Some(result);
                 }
 
+                log::info!("Image rendered");
                 cx.notify();
             })
             .ok();
@@ -234,6 +235,7 @@ impl Render for CanvasWidget {
                                     0,
                                     false,
                                 );
+                                log::info!("Image painted");
                             }
 
                             window.on_mouse_event({

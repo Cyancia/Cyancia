@@ -7,7 +7,7 @@ use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasId, CanvasManager, event::Canv
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,
-    tile::GpuTileStorage,
+    tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_math::number::LerpAngle;
 use cyancia_tools::{ToolFunction, ToolId};
@@ -126,7 +126,8 @@ impl ToolFunction for BrushTool {
             preview
         });
 
-        if let Some((bounds, preview)) = maybe_preview {
+        if let Some((dirty_pixels, preview)) = maybe_preview {
+            let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(dirty_pixels);
             let overriders = cx.global_mut::<LayerPreviewOverriders>();
             overriders.insert_overrider(
                 *active_layer,
@@ -137,9 +138,7 @@ impl ToolFunction for BrushTool {
             );
 
             canvas_entity.update(cx, |canvas, cx| {
-                cx.emit(CanvasUpdated {
-                    dirty_tiles: bounds,
-                });
+                cx.emit(CanvasUpdated { dirty_tiles });
             });
         }
     }
@@ -174,7 +173,7 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let dirty_tiles = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+        let dirty_pixels = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
             let Some(brush) = brush.as_mut() else {
                 return None;
             };
@@ -185,7 +184,8 @@ impl ToolFunction for BrushTool {
         let overriders = cx.global_mut::<LayerPreviewOverriders>();
         overriders.remove_overrider(&active_layer);
 
-        if let Some(dirty_tiles) = dirty_tiles {
+        if let Some(dirty_pixels) = dirty_pixels {
+            let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(dirty_pixels);
             canvas_entity.update(cx, |canvas, cx| {
                 cx.emit(CanvasUpdated { dirty_tiles });
             });
