@@ -30,11 +30,12 @@ pub trait View: Render + 'static {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub ViewId : &'static str
 }
 
 pub struct ViewManager {
+    main_view: Option<ViewId>,
     registered_views: HashMap<ViewId, Box<dyn Fn(&mut App) -> anyhow::Result<WindowHandle<Root>>>>,
     opened_view_root_window: HashMap<ViewId, WindowHandle<Root>>,
 }
@@ -64,13 +65,26 @@ impl ViewManager {
             let vm = cx.global_mut::<Self>();
             vm.opened_view_root_window
                 .retain(|_, w| w.window_id() != window);
+
+            if vm
+                .main_view
+                .as_ref()
+                .is_some_and(|m| !vm.opened_view_root_window.contains_key(m))
+            {
+                cx.quit();
+            }
         })
         .detach();
 
         Self {
+            main_view: None,
             registered_views: HashMap::new(),
             opened_view_root_window: HashMap::new(),
         }
+    }
+
+    pub fn set_main_view(&mut self, id: ViewId) {
+        self.main_view = Some(id);
     }
 
     pub fn register_view<T: View>(&mut self) {
@@ -96,6 +110,11 @@ impl ViewManager {
     }
 
     pub fn close_view(&mut self, id: ViewId, cx: &mut App) {
+        if Some(id) == self.main_view {
+            cx.quit();
+            return;
+        }
+
         if let Some(window) = self.opened_view_root_window.remove(&id) {
             let _ = window.update(cx, |root, window, cx| {
                 window.remove_window();

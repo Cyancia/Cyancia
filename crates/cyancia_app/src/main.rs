@@ -61,6 +61,9 @@ fn main() {
             cyancia_actions::finish(cx);
             cyancia_theme::finish(cx);
 
+            let vm = cx.global_mut::<ViewManager>();
+            vm.set_main_view(MainView::id());
+
             cx.register_view::<MainView>();
             cx.register_view::<BrushEditorView>();
             cx.open_view(MainView::id());
