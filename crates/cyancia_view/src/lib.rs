@@ -5,7 +5,8 @@ use gpui::{AnyEntity, App, BorrowAppContext, Entity, Global, Render, WindowHandl
 use gpui_component::Root;
 
 pub fn init(cx: &mut App) {
-    cx.set_global(ViewManager::new());
+    let vm = ViewManager::new(cx);
+    cx.set_global(vm);
 }
 
 pub trait ViewAppExt {
@@ -58,7 +59,14 @@ impl ViewOpenResult {
 }
 
 impl ViewManager {
-    pub fn new() -> Self {
+    pub fn new(cx: &mut App) -> Self {
+        cx.on_window_closed(|cx, window| {
+            let vm = cx.global_mut::<Self>();
+            vm.opened_view_root_window
+                .retain(|_, w| w.window_id() != window);
+        })
+        .detach();
+
         Self {
             registered_views: HashMap::new(),
             opened_view_root_window: HashMap::new(),
