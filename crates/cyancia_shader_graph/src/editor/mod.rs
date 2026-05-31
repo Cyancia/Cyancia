@@ -679,11 +679,125 @@ impl GraphEditor {
             node_ids.push(*id);
         }
 
+        let canvas = canvas(|_, _, _| {}, {
+            let connecting = self.slot_connect_state.and_then(|st| match st.start_slot {
+                GraphSlotId::Input(input_id) => {
+                    let pos = self.input_slot_pos.get(&input_id)?;
+                    let slot = graph.slots.inputs.get(&input_id)?;
+                    Some((
+                        *pos + self.editor_bounds.origin,
+                        window.mouse_position(),
+                        solid_background(slot.data.ty().color(cx)),
+                    ))
+                }
+                GraphSlotId::Output(output_id) => {
+                    let pos = self.output_slot_pos.get(&output_id)?;
+                    let slot = graph.slots.outputs.get(&output_id)?;
+                    Some((
+                        *pos + self.editor_bounds.origin,
+                        window.mouse_position(),
+                        solid_background(slot.data_ty.color(cx)),
+                    ))
+                }
+            });
+            let segments = graph
+                .slots
+                .inputs
+                .iter()
+                .filter_map(|(input_id, input)| {
+                    let output_id = &input.connected?;
+                    let from = self.input_slot_pos.get(input_id)?;
+                    let to = self.output_slot_pos.get(output_id)?;
+                    let from_slot = graph.slots.inputs.get(input_id)?;
+                    let to_slot = graph.slots.outputs.get(output_id)?;
+                    let color = if from_slot.data.ty().name() != to_slot.data_ty.name() {
+                        let from_color = from_slot.data.ty().color(cx);
+                        let to_color = to_slot.data_ty.color(cx);
+                        let d = *to - *from;
+                        let angle = d.y.as_f32().atan2(d.x.as_f32());
+                        linear_gradient(
+                            angle.to_degrees(),
+                            linear_color_stop(from_color, 0.0),
+                            linear_color_stop(to_color, 1.0),
+                        )
+                    } else {
+                        solid_background(input.data.ty().color(cx))
+                    };
+                    Some((
+                        *from + self.editor_bounds.origin,
+                        *to + self.editor_bounds.origin,
+                        color,
+                    ))
+                })
+                .chain(connecting)
+                .collect::<Vec<_>>();
+
+            self.input_slot_pos.clear();
+            self.output_slot_pos.clear();
+
+            let edits = edits.clone();
+            let editor = cx.entity().downgrade();
+            move |_, _, window, _| {
+                window.on_mouse_event({
+                    let edits = edits.clone();
+                    let editor = editor.clone();
+                    move |event: &MouseMoveEvent, phase, window, cx| {
+                        if !phase.capture() {
+                            return;
+                        }
+
+                        editor
+                            .update(cx, |editor, cx| {
+                                editor.on_mouse_move(event, &edits, window, cx);
+                            })
+                            .ok();
+                        cx.stop_propagation();
+                    }
+                });
+
+                window.on_mouse_event({
+                    let editor = editor.clone();
+                    let edits = edits.clone();
+                    move |event: &MouseUpEvent, phase, window, cx| {
+                        if !phase.capture() {
+                            return;
+                        }
+
+                        editor
+                            .update(cx, |editor, cx| match event.button {
+                                MouseButton::Left => {
+                                    editor.on_left_mouse_up(event, &edits, window, cx);
+                                }
+                                MouseButton::Middle => {
+                                    editor.on_middle_mouse_up(event, window, cx);
+                                }
+                                _ => {}
+                            })
+                            .ok();
+                    }
+                });
+
+                for (from, to, color) in segments {
+                    let mut builder = PathBuilder::stroke(CONNECTION_STROKE_WIDTH);
+
+                    builder.move_to(from);
+                    builder.line_to(to);
+
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, color);
+                    }
+                }
+            }
+        })
+        .absolute()
+        .size_full();
+
         let all_nodes = node_registry.all().keys().cloned().collect::<Vec<_>>();
         let node_registry = (*node_registry).clone();
         div()
             .w_full()
             .h_full()
+            .relative()
             .key_context(GRAPH_EDITOR_CONTEXT)
             .track_focus(&self.focus_handle)
             .bg(cx.theme().background)
@@ -701,75 +815,7 @@ impl GraphEditor {
                         .border_color(cx.theme().foreground),
                 )
             })
-            .child(canvas(|_, _, _| {}, {
-                let connecting = self.slot_connect_state.and_then(|st| match st.start_slot {
-                    GraphSlotId::Input(input_id) => {
-                        let pos = self.input_slot_pos.get(&input_id)?;
-                        let slot = graph.slots.inputs.get(&input_id)?;
-                        Some((
-                            *pos + self.editor_bounds.origin,
-                            window.mouse_position(),
-                            solid_background(slot.data.ty().color(cx)),
-                        ))
-                    }
-                    GraphSlotId::Output(output_id) => {
-                        let pos = self.output_slot_pos.get(&output_id)?;
-                        let slot = graph.slots.outputs.get(&output_id)?;
-                        Some((
-                            *pos + self.editor_bounds.origin,
-                            window.mouse_position(),
-                            solid_background(slot.data_ty.color(cx)),
-                        ))
-                    }
-                });
-                let segments = graph
-                    .slots
-                    .inputs
-                    .iter()
-                    .filter_map(|(input_id, input)| {
-                        let output_id = &input.connected?;
-                        let from = self.input_slot_pos.get(input_id)?;
-                        let to = self.output_slot_pos.get(output_id)?;
-                        let from_slot = graph.slots.inputs.get(input_id)?;
-                        let to_slot = graph.slots.outputs.get(output_id)?;
-                        let color = if from_slot.data.ty().name() != to_slot.data_ty.name() {
-                            let from_color = from_slot.data.ty().color(cx);
-                            let to_color = to_slot.data_ty.color(cx);
-                            let d = *to - *from;
-                            let angle = d.y.as_f32().atan2(d.x.as_f32());
-                            linear_gradient(
-                                angle.to_degrees(),
-                                linear_color_stop(from_color, 0.0),
-                                linear_color_stop(to_color, 1.0),
-                            )
-                        } else {
-                            solid_background(input.data.ty().color(cx))
-                        };
-                        Some((
-                            *from + self.editor_bounds.origin,
-                            *to + self.editor_bounds.origin,
-                            color,
-                        ))
-                    })
-                    .chain(connecting)
-                    .collect::<Vec<_>>();
-
-                self.input_slot_pos.clear();
-                self.output_slot_pos.clear();
-
-                move |bounds, _, window, cx| {
-                    for (from, to, color) in segments {
-                        let mut builder = PathBuilder::stroke(CONNECTION_STROKE_WIDTH);
-
-                        builder.move_to(from);
-                        builder.line_to(to);
-
-                        if let Ok(path) = builder.build() {
-                            window.paint_path(path, color);
-                        }
-                    }
-                }
-            }))
+            .child(canvas)
             .child(
                 div()
                     .absolute()
@@ -817,20 +863,6 @@ impl GraphEditor {
                 }),
             )
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_mouse_down))
-            .on_mouse_move(cx.listener({
-                let edits = edits.clone();
-                move |editor, event, window, cx| editor.on_mouse_move(event, &edits, window, cx)
-            }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener({
-                    let edits = edits.clone();
-                    move |editor, event, window, cx| {
-                        editor.on_left_mouse_up(event, &edits, window, cx)
-                    }
-                }),
-            )
-            .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_middle_mouse_up))
             .on_prepaint({
                 let editor = cx.entity().downgrade();
 
