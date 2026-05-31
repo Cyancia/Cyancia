@@ -111,7 +111,8 @@ impl CanvasRenderer {
         &mut self,
         device: &Device,
         queue: &Queue,
-        uniform: CanvasUniform,
+        canvas_transform: &CanvasTransform,
+        image_size: UVec2,
         tile_storage: &GpuTileStorage,
         root_layer_id: LayerId,
     ) {
@@ -119,10 +120,21 @@ impl CanvasRenderer {
             return;
         };
 
+        let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(IRect {
+            min: IVec2::ZERO,
+            max: image_size.as_ivec2(),
+        });
+
         self.render_pipeline.prepare(
             &device,
             &queue,
-            uniform,
+            CanvasUniform {
+                transform: canvas_transform.pixel_to_widget,
+                inv_transform: canvas_transform.pixel_to_widget.inverse(),
+                size: image_size,
+                total_tile_count: tile_rect.size().as_uvec2(),
+                tile_size: GpuTileStorageInner::TILE_SIZE,
+            },
             buffer,
             tile_storage,
             root_layer_id,

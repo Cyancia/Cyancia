@@ -114,24 +114,14 @@ impl CanvasWidget {
 
         let render_context = cx.global::<RenderContext>();
         let tiles = cx.global::<GpuTileStorage>();
-        let canvas_transform = canvas.transform.pixel_to_widget;
-        let pixel_rect = GpuTileStorageInner::tile_rect_to_pixel(IRect {
-            min: IVec2::ZERO,
-            max: canvas.image.size().as_ivec2(),
-        });
 
         self.renderer
             .resize_output_buffer(&render_context.device, self.output_size);
         self.renderer.prepare(
             &render_context.device,
             &render_context.queue,
-            CanvasUniform {
-                transform: canvas_transform,
-                inv_transform: canvas_transform.inverse(),
-                size: self.output_size,
-                total_tile_count: pixel_rect.size().as_uvec2(),
-                tile_size: GpuTileStorageInner::TILE_SIZE,
-            },
+            &canvas.transform,
+            canvas.image.size(),
             tiles,
             canvas.image.root_id(),
         );
