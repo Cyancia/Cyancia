@@ -254,6 +254,9 @@ impl BrushPresetOperator {
         &mut self,
         tiles: &GpuTileStorage,
     ) -> Option<(IRect, DynamicLayerStorage)> {
+        unsafe {
+            self.device.start_graphics_debugger_capture();
+        }
         let renderer = self.renderer.as_mut()?;
         let mut accumulated_pixel_bounds = self.accumulated_pixel_bounds;
         let mut round = self.round;
@@ -283,6 +286,10 @@ impl BrushPresetOperator {
             &mut round,
             &mut accumulated_pixel_bounds,
         );
+
+        unsafe {
+            self.device.stop_graphics_debugger_capture();
+        }
 
         let [result_buffer_a, result_buffer_b] = new_intermediate_buffers;
         if round % 2 == 0 {
@@ -481,7 +488,6 @@ impl BrushPresetRenderer {
                 });
                 self.stroke_pp_data.write_buffer(device, queue);
 
-                let size = bounds.size().as_uvec2();
                 *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
                 pipeline.dispatch(
                     device,
@@ -521,12 +527,6 @@ impl BrushPresetRenderer {
         ec.push_debug_group("copy brush preset result to target layer");
         for (coord, src, _) in result_buffer.iter_tiles() {
             let dst = target_layer.get_tile_layer(coord).unwrap();
-            log::info!(
-                "Copying tile {:?} from intermediate buffer to target layer (src layer {}, dst layer {})",
-                coord,
-                src,
-                dst
-            );
 
             ec.copy_texture_to_texture(
                 TexelCopyTextureInfo {
@@ -550,10 +550,16 @@ impl BrushPresetRenderer {
         }
         ec.pop_debug_group();
         queue.submit([ec.finish()]);
+
+        log::info!(
+            "Copied tiles {:?} from intermediate buffer to target layer",
+            result_buffer
+                .iter_tiles()
+                .map(|(index, _, _)| index)
+                .collect::<Vec<_>>()
+        );
     }
 }
-
-pub const MAX_SAMPLES_BETWEEN_INPUTS: usize = 256;
 
 #[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct ComputedPenInput {

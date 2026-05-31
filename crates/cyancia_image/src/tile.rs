@@ -236,7 +236,7 @@ impl GpuTileStorageInner {
                 };
                 let tile = layer.get_tile_or_allocate(tile_index.coord);
                 let tile_layer = layer.get_tile_layer(tile_index.coord).unwrap();
-                log::info!("Uploading tile: {:?}", tile_index);
+                log::debug!("Uploading tile: {:?}", tile_index);
                 let origin = UVec2::new(x, y) * Self::TILE_SIZE;
 
                 let sub_img = img.view(

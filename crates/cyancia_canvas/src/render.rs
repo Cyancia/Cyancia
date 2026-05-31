@@ -188,7 +188,7 @@ impl CanvasRenderer {
             drop(mapped);
             mapped_buffer.unmap();
 
-            tx.send(Arc::new(render_image)).unwrap();
+            tx.send(Arc::new(render_image)).ok();
         });
 
         (submission_index, rx)

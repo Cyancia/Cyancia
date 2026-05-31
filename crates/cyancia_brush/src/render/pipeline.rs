@@ -144,7 +144,7 @@ impl BrushMainPipeline {
         }
         pass.pop_debug_group();
 
-        log::info!(
+        log::debug!(
             "Dispatched {} main passes, next round {}.",
             samples_offsets.len(),
             round,

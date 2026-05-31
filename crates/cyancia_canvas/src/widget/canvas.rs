@@ -3,25 +3,19 @@ use std::sync::Arc;
 use bevy_math::{IRect, Rect};
 use cyancia_image::{
     composite::{ImageCompositor, LayerPreviewOverriders},
-    texel::TexelType,
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
 use glam::{IVec2, UVec2, Vec2};
 use gpui::{
-    App, AppContext, BorrowAppContext, Context, InteractiveElement, IntoElement, MouseButton,
-    MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage, RenderOnce,
-    Styled, StyledImage, WeakEntity, Window, canvas, div, img, prelude::FluentBuilder, px,
+    App, AppContext, BorrowAppContext, Context, Corners, InteractiveElement, IntoElement,
+    MouseButton, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage,
+    Styled, WeakEntity, Window, canvas, div, px,
 };
-use gpui_component::ElementExt;
-use wgpu::{Device, PollType};
+use wgpu::PollType;
 
-use crate::{
-    CCanvas, CanvasAppExt, CanvasId, CanvasManager,
-    event::CanvasUpdated,
-    render::{CanvasRenderer, CanvasUniform},
-};
+use crate::{CCanvas, CanvasAppExt, CanvasId, event::CanvasUpdated, render::CanvasRenderer};
 
 pub struct CanvasWidget {
     canvas_id: CanvasId,
@@ -31,6 +25,7 @@ pub struct CanvasWidget {
     latest_image: Option<Arc<RenderImage>>,
     output_size: UVec2,
     ongoing_render: bool,
+    dirty_tiles: IRect,
     compositor: ImageCompositor,
 }
 
@@ -45,12 +40,20 @@ impl CanvasWidget {
         let canvas = canvas_entity.read(cx);
         let render_context = cx.global::<RenderContext>();
         let renderer = CanvasRenderer::new(&render_context.device, canvas.image.texel_type());
+        let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {
+            min: IVec2::ZERO,
+            max: canvas.image.size().as_ivec2(),
+        });
 
         cx.subscribe_in(
             &canvas_entity,
             window,
-            |widget, canvas, event: &CanvasUpdated, window, cx| {
-                widget.recomposite(cx, Some(event.dirty_tiles));
+            |widget, _canvas, event: &CanvasUpdated, window, cx| {
+                widget.dirty_tiles = widget.dirty_tiles.union(event.dirty_tiles);
+                cx.defer_in(window, |widget, window, cx| {
+                    widget.request_rerender(cx);
+                    cx.notify();
+                });
             },
         )
         .detach();
@@ -63,11 +66,18 @@ impl CanvasWidget {
             latest_image: None,
             output_size: UVec2::ZERO,
             ongoing_render: false,
+            dirty_tiles,
             compositor: ImageCompositor::new(),
         })
     }
 
-    pub fn recomposite(&mut self, cx: &mut Context<Self>, dirty_tiles: Option<IRect>) {
+    pub fn recomposite(&mut self, cx: &mut Context<Self>) {
+        if self.dirty_tiles.is_empty() {
+            return;
+        }
+        let dirty_tiles = self.dirty_tiles;
+        self.dirty_tiles = IRect::EMPTY;
+
         cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
             self.canvas
                 .update(cx, |canvas, cx| {
@@ -82,12 +92,7 @@ impl CanvasWidget {
                     );
                     self.compositor.composite(
                         overriders,
-                        dirty_tiles.unwrap_or_else(|| {
-                            GpuTileStorageInner::pixel_rect_to_tile(IRect {
-                                min: IVec2::ZERO,
-                                max: canvas.image.size().as_ivec2(),
-                            })
-                        }),
+                        dirty_tiles,
                         &canvas.image,
                         tiles,
                         &render_context.device,
@@ -98,20 +103,22 @@ impl CanvasWidget {
         });
     }
 
-    pub fn rerender(&mut self, cx: &mut Context<Self>) {
-        if self.ongoing_render {
-            return;
-        }
-
-        let Some(canvas) = self.canvas.upgrade().map(|c| c.read(cx)) else {
-            return;
-        };
+    pub fn request_rerender(&mut self, cx: &mut Context<Self>) {
         if self.output_size == UVec2::ZERO {
             return;
         }
 
-        self.ongoing_render = true;
+        if self.ongoing_render {
+            return;
+        }
 
+        let Some(canvas_entity) = self.canvas.upgrade() else {
+            return;
+        };
+        self.ongoing_render = true;
+        self.recomposite(cx);
+
+        let canvas = canvas_entity.read(cx);
         let render_context = cx.global::<RenderContext>();
         let tiles = cx.global::<GpuTileStorage>();
 
@@ -143,13 +150,16 @@ impl CanvasWidget {
 
         cx.spawn(async move |this, cx| {
             let result = render_task.await;
-            let _ = this.update(cx, |this, cx| {
+            this.update(cx, |this, cx| {
                 this.ongoing_render = false;
                 if let Ok(result) = result {
                     this.latest_image = Some(result);
                 }
+
                 cx.notify();
-            });
+            })
+            .ok();
+            cx.refresh();
         })
         .detach();
     }
@@ -159,7 +169,7 @@ impl CanvasWidget {
             return;
         }
         self.output_size = size;
-        self.rerender(cx);
+        self.request_rerender(cx);
     }
 }
 
@@ -170,77 +180,99 @@ impl Render for CanvasWidget {
         div()
             .w_full()
             .h_full()
-            .on_prepaint({
-                let this = cx.entity().downgrade();
-                move |bounds, window, cx| {
-                    let _ = this.update(cx, |this, cx| {
-                        let pixels = bounds.size;
-                        this.update_output_size(
-                            UVec2::new(pixels.width.into(), pixels.height.into()),
-                            cx,
-                        );
-
-                        let Ok(last_rect) = this
-                            .canvas
-                            .read_with(cx, |canvas, cx| canvas.transform.widget_bounds)
-                        else {
-                            return;
-                        };
-
-                        let min = Vec2::new(bounds.origin.x.into(), bounds.origin.y.into());
-                        let max = Vec2::new(
-                            (bounds.origin.x + bounds.size.width).into(),
-                            (bounds.origin.y + bounds.size.height).into(),
-                        );
-                        let widget_bounds = Rect { min, max };
-
-                        if last_rect != widget_bounds {
-                            this.canvas
-                                .update(cx, |canvas, cx| {
-                                    canvas.transform.widget_bounds = widget_bounds;
-                                })
-                                .ok();
-                        }
-                    });
-                }
-            })
-            .when_some(self.latest_image.clone(), |d, i| {
-                d.child(
-                    img(i)
-                        .w_full()
-                        .h_full()
-                        .overflow_hidden()
-                        .object_fit(ObjectFit::None),
-                )
-            })
+            .overflow_hidden()
             .child(
-                canvas(|_, _, _| {}, {
-                    let widget = cx.entity().downgrade();
-                    move |_, _, window, cx| {
-                        window.on_mouse_event({
-                            let widget = widget.clone();
-                            move |event: &MouseMoveEvent, phase, window, cx| {
-                                if !phase.capture() {
+                canvas(
+                    {
+                        let widget = cx.entity().downgrade();
+                        move |bounds, _window, cx| {
+                            let _ = widget.update(cx, |this, cx| {
+                                let pixels = bounds.size;
+                                this.update_output_size(
+                                    UVec2::new(pixels.width.into(), pixels.height.into()),
+                                    cx,
+                                );
+
+                                let Ok(last_rect) = this
+                                    .canvas
+                                    .read_with(cx, |canvas, cx| canvas.transform.widget_bounds)
+                                else {
                                     return;
+                                };
+
+                                let min = Vec2::new(bounds.origin.x.into(), bounds.origin.y.into());
+                                let max = Vec2::new(
+                                    (bounds.origin.x + bounds.size.width).into(),
+                                    (bounds.origin.y + bounds.size.height).into(),
+                                );
+                                let widget_bounds = Rect { min, max };
+
+                                if last_rect != widget_bounds {
+                                    this.canvas
+                                        .update(cx, |canvas, cx| {
+                                            canvas.transform.widget_bounds = widget_bounds;
+                                        })
+                                        .ok();
                                 }
-
-                                update_tool_proxy(cx, &widget, tool_proxy_id, |tool_proxy, cx| {
-                                    tool_proxy.mouse_moved(event, cx);
-                                });
-                            }
-                        });
-
-                        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-                            if !phase.capture() || event.button != MouseButton::Left {
-                                return;
-                            }
-
-                            update_tool_proxy(cx, &widget, tool_proxy_id, |tool_proxy, cx| {
-                                tool_proxy.mouse_released(event, cx);
                             });
-                        });
-                    }
-                })
+                        }
+                    },
+                    {
+                        let widget = cx.entity().downgrade();
+                        move |bounds, _, window, cx| {
+                            if let Some(image) = widget
+                                .read_with(cx, |widget, _| widget.latest_image.clone())
+                                .ok()
+                                .flatten()
+                            {
+                                let image_bounds =
+                                    ObjectFit::None.get_bounds(bounds, image.size(0));
+                                let _ = window.paint_image(
+                                    image_bounds,
+                                    Corners::all(px(0.0)),
+                                    image,
+                                    0,
+                                    false,
+                                );
+                            }
+
+                            window.on_mouse_event({
+                                let widget = widget.clone();
+                                move |event: &MouseMoveEvent, phase, window, cx| {
+                                    if !phase.capture() {
+                                        return;
+                                    }
+
+                                    update_tool_proxy(
+                                        cx,
+                                        &widget,
+                                        tool_proxy_id,
+                                        |tool_proxy, cx| {
+                                            tool_proxy.mouse_moved(event, cx);
+                                        },
+                                    );
+                                }
+                            });
+
+                            window.on_mouse_event(
+                                move |event: &MouseUpEvent, phase, window, cx| {
+                                    if !phase.capture() || event.button != MouseButton::Left {
+                                        return;
+                                    }
+
+                                    update_tool_proxy(
+                                        cx,
+                                        &widget,
+                                        tool_proxy_id,
+                                        |tool_proxy, cx| {
+                                            tool_proxy.mouse_released(event, cx);
+                                        },
+                                    );
+                                },
+                            );
+                        }
+                    },
+                )
                 .absolute()
                 .size_full(),
             )
@@ -269,7 +301,7 @@ fn update_tool_proxy(
 
     widget
         .update(cx, |widget, cx| {
-            widget.rerender(cx);
+            widget.request_rerender(cx);
         })
         .ok();
 }

@@ -87,7 +87,7 @@ impl CanvasDock {
             cx.new(|cx| CanvasWidget::new(canvas_id, tool_proxy_id, window, cx).unwrap());
 
         canvas_state.update(cx, |widget, cx| {
-            widget.recomposite(cx, None);
+            widget.recomposite(cx);
         });
 
         Self {

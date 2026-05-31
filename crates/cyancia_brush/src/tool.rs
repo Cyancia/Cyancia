@@ -39,11 +39,9 @@ impl ToolFunction for BrushTool {
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
         let Some(canvas_entity) = cx.current_canvas() else {
-            dbg!();
             return;
         };
         let Some(canvas) = canvas_entity.upgrade().map(|c| c.read(cx)) else {
-            dbg!();
             return;
         };
 
@@ -78,7 +76,6 @@ impl ToolFunction for BrushTool {
 
         cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
             let Some(brush) = brush.as_mut() else {
-                dbg!();
                 return;
             };
             let tiles = cx.global::<GpuTileStorage>();
@@ -87,14 +84,11 @@ impl ToolFunction for BrushTool {
     }
 
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
-        dbg!();
         let Some((canvas_entity, active_layer)) = &self.target_layer else {
-            dbg!();
             return;
         };
 
         let Some(canvas_entity) = canvas_entity.upgrade() else {
-            dbg!();
             return;
         };
         let canvas = canvas_entity.read(cx);
@@ -120,16 +114,14 @@ impl ToolFunction for BrushTool {
         };
 
         let maybe_preview = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
-            dbg!();
             let Some(brush) = brush.as_mut() else {
-                dbg!();
                 return None;
             };
             let tiles = cx.global::<GpuTileStorage>();
             let now = std::time::Instant::now();
             brush.update_stroke(params, tiles);
             let preview = brush.generate_preview(tiles);
-            log::info!("Brush stroke update took {:?}", now.elapsed());
+            log::debug!("Brush stroke update took {:?}", now.elapsed());
 
             preview
         });

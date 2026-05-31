@@ -610,12 +610,12 @@ impl<Data: GraphData> Graph<Data> {
             match node.data.run(context) {
                 Ok(()) => {}
                 Err(err) => {
-                    log::error!(
-                        "Error running node {:?} ({:?}): {:?}",
-                        node_id,
-                        node.data.name(),
-                        err
-                    );
+                    // log::error!(
+                    //     "Error running node {:?} ({:?}): {:?}",
+                    //     node_id,
+                    //     node.data.name(),
+                    //     err
+                    // );
                     // return Err(GraphRunError::NodeRunError(ContextualGraphNodeRunError {
                     //     node_id: *node_id,
                     //     node_title: node.data.name().to_string(),
