@@ -254,9 +254,6 @@ impl BrushPresetOperator {
         &mut self,
         tiles: &GpuTileStorage,
     ) -> Option<(IRect, DynamicLayerStorage)> {
-        unsafe {
-            self.device.start_graphics_debugger_capture();
-        }
         let renderer = self.renderer.as_mut()?;
         let mut accumulated_pixel_bounds = self.accumulated_pixel_bounds;
         let mut round = self.round;
@@ -286,10 +283,6 @@ impl BrushPresetOperator {
             &mut round,
             &mut accumulated_pixel_bounds,
         );
-
-        unsafe {
-            self.device.stop_graphics_debugger_capture();
-        }
 
         let [result_buffer_a, result_buffer_b] = new_intermediate_buffers;
         if round % 2 == 0 {
