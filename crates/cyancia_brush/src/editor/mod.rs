@@ -179,10 +179,8 @@ impl BrushEditor {
                         editor.stroke_pp_function_storage.clone(),
                     );
 
-                    if !errs.is_empty() {
-                        for err in errs {
-                            log::error!("Error deserializing brush preset {}: {}", brush.id(), err);
-                        }
+                    for err in errs {
+                        log::error!("Error deserializing brush preset {}: {}", brush.id(), err);
                     }
 
                     let Some(instance) = maybe_instance else {
@@ -223,7 +221,7 @@ impl BrushEditor {
         cx.subscribe_in(&functions, window, {
             let name_input_state = name_input_state.downgrade();
             move |editor, functions_entity, event: &ListEvent, window, cx| match event {
-                ListEvent::Select(_) => todo!(),
+                ListEvent::Select(_) => {}
                 ListEvent::Confirm(ix) => {
                     let Some(func) = functions_entity.update(cx, |funcs, cx| {
                         let item = funcs.delegate().get(*ix)?;
@@ -250,13 +248,11 @@ impl BrushEditor {
                         FUNCTION_GRAPH_NODE_REGISTRY.as_ref(),
                     );
 
-                    if !errs.is_empty() {
-                        for err in errs {
-                            log::error!("Error deserializing function {:?}: {:?}", func.id(), err);
-                        }
-                        return;
+                    for err in errs {
+                        log::error!("Error deserializing function {:?}: {:?}", func.id(), err);
                     }
                     let Some(func) = maybe_func else {
+                        log::error!("Failed to load function {}", func.id());
                         return;
                     };
 
@@ -266,7 +262,7 @@ impl BrushEditor {
                         instance: GraphFunctionInstance::new(func),
                     }));
                 }
-                ListEvent::Cancel => todo!(),
+                ListEvent::Cancel => {}
             }
         })
         .detach();
