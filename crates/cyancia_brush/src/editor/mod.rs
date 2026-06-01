@@ -36,7 +36,7 @@ use gpui::{
     ParentElement, Render, Styled, Window, actions, div, px, relative,
 };
 use gpui_component::{
-    IconName, Selectable, Sizable,
+    IconName, IndexPath, Selectable, Sizable,
     button::{Button, ButtonGroup},
     clipboard,
     form::{field, v_form},
@@ -160,11 +160,16 @@ impl BrushEditor {
             .new(|cx| ListState::new(BrushFunctionListDelegate::new(function_assets), window, cx));
         let name_input_state = cx.new(|cx| InputState::new(window, cx));
 
-        cx.subscribe_in(&brushes, window, {
-            let name_input_state = name_input_state.downgrade();
+        cx.subscribe_in(
+            &brushes,
+            window,
             move |editor, brushes_entity, event: &ListEvent, window, cx| match event {
                 ListEvent::Select(_) => {}
                 ListEvent::Confirm(ix) => {
+                    editor.functions.update(cx, |funcs, cx| {
+                        funcs.set_selected_index(None, window, cx);
+                    });
+
                     let Some(brush) = brushes_entity.update(cx, |brushes, cx| {
                         let item = brushes.delegate().get(*ix)?;
                         Some(item.handle.clone())
@@ -188,11 +193,9 @@ impl BrushEditor {
                         return;
                     };
 
-                    name_input_state
-                        .update(cx, |st, cx| {
-                            st.set_value(instance.metadata().name.clone(), window, cx);
-                        })
-                        .ok();
+                    editor.name_input_state.update(cx, |st, cx| {
+                        st.set_value(instance.metadata().name.clone(), window, cx);
+                    });
 
                     let instance = Arc::new(RwLock::new(instance));
 
@@ -214,15 +217,20 @@ impl BrushEditor {
                     )));
                 }
                 ListEvent::Cancel => {}
-            }
-        })
+            },
+        )
         .detach();
 
-        cx.subscribe_in(&functions, window, {
-            let name_input_state = name_input_state.downgrade();
+        cx.subscribe_in(
+            &functions,
+            window,
             move |editor, functions_entity, event: &ListEvent, window, cx| match event {
                 ListEvent::Select(_) => {}
                 ListEvent::Confirm(ix) => {
+                    editor.brushes.update(cx, |brushes, cx| {
+                        brushes.set_selected_index(None, window, cx);
+                    });
+
                     let Some(func) = functions_entity.update(cx, |funcs, cx| {
                         let item = funcs.delegate().get(*ix)?;
                         Some(item.handle.clone())
@@ -237,11 +245,9 @@ impl BrushEditor {
                             return;
                         }
                     };
-                    name_input_state
-                        .update(cx, |st, cx| {
-                            st.set_value(ser_func.name.clone(), window, cx);
-                        })
-                        .ok();
+                    editor.name_input_state.update(cx, |st, cx| {
+                        st.set_value(ser_func.name.clone(), window, cx);
+                    });
                     let (maybe_func, errs) = ser_func.deserialize_func(
                         Some(func.id()),
                         FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
@@ -263,8 +269,8 @@ impl BrushEditor {
                     }));
                 }
                 ListEvent::Cancel => {}
-            }
-        })
+            },
+        )
         .detach();
 
         cx.subscribe_in(
