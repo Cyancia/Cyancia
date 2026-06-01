@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use bevy_math::Rect;
 use cyancia_render::buffer::DynamicBuffer;
@@ -6,7 +6,7 @@ use cyancia_utils::{random_oklch, wrapper};
 use glam::{Vec2, Vec4};
 use gpui::{
     AnyElement, App, AppContext, Context, ElementId, Entity, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Rgba, Styled, div, px, rgb,
+    ParentElement, Pixels, Rgba, Styled, Window, div, px, rgb,
 };
 use gpui_component::{
     Sizable,
@@ -387,69 +387,97 @@ impl GraphValueType for RectType {
     }
 }
 
+struct LiteralNumberInputState {
+    input_state: Entity<InputState>,
+    value: f32,
+}
+
+impl LiteralNumberInputState {
+    fn new<T: GraphLiteralValue>(
+        initial_value: f32,
+        on_update: Rc<dyn Fn(Box<dyn GraphLiteralValue>, &mut App)>,
+        updated_literal: impl Fn(f32) -> T + 'static,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let input_state = cx.new(|cx| {
+            let mut state = InputState::new(window, cx).mask_pattern(MaskPattern::Number {
+                separator: None,
+                fraction: Some(4),
+            });
+            state.set_value(format!("{:.4}", initial_value), window, cx);
+            state
+        });
+
+        cx.subscribe_in(&input_state, window, {
+            let on_update = on_update.clone();
+            move |state, input_state, event: &InputEvent, window, cx| match event {
+                InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                    input_state.update(cx, |input_state, cx| {
+                        if let Ok(value) = input_state.value().parse::<f32>() {
+                            (on_update)(Box::new(updated_literal(value)), cx);
+                            state.value = value;
+                            input_state.set_value(format!("{:.4}", value), window, cx);
+                        } else {
+                            input_state.set_value(format!("{:.4}", state.value), window, cx);
+                        }
+                    });
+                }
+                InputEvent::Change | InputEvent::Focus => {}
+            }
+        })
+        .detach();
+        cx.subscribe_in(&input_state, window, {
+            let on_update = on_update;
+            move |state, input_state, event: &NumberInputEvent, window, cx| match event {
+                NumberInputEvent::Step(step) => {
+                    let delta = match step {
+                        StepAction::Increment => 0.1,
+                        StepAction::Decrement => -0.1,
+                    };
+                    let value = state.input_state.read(cx).value();
+                    let Ok(value) = value.parse::<f32>() else {
+                        return;
+                    };
+                    let value = value + delta;
+                    state.value = value;
+                    input_state.update(cx, |input_state, cx| {
+                        input_state.set_value(format!("{:.4}", value), window, cx);
+                    });
+                    (on_update)(Box::new(value), cx);
+                }
+            }
+        })
+        .detach();
+
+        Self {
+            input_state,
+            value: initial_value,
+        }
+    }
+}
+
 fn literal_number_input<T: GraphLiteralValue>(
     id: impl Into<ElementId>,
     ctx: &mut GraphInlineLiteralRenderContext<'_>,
     initial_value: f32,
     updated_literal: impl Fn(f32) -> T + 'static,
 ) -> AnyElement {
-    let input_state = ctx.window.use_keyed_state(
-        id,
-        ctx.cx,
-        |window, cx: &mut Context<Entity<InputState>>| {
-            let state = cx.new(|cx| {
-                let mut state = InputState::new(window, cx).mask_pattern(MaskPattern::Number {
-                    separator: None,
-                    fraction: Some(4),
-                });
-                state.set_value(format!("{:.4}", initial_value), window, cx);
-                state
-            });
-
-            cx.subscribe_in(&state, window, {
-                let on_update = ctx.on_update.clone();
-                move |state, _, event: &InputEvent, window, cx| match event {
-                    InputEvent::PressEnter { .. } | InputEvent::Blur => {
-                        let value = state.read(cx).value();
-                        if let Ok(value) = value.parse::<f32>() {
-                            (on_update)(Box::new(updated_literal(value)), cx);
-                        }
-                    }
-                    InputEvent::Change | InputEvent::Focus => {}
-                }
-            })
-            .detach();
-            cx.subscribe_in(&state, window, {
-                let on_update = ctx.on_update.clone();
-                move |state, _, event: &NumberInputEvent, window, cx| match event {
-                    NumberInputEvent::Step(step) => {
-                        let delta = match step {
-                            StepAction::Increment => 0.1,
-                            StepAction::Decrement => -0.1,
-                        };
-                        let value = state.read(cx).value();
-                        let Ok(value) = value.parse::<f32>() else {
-                            return;
-                        };
-                        let value = value + delta;
-                        state.update(cx, |state, cx| {
-                            state.set_value(format!("{:.4}", value), window, cx);
-                        });
-                        (on_update)(Box::new(value), cx);
-                    }
-                }
-            })
-            .detach();
-
-            state
-        },
-    );
+    let input_state = ctx.window.use_keyed_state(id, ctx.cx, |window, cx| {
+        LiteralNumberInputState::new(
+            initial_value,
+            ctx.on_update.clone(),
+            updated_literal,
+            window,
+            cx,
+        )
+    });
 
     let input_state = input_state.read(ctx.cx);
     div()
         .w_full()
         .min_w(MIN_INLINE_FLOAT_WIDTH)
-        .child(NumberInput::new(input_state).small())
+        .child(NumberInput::new(&input_state.input_state).small())
         .on_any_mouse_down(|_, _, cx| cx.stop_propagation())
         .into_any_element()
 }
