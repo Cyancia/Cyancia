@@ -78,8 +78,7 @@ impl ToolFunction for BrushTool {
             let Some(brush) = brush.as_mut() else {
                 return;
             };
-            let tiles = cx.global::<GpuTileStorage>();
-            brush.begin_stroke(params, tiles, cx.assets(), active_layer);
+            brush.begin_stroke(params, active_layer, cx);
         });
     }
 
@@ -117,10 +116,9 @@ impl ToolFunction for BrushTool {
             let Some(brush) = brush.as_mut() else {
                 return None;
             };
-            let tiles = cx.global::<GpuTileStorage>();
             let now = std::time::Instant::now();
-            brush.update_stroke(params, tiles);
-            let preview = brush.generate_preview(tiles);
+            brush.update_stroke(params, cx);
+            let preview = brush.generate_preview(cx);
             log::debug!("Brush stroke update took {:?}", now.elapsed());
 
             preview
@@ -177,8 +175,7 @@ impl ToolFunction for BrushTool {
             let Some(brush) = brush.as_mut() else {
                 return None;
             };
-            let tiles = cx.global::<GpuTileStorage>();
-            brush.end_stroke(final_input, tiles, active_layer)
+            brush.end_stroke(final_input, active_layer, cx)
         });
 
         let overriders = cx.global_mut::<LayerPreviewOverriders>();

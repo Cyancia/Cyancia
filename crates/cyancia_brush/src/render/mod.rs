@@ -7,7 +7,7 @@ use std::{
 
 use bevy_math::{IRect, Rect};
 use bytemuck::Contiguous;
-use cyancia_assets::{asset::AssetId, store::AssetRegistry};
+use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
     layer::LayerId,
     texel::{TexelDepth, TexelFormat, TexelType},
@@ -26,6 +26,7 @@ use cyancia_shader_graph::graph::{Graph, texture::TextureId};
 use cyancia_utils::include_shader;
 use encase::{ShaderType, StorageBuffer};
 use glam::{IVec2, IVec4, UVec2, UVec3, UVec4, Vec2, Vec4Swizzles};
+use gpui::App;
 use parking_lot::RwLock;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use uuid::Uuid;
@@ -65,7 +66,7 @@ pub struct BrushStrokeSessionInfo {
 }
 
 pub struct BrushPresetOperator {
-    instance: Arc<RwLock<BrushPresetInstance>>,
+    instance: BrushPresetInstance,
     device: Device,
     queue: Queue,
     renderer: Option<BrushPresetRenderer>,
@@ -79,7 +80,7 @@ pub struct BrushPresetOperator {
 
 impl BrushPresetOperator {
     pub fn new(
-        instance: Arc<RwLock<BrushPresetInstance>>,
+        instance: BrushPresetInstance,
         device: Device,
         queue: Queue,
         input_processor: InputProcessor,
@@ -98,18 +99,20 @@ impl BrushPresetOperator {
         }
     }
 
-    pub fn begin_stroke(
-        &mut self,
-        input: RawPenInput,
-        tiles: &GpuTileStorage,
-        assets: &AssetRegistry,
-        target_layer: LayerId,
-    ) {
-        let instance = self.instance.read();
+    pub fn instance(&self) -> &BrushPresetInstance {
+        &self.instance
+    }
+
+    pub fn instance_mut(&mut self) -> &mut BrushPresetInstance {
+        &mut self.instance
+    }
+
+    pub fn begin_stroke(&mut self, input: RawPenInput, target_layer: LayerId, cx: &mut App) {
+        let tiles = cx.global::<GpuTileStorage>();
 
         let target_layer_info = tiles.get_layer_info(target_layer).unwrap();
         let session = BrushStrokeSessionInfo {
-            brush_runtime_revision: instance.runtime_revision(),
+            brush_runtime_revision: self.instance.runtime_revision(),
             target_layer_format: target_layer_info.texel_type,
         };
         match self.last_session.as_mut() {
@@ -132,7 +135,10 @@ impl BrushPresetOperator {
 
         let compiled_brush = self.cached_brush.get_or_insert_with(|| {
             let now = std::time::Instant::now();
-            let compiled = instance.compile(EXTERNAL_VARIABLE_BASE_BINDING).unwrap();
+            let compiled = self
+                .instance
+                .compile(EXTERNAL_VARIABLE_BASE_BINDING, cx)
+                .unwrap();
             log::info!("Brush preset compilation: {:?}", now.elapsed());
             println!("Compiled brush preset: {}", compiled);
             compiled
@@ -146,7 +152,7 @@ impl BrushPresetOperator {
                 &compiled_brush,
                 target_layer,
                 target_layer_info.texel_type,
-                assets,
+                cx.assets(),
             );
             log::info!("Brush preset renderer creation: {:?}", now.elapsed());
             renderer
@@ -172,16 +178,17 @@ impl BrushPresetOperator {
             &self.device,
             &self.queue,
             self.input_processor
-                .push(input, instance.required_spacing_graph()),
-            instance.main_graph(),
-            tiles,
+                .push(input, self.instance.required_spacing_graph().read(cx), cx),
+            self.instance.main_graph().read(cx),
+            cx.global::<GpuTileStorage>(),
             intermediate_buffers,
             &mut self.round,
             &mut self.accumulated_pixel_bounds,
+            cx,
         );
     }
 
-    pub fn update_stroke(&mut self, input: RawPenInput, tiles: &GpuTileStorage) {
+    pub fn update_stroke(&mut self, input: RawPenInput, cx: &mut App) {
         let Some(renderer) = &mut self.renderer else {
             return;
         };
@@ -190,25 +197,25 @@ impl BrushPresetOperator {
             return;
         };
 
-        let instance = self.instance.read();
         renderer.update(
             &self.device,
             &self.queue,
             self.input_processor
-                .push(input, instance.required_spacing_graph()),
-            instance.main_graph(),
-            tiles,
+                .push(input, self.instance.required_spacing_graph().read(cx), cx),
+            self.instance.main_graph().read(cx),
+            cx.global::<GpuTileStorage>(),
             intermediate_buffers,
             &mut self.round,
             &mut self.accumulated_pixel_bounds,
+            cx,
         );
     }
 
     pub fn end_stroke(
         &mut self,
         final_input: RawPenInput,
-        tiles: &GpuTileStorage,
         target_layer: LayerId,
+        cx: &mut App,
     ) -> Option<IRect> {
         let renderer = self.renderer.as_mut()?;
         let intermediate_buffers = self.intermediate_buffers.as_mut()?;
@@ -217,30 +224,34 @@ impl BrushPresetOperator {
             &self.device,
             &self.queue,
             self.input_processor
-                .flush(final_input, self.instance.read().required_spacing_graph()),
-            self.instance.read().main_graph(),
-            tiles,
+                .flush(final_input, self.instance.required_spacing_graph().read(cx), cx),
+            self.instance.main_graph().read(cx),
+            cx.global::<GpuTileStorage>(),
             intermediate_buffers,
             &mut self.round,
             &mut self.accumulated_pixel_bounds,
+            cx,
         );
 
         let now = std::time::Instant::now();
-        let instance = self.instance.read();
         renderer.postprocess_stroke(
             &self.device,
             &self.queue,
-            instance.stroke_postprocess_graphs(),
-            tiles,
+            self.instance
+                .stroke_postprocess_graphs()
+                .iter()
+                .map(|g| g.read(cx)),
+            cx.global::<GpuTileStorage>(),
             final_input.time,
             intermediate_buffers,
             &mut self.round,
             &mut self.accumulated_pixel_bounds,
+            cx,
         );
         renderer.copy_last_surface_to_layer(
             &self.device,
             &self.queue,
-            tiles,
+            cx.global::<GpuTileStorage>(),
             target_layer,
             intermediate_buffers,
             self.round,
@@ -250,10 +261,7 @@ impl BrushPresetOperator {
         Some(self.accumulated_pixel_bounds)
     }
 
-    pub fn generate_preview(
-        &mut self,
-        tiles: &GpuTileStorage,
-    ) -> Option<(IRect, DynamicLayerStorage)> {
+    pub fn generate_preview(&mut self, cx: &mut App) -> Option<(IRect, DynamicLayerStorage)> {
         let renderer = self.renderer.as_mut()?;
         let mut accumulated_pixel_bounds = self.accumulated_pixel_bounds;
         let mut round = self.round;
@@ -267,13 +275,15 @@ impl BrushPresetOperator {
         } else {
             [another_buffer, result_buffer]
         };
-        let instance = self.instance.read();
 
         renderer.postprocess_stroke(
             &self.device,
             &self.queue,
-            instance.stroke_postprocess_graphs(),
-            tiles,
+            self.instance
+                .stroke_postprocess_graphs()
+                .iter()
+                .map(|g| g.read(cx)),
+            cx.global::<GpuTileStorage>(),
             // TODO
             Time {
                 now: 0.0,
@@ -282,6 +292,7 @@ impl BrushPresetOperator {
             &mut new_intermediate_buffers,
             &mut round,
             &mut accumulated_pixel_bounds,
+            cx,
         );
 
         let [result_buffer_a, result_buffer_b] = new_intermediate_buffers;
@@ -356,6 +367,7 @@ impl BrushPresetRenderer {
         intermediate_buffers: &mut [DynamicLayerStorage; 2],
         round: &mut u32,
         accumulated_pixel_bounds: &mut IRect,
+        cx: &App,
     ) {
         if pen_input.is_empty() {
             return;
@@ -368,7 +380,7 @@ impl BrushPresetRenderer {
 
         for sample in pen_input {
             let output = main_graph
-                .run(&BrushGraphData { pen_input: sample }, Vec::new())
+                .run(&BrushGraphData { pen_input: sample }, Vec::new(), cx)
                 .unwrap();
 
             assert_eq!(output.len(), 1);
@@ -423,16 +435,17 @@ impl BrushPresetRenderer {
         queue.submit([ec.finish()]);
     }
 
-    pub fn postprocess_stroke(
+    pub fn postprocess_stroke<'a>(
         &mut self,
         device: &Device,
         queue: &Queue,
-        graphs: &[Graph<BrushGraphPostprocessData>],
+        graphs: impl Iterator<Item = &'a Graph<BrushGraphPostprocessData>>,
         tiles: &GpuTileStorage,
         time: Time,
         intermediate_buffers: &mut [DynamicLayerStorage; 2],
         round: &mut u32,
         accumulated_pixel_bounds: &mut IRect,
+        cx: &App,
     ) {
         if accumulated_pixel_bounds.is_empty() {
             return;
@@ -451,7 +464,7 @@ impl BrushPresetRenderer {
                 ..Default::default()
             });
 
-            for (graph, pipeline) in graphs.iter().zip(&self.stroke_pp) {
+            for (graph, pipeline) in graphs.into_iter().zip(&self.stroke_pp) {
                 let output = graph
                     .run(
                         &BrushGraphPostprocessData {
@@ -462,6 +475,7 @@ impl BrushPresetRenderer {
                             },
                         },
                         Vec::new(),
+                        cx,
                     )
                     .unwrap();
                 assert_eq!(output.len(), 1);

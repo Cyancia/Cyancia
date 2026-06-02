@@ -7,7 +7,7 @@ use cyancia_assets::{
     asset::{Asset, AssetId},
     loader::AssetSerializer,
 };
-use gpui::Point;
+use gpui::{App, AppContext, Context, Point};
 use serde::{Deserialize, Serialize};
 use toml::ser::Buffer;
 
@@ -97,6 +97,7 @@ impl<Data: GraphData> Graph<Data> {
         type_registry: Arc<GraphTypeRegistry>,
         node_registry: &GraphNodeRegistry<Data>,
         external_vars: Arc<GraphExternalVariableStorage>,
+        cx: &App,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let graph = match toml::from_str::<SerializableGraph>(s) {
             Ok(g) => g,
@@ -104,7 +105,7 @@ impl<Data: GraphData> Graph<Data> {
                 return (None, vec![GraphDeserializeError::DeserializerError(e)]);
             }
         };
-        Self::from_serialized(&graph, resources, type_registry, node_registry)
+        Self::from_serialized(&graph, resources, type_registry, node_registry, cx)
     }
 
     pub fn from_serialized(
@@ -112,6 +113,7 @@ impl<Data: GraphData> Graph<Data> {
         resources: GraphResources<Data>,
         type_registry: Arc<GraphTypeRegistry>,
         node_registry: &GraphNodeRegistry<Data>,
+        cx: &App,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let SerializableGraph {
             nodes,
@@ -146,6 +148,7 @@ impl<Data: GraphData> Graph<Data> {
             let raw_inputs = node.create_inputs(GraphNodeCreateSlotsContext {
                 resources: &resources,
                 type_registry: &type_registry,
+                cx,
             });
             if raw_inputs.len() != ser_node.inputs.len() {
                 errs.push(GraphDeserializeError::UnmatchedInputSlotCount {
@@ -198,6 +201,7 @@ impl<Data: GraphData> Graph<Data> {
             let raw_outputs = node.create_outputs(GraphNodeCreateSlotsContext {
                 resources: &resources,
                 type_registry: &type_registry,
+                cx,
             });
             if raw_outputs.len() != ser_node.outputs.len() {
                 errs.push(GraphDeserializeError::UnmatchedOutputSlotCount {
@@ -452,11 +456,12 @@ pub struct SerializableGraphFunction {
 impl SerializableGraphFunction {
     pub fn serialize_func<Data: crate::graph::GraphData>(
         func: &GraphFunction<Data>,
+        cx: &App,
     ) -> Result<Self, anyhow::Error> {
         Ok(SerializableGraphFunction {
             id: func.id,
             name: func.name.clone(),
-            graph: func.graph.as_serialized()?,
+            graph: func.graph.read(cx).as_serialized()?,
         })
     }
 
@@ -465,6 +470,7 @@ impl SerializableGraphFunction {
         asset_id: Option<AssetId<SerializableGraphFunction>>,
         type_registry: Arc<GraphTypeRegistry>,
         node_registry: &GraphNodeRegistry<Data>,
+        cx: &mut App,
     ) -> (Option<GraphFunction<Data>>, Vec<GraphDeserializeError>) {
         // Create empty resources for the graph function
         let resources = GraphResources {
@@ -476,13 +482,13 @@ impl SerializableGraphFunction {
         };
 
         let (maybe_graph, err) =
-            Graph::from_serialized(&self.graph, resources, type_registry, node_registry);
+            Graph::from_serialized(&self.graph, resources, type_registry, node_registry, cx);
 
         let func = maybe_graph.map(|graph| GraphFunction {
             asset_id,
             id: self.id,
             name: self.name.clone(),
-            graph,
+            graph: cx.new(|_| graph),
         });
 
         (func, err)

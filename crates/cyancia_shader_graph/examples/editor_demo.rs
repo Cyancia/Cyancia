@@ -1,19 +1,19 @@
 use std::collections::HashMap;
 
 use cyancia_shader_graph::{
-    editor::{GraphEditSink, GraphEditor},
-    graph::{node::GraphNodeRegistry, Graph, GraphData, GraphResources},
+    editor::GraphEditor,
+    graph::{Graph, GraphData, GraphResources, node::GraphNodeRegistry},
     wgsl_std::{
         builtin_nodes, builtin_types,
         nodes::{GraphInputNode, GraphOutputNode},
     },
 };
 use gpui::{
-    div, Action, App, AppContext, Context, Entity, IntoElement, Menu, MenuItem, ParentElement,
-    Render, SharedString, Styled, Window, WindowOptions,
+    Action, App, AppContext, Context, Entity, IntoElement, Menu, MenuItem, ParentElement, Render,
+    SharedString, Styled, Window, WindowOptions, div,
 };
 use gpui_component::{
-    menu::AppMenuBar, ActiveTheme, GlobalState, Root, Theme, ThemeMode, ThemeRegistry, TitleBar,
+    ActiveTheme, GlobalState, Root, Theme, ThemeMode, ThemeRegistry, TitleBar, menu::AppMenuBar,
 };
 use gpui_platform::application;
 
@@ -24,9 +24,8 @@ impl GraphData for DemoData {}
 
 struct DemoEditor {
     menu_bar: Entity<AppMenuBar>,
-    editor: Entity<GraphEditor>,
-    graph: Graph<DemoData>,
-    node_registry: GraphNodeRegistry<DemoData>,
+    editor: Entity<GraphEditor<DemoData>>,
+    graph: Entity<Graph<DemoData>>,
 }
 
 impl DemoEditor {
@@ -34,35 +33,24 @@ impl DemoEditor {
         let mut nodes = builtin_nodes();
         nodes.register::<GraphInputNode>();
         nodes.register::<GraphOutputNode>();
+
+        let graph =
+            cx.new(|cx| Graph::new(GraphResources::default().into(), builtin_types().into()));
         Self {
             menu_bar: menu_bar_init(cx),
-            editor: cx.new(|cx| GraphEditor::new(cx)),
-            graph: Graph::new(GraphResources::default().into(), builtin_types().into()),
-            node_registry: nodes.into(),
+            editor: cx.new(|cx| GraphEditor::new(graph.clone(), nodes.into(), cx)),
+            graph,
         }
     }
 }
 
 impl Render for DemoEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let parent = cx.entity().downgrade();
-        let edits = GraphEditSink::new(move |edit, cx| {
-            parent
-                .update(cx, |editor, cx| {
-                    edit.apply(&mut editor.graph);
-                    cx.notify();
-                })
-                .ok();
-        });
-        let editor = self.editor.update(cx, |editor, cx| {
-            editor.render_graph(&self.graph, &self.node_registry, edits, window, cx)
-        });
-
         div()
             .w_full()
             .h_full()
             .child(TitleBar::new().child(self.menu_bar.clone()))
-            .child(editor)
+            .child(self.editor.clone())
     }
 }
 
@@ -128,27 +116,90 @@ fn menu_bar_init(cx: &mut App) -> Entity<AppMenuBar> {
 fn embedded_themes() -> HashMap<&'static str, &'static str> {
     let mut themes = HashMap::new();
 
-    themes.insert("adventure", include_str!("../../../assets/builtin_assets/themes/adventure.theme"));
-    themes.insert("alduin", include_str!("../../../assets/builtin_assets/themes/alduin.theme"));
-    themes.insert("asciinema", include_str!("../../../assets/builtin_assets/themes/asciinema.theme"));
-    themes.insert("ayu", include_str!("../../../assets/builtin_assets/themes/ayu.theme"));
-    themes.insert("catppuccin", include_str!("../../../assets/builtin_assets/themes/catppuccin.theme"));
-    themes.insert("everforest", include_str!("../../../assets/builtin_assets/themes/everforest.theme"));
-    themes.insert("fahrenheit", include_str!("../../../assets/builtin_assets/themes/fahrenheit.theme"));
-    themes.insert("flexoki", include_str!("../../../assets/builtin_assets/themes/flexoki.theme"));
-    themes.insert("gruvbox", include_str!("../../../assets/builtin_assets/themes/gruvbox.theme"));
-    themes.insert("harper", include_str!("../../../assets/builtin_assets/themes/harper.theme"));
-    themes.insert("hybrid", include_str!("../../../assets/builtin_assets/themes/hybrid.theme"));
-    themes.insert("jellybeans", include_str!("../../../assets/builtin_assets/themes/jellybeans.theme"));
-    themes.insert("kibble", include_str!("../../../assets/builtin_assets/themes/kibble.theme"));
-    themes.insert("macos-classic", include_str!("../../../assets/builtin_assets/themes/macos-classic.theme"));
-    themes.insert("matrix", include_str!("../../../assets/builtin_assets/themes/matrix.theme"));
-    themes.insert("mellifluous", include_str!("../../../assets/builtin_assets/themes/mellifluous.theme"));
-    themes.insert("molokai", include_str!("../../../assets/builtin_assets/themes/molokai.theme"));
-    themes.insert("solarized", include_str!("../../../assets/builtin_assets/themes/solarized.theme"));
-    themes.insert("spaceduck", include_str!("../../../assets/builtin_assets/themes/spaceduck.theme"));
-    themes.insert("tokyonight", include_str!("../../../assets/builtin_assets/themes/tokyonight.theme"));
-    themes.insert("twilight", include_str!("../../../assets/builtin_assets/themes/twilight.theme"));
+    themes.insert(
+        "adventure",
+        include_str!("../../../assets/builtin_assets/themes/adventure.theme"),
+    );
+    themes.insert(
+        "alduin",
+        include_str!("../../../assets/builtin_assets/themes/alduin.theme"),
+    );
+    themes.insert(
+        "asciinema",
+        include_str!("../../../assets/builtin_assets/themes/asciinema.theme"),
+    );
+    themes.insert(
+        "ayu",
+        include_str!("../../../assets/builtin_assets/themes/ayu.theme"),
+    );
+    themes.insert(
+        "catppuccin",
+        include_str!("../../../assets/builtin_assets/themes/catppuccin.theme"),
+    );
+    themes.insert(
+        "everforest",
+        include_str!("../../../assets/builtin_assets/themes/everforest.theme"),
+    );
+    themes.insert(
+        "fahrenheit",
+        include_str!("../../../assets/builtin_assets/themes/fahrenheit.theme"),
+    );
+    themes.insert(
+        "flexoki",
+        include_str!("../../../assets/builtin_assets/themes/flexoki.theme"),
+    );
+    themes.insert(
+        "gruvbox",
+        include_str!("../../../assets/builtin_assets/themes/gruvbox.theme"),
+    );
+    themes.insert(
+        "harper",
+        include_str!("../../../assets/builtin_assets/themes/harper.theme"),
+    );
+    themes.insert(
+        "hybrid",
+        include_str!("../../../assets/builtin_assets/themes/hybrid.theme"),
+    );
+    themes.insert(
+        "jellybeans",
+        include_str!("../../../assets/builtin_assets/themes/jellybeans.theme"),
+    );
+    themes.insert(
+        "kibble",
+        include_str!("../../../assets/builtin_assets/themes/kibble.theme"),
+    );
+    themes.insert(
+        "macos-classic",
+        include_str!("../../../assets/builtin_assets/themes/macos-classic.theme"),
+    );
+    themes.insert(
+        "matrix",
+        include_str!("../../../assets/builtin_assets/themes/matrix.theme"),
+    );
+    themes.insert(
+        "mellifluous",
+        include_str!("../../../assets/builtin_assets/themes/mellifluous.theme"),
+    );
+    themes.insert(
+        "molokai",
+        include_str!("../../../assets/builtin_assets/themes/molokai.theme"),
+    );
+    themes.insert(
+        "solarized",
+        include_str!("../../../assets/builtin_assets/themes/solarized.theme"),
+    );
+    themes.insert(
+        "spaceduck",
+        include_str!("../../../assets/builtin_assets/themes/spaceduck.theme"),
+    );
+    themes.insert(
+        "tokyonight",
+        include_str!("../../../assets/builtin_assets/themes/tokyonight.theme"),
+    );
+    themes.insert(
+        "twilight",
+        include_str!("../../../assets/builtin_assets/themes/twilight.theme"),
+    );
 
     themes
 }

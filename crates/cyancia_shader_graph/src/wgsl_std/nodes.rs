@@ -154,7 +154,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         ScalarMathNodeMode::Add
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(ScalarMathNode, cx)
     }
 
@@ -233,7 +233,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -260,13 +260,11 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
                             let val = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
+                            graph.update(cx, |graph, cx| {
+                                graph.update_node_state::<Self>(cx, node_id, move |state| {
                                     *state = val;
-                                },
-                                cx,
-                            );
+                                });
+                            });
                         }
                         _ => {}
                     },
@@ -497,7 +495,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         VectorMathNodeMode::Add
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(VectorMathNode, cx)
     }
 
@@ -647,7 +645,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -674,13 +672,11 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
                             let val = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
+                            graph.update(cx, |graph, cx| {
+                                graph.update_node_state::<Self>(cx, node_id, move |state| {
                                     *state = val;
-                                },
-                                cx,
-                            );
+                                });
+                            });
                         }
                         _ => {}
                     },
@@ -865,7 +861,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
         RectMathNodeMode::Union
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(RectMathNode, cx)
     }
 
@@ -901,7 +897,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -928,13 +924,13 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
                             let val = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    *state = val;
-                                },
-                                cx,
-                            );
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        *state = val;
+                                    });
+                                })
+                                .ok();
                         }
 
                         _ => {}
@@ -1064,7 +1060,7 @@ impl<Data: GraphDataWithTime> StatelessCommonGraphNode<Data> for TimeNode {
         "Time"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(TimeNode, cx)
     }
 
@@ -1119,7 +1115,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
         "Clamp"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(ClampNode, cx)
     }
 
@@ -1174,7 +1170,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
         "Step"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(StepNode, cx)
     }
 
@@ -1226,7 +1222,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
         "Smooth Step"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(SmoothStepNode, cx)
     }
 
@@ -1282,7 +1278,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
         "Split Components"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(SplitComponentsNode, cx)
     }
 
@@ -1337,7 +1333,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
         "Combine Components"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(CombineComponentsNode, cx)
     }
 
@@ -1389,7 +1385,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
         "Combine Color Components"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(CombineColorComponentsNode, cx)
     }
 
@@ -1447,7 +1443,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
         "Split Color Components"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(SplitColorComponentsNode, cx)
     }
 
@@ -1515,7 +1511,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for GetPixelColorNode {
         "Get Pixel Color"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(GetPixelColorNode, cx)
     }
 
@@ -1566,7 +1562,7 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         TextureId::NULL
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(TextureNode, cx)
     }
 
@@ -1591,8 +1587,8 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
+        let graph = ctx.cx.entity().downgrade();
         let node_id = ctx.node_id;
-        let edits = ctx.edits.clone();
         let all_textures = ctx
             .resources
             .textures
@@ -1614,19 +1610,22 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
                 cx.subscribe_in(
                     &select_state,
                     window,
-                    move |state, _, event: &SelectEvent<_>, window, cx| match event {
-                        SelectEvent::Confirm(val) => {
-                            if let Some(val) = val {
-                                let val = *val;
-                                edits.update_node_state::<Self, _>(
-                                    node_id,
-                                    move |state| {
-                                        *state = val;
-                                    },
-                                    cx,
-                                );
-                            }
+                    move |state: &mut Entity<SelectState<_>>,
+                          select,
+                          event: &SelectEvent<_>,
+                          window,
+                          cx| match event {
+                        SelectEvent::Confirm(Some(val)) => {
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        *state = *val;
+                                    });
+                                })
+                                .ok();
                         }
+
+                        _ => {}
                     },
                 )
                 .detach();
@@ -1681,7 +1680,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
         "Color Mix"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(ColorMixNode, cx)
     }
 
@@ -1736,7 +1735,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
         "Texture Size"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(TextureSizeNode, cx)
     }
 
@@ -1831,7 +1830,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         GraphFunctionNodeState { id: None }
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(GraphFunctionNode, cx)
     }
 
@@ -1849,6 +1848,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         };
 
         func.graph
+            .read(ctx.cx)
             .signature()
             .inputs
             .iter()
@@ -1875,6 +1875,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         };
 
         func.graph
+            .read(ctx.cx)
             .signature()
             .outputs
             .iter()
@@ -1889,7 +1890,6 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
         let all_refs = ctx
             .resources
             .functions
@@ -1904,6 +1904,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             .iter()
             .position(|r| Some(&r.id) == state.id.as_ref())
             .map(|i| IndexPath::new(i));
+        let graph = ctx.cx.entity().downgrade();
 
         let select_state = ctx
             .window
@@ -1921,13 +1922,13 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
                           cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
                             let val = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    state.id = Some(val);
-                                },
-                                cx,
-                            );
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        state.id = Some(val);
+                                    });
+                                })
+                                .ok();
                         }
                         _ => {}
                     },
@@ -1963,6 +1964,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
 
         let (output_idents, code) = func
             .graph
+            .read(ctx.cx)
             .compile(
                 input_idents,
                 GraphVarIdentGenerator::new(format!(
@@ -1971,6 +1973,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
                     UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed)
                 )),
                 ctx.texture_usage,
+                ctx.cx,
             )
             .map_err(|e| GraphNodeCodeGenError::Custom(e.into()))?;
 
@@ -2003,7 +2006,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
 
         let output_values = func
             .graph
-            .run(ctx.data, input_values)
+            .read(ctx.cx)
+            .run(ctx.data, input_values, ctx.cx)
             .map_err(|e| GraphNodeRunError::Custom(e.into()))?;
 
         for (slot_id, output_value) in ctx.outputs.iter().zip(output_values) {
@@ -2034,7 +2038,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         GraphInputNodeState::default()
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(GraphInputNode, cx)
     }
 
@@ -2074,7 +2078,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let input_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -2099,44 +2103,48 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
                 });
 
                 let node_id = ctx.node_id;
-                {
-                    let edits = edits.clone();
-                    cx.subscribe_in(
-                        &name_state,
-                        window,
-                        move |state, input, event: &InputEvent, window, cx| match event {
-                            InputEvent::PressEnter { .. } | InputEvent::Blur => {
-                                let name = input.read(cx).value();
-                                edits.update_node_state::<Self, _>(
-                                    node_id,
-                                    move |state| {
-                                        state.name = name.into();
-                                    },
-                                    cx,
-                                );
-                            }
-                            InputEvent::Change | InputEvent::Focus => {}
-                        },
-                    )
-                    .detach();
-                }
-                cx.subscribe_in(
-                    &ty_state,
-                    window,
+                cx.subscribe_in(&name_state, window, {
+                    let node_id = node_id.clone();
+                    let graph = graph.clone();
+                    move |state, input, event: &InputEvent, window, cx| match event {
+                        InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                            let name = input.read(cx).value();
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(
+                                        cx,
+                                        node_id.clone(),
+                                        move |state| {
+                                            state.name = name.into();
+                                        },
+                                    );
+                                })
+                                .ok();
+                        }
+                        InputEvent::Change | InputEvent::Focus => {}
+                    }
+                })
+                .detach();
+                cx.subscribe_in(&ty_state, window, {
+                    let node_id = node_id.clone();
                     move |state, select, event: &SelectEvent<_>, window, cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
                             let val = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    state.ty = Some(val);
-                                },
-                                cx,
-                            );
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(
+                                        cx,
+                                        node_id.clone(),
+                                        move |state| {
+                                            state.ty = Some(val);
+                                        },
+                                    );
+                                })
+                                .ok();
                         }
                         _ => {}
-                    },
-                )
+                    }
+                })
                 .detach();
 
                 (name_state, ty_state)
@@ -2182,7 +2190,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         GraphOutputNodeState::default()
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(GraphOutputNode, cx)
     }
 
@@ -2225,7 +2233,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let input_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -2249,45 +2257,48 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
                     )
                 });
 
-                let node_id = ctx.node_id;
-                {
-                    let edits = edits.clone();
-                    cx.subscribe_in(
-                        &name_state,
-                        window,
-                        move |state, input, event: &InputEvent, window, cx| match event {
-                            InputEvent::PressEnter { .. } | InputEvent::Blur => {
-                                let name = input.read(cx).value();
-                                edits.update_node_state::<Self, _>(
-                                    node_id,
-                                    move |state| {
-                                        state.name = name.into();
-                                    },
-                                    cx,
-                                );
-                            }
-                            InputEvent::Change | InputEvent::Focus => {}
-                        },
-                    )
-                    .detach();
-                }
-                cx.subscribe_in(
-                    &ty_state,
-                    window,
+                cx.subscribe_in(&name_state, window, {
+                    let graph = graph.clone();
+                    let node_id = ctx.node_id;
+                    move |state, input, event: &InputEvent, window, cx| match event {
+                        InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                            let name = input.read(cx).value();
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(
+                                        cx,
+                                        node_id.clone(),
+                                        move |state| {
+                                            state.name = name.into();
+                                        },
+                                    );
+                                })
+                                .ok();
+                        }
+                        InputEvent::Change | InputEvent::Focus => {}
+                    }
+                })
+                .detach();
+                cx.subscribe_in(&ty_state, window, {
+                    let node_id = ctx.node_id;
                     move |state, select, event: &SelectEvent<_>, window, cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
                             let val = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    state.ty = Some(val);
-                                },
-                                cx,
-                            );
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(
+                                        cx,
+                                        node_id.clone(),
+                                        move |state| {
+                                            state.ty = Some(val);
+                                        },
+                                    );
+                                })
+                                .ok();
                         }
                         _ => {}
-                    },
-                )
+                    }
+                })
                 .detach();
 
                 (name_state, ty_state)
@@ -2341,7 +2352,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         "External Variable"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(ExternalVariableNode, cx)
     }
 
@@ -2418,7 +2429,6 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
         let all_refs = ctx
             .resources
             .external_vars
@@ -2436,33 +2446,32 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
                 .map(IndexPath::new)
         });
 
+        let graph = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
                 let state = cx.new(|cx| SelectState::new(all_refs.clone(), selected, window, cx));
 
                 let node_id = ctx.node_id;
-                cx.subscribe_in(
-                    &state,
-                    window,
-                    move |state: &mut Entity<SelectState<_>>,
-                          select,
-                          event: &SelectEvent<_>,
-                          window,
-                          cx| match event {
+                cx.subscribe_in(&state, window, {
+                    let node_id = node_id.clone();
+                    move |state, select, event: &SelectEvent<_>, window, cx| match event {
                         SelectEvent::Confirm(Some(val)) => {
-                            let val = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    *state = Some(val);
-                                },
-                                cx,
-                            );
+                            graph
+                                .update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(
+                                        cx,
+                                        node_id.clone(),
+                                        move |state| {
+                                            *state = Some(*val);
+                                        },
+                                    );
+                                })
+                                .ok();
                         }
                         _ => {}
-                    },
-                )
+                    }
+                })
                 .detach();
 
                 state
@@ -2527,7 +2536,7 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         Default::default()
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(CurveNode, cx)
     }
 
@@ -2552,7 +2561,7 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let edit_state: Entity<Entity<_>> =
             ctx.window
                 .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -2560,23 +2569,20 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
                         CurveEditState::new(CubicCurve::new(state.control_points.clone()), cx)
                     });
 
-                    cx.subscribe_in(
-                        &state,
-                        window,
+                    cx.subscribe_in(&state, window, {
+                        let node_id = ctx.node_id;
                         move |_, edit, event: &CurveEditEvent, window, cx| match event {
                             CurveEditEvent::ControlPointsChanged => {
                                 let edit = edit.read(cx);
                                 let control_points = edit.value().control_points().to_vec();
-                                edits.update_node_state::<Self, _>(
-                                    ctx.node_id,
-                                    move |state| {
+                                graph.update(cx, |graph, cx| {
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
                                         state.control_points = control_points;
-                                    },
-                                    cx,
-                                );
+                                    });
+                                });
                             }
-                        },
-                    )
+                        }
+                    })
                     .detach();
 
                     state
@@ -2700,7 +2706,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
         "Random Number"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(RandomNode, cx)
     }
 

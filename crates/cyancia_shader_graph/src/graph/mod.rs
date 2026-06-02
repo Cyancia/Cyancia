@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use gpui::Point;
+use gpui::{App, Context, Point};
 use indexmap::IndexMap;
 use parking_lot::{RwLock, RwLockReadGuard};
 use uuid::Uuid;
@@ -22,7 +22,7 @@ use crate::graph::{
         GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
     },
     texture::{GraphTextureStorage, GraphTextureUsageRecorder},
-    variable::{GraphLiteral, GraphTypeRegistry, GraphVariable},
+    variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
 };
 
 pub mod external;
@@ -57,9 +57,10 @@ impl<Data: GraphData> Graph<Data> {
         &mut self,
         position: Point<f32>,
         node: Box<dyn ErasedGraphNode<Data>>,
+        cx: &mut App,
     ) -> GraphNodeId {
         let node_id = GraphNodeId::new(Uuid::new_v4());
-        self.insert_boxed_node(node_id, position, node);
+        self.insert_boxed_node(node_id, position, node, cx);
         node_id
     }
 
@@ -68,6 +69,7 @@ impl<Data: GraphData> Graph<Data> {
         node_id: GraphNodeId,
         position: Point<f32>,
         node: Box<dyn ErasedGraphNode<Data>>,
+        cx: &mut App,
     ) {
         let node = StatefulGraphNode::new(node);
         let inputs = create_input_slots(
@@ -76,6 +78,7 @@ impl<Data: GraphData> Graph<Data> {
             node.create_inputs(GraphNodeCreateSlotsContext {
                 resources: &self.resources,
                 type_registry: &self.type_registry,
+                cx,
             }),
         )
         .into();
@@ -85,6 +88,7 @@ impl<Data: GraphData> Graph<Data> {
             node.create_outputs(GraphNodeCreateSlotsContext {
                 resources: &self.resources,
                 type_registry: &self.type_registry,
+                cx,
             }),
         )
         .into();
@@ -101,8 +105,13 @@ impl<Data: GraphData> Graph<Data> {
         self.invalidate_cache();
     }
 
-    pub fn add_node<T: GraphNode<Data>>(&mut self, position: Point<f32>, node: T) -> GraphNodeId {
-        self.add_boxed_node(position, Box::new(node))
+    pub fn add_node<T: GraphNode<Data>>(
+        &mut self,
+        position: Point<f32>,
+        node: T,
+        cx: &mut App,
+    ) -> GraphNodeId {
+        self.add_boxed_node(position, Box::new(node), cx)
     }
 
     pub fn delete_node(&mut self, id: &GraphNodeId) {
@@ -200,8 +209,9 @@ impl<Data: GraphData> Graph<Data> {
 
     pub fn update_node_state<T: GraphNode<Data>>(
         &mut self,
+        cx: &mut App,
         node_id: GraphNodeId,
-        mut f: impl FnOnce(&mut T::State),
+        f: impl FnOnce(&mut T::State),
     ) {
         if let Some(state) = self
             .nodes
@@ -209,7 +219,13 @@ impl<Data: GraphData> Graph<Data> {
             .and_then(|n| n.data.state_mut::<T>())
         {
             f(state);
-            self.reconcile_node_slots(node_id);
+            self.reconcile_node_slots(node_id, cx);
+        }
+    }
+
+    pub fn set_slot_value(&mut self, slot_id: GraphInputSlotId, value: Box<dyn GraphLiteralValue>) {
+        if let Some(slot) = self.slots.inputs.get_mut(&slot_id) {
+            slot.data.set_boxed(value);
         }
     }
 
@@ -363,7 +379,7 @@ impl<Data: GraphData> Graph<Data> {
         self.cached_signature.write().replace(signature);
     }
 
-    pub fn reconcile_node_slots(&mut self, node_id: GraphNodeId) {
+    pub fn reconcile_node_slots(&mut self, node_id: GraphNodeId, cx: &mut App) {
         let Some(node) = self.nodes.get_mut(&node_id) else {
             return;
         };
@@ -371,6 +387,7 @@ impl<Data: GraphData> Graph<Data> {
         let new_input_defs = node.data.create_inputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
             type_registry: &self.type_registry,
+            cx,
         });
         let mut new_input_ids = Vec::with_capacity(new_input_defs.len());
         let mut old_input_ids = node.inputs.to_vec();
@@ -424,6 +441,7 @@ impl<Data: GraphData> Graph<Data> {
         let new_output_defs = node.data.create_outputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
             type_registry: &self.type_registry,
+            cx,
         });
         let mut new_output_ids = Vec::with_capacity(new_output_defs.len());
         let mut old_output_ids = node.outputs.to_vec();
@@ -489,6 +507,7 @@ impl<Data: GraphData> Graph<Data> {
         graph_input_idents: Vec<String>,
         mut ident_generator: GraphVarIdentGenerator,
         texture_usage: &mut GraphTextureUsageRecorder,
+        cx: &App,
     ) -> Result<(Vec<String>, String), GraphCompileError> {
         if self.cached_run_order.read().is_none() {
             self.update_run_order_cache();
@@ -527,6 +546,7 @@ impl<Data: GraphData> Graph<Data> {
                 resources: &self.resources,
                 type_registry: &self.type_registry,
                 texture_usage,
+                cx,
             };
 
             match node.data.generate_code(context) {
@@ -569,6 +589,7 @@ impl<Data: GraphData> Graph<Data> {
         &self,
         data: &Data,
         graph_input_values: Vec<GraphLiteral>,
+        cx: &App,
     ) -> Result<Vec<GraphLiteral>, GraphRunError> {
         if self.cached_run_order.read().is_none() {
             self.update_run_order_cache();
@@ -605,6 +626,7 @@ impl<Data: GraphData> Graph<Data> {
                 output_storage: &mut output_storage,
                 resources: &self.resources,
                 type_registry: &self.type_registry,
+                cx,
             };
 
             match node.data.run(context) {

@@ -101,7 +101,7 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPositionNode {
         "Pen Position"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(PenPositionNode, cx)
     }
 
@@ -147,7 +147,7 @@ impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
         "Draw Direction"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(DrawDirectionNode, cx)
     }
 
@@ -198,7 +198,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for PixelPositionNode {
         "Pixel Position"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(PixelPositionNode, cx)
     }
 
@@ -233,7 +233,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
         "Filter Within Mask"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(FilterWithinMaskNode, cx)
     }
 
@@ -330,7 +330,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinBoundsNode 
         "Filter Within Bounds"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(FilterWithinBoundsNode, cx)
     }
 
@@ -388,7 +388,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputColorNode {
         "Output Color"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(OutputColorNode, cx)
     }
 
@@ -433,7 +433,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
         "Output Bounds"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(OutputBoundsNode, cx)
     }
 
@@ -521,7 +521,7 @@ impl<Data: GraphData> GraphNode<Data> for PasteTextureNode {
         Default::default()
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(PasteTextureNode, cx)
     }
 
@@ -552,7 +552,7 @@ impl<Data: GraphData> GraphNode<Data> for PasteTextureNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let select_state = ctx
             .window
             .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
@@ -578,14 +578,15 @@ impl<Data: GraphData> GraphNode<Data> for PasteTextureNode {
                           _window,
                           cx| {
                         if let SelectEvent::Confirm(Some(val)) = event {
-                            let mode = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    state.mode = mode;
-                                },
-                                cx,
-                            );
+                            graph.update(cx, |graph, cx| {
+                                graph.update_node_state::<PasteTextureNode>(
+                                    cx,
+                                    node_id,
+                                    move |state| {
+                                        state.mode = *val;
+                                    },
+                                );
+                            });
                         }
                     },
                 )
@@ -629,7 +630,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CurrentPixelColorNode {
         "Current Pixel Color"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(CurrentPixelColorNode, cx)
     }
 
@@ -671,7 +672,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for LayerPixelColorNode {
         "Layer Pixel Color"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(LayerPixelColorNode, cx)
     }
 
@@ -725,7 +726,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
         }
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(BlendColorNode, cx)
     }
 
@@ -753,7 +754,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let items = BlendMode::ALL.map(BlendModeItem);
         let select_state = ctx
             .window
@@ -780,14 +781,15 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
                           _window,
                           cx| {
                         if let SelectEvent::Confirm(Some(val)) = event {
-                            let blend_mode = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    state.blend_mode = blend_mode;
-                                },
-                                cx,
-                            );
+                            graph.update(cx, |graph, cx| {
+                                graph.update_node_state::<BlendColorNode>(
+                                    cx,
+                                    node_id,
+                                    move |state| {
+                                        state.blend_mode = *val;
+                                    },
+                                );
+                            });
                         }
                     },
                 )
@@ -827,7 +829,7 @@ impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
         "Stroke Bounds"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(StrokeBoundsNode, cx)
     }
 
@@ -879,7 +881,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
         "Elliptical Mask"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(EllipticalMaskNode, cx)
     }
 
@@ -956,7 +958,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithInputNode {
         }
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(BlendWithInputNode, cx)
     }
 
@@ -984,7 +986,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithInputNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let items = BlendMode::ALL.map(BlendModeItem);
         let select_state = ctx
             .window
@@ -1011,14 +1013,15 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithInputNode {
                           _window,
                           cx| {
                         if let SelectEvent::Confirm(Some(val)) = event {
-                            let blend_mode = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    state.blend_mode = blend_mode;
-                                },
-                                cx,
-                            );
+                            graph.update(cx, |graph, cx| {
+                                graph.update_node_state::<BlendColorNode>(
+                                    cx,
+                                    node_id,
+                                    move |state| {
+                                        state.blend_mode = *val;
+                                    },
+                                );
+                            });
                         }
                     },
                 )
@@ -1067,7 +1070,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
         }
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(BlendWithLayerNode, cx)
     }
 
@@ -1095,7 +1098,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let edits = ctx.edits.clone();
+        let graph = ctx.cx.entity().downgrade();
         let items = BlendMode::ALL.map(BlendModeItem);
         let select_state = ctx
             .window
@@ -1122,14 +1125,15 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
                           _window,
                           cx| {
                         if let SelectEvent::Confirm(Some(val)) = event {
-                            let blend_mode = *val;
-                            edits.update_node_state::<Self, _>(
-                                node_id,
-                                move |state| {
-                                    state.blend_mode = blend_mode;
-                                },
-                                cx,
-                            );
+                            graph.update(cx, |graph, cx| {
+                                graph.update_node_state::<BlendColorNode>(
+                                    cx,
+                                    node_id,
+                                    move |state| {
+                                        state.blend_mode = *val;
+                                    },
+                                );
+                            });
                         }
                     },
                 )
@@ -1166,7 +1170,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputSpacingNode {
         "Output Spacing"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(OutputSpacingNode, cx)
     }
 
@@ -1209,7 +1213,7 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for PenPositionsNode {
         "Pen Positions"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(PenPositionsNode, cx)
     }
 
@@ -1263,7 +1267,7 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for DrawDirectionsNode {
         "Draw Directions"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(DrawDirectionsNode, cx)
     }
 
@@ -1325,7 +1329,7 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for TimesNode {
         "Times"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(TimesNode, cx)
     }
 
@@ -1387,7 +1391,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputRequiredSpacingNo
         "Output Required Spacing"
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         random_oklch!(OutputRequiredSpacingNode, cx)
     }
 

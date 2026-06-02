@@ -130,7 +130,7 @@ pub struct GraphOutputSlotData {
 
 pub trait GraphValueType: Send + Sync + 'static + DynClone {
     type AssociatedLiteralType: GraphLiteralValue + Serialize + DeserializeOwned;
-    fn color(&self, cx: &mut App) -> Rgba;
+    fn color(&self, cx: &App) -> Rgba;
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Self::AssociatedLiteralType;
     fn wgsl_type(&self) -> Option<&'static str>;
@@ -159,7 +159,7 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
 }
 
 pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
-    fn color(&self, cx: &mut App) -> Rgba;
+    fn color(&self, cx: &App) -> Rgba;
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Box<dyn GraphLiteralValue>;
     fn wgsl_type(&self) -> Option<&'static str>;
@@ -184,7 +184,7 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
 dyn_clone::clone_trait_object!(ErasedGraphValueType);
 
 impl<T: GraphValueType> ErasedGraphValueType for T {
-    fn color(&self, cx: &mut App) -> Rgba {
+    fn color(&self, cx: &App) -> Rgba {
         self.color(cx)
     }
 

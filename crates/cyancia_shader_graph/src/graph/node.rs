@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::{hash_map::Entry, BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, hash_map::Entry},
     convert::identity,
     rc::Rc,
     sync::Arc,
@@ -9,17 +9,18 @@ use std::{
 use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, Context, Hsla, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Pixels, Point, Rgba, Styled, Window,
+    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Pixels, Point, Rgba, Styled, WeakEntity, Window, div, prelude::FluentBuilder, px,
 };
-use gpui_component::{text, ElementExt};
+use gpui_component::{ElementExt, text};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    editor::{GraphEditSink, GraphEditor},
+    editor::GraphEditor,
     graph::{
+        Graph, GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
             GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInlineLiteralRenderContext,
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
@@ -27,7 +28,6 @@ use crate::{
         },
         texture::{GraphTextureStorage, GraphTextureUsageRecorder},
         variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
-        GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
     },
     save::GraphSerializable,
 };
@@ -43,7 +43,7 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     type State: Send + Sync + 'static + GraphSerializable;
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Self::State;
-    fn header_color(&self, cx: &mut App) -> Rgba;
+    fn header_color(&self, cx: &App) -> Rgba;
     fn create_inputs(
         &self,
         state: &Self::State,
@@ -94,7 +94,7 @@ pub struct ErasedGraphNodeMessage {
 pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_state(&self) -> Box<dyn Any + Send + Sync>;
-    fn header_color(&self, cx: &mut App) -> Rgba;
+    fn header_color(&self, cx: &App) -> Rgba;
     fn create_inputs(
         &self,
         state: &Box<dyn Any + Send + Sync>,
@@ -147,7 +147,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
         Box::new(self.default_state())
     }
 
-    fn header_color(&self, cx: &mut App) -> Rgba {
+    fn header_color(&self, cx: &App) -> Rgba {
         self.header_color(cx)
     }
 
@@ -262,7 +262,7 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         self.data.name()
     }
 
-    pub fn header_color(&self, cx: &mut App) -> Rgba {
+    pub fn header_color(&self, cx: &App) -> Rgba {
         self.data.header_color(cx)
     }
 
@@ -322,7 +322,7 @@ pub struct StatelessState {
 
 pub trait StatelessCommonGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
-    fn header_color(&self, cx: &mut App) -> Rgba;
+    fn header_color(&self, cx: &App) -> Rgba;
     fn create_inputs(
         &self,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
@@ -355,9 +355,9 @@ impl<Data: GraphData> GraphNodeData<Data> {
         graph_slots: &GraphSlots,
         resources: &GraphResources<Data>,
         type_registry: &GraphTypeRegistry,
-        edits: GraphEditSink<Data>,
+        editor: WeakEntity<GraphEditor<Data>>,
         window: &mut Window,
-        cx: &mut Context<'_, GraphEditor>,
+        cx: &mut Context<'_, Graph<Data>>,
     ) -> AnyElement {
         self.data.render(GraphNodeRenderContext {
             node_id,
@@ -366,7 +366,7 @@ impl<Data: GraphData> GraphNodeData<Data> {
             graph_slots,
             resources,
             type_registry,
-            edits,
+            editor,
             window,
             cx,
         })
@@ -376,6 +376,7 @@ impl<Data: GraphData> GraphNodeData<Data> {
 pub struct GraphNodeCreateSlotsContext<'a, Data: GraphData> {
     pub resources: &'a GraphResources<Data>,
     pub type_registry: &'a GraphTypeRegistry,
+    pub cx: &'a App,
 }
 
 pub struct GraphNodeUpdateSignatureContext<'a, Data: GraphData> {
@@ -424,9 +425,9 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
     pub graph_slots: &'a GraphSlots,
     pub resources: &'a GraphResources<Data>,
     pub type_registry: &'a GraphTypeRegistry,
-    pub edits: GraphEditSink<Data>,
+    pub editor: WeakEntity<GraphEditor<Data>>,
     pub window: &'a mut Window,
-    pub cx: &'a mut Context<'app, GraphEditor>,
+    pub cx: &'a mut Context<'app, Graph<Data>>,
 }
 
 const NODE_HEADER_GAP: Pixels = px(2.0);
@@ -491,7 +492,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                         .min_h(SLOT_DOT_SIZE)
                         .rounded(SLOT_DOT_RADIUS)
                         .on_prepaint({
-                            let editor = self.cx.entity().downgrade();
+                            let editor = self.editor.clone();
                             move |bounds, window, cx| {
                                 editor.update(cx, |editor, cx| {
                                     editor.add_input_slot_pos(slot_id, bounds.center());
@@ -501,16 +502,20 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                 )
                 .child(div().text_sm().child(slot.name.clone()))
                 .when(slot.connected.is_none(), |d| {
-                    let edits = self.edits.clone();
                     d.child(slot.data.ty().render_inline(
                         slot.data.value(),
                         GraphInlineLiteralRenderContext {
                             slot_id,
                             window: self.window,
-                            cx: self.cx,
-                            on_update: Rc::new(move |value, cx| {
-                                edits.update_slot_value(slot_id, value, cx);
+                            on_update: Rc::new({
+                                let graph = self.cx.entity().downgrade();
+                                move |value, cx| {
+                                    graph.update(cx, |graph, cx| {
+                                        graph.set_slot_value(slot_id, value);
+                                    });
+                                }
                             }),
+                            cx: self.cx,
                         },
                     ))
                 })
@@ -537,7 +542,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                         .min_h(SLOT_DOT_SIZE)
                         .rounded(SLOT_DOT_RADIUS)
                         .on_prepaint({
-                            let editor = self.cx.entity().downgrade();
+                            let editor = self.editor.clone();
                             move |bounds, window, cx| {
                                 editor.update(cx, |editor, cx| {
                                     editor.add_output_slot_pos(slot_id, bounds.center());
@@ -558,6 +563,7 @@ pub struct GraphNodeRunContext<'a, Data: GraphData> {
     pub output_storage: &'a mut HashMap<GraphOutputSlotId, GraphLiteral>,
     pub resources: &'a GraphResources<Data>,
     pub type_registry: &'a GraphTypeRegistry,
+    pub cx: &'a App,
 }
 
 impl<'a, Data: GraphData> GraphNodeRunContext<'a, Data> {
@@ -665,6 +671,7 @@ pub struct GraphNodeCodeGenContext<'a, Data: GraphData> {
     pub resources: &'a GraphResources<Data>,
     pub type_registry: &'a GraphTypeRegistry,
     pub texture_usage: &'a mut GraphTextureUsageRecorder,
+    pub cx: &'a App,
 }
 
 impl<Data: GraphData> GraphNodeCodeGenContext<'_, Data> {

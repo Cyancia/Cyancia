@@ -1,6 +1,7 @@
 use cyancia_math::curve::CubicBezierCurve;
 use cyancia_shader_graph::graph::Graph;
 use glam::Vec2;
+use gpui::App;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::render::{ComputedPenInput, Time, graph::BrushGraphData};
@@ -52,6 +53,7 @@ impl InputProcessor {
         &mut self,
         input: RawPenInput,
         required_spacing: &Graph<BrushGraphData>,
+        cx: &App,
     ) -> Vec<ComputedPenInput> {
         self.samples.enqueue(input);
 
@@ -102,7 +104,7 @@ impl InputProcessor {
         }
 
         let mid_sample = compute_pen_input(&curve, 0.5, &from, &to);
-        let spacing = compute_required_spacing(mid_sample, required_spacing);
+        let spacing = compute_required_spacing(mid_sample, required_spacing, cx);
 
         if total_arc < 0.0001 || spacing <= 0.0 {
             return Vec::new();
@@ -136,11 +138,12 @@ impl InputProcessor {
         &mut self,
         final_input: RawPenInput,
         required_spacing: &Graph<BrushGraphData>,
+        cx: &App,
     ) -> Vec<ComputedPenInput> {
         let steps = self.stabilizer.convergence_steps();
         let mut result = Vec::new();
         for _ in 0..steps {
-            result.extend(self.push(final_input, required_spacing));
+            result.extend(self.push(final_input, required_spacing, cx));
         }
         result
     }
@@ -237,9 +240,13 @@ fn arc_length_to_t(arc_table: &[(f32, f32)], arc: f32) -> f32 {
     t0 + (t1 - t0) * (arc - a0) / (a1 - a0)
 }
 
-fn compute_required_spacing(sample: ComputedPenInput, graph: &Graph<BrushGraphData>) -> f32 {
+fn compute_required_spacing(
+    sample: ComputedPenInput,
+    graph: &Graph<BrushGraphData>,
+    cx: &App,
+) -> f32 {
     let output = graph
-        .run(&BrushGraphData { pen_input: sample }, Vec::new())
+        .run(&BrushGraphData { pen_input: sample }, Vec::new(), cx)
         .unwrap();
 
     assert!(

@@ -31,7 +31,7 @@ macro_rules! random_oklch {
     }};
 }
 
-pub fn themed_oklch(c: f32, h: f32, cx: &mut App) -> Rgba {
+pub fn themed_oklch(c: f32, h: f32, cx: &App) -> Rgba {
     let l = if Theme::global(cx).is_dark() {
         0.4
     } else {

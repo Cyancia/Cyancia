@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use cyancia_assets::asset::AssetId;
 use cyancia_utils::wrapper;
+use gpui::Entity;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -21,7 +22,7 @@ pub struct GraphFunction<Data: GraphData> {
     pub asset_id: Option<AssetId<SerializableGraphFunction>>,
     pub id: GraphFunctionId,
     pub name: String,
-    pub graph: Graph<Data>,
+    pub graph: Entity<Graph<Data>>,
 }
 
 #[derive(Default)]

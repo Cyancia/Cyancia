@@ -32,7 +32,7 @@ pub struct F32Type;
 impl GraphValueType for F32Type {
     type AssociatedLiteralType = f32;
 
-    fn color(&self, cx: &mut App) -> Rgba {
+    fn color(&self, cx: &App) -> Rgba {
         random_oklch!(F32Type, cx)
     }
 
@@ -88,7 +88,7 @@ pub enum Vec2FMessage {
 impl GraphValueType for Vec2FType {
     type AssociatedLiteralType = Vec2;
 
-    fn color(&self, cx: &mut App) -> Rgba {
+    fn color(&self, cx: &App) -> Rgba {
         random_oklch!(Vec2FType, cx)
     }
 
@@ -154,7 +154,7 @@ pub enum ColorMessage {
 impl GraphValueType for ColorType {
     type AssociatedLiteralType = Vec4;
 
-    fn color(&self, cx: &mut App) -> Rgba {
+    fn color(&self, cx: &App) -> Rgba {
         random_oklch!(ColorType, cx)
     }
 
@@ -252,7 +252,7 @@ impl TextureReference {
 impl GraphValueType for TextureType {
     type AssociatedLiteralType = TextureReference;
 
-    fn color(&self, cx: &mut App) -> Rgba {
+    fn color(&self, cx: &App) -> Rgba {
         random_oklch!(TextureType, cx)
     }
 
@@ -302,7 +302,7 @@ pub enum RectMessage {
 impl GraphValueType for RectType {
     type AssociatedLiteralType = Rect;
 
-    fn color(&self, cx: &mut App) -> Rgba {
+    fn color(&self, cx: &App) -> Rgba {
         random_oklch!(RectType, cx)
     }
 
