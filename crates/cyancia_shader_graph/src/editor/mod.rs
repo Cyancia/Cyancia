@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-    rc::Rc, sync::Arc,
+    rc::Rc,
+    sync::Arc,
 };
 
 use cyancia_math::point::PointExt;
@@ -628,12 +629,21 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                             return;
                         }
 
-                        editor
+                        let should_stop_propagation = editor
                             .update(cx, |editor, cx| {
+                                let is_handling_editor_interaction =
+                                    editor.node_drag_state.is_some()
+                                        || editor.slot_connect_state.is_some()
+                                        || editor.marquee_state.is_some()
+                                        || editor.pan_state.is_some();
                                 editor.on_mouse_move(event, window, cx);
+                                is_handling_editor_interaction
                             })
-                            .ok();
-                        cx.stop_propagation();
+                            .unwrap_or(false);
+
+                        if should_stop_propagation {
+                            cx.stop_propagation();
+                        }
                     }
                 });
 
@@ -674,6 +684,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
         .size_full();
 
         let all_nodes = self.node_registry.all().keys().cloned().collect::<Vec<_>>();
+        let focus_handle = self.focus_handle.clone();
         div()
             .w_full()
             .h_full()
@@ -747,17 +758,24 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
             })
             .context_menu(move |menu, window, cx| {
                 let all_nodes = all_nodes.clone();
-                menu.submenu("Add Node", window, cx, move |mut menu, window, cx| {
-                    for node in all_nodes.iter() {
-                        menu = menu.menu(
-                            *node,
-                            Box::new(AddNodeAction {
-                                name: (*node).into(),
-                            }),
-                        )
-                    }
-                    menu
-                })
+                let submenu_focus_handle = focus_handle.clone();
+                menu.action_context(focus_handle.clone()).submenu(
+                    "Add Node",
+                    window,
+                    cx,
+                    move |mut menu, _window, _cx| {
+                        menu = menu.action_context(submenu_focus_handle.clone());
+                        for node in all_nodes.iter() {
+                            menu = menu.menu(
+                                *node,
+                                Box::new(AddNodeAction {
+                                    name: (*node).into(),
+                                }),
+                            )
+                        }
+                        menu
+                    },
+                )
             })
             .into_any_element()
     }
