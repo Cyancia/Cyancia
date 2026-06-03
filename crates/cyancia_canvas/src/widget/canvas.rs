@@ -28,6 +28,8 @@ use crate::{CCanvas, CanvasAppExt, CanvasId, event::CanvasUpdated, render::Canva
 //       the brush tool is not. All of them is recompositing the entire image on tool update.
 //       So probably, wait for gpui use wgpu on windows, so we can draw the texture directly onto
 //       the window surface, and that might fixes.
+//
+//       Edit: But it works in release build, okay nevermind.
 pub struct CanvasWidget {
     canvas_id: CanvasId,
     tool_proxy_id: ToolProxyId,
