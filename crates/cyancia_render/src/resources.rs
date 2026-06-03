@@ -112,7 +112,7 @@ impl FullscreenVertex {
     pub fn new(device: &Device) -> Self {
         let fullscreen_vertex = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fullscreen vertex shader"),
-            source: ShaderSource::Wgsl(include_shader!("fullscreen_vertex.wgsl").into()),
+            source: ShaderSource::Wgsl(include_str!("shaders/fullscreen_vertex.wgsl").into()),
         });
 
         Self {
