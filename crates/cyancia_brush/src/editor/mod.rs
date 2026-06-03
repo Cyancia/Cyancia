@@ -579,7 +579,6 @@ impl Render for BrushEditor {
             );
 
         let editor = if let Some(selected) = &self.selected {
-            let parent = cx.entity().downgrade();
             let title_widget = h_flex()
                 .gap_2()
                 .child("Name")
@@ -701,7 +700,10 @@ impl Render for BrushEditor {
                                         slot_id: (*id).into(),
                                         window,
                                         cx,
-                                        on_update: Rc::new(move |value, cx| todo!()),
+                                        on_update: Rc::new(move |value, cx| {
+                                            let Some(op) = cx.global_mut::<CurrentBrushPresetOperator>().as_mut() else { return; };
+                                            op.instance_mut().update_external_var(&id, value);
+                                        }),
                                     },
                                 ))
                         });
