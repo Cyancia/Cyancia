@@ -32,8 +32,9 @@ use cyancia_shader_graph::{
     },
 };
 use gpui::{
-    Action, App, AppContext, Axis, BorrowAppContext, Context, Entity, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Render, Styled, Window, actions, div, px, relative,
+    Action, App, AppContext, Axis, BorrowAppContext, ClickEvent, Context, Entity,
+    InteractiveElement, IntoElement, KeyBinding, MouseClickEvent, ParentElement, Render, Styled,
+    Window, actions, div, px, relative,
 };
 use gpui_component::{
     IconName, IndexPath, Selectable, Sizable,
@@ -43,7 +44,7 @@ use gpui_component::{
     h_flex,
     input::{Input, InputEvent, InputState},
     list::{List, ListDelegate, ListEvent, ListState},
-    menu::{ContextMenuExt, DropdownMenu, PopupMenuItem},
+    menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem},
     scroll::ScrollableElement,
     select::{SearchableVec, Select, SelectState},
     v_flex,
@@ -443,6 +444,448 @@ impl BrushEditor {
 
         log::info!("Saved current item.")
     }
+
+    fn on_new_item(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match self.pane_selection {
+            PaneSelection::Brush => {
+                let new_brush = BrushPreset {
+                    metadata: BrushPresetMetadata {
+                        name: "[Unnamed Brush]".to_string(),
+                    },
+                    required_spacing_graph: SerializableGraph::default(),
+                    main_graph: SerializableGraph::default(),
+                    stroke_postprocess_graphs: Vec::new(),
+                    external_vars: Vec::new(),
+                };
+                let new_brush = Arc::new(new_brush);
+                let assets = cx.assets();
+                let id = assets
+                    .add_asset(
+                        // TODO
+                        BundleId::new(
+                            Uuid::from_str("b92c20f6-8cdb-42b8-efae-a92705efd029").unwrap(),
+                        ),
+                        "unnamed_brush.cbp".to_string(),
+                        new_brush.clone(),
+                    )
+                    .unwrap();
+                let handle = assets.handle(id).unwrap();
+
+                let (instance, err) = BrushPresetInstance::from_asset(
+                    &handle,
+                    self.texture_storage.clone(),
+                    self.main_function_storage.clone(),
+                    self.stroke_pp_function_storage.clone(),
+                    cx,
+                );
+                let Some(instance) = instance else {
+                    return;
+                };
+
+                let render_context = cx.global::<RenderContext>();
+                let op = BrushPresetOperator::new(
+                    instance,
+                    render_context.device.clone(),
+                    render_context.queue.clone(),
+                    Default::default(),
+                );
+                cx.set_global(CurrentBrushPresetOperator::new(Some(op)));
+                self.selected = Some(Selected::Brush(SelectedBrush {
+                    viewing_graph: BrushPresetGraph::Main,
+                }));
+                self.saved_runtime_revision = 0;
+            }
+            PaneSelection::Function => {
+                let id = GraphFunctionId::new(Uuid::new_v4());
+                self.selected = Some(Selected::Function(SelectedFunction {
+                    asset_id: None,
+                    id,
+                    instance: GraphFunctionInstance::new(GraphFunction {
+                        asset_id: None,
+                        id,
+                        name: "[Unnamed Function]".to_string(),
+                        graph: cx.new(|_| {
+                            Graph::new(
+                                GraphResources {
+                                    functions: self.main_function_storage.clone(),
+                                    ..Default::default()
+                                },
+                                FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
+                            )
+                        }),
+                    }),
+                }));
+                self.saved_runtime_revision = 0;
+            }
+        }
+    }
+
+    fn on_new_external_variable(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(Selected::Brush(_)) = self.selected.as_ref() else {
+            return;
+        };
+
+        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
+            let Some(brush) = op.as_mut() else {
+                return;
+            };
+
+            let Some(ty) = self
+                .new_ext_var_type_select_state
+                .read(cx)
+                .selected_value()
+                .and_then(|ty_name| {
+                    brush
+                        .instance()
+                        .main_graph()
+                        .read(cx)
+                        .type_registry()
+                        .get_type(*ty_name)
+                })
+            else {
+                return;
+            };
+
+            let id = ExternalVariableId::new(Uuid::new_v4());
+            let value = GraphLiteral::new_boxed(ty.default_literal(), ty.clone());
+
+            let Some(name) = self.new_ext_var_name_input_state.update(cx, |state, cx| {
+                let name = state.value();
+                if name.is_empty() {
+                    return None;
+                }
+                state.set_value("", window, cx);
+                Some(name)
+            }) else {
+                return;
+            };
+
+            brush.instance_mut().insert_external_var(ExternalVariable {
+                id,
+                name: name.into(),
+                value,
+            });
+        });
+    }
+
+    fn render_brush_extra_panes(
+        &self,
+        instance: &BrushPresetInstance,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let ext_vars = instance.iter_external_vars().map(|(id, var)| {
+            let is_renaming = self.renaming_ext_var == Some(id);
+            let name = var.name.clone();
+            let name_row = if is_renaming {
+                h_flex()
+                    .gap_1()
+                    .child(Input::new(&self.rename_ext_var_input_state).flex_1())
+                    .child(
+                        Button::new(format!("confirm-external-variable-rename-button-{}", id))
+                            .icon(IconName::Check)
+                            .on_click(cx.listener(move |editor, _, window, cx| {
+                                editor.confirm_external_var_rename(id, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new(format!("cancel-external-variable-rename-button-{}", id))
+                            .icon(IconName::Close)
+                            .on_click(cx.listener(move |editor, _, window, cx| {
+                                editor.renaming_ext_var = None;
+                            })),
+                    )
+                    .into_any_element()
+            } else {
+                let drop_down = {
+                    let editor = cx.entity().downgrade();
+                    let name = name.clone();
+                    move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
+                        menu.item(PopupMenuItem::new("Rename").on_click({
+                            let editor = editor.clone();
+                            let name = name.clone();
+                            move |_, window, cx| {
+                                let _ = editor.update(cx, |editor, cx| {
+                                    editor.renaming_ext_var = Some(id);
+                                    editor.rename_ext_var_input_state.update(cx, |state, cx| {
+                                        state.set_value(name.clone(), window, cx);
+                                    });
+                                    cx.notify();
+                                });
+                            }
+                        }))
+                        .item(PopupMenuItem::new("Remove").on_click({
+                            let editor = editor.clone();
+                            move |_, _window, cx| {
+                                editor
+                                    .update(cx, |editor, cx| {
+                                        let Some(Selected::Brush(_)) = editor.selected.as_ref()
+                                        else {
+                                            return;
+                                        };
+                                        let Some(brush) =
+                                            cx.global_mut::<CurrentBrushPresetOperator>().as_mut()
+                                        else {
+                                            return;
+                                        };
+
+                                        brush.instance_mut().remove_external_var(&id);
+                                    })
+                                    .ok();
+                            }
+                        }))
+                    }
+                };
+
+                h_flex()
+                    .justify_between()
+                    .child(name.clone())
+                    .child(
+                        Button::new(format!("external-variable-menu-{}", id))
+                            .icon(IconName::Menu)
+                            .dropdown_menu(drop_down),
+                    )
+                    .into_any_element()
+            };
+
+            v_flex()
+                .gap_1()
+                .child(
+                    v_flex().child(name_row).child(
+                        div()
+                            .opacity(0.7)
+                            .italic()
+                            .text_sm()
+                            .child(var.value.ty().name()),
+                    ),
+                )
+                .child(var.value.ty().render_inline(
+                    var.value.value(),
+                    GraphInlineLiteralRenderContext {
+                        slot_id: (*id).into(),
+                        window,
+                        cx,
+                        on_update: Rc::new(move |value, cx| {
+                            let Some(op) = cx.global_mut::<CurrentBrushPresetOperator>().as_mut()
+                            else {
+                                return;
+                            };
+                            op.instance_mut().update_external_var(&id, value);
+                        }),
+                    },
+                ))
+        });
+        let ext_var_panel = v_flex()
+            .w(px(200.0))
+            .overflow_hidden()
+            .child(div().flex_shrink_0().child("External variables"))
+            .child(
+                div().flex_1().overflow_hidden().child(
+                    v_flex()
+                        .size_full()
+                        .gap_1()
+                        .children(ext_vars)
+                        .overflow_y_scrollbar(),
+                ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        v_form()
+                            .label_width(px(70.0))
+                            .layout(Axis::Horizontal)
+                            .child(
+                                field()
+                                    .label("Name")
+                                    .child(Input::new(&self.new_ext_var_name_input_state)),
+                            )
+                            .child(
+                                field()
+                                    .label("Type")
+                                    .child(Select::new(&self.new_ext_var_type_select_state)),
+                            ),
+                    )
+                    .child(
+                        Button::new("create-external-variable-button")
+                            .label("Create")
+                            .on_click(cx.listener(Self::on_new_external_variable)),
+                    ),
+            );
+
+        let graph_switcher = v_flex()
+            .w(px(200.0))
+            .child(
+                Button::new("select-required-spacing-button")
+                    .label("Required Spacing")
+                    .on_click(cx.listener(Self::on_select_required_spacing_graph)),
+            )
+            .child(
+                Button::new("select-main-graph-button")
+                    .label("Main")
+                    .on_click(cx.listener(Self::on_select_main_graph)),
+            )
+            .children(
+                (0..instance.stroke_postprocess_graphs().len()).map(|index| {
+                    let context_menu = {
+                        let editor = cx.entity().downgrade();
+                        move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
+                            menu.item(PopupMenuItem::new("Remove").on_click({
+                                let editor = editor.upgrade().unwrap();
+                                move |_, _, cx| {
+                                    editor.update(cx, |editor, cx| {
+                                        let Some(Selected::Brush(brush)) = &mut editor.selected
+                                        else {
+                                            return;
+                                        };
+
+                                        cx.update_global::<CurrentBrushPresetOperator, _>(
+                                            |op, cx| {
+                                                let Some(op) = op.as_mut() else {
+                                                    return;
+                                                };
+                                                op.instance_mut()
+                                                    .remove_stroke_postprocess_graph(index);
+                                                if brush.viewing_graph
+                                                    == (BrushPresetGraph::StrokePostprocess {
+                                                        index,
+                                                    })
+                                                {
+                                                    let n_pp = op
+                                                        .instance()
+                                                        .stroke_postprocess_graphs()
+                                                        .len();
+                                                    if n_pp == 0 {
+                                                        brush.viewing_graph =
+                                                            BrushPresetGraph::Main;
+                                                    } else {
+                                                        brush.viewing_graph =
+                                                            BrushPresetGraph::StrokePostprocess {
+                                                                index: n_pp - 1,
+                                                            };
+                                                    }
+                                                }
+                                            },
+                                        );
+                                    });
+                                }
+                            }))
+                        }
+                    };
+
+                    Button::new(format!("select-stroke-pp-graph-button-{}", index))
+                        .label(format!("Stroke Postprocess {}", index))
+                        .on_click(cx.listener(move |editor, event, window, cx| {
+                            editor.on_select_stroke_pp_graph(index, event, window, cx);
+                        }))
+                        .context_menu(context_menu)
+                }),
+            )
+            .child(
+                Button::new("new-stroke-pp-graph-button")
+                    .label("New Stroke Postprocess")
+                    .on_click(cx.listener(|editor, _, window, cx| {
+                        let Some(Selected::Brush(brush)) = &mut editor.selected else {
+                            return;
+                        };
+
+                        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
+                            let Some(op) = op.as_mut() else {
+                                return;
+                            };
+
+                            brush.viewing_graph = BrushPresetGraph::StrokePostprocess {
+                                index: op.instance_mut().new_stroke_postprocess_graph(cx),
+                            };
+                        });
+                    })),
+            );
+
+        h_flex()
+            .gap_2()
+            .h_full()
+            .child(graph_switcher.h_full())
+            .child(ext_var_panel.h_full())
+    }
+
+    fn on_select_required_spacing_graph(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
+            let Some(op) = op.as_ref() else {
+                return;
+            };
+
+            if let Some(Selected::Brush(brush)) = &mut self.selected {
+                brush.viewing_graph = BrushPresetGraph::RequiredSpacing;
+                let st = cx.new(|cx| {
+                    GraphEditor::new(
+                        op.instance().required_spacing_graph().clone(),
+                        REQUIRED_SPACING_GRAPH_NODES.clone(),
+                        cx,
+                    )
+                });
+                self.editor_state = Some(EditorState::Main(st));
+            }
+        });
+    }
+
+    fn on_select_main_graph(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
+            let Some(op) = op.as_ref() else {
+                return;
+            };
+
+            if let Some(Selected::Brush(brush)) = &mut self.selected {
+                brush.viewing_graph = BrushPresetGraph::Main;
+                let st = cx.new(|cx| {
+                    GraphEditor::new(
+                        op.instance().main_graph().clone(),
+                        MAIN_GRAPH_NODES.clone(),
+                        cx,
+                    )
+                });
+                self.editor_state = Some(EditorState::Main(st));
+            }
+        });
+    }
+
+    fn on_select_stroke_pp_graph(
+        &mut self,
+        index: usize,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
+            let Some(op) = op.as_ref() else {
+                return;
+            };
+            let Some(graph) = op.instance().stroke_postprocess_graph(index) else {
+                return;
+            };
+            if let Some(Selected::Brush(brush)) = &mut self.selected {
+                brush.viewing_graph = BrushPresetGraph::StrokePostprocess { index };
+                let st = cx.new(|cx| {
+                    GraphEditor::new(graph.clone(), STROKE_POSTPROCESS_GRAPH_NODES.clone(), cx)
+                });
+                self.editor_state = Some(EditorState::Postprocess(st));
+            }
+        });
+    }
 }
 
 impl Render for BrushEditor {
@@ -481,88 +924,7 @@ impl Render for BrushEditor {
                                 PaneSelection::Brush => "New Brush",
                                 PaneSelection::Function => "New Function",
                             })
-                            .on_click(cx.listener(|editor, _, window, cx| {
-                                match editor.pane_selection {
-                                    PaneSelection::Brush => {
-                                        let new_brush = BrushPreset {
-                                            metadata: BrushPresetMetadata {
-                                                name: "[Unnamed Brush]".to_string(),
-                                            },
-                                            required_spacing_graph: SerializableGraph::default(),
-                                            main_graph: SerializableGraph::default(),
-                                            stroke_postprocess_graphs: Vec::new(),
-                                            external_vars: Vec::new(),
-                                        };
-                                        let new_brush = Arc::new(new_brush);
-                                        let assets = cx.assets();
-                                        let id = assets
-                                            .add_asset(
-                                                // TODO
-                                                BundleId::new(
-                                                    Uuid::from_str(
-                                                        "b92c20f6-8cdb-42b8-efae-a92705efd029",
-                                                    )
-                                                    .unwrap(),
-                                                ),
-                                                "unnamed_brush.cbp".to_string(),
-                                                new_brush.clone(),
-                                            )
-                                            .unwrap();
-                                        let handle = assets.handle(id).unwrap();
-
-                                        let (instance, err) = BrushPresetInstance::from_asset(
-                                            &handle,
-                                            editor.texture_storage.clone(),
-                                            editor.main_function_storage.clone(),
-                                            editor.stroke_pp_function_storage.clone(),
-                                            cx,
-                                        );
-                                        let Some(instance) = instance else {
-                                            return;
-                                        };
-
-                                        let render_context = cx.global::<RenderContext>();
-                                        let op = BrushPresetOperator::new(
-                                            instance,
-                                            render_context.device.clone(),
-                                            render_context.queue.clone(),
-                                            Default::default(),
-                                        );
-                                        editor.selected = Some(Selected::Brush(SelectedBrush {
-                                            viewing_graph: BrushPresetGraph::Main,
-                                        }));
-                                        editor.saved_runtime_revision = 0;
-                                    }
-                                    PaneSelection::Function => {
-                                        let id = GraphFunctionId::new(Uuid::new_v4());
-                                        editor.selected =
-                                            Some(Selected::Function(SelectedFunction {
-                                                asset_id: None,
-                                                id,
-                                                instance: GraphFunctionInstance::new(
-                                                    GraphFunction {
-                                                        asset_id: None,
-                                                        id,
-                                                        name: "[Unnamed Function]".to_string(),
-                                                        graph: cx.new(|_| {
-                                                            Graph::new(
-                                                                GraphResources {
-                                                                    functions: editor
-                                                                        .main_function_storage
-                                                                        .clone(),
-                                                                    ..Default::default()
-                                                                },
-                                                                FUNCTION_GRAPH_TYPE_REGISTRY
-                                                                    .clone(),
-                                                            )
-                                                        }),
-                                                    },
-                                                ),
-                                            }));
-                                        editor.saved_runtime_revision = 0;
-                                    }
-                                }
-                            })),
+                            .on_click(cx.listener(Self::on_new_item)),
                     )
                     .child(match self.pane_selection {
                         PaneSelection::Brush => List::new(&self.brushes)
@@ -588,374 +950,38 @@ impl Render for BrushEditor {
                 Some(EditorState::Postprocess(e)) => e.clone().into_any_element(),
                 None => div().into_any_element(),
             };
+            let common_editor = v_flex()
+                .size_full()
+                .min_w(px(0.0))
+                .overflow_hidden()
+                .gap_2()
+                .child(title_widget)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h(px(0.0))
+                        .overflow_hidden()
+                        .child(graph_view),
+                );
 
             match selected {
-                Selected::Brush(brush) => {
+                Selected::Brush(_) => {
                     cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
                         let Some(op) = op.as_mut() else {
-                            return div().into_any_element()
+                            return div().into_any_element();
                         };
 
                         let instance = op.instance();
-
-                        let ext_vars = instance.iter_external_vars().map(|(id, var)| {
-                            let is_renaming = self.renaming_ext_var == Some(id);
-                            let name = var.name.clone();
-                            let name_row =
-                                if is_renaming {
-                                    h_flex()
-                                        .gap_1()
-                                        .child(
-                                            Input::new(&self.rename_ext_var_input_state).flex_1(),
-                                        )
-                                        .child(
-                                            Button::new(format!(
-                                                "confirm-external-variable-rename-button-{}",
-                                                id
-                                            ))
-                                            .icon(IconName::Check)
-                                            .on_click(cx.listener(move |editor, _, window, cx| {
-                                                editor.confirm_external_var_rename(id, cx);
-                                            })),
-                                        )
-                                        .child(
-                                            Button::new(format!(
-                                                "cancel-external-variable-rename-button-{}",
-                                                id
-                                            ))
-                                            .icon(IconName::Close)
-                                            .on_click(cx.listener(move |editor, _, window, cx| {
-                                                editor.renaming_ext_var = None;
-                                            })),
-                                        )
-                                        .into_any_element()
-                                } else {
-                                    h_flex()
-                                .justify_between()
-                                .child(name.clone())
-                                .child(
-                                    Button::new(format!("external-variable-menu-{}", id))
-                                        .icon(IconName::Menu)
-                                        .dropdown_menu({
-                                            let editor = cx.entity().downgrade();
-                                            move |menu, window, cx| {
-                                                menu.item(PopupMenuItem::new("Rename").on_click({
-                                                    let editor = editor.clone();
-                                                    let name = name.clone();
-                                                    move |_, window, cx| {
-                                                        let _ = editor.update(cx, |editor, cx| {
-                                                            editor.renaming_ext_var = Some(id);
-                                                            editor
-                                                                .rename_ext_var_input_state
-                                                                .update(cx, |state, cx| {
-                                                                    state.set_value(
-                                                                        name.clone(),
-                                                                        window,
-                                                                        cx,
-                                                                    );
-                                                                });
-                                                            cx.notify();
-                                                        });
-                                                    }
-                                                }))
-                                                .item(PopupMenuItem::new("Remove").on_click({
-                                                    let editor = editor.clone();
-                                                    move |_, _window, cx| {
-                                                        editor
-                                                            .update(cx, |editor, cx| {
-                                                                let Some(Selected::Brush(_)) =
-                                                                    editor.selected.as_ref()
-                                                                else {
-                                                                    return;
-                                                                };
-                                                                let Some(brush) = cx.global_mut::<CurrentBrushPresetOperator>().as_mut() else {
-                                                                    return;
-                                                                };
-
-                                                                brush.instance_mut().remove_external_var(&id);
-                                                            })
-                                                            .ok();
-                                                    }
-                                                }))
-                                            }
-                                        }),
-                                )
-                                .into_any_element()
-                                };
-
-                            v_flex()
-                                .gap_1()
-                                .child(
-                                    v_flex().child(name_row).child(
-                                        div()
-                                            .opacity(0.7)
-                                            .italic()
-                                            .text_sm()
-                                            .child(var.value.ty().name()),
-                                    ),
-                                )
-                                .child(var.value.ty().render_inline(
-                                    var.value.value(),
-                                    GraphInlineLiteralRenderContext {
-                                        slot_id: (*id).into(),
-                                        window,
-                                        cx,
-                                        on_update: Rc::new(move |value, cx| {
-                                            let Some(op) = cx.global_mut::<CurrentBrushPresetOperator>().as_mut() else { return; };
-                                            op.instance_mut().update_external_var(&id, value);
-                                        }),
-                                    },
-                                ))
-                        });
-                        let ext_var_panel = v_flex()
-                            .w(px(200.0))
-                            .overflow_hidden()
-                            .child(div().flex_shrink_0().child("External variables"))
-                            .child(
-                                div().flex_1().overflow_hidden().child(
-                                    v_flex()
-                                        .size_full()
-                                        .gap_1()
-                                        .children(ext_vars)
-                                        .overflow_y_scrollbar(),
-                                ),
-                            )
-                            .child(
-                                v_flex()
-                                    .gap_1()
-                                    .child(
-                                        v_form()
-                                            .label_width(px(70.0))
-                                            .layout(Axis::Horizontal)
-                                            .child(field().label("Name").child(Input::new(
-                                                &self.new_ext_var_name_input_state,
-                                            )))
-                                            .child(field().label("Type").child(Select::new(
-                                                &self.new_ext_var_type_select_state,
-                                            ))),
-                                    )
-                                    .child(
-                                        Button::new("create-external-variable-button")
-                                            .label("Create")
-                                            .on_click({
-                                                let editor = cx.entity().downgrade();
-                                                move |_, window, cx| {
-                                                    let _ = editor.update(cx, |editor, cx| {
-                                                        let Some(Selected::Brush(brush)) =
-                                                            editor.selected.as_ref()
-                                                        else {
-                                                            return;
-                                                        };
-
-                                                        cx.update_global::<CurrentBrushPresetOperator,_>(|op, cx| {
-                                                            let Some(brush) = op.as_mut() else {
-                                                                return;
-                                                            };
-
-                                                            let Some(ty) = editor
-                                                                .new_ext_var_type_select_state
-                                                                .read(cx)
-                                                                .selected_value()
-                                                                .and_then(|ty_name| {
-                                                                    brush.instance()
-                                                                        .main_graph()
-                                                                        .read(cx)
-                                                                        .type_registry()
-                                                                        .get_type(*ty_name)
-                                                                })
-                                                            else {
-                                                                return;
-                                                            };
-
-                                                            let id =
-                                                                ExternalVariableId::new(Uuid::new_v4());
-                                                            let value = GraphLiteral::new_boxed(
-                                                                ty.default_literal(),
-                                                                ty.clone(),
-                                                            );
-
-                                                            let Some(name) = editor
-                                                                .new_ext_var_name_input_state
-                                                                .update(cx, |state, cx| {
-                                                                    let name = state.value();
-                                                                    if name.is_empty() {
-                                                                        return None;
-                                                                    }
-                                                                    state.set_value("", window, cx);
-                                                                    Some(name)
-                                                                })
-                                                            else {
-                                                                return;
-                                                            };
-
-                                                            brush.instance_mut().insert_external_var(
-                                                                ExternalVariable {
-                                                                    id,
-                                                                    name: name.into(),
-                                                                    value,
-                                                                },
-                                                            );
-                                                        });
-
-                                                    });
-                                                }
-                                            }),
-                                    ),
-                            );
-
-                        let graph_switcher = v_flex()
-                            .w(px(200.0))
-                            .child(
-                                Button::new("select-required-spacing-button")
-                                    .label("Required Spacing")
-                                    .on_click(cx.listener(|editor, _, window, cx| {
-                                        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-                                            let Some(op) = op.as_ref() else { return; };
-
-                                            if let Some(Selected::Brush(brush)) = &mut editor.selected {
-                                                brush.viewing_graph = BrushPresetGraph::RequiredSpacing;
-                                                let st = cx.new(|cx| GraphEditor::new(op.instance().required_spacing_graph().clone(), REQUIRED_SPACING_GRAPH_NODES.clone(), cx));
-                                                editor.editor_state = Some(EditorState::Main(st));
-                                            }
-                                        });
-                                    })),
-                            )
-                            .child(
-                                Button::new("select-main-graph-button")
-                                    .label("Main")
-                                    .on_click(cx.listener(|editor, _, window, cx| {
-                                        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-                                            let Some(op) = op.as_ref() else {
-                                                return;
-                                            };
-
-                                            if let Some(Selected::Brush(brush)) = &mut editor.selected {
-                                                brush.viewing_graph = BrushPresetGraph::Main;
-                                                let st = cx.new(|cx| GraphEditor::new(op.instance().main_graph().clone(), MAIN_GRAPH_NODES.clone(), cx));
-                                                editor.editor_state = Some(EditorState::Main(st));
-                                            }
-                                        });
-                                    })),
-                            )
-                            .children(op.instance().stroke_postprocess_graphs().iter().enumerate().map(
-                                |(index, graph)| {
-                                    Button::new(format!("select-stroke-pp-graph-button-{}", index))
-                                        .label(format!("Stroke Postprocess {}", index))
-                                        .on_click(cx.listener({
-                                            let graph = graph.downgrade();
-                                            move |editor, _, window, cx| {
-                                                cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-                                                    let Some(graph) = graph.upgrade() else {
-                                                        return;
-                                                    };
-                                                    let Some(op) = op.as_ref() else {
-                                                        return;
-                                                    };
-                                                    if let Some(Selected::Brush(brush)) = &mut editor.selected {
-                                                        brush.viewing_graph = BrushPresetGraph::StrokePostprocess { index };
-                                                        let st = cx.new(|cx| GraphEditor::new(graph, STROKE_POSTPROCESS_GRAPH_NODES.clone(), cx));
-                                                        editor.editor_state = Some(EditorState::Postprocess(st));
-                                                    }
-                                                });
-                                            }
-                                        }))
-                                        .context_menu({
-                                            let editor = cx.entity().downgrade();
-                                            move |menu, window, cx| {
-                                                menu.item(PopupMenuItem::new("Remove").on_click({
-                                                    let editor = editor.upgrade().unwrap();
-                                                    move |_, _, cx| {
-                                                        editor.update(cx, |editor, cx| {
-                                                            let Some(Selected::Brush(brush)) =
-                                                                &mut editor.selected
-                                                            else {
-                                                                return;
-                                                            };
-
-                                                            cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-                                                                let Some(op) = op.as_mut() else {
-                                                                    return;
-                                                                };
-                                                                op.instance_mut()
-                                                                    .remove_stroke_postprocess_graph(
-                                                                        index,
-                                                                    );
-                                                                if brush.viewing_graph == (BrushPresetGraph::StrokePostprocess { index }) {
-                                                                    let n_pp = op.instance().stroke_postprocess_graphs().len();
-                                                                    if n_pp == 0 {
-                                                                        brush.viewing_graph = BrushPresetGraph::Main;
-                                                                    } else {
-                                                                        brush.viewing_graph = BrushPresetGraph::StrokePostprocess { index: n_pp - 1 };
-                                                                    }
-                                                                }
-                                                            });
-                                                        });
-                                                    }
-                                                }))
-                                            }
-                                        })
-                                },
-                            ))
-                            .child(
-                                Button::new("new-stroke-pp-graph-button")
-                                    .label("New Stroke Postprocess")
-                                    .on_click(cx.listener(|editor, _, window, cx| {
-                                        let Some(Selected::Brush(brush)) = &mut editor.selected
-                                        else {
-                                            return;
-                                        };
-
-                                        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-                                            let Some(op) = op.as_mut() else {
-                                                return;
-                                            };
-
-                                            brush.viewing_graph =
-                                                BrushPresetGraph::StrokePostprocess { index: op.instance_mut().new_stroke_postprocess_graph(cx) };
-                                        });
-                                    })),
-                            );
-
+                        let brush_extra = self.render_brush_extra_panes(&instance, window, cx);
                         h_flex()
                             .gap_2()
                             .size_full()
-                            .min_w(px(0.0))
-                            .overflow_hidden()
-                            .child(
-                                v_flex()
-                                    .flex_1()
-                                    .min_w(px(0.0))
-                                    .h_full()
-                                    .gap_2()
-                                    .overflow_hidden()
-                                    .child(title_widget)
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_h(px(0.0))
-                                            .overflow_hidden()
-                                            .child(graph_view),
-                                    ),
-                            )
-                            .child(graph_switcher.h_full())
-                            .child(ext_var_panel.h_full())
+                            .child(common_editor)
+                            .child(brush_extra)
                             .into_any_element()
                     })
                 }
-                Selected::Function(func) => v_flex()
-                    .size_full()
-                    .min_w(px(0.0))
-                    .overflow_hidden()
-                    .gap_2()
-                    .child(title_widget)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_h(px(0.0))
-                            .overflow_hidden()
-                            .child(graph_view),
-                    )
-                    .into_any_element(),
+                Selected::Function(_) => common_editor.into_any_element(),
             }
         } else {
             div()
