@@ -5,7 +5,10 @@ use futures::{
     SinkExt,
     channel::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender},
 };
-use gpui::{App, Global, MouseDownEvent, MouseMoveEvent, MouseUpEvent};
+use gpui::{
+    AnyElement, App, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Window, div,
+};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
@@ -39,58 +42,26 @@ wrapper! {
 }
 
 pub trait ToolFunction: Send + Sync + 'static {
-    fn id() -> ToolId;
+    fn id() -> ToolId
+    where
+        Self: Sized;
     fn activate(&mut self, cx: &mut App) {}
     fn hover(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {}
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {}
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {}
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App) {}
     fn deactivate(&mut self, cx: &mut App) {}
-}
-
-pub trait ErasedToolFunction: Send + Sync + 'static {
-    fn id(&self) -> ToolId;
-    fn activate(&mut self, cx: &mut App);
-    fn hover(&mut self, mouse: &MouseMoveEvent, cx: &mut App);
-    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App);
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App);
-    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App);
-    fn deactivate(&mut self, cx: &mut App);
-}
-
-impl<T: ToolFunction> ErasedToolFunction for T {
-    fn id(&self) -> ToolId {
-        T::id()
-    }
-
-    fn activate(&mut self, cx: &mut App) {
-        <T as ToolFunction>::activate(self, cx)
-    }
-
-    fn hover(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
-        <T as ToolFunction>::hover(self, mouse, cx)
-    }
-
-    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
-        <T as ToolFunction>::begin(self, mouse, cx)
-    }
-
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
-        <T as ToolFunction>::update(self, mouse, cx)
-    }
-
-    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App) {
-        <T as ToolFunction>::end(self, mouse, cx)
-    }
-
-    fn deactivate(&mut self, cx: &mut App) {
-        <T as ToolFunction>::deactivate(self, cx)
+    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement
+    where
+        Self: Sized,
+    {
+        div().into_any_element()
     }
 }
 
 #[derive(Default)]
 pub struct ToolFunctionRegistry {
-    spawners: HashMap<ToolId, Box<dyn Fn() -> Box<dyn ErasedToolFunction> + Send + Sync>>,
+    spawners: HashMap<ToolId, Box<dyn Fn() -> Box<dyn ToolFunction> + Send + Sync>>,
 }
 
 impl Global for ToolFunctionRegistry {}
@@ -102,7 +73,7 @@ impl ToolFunctionRegistry {
 
     pub fn register<T: ToolFunction + Default>(&mut self) {
         self.spawners
-            .insert(T::default().id(), Box::new(|| Box::new(T::default())));
+            .insert(T::id(), Box::new(|| Box::new(T::default())));
     }
 }
 
@@ -112,7 +83,7 @@ struct State {
     last: ToolId,
     current: ToolId,
     last_switch: Instant,
-    current_function: Box<dyn ErasedToolFunction>,
+    current_function: Box<dyn ToolFunction>,
     is_updating: bool,
 }
 
