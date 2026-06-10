@@ -14,4 +14,8 @@ fn main() {
         &"package::debug_bit_mask.wesl".parse().unwrap(),
         "debug_bit_mask",
     );
+    compiler.build_artifact(
+        &"package::ccl.wesl".parse().unwrap(),
+        "ccl",
+    );
 }

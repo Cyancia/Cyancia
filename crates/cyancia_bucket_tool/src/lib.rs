@@ -59,7 +59,7 @@ impl ToolFunction for BucketTool {
         let params = BucketParams {
             seed: position_ps.as_uvec2(),
             // TODO
-            threshold: 0.05,
+            threshold: 0.4,
             alpha_threshold: 0.02,
         };
 

@@ -28,11 +28,21 @@ pub struct PreparedBucket {
     params_buffer: Buffer,
     bit_mask: Buffer,
     thresholding_bind_group: BindGroup,
+    ccl_params_buffer: Buffer,
+    ccl_labels: Buffer,
+    ccl_output: Buffer,
+    ccl_bind_group: BindGroup,
+    total_pixels: u32,
 }
 
 pub struct Bucket {
     thresholding_layout: BindGroupLayout,
     thresholding_pipeline: ComputePipeline,
+    ccl_layout: BindGroupLayout,
+    ccl_init_pipeline: ComputePipeline,
+    ccl_merge_pipeline: ComputePipeline,
+    ccl_compress_pipeline: ComputePipeline,
+    ccl_extract_pipeline: ComputePipeline,
 }
 
 impl Bucket {
@@ -102,9 +112,117 @@ impl Bucket {
             cache: None,
         });
 
+        let ccl_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("ccl_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(UVec2::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(u32::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(u32::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(u32::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(GpuTileInfo::min_size()),
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let ccl_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("ccl_pipeline_layout"),
+            bind_group_layouts: &[&ccl_layout],
+            push_constant_ranges: &[],
+        });
+
+        let ccl_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("ccl_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("ccl").into()),
+        });
+
+        let ccl_init_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("ccl_init_pipeline"),
+            layout: Some(&ccl_pipeline_layout),
+            module: &ccl_shader,
+            entry_point: Some("ccl_init"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let ccl_merge_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("ccl_merge_pipeline"),
+            layout: Some(&ccl_pipeline_layout),
+            module: &ccl_shader,
+            entry_point: Some("ccl_merge"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let ccl_compress_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("ccl_compress_pipeline"),
+            layout: Some(&ccl_pipeline_layout),
+            module: &ccl_shader,
+            entry_point: Some("ccl_compress"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let ccl_extract_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("ccl_extract_pipeline"),
+            layout: Some(&ccl_pipeline_layout),
+            module: &ccl_shader,
+            entry_point: Some("ccl_extract"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         Self {
             thresholding_layout,
             thresholding_pipeline,
+            ccl_layout,
+            ccl_init_pipeline,
+            ccl_merge_pipeline,
+            ccl_compress_pipeline,
+            ccl_extract_pipeline,
         }
     }
 
@@ -122,12 +240,16 @@ impl Bucket {
         params_buffer.push(params);
         params_buffer.write_buffer(device, queue);
 
+        let bit_mask_size = (input_layer_tile_count
+            * GpuTileStorageInner::TILE_SIZE
+            * GpuTileStorageInner::TILE_SIZE
+            + 31)
+            / 32;
+
         let thresholded_output = device.create_buffer(&BufferDescriptor {
             label: Some("thresholded_output"),
-            size: (input_layer_tile_count
-                * GpuTileStorageInner::TILE_SIZE
-                * GpuTileStorageInner::TILE_SIZE) as u64,
-            usage: BufferUsages::STORAGE,
+            size: (bit_mask_size * 4) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
@@ -154,11 +276,65 @@ impl Bucket {
             ],
         });
 
+        let total_pixels = input_layer_tile_count
+            * GpuTileStorageInner::TILE_SIZE
+            * GpuTileStorageInner::TILE_SIZE;
+
+        let ccl_labels = device.create_buffer(&BufferDescriptor {
+            label: Some("ccl_labels"),
+            size: (total_pixels * 4) as u64,
+            usage: BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+
+        let ccl_output = device.create_buffer(&BufferDescriptor {
+            label: Some("ccl_output"),
+            size: (bit_mask_size * 4) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let mut ccl_params_buffer = DynamicBuffer::new(Some("ccl_params"), BufferUsages::UNIFORM);
+        ccl_params_buffer.push(&params.seed);
+        ccl_params_buffer.write_buffer(device, queue);
+
+        let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("ccl_bind_group"),
+            layout: &self.ccl_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: ccl_params_buffer.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: thresholded_output.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: ccl_labels.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: ccl_output.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: input_layer.tile_info_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         PreparedBucket {
             input_layer_tile_count,
             params_buffer: params_buffer.into_inner_buffer().unwrap(),
             bit_mask: thresholded_output,
             thresholding_bind_group,
+            ccl_params_buffer: ccl_params_buffer.into_inner_buffer().unwrap(),
+            ccl_labels,
+            ccl_output,
+            ccl_bind_group,
+            total_pixels,
         }
     }
 
@@ -179,11 +355,70 @@ impl Bucket {
         }
 
         queue.submit([ec.finish()]);
+
         unsafe { device.start_graphics_debugger_capture() };
         debug_bit_mask(
             device,
             queue,
             &prepared.bit_mask,
+            prepared.input_layer_tile_count,
+        );
+        unsafe { device.stop_graphics_debugger_capture() };
+
+        let max_distance = (prepared.total_pixels as f32).sqrt().ceil() as u32;
+        let iterations = (max_distance as f32).log2().ceil() as u32 + 1;
+
+        let mut ec = device.create_command_encoder(&Default::default());
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("ccl_init_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.ccl_init_pipeline);
+            pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
+        }
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("ccl_merge_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.ccl_merge_pipeline);
+            pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
+            for _ in 0..iterations {
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
+            }
+        }
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("ccl_compress_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.ccl_compress_pipeline);
+            pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
+        }
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("ccl_extract_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.ccl_extract_pipeline);
+            pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
+        }
+
+        queue.submit([ec.finish()]);
+
+        unsafe { device.start_graphics_debugger_capture() };
+        debug_bit_mask(
+            device,
+            queue,
+            &prepared.ccl_output,
             prepared.input_layer_tile_count,
         );
         unsafe { device.stop_graphics_debugger_capture() };
