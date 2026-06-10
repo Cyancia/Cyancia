@@ -15,8 +15,7 @@ use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use glam::{FloatExt, Vec2};
 use gpui::{
-    AnyElement, App, BorrowAppContext, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
+    AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Styled, WeakEntity, Window
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
@@ -36,11 +35,15 @@ pub struct BrushTool {
 }
 
 impl ToolFunction for BrushTool {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self::default()
+    }
+
     fn id() -> ToolId {
         ToolId::new("brush_tool")
     }
 
-    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
         let Some(canvas_entity) = cx.current_canvas() else {
             return;
         };
@@ -85,7 +88,7 @@ impl ToolFunction for BrushTool {
         });
     }
 
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
         let Some((canvas_entity, active_layer)) = &self.target_layer else {
             return;
         };
@@ -144,7 +147,7 @@ impl ToolFunction for BrushTool {
         }
     }
 
-    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App) {
+    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some((canvas_entity, active_layer)) = self.target_layer.take() else {
             return;
         };
@@ -192,7 +195,7 @@ impl ToolFunction for BrushTool {
         }
     }
 
-    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> AnyElement {
+    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
             let Some(brush) = brush.as_ref() else {
                 return "No brush selected".into_any_element();

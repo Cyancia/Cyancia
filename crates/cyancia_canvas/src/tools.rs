@@ -1,7 +1,7 @@
 use cyancia_math::number::AngleDifference;
 use cyancia_tools::{ToolFunction, ToolId};
 use glam::Vec2;
-use gpui::{App, MouseDownEvent, MouseMoveEvent, Pixels, Point, px};
+use gpui::{App, AppContext, Context, MouseDownEvent, MouseMoveEvent, Pixels, Point, px};
 
 use crate::{CanvasAppExt, CanvasManager, control::CanvasTransform};
 
@@ -16,11 +16,15 @@ pub struct PanTool {
 }
 
 impl ToolFunction for PanTool {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self::default()
+    }
+
     fn id() -> ToolId {
         ToolId::new("pan_tool")
     }
 
-    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
         let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
@@ -29,7 +33,7 @@ impl ToolFunction for PanTool {
         self.original_transform = canvas.transform.clone();
     }
 
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
         cx.update_current_canvas(|canvas, _| {
             let delta = mouse_position(mouse.position) - self.start_pos;
             canvas.transform = self.original_transform.clone().translated(delta);
@@ -45,11 +49,15 @@ pub struct RotateTool {
 }
 
 impl ToolFunction for RotateTool {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self::default()
+    }
+
     fn id() -> ToolId {
         ToolId::new("rotate_tool")
     }
 
-    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
         let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
@@ -60,7 +68,7 @@ impl ToolFunction for RotateTool {
         self.original_transform = canvas.transform.clone();
     }
 
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
         cx.update_current_canvas(|canvas, _| {
             let t = self.center - mouse_position(mouse.position);
             let cur_angle = t.y.atan2(t.x);
@@ -79,11 +87,15 @@ pub struct ZoomTool {
 }
 
 impl ToolFunction for ZoomTool {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self::default()
+    }
+
     fn id() -> ToolId {
         ToolId::new("zoom_tool")
     }
 
-    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
+    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
         let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
@@ -92,7 +104,7 @@ impl ToolFunction for ZoomTool {
         self.original_transform = canvas.transform.clone();
     }
 
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
         cx.update_current_canvas(|canvas, _| {
             let d = mouse_position(mouse.position).y - self.start_pos.y;
             let f = d / self.original_transform.widget_bounds.size().y + 1.0;
