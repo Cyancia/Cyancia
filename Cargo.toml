@@ -4,6 +4,7 @@ members = [
     "crates/cyancia_app",
     "crates/cyancia_assets",
     "crates/cyancia_brush",
+    "crates/cyancia_bucket_tool",
     "crates/cyancia_canvas",
     "crates/cyancia_image",
     "crates/cyancia_math",
@@ -35,6 +36,7 @@ cyancia_shader_graph_derive = { version = "0.1.0", path = "crates/cyancia_shader
 cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
 cyancia_view = { version = "0.1.0", path = "crates/cyancia_view" }
 cyancia_theme = { version = "0.1.0", path = "crates/cyancia_theme" }
+cyancia_bucket_tool = { version = "0.1.0", path = "crates/cyancia_bucket_tool" }
 
 uuid = { version = "1", features = ["v4", "serde"] }
 syn = "2"

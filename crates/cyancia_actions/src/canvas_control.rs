@@ -27,6 +27,7 @@ canvas_tool_action!(SwitchToPanToolAction, "pan_tool");
 canvas_tool_action!(SwitchToRotateToolAction, "rotate_tool");
 canvas_tool_action!(SwitchToZoomToolAction, "zoom_tool");
 canvas_tool_action!(SwitchToBrushToolAction, "brush_tool");
+canvas_tool_action!(SwitchToBucketToolAction, "bucket_tool");
 
 fn trigger_tool_switch(tool_id: ToolId, cx: &mut App) {
     let Some(canvas) = cx.read_current_canvas() else {

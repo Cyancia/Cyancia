@@ -26,3 +26,4 @@ toml.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true
 cyancia_view.workspace = true
+cyancia_bucket_tool.workspace = true

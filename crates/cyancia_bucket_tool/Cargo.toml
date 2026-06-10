@@ -1,0 +1,19 @@
+[package]
+name = "cyancia_bucket_tool"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wesl.workspace = true
+wgpu.workspace = true
+cyancia_image.workspace = true
+encase.workspace = true
+cyancia_render.workspace = true
+glam.workspace = true
+cyancia_tools.workspace = true
+gpui.workspace = true
+cyancia_canvas.workspace = true
+
+[build-dependencies]
+wesl.workspace = true
+cyancia_image.workspace = true

@@ -31,6 +31,7 @@ thiserror.workspace = true
 cyancia_theme.workspace = true
 cyancia_view.workspace = true
 anyhow.workspace = true
+cyancia_bucket_tool.workspace = true
 
 [build-dependencies]
 fs_extra.workspace = true

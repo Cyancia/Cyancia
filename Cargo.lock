@@ -1677,6 +1677,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cyancia_assets",
+ "cyancia_bucket_tool",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_tools",
@@ -1707,6 +1708,7 @@ dependencies = [
  "cyancia_actions",
  "cyancia_assets",
  "cyancia_brush",
+ "cyancia_bucket_tool",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_render",
@@ -1793,6 +1795,21 @@ dependencies = [
  "wesl",
  "wgpu 27.0.1",
  "zip",
+]
+
+[[package]]
+name = "cyancia_bucket_tool"
+version = "0.1.0"
+dependencies = [
+ "cyancia_canvas",
+ "cyancia_image",
+ "cyancia_render",
+ "cyancia_tools",
+ "encase",
+ "glam",
+ "gpui",
+ "wesl",
+ "wgpu 27.0.1",
 ]
 
 [[package]]
