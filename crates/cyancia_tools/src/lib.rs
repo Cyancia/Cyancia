@@ -1,6 +1,7 @@
 use std::{any::Any, collections::HashMap, sync::Arc, time::Instant};
 
 use cyancia_utils::wrapper;
+use downcast_rs::Downcast;
 use futures::{
     SinkExt,
     channel::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender},
@@ -41,7 +42,7 @@ wrapper! {
     pub ToolId : &'static str
 }
 
-pub trait ToolFunction: Send + Sync + 'static {
+pub trait ToolFunction: Send + Sync + 'static + Downcast {
     fn id() -> ToolId
     where
         Self: Sized;
@@ -51,13 +52,11 @@ pub trait ToolFunction: Send + Sync + 'static {
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {}
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App) {}
     fn deactivate(&mut self, cx: &mut App) {}
-    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement
-    where
-        Self: Sized,
-    {
+    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> AnyElement {
         div().into_any_element()
     }
 }
+downcast_rs::impl_downcast!(ToolFunction);
 
 #[derive(Default)]
 pub struct ToolFunctionRegistry {
@@ -153,6 +152,19 @@ impl ToolProxy {
 
             state.is_updating = false;
             state.current_function.end(mouse, cx);
+        }
+    }
+
+    pub fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+        let state = self.state.as_mut()?;
+        Some(state.current_function.tool_option_widget(window, cx))
+    }
+
+    pub fn update_tool<T: ToolFunction>(&mut self, update: impl FnOnce(&mut T)) {
+        if let Some(state) = self.state.as_mut()
+            && let Some(tool) = state.current_function.downcast_mut::<T>()
+        {
+            update(tool);
         }
     }
 }

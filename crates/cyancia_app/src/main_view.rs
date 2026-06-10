@@ -35,7 +35,7 @@ fn default_dock_layout(
             vec![
                 Arc::new(cx.new(LayersDock::new)),
                 Arc::new(cx.new(FiltersDock::new)),
-                Arc::new(cx.new(ToolOptionsDock::new)),
+                Arc::new(cx.new(|cx| ToolOptionsDock::new(window, cx))),
                 Arc::new(cx.new(|cx| CurrentCanvasLayersDock::new(window, cx))),
             ],
             dock_area,

@@ -1941,6 +1941,7 @@ version = "0.1.0"
 dependencies = [
  "cyancia_math",
  "cyancia_utils",
+ "downcast-rs 2.0.2",
  "futures",
  "glam",
  "gpui",

@@ -61,7 +61,6 @@ macro_rules! test_dummy_dock {
 
 test_dummy_dock!(LayersDock);
 test_dummy_dock!(FiltersDock);
-test_dummy_dock!(ToolOptionsDock);
 
 pub struct CanvasDock {
     canvas: CanvasId,
@@ -178,5 +177,51 @@ impl Render for CurrentCanvasLayersDock {
             .as_ref()
             .map(|w| w.clone().into_any_element())
             .unwrap_or_else(|| div().into_any_element())
+    }
+}
+
+pub struct ToolOptionsDock {
+    focus_handle: FocusHandle,
+}
+
+impl ToolOptionsDock {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self {
+            focus_handle: cx.focus_handle(),
+        }
+    }
+}
+
+impl EventEmitter<PanelEvent> for ToolOptionsDock {}
+
+impl Focusable for ToolOptionsDock {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Panel for ToolOptionsDock {
+    fn panel_name(&self) -> &'static str {
+        "tool_options"
+    }
+
+    fn title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        "Tool Options"
+    }
+}
+
+impl Render for ToolOptionsDock {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(canvas) = cx.read_current_canvas() else {
+            return div().into_any_element();
+        };
+
+        let tool_proxy_id = canvas.tool_proxy_id();
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
+            tool_proxy
+                .tool_option_widget(window, cx)
+                .unwrap_or_else(|| div().into_any_element())
+        })
     }
 }

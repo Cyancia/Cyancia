@@ -13,3 +13,4 @@ uuid.workspace = true
 log.workspace = true
 futures.workspace = true
 gpui.workspace = true
+downcast-rs.workspace = true
