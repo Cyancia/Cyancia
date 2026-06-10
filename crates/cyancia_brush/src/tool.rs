@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, rc::Rc};
 
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
@@ -10,12 +10,15 @@ use cyancia_image::{
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_math::number::LerpAngle;
+use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use glam::{FloatExt, Vec2};
 use gpui::{
-    App, BorrowAppContext, Global, MouseDownEvent, MouseMoveEvent, MouseUpEvent, WeakEntity,
+    AnyElement, App, BorrowAppContext, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
 };
+use gpui_component::{scroll::ScrollableElement, v_flex};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
@@ -187,6 +190,45 @@ impl ToolFunction for BrushTool {
                 cx.emit(CanvasUpdated { dirty_tiles });
             });
         }
+    }
+
+    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> AnyElement {
+        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            let Some(brush) = brush.as_ref() else {
+                return "No brush selected".into_any_element();
+            };
+
+            let ext_vars = brush.instance().iter_external_vars().map(|(id, var)| {
+                v_flex()
+                    .gap_1()
+                    .child(var.name.clone())
+                    .child(var.value.ty().render_inline(
+                        var.value.value(),
+                        GraphInlineLiteralRenderContext {
+                            slot_id: (*id).into(),
+                            window,
+                            cx,
+                            on_update: Rc::new(move |value, cx| {
+                                let Some(op) =
+                                    cx.global_mut::<CurrentBrushPresetOperator>().as_mut()
+                                else {
+                                    return;
+                                };
+                                op.instance_mut().update_external_var(&id, value);
+                            }),
+                        },
+                    ))
+            });
+
+            v_flex()
+                .p_2()
+                .size_full()
+                .overflow_y_scrollbar()
+                .gap_2()
+                .child("Variables")
+                .child(v_flex().gap_1().children(ext_vars))
+                .into_any_element()
+        })
     }
 }
 
