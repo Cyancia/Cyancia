@@ -13,6 +13,7 @@ glam.workspace = true
 cyancia_tools.workspace = true
 gpui.workspace = true
 cyancia_canvas.workspace = true
+gpui-component.workspace = true
 
 [build-dependencies]
 wesl.workspace = true
