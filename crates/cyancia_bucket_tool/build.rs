@@ -18,4 +18,8 @@ fn main() {
         &"package::ccl.wesl".parse().unwrap(),
         "ccl",
     );
+    compiler.build_artifact(
+        &"package::composite.wesl".parse().unwrap(),
+        "composite",
+    );
 }

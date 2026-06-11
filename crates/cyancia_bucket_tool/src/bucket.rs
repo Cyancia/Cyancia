@@ -4,7 +4,7 @@ use cyancia_image::{
 };
 use cyancia_render::buffer::DynamicBuffer;
 use encase::{DynamicUniformBuffer, ShaderType};
-use glam::UVec2;
+use glam::{UVec2, Vec4};
 use wesl::include_wesl;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -19,6 +19,7 @@ use wgpu::{
 #[derive(ShaderType, Debug, Clone, Copy)]
 pub struct BucketParams {
     pub seed: UVec2,
+    pub fill_color: Vec4,
     pub threshold: f32,
     pub alpha_threshold: f32,
 }
@@ -28,11 +29,11 @@ pub struct PreparedBucket {
     params_buffer: Buffer,
     bit_mask: Buffer,
     thresholding_bind_group: BindGroup,
-    ccl_params_buffer: Buffer,
     ccl_labels: Buffer,
     ccl_output: Buffer,
     ccl_bind_group: BindGroup,
     total_pixels: u32,
+    composite_bind_group: BindGroup,
 }
 
 pub struct Bucket {
@@ -43,10 +44,12 @@ pub struct Bucket {
     ccl_merge_pipeline: ComputePipeline,
     ccl_compress_pipeline: ComputePipeline,
     ccl_extract_pipeline: ComputePipeline,
+    composite_layout: BindGroupLayout,
+    composite_pipeline: ComputePipeline,
 }
 
 impl Bucket {
-    pub fn new(device: &Device, input_texel_type: TexelType) -> Self {
+    pub fn new(device: &Device, ref_texel_type: TexelType, output_texel_type: TexelType) -> Self {
         let thresholding_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("thresholding_layout"),
             entries: &[
@@ -65,7 +68,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
-                        format: input_texel_type.wgpu_format(),
+                        format: ref_texel_type.wgpu_format(),
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -121,7 +124,7 @@ impl Bucket {
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: Some(UVec2::min_size()),
+                        min_binding_size: Some(BucketParams::min_size()),
                     },
                     count: None,
                 },
@@ -215,6 +218,60 @@ impl Bucket {
             cache: None,
         });
 
+        let composite_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("composite_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(BucketParams::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(u32::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        format: output_texel_type.wgpu_format(),
+                        view_dimension: TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let composite_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("composite_pipeline_layout"),
+            bind_group_layouts: &[&composite_layout],
+            push_constant_ranges: &[],
+        });
+        let composite_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("composite_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("composite").into()),
+        });
+        let composite_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("composite_pipeline"),
+            layout: Some(&composite_pipeline_layout),
+            module: &composite_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         Self {
             thresholding_layout,
             thresholding_pipeline,
@@ -223,6 +280,8 @@ impl Bucket {
             ccl_merge_pipeline,
             ccl_compress_pipeline,
             ccl_extract_pipeline,
+            composite_layout,
+            composite_pipeline,
         }
     }
 
@@ -231,9 +290,10 @@ impl Bucket {
         device: &Device,
         queue: &Queue,
         params: &BucketParams,
-        input_layer: &LayerBindingData,
+        ref_layer: &LayerBindingData,
+        output_layer: &LayerBindingData,
     ) -> PreparedBucket {
-        let input_layer_tile_count = input_layer.texture.texture().depth_or_array_layers();
+        let input_layer_tile_count = ref_layer.texture.texture().depth_or_array_layers();
 
         let mut params_buffer =
             DynamicBuffer::new(Some("bucket_params_buffer"), BufferUsages::UNIFORM);
@@ -263,7 +323,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&input_layer.texture),
+                    resource: BindingResource::TextureView(&ref_layer.texture),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -271,7 +331,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: input_layer.tile_info_buffer.as_entire_binding(),
+                    resource: ref_layer.tile_info_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -294,17 +354,13 @@ impl Bucket {
             mapped_at_creation: false,
         });
 
-        let mut ccl_params_buffer = DynamicBuffer::new(Some("ccl_params"), BufferUsages::UNIFORM);
-        ccl_params_buffer.push(&params.seed);
-        ccl_params_buffer.write_buffer(device, queue);
-
         let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("ccl_bind_group"),
             layout: &self.ccl_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: ccl_params_buffer.binding().unwrap(),
+                    resource: params_buffer.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -320,7 +376,26 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: input_layer.tile_info_buffer.as_entire_binding(),
+                    resource: ref_layer.tile_info_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("composite_bind_group"),
+            layout: &self.composite_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: thresholded_output.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&output_layer.texture),
                 },
             ],
         });
@@ -330,11 +405,11 @@ impl Bucket {
             params_buffer: params_buffer.into_inner_buffer().unwrap(),
             bit_mask: thresholded_output,
             thresholding_bind_group,
-            ccl_params_buffer: ccl_params_buffer.into_inner_buffer().unwrap(),
             ccl_labels,
             ccl_output,
             ccl_bind_group,
             total_pixels,
+            composite_bind_group,
         }
     }
 
@@ -356,14 +431,14 @@ impl Bucket {
 
         queue.submit([ec.finish()]);
 
-        unsafe { device.start_graphics_debugger_capture() };
-        debug_bit_mask(
-            device,
-            queue,
-            &prepared.bit_mask,
-            prepared.input_layer_tile_count,
-        );
-        unsafe { device.stop_graphics_debugger_capture() };
+        // unsafe { device.start_graphics_debugger_capture() };
+        // debug_bit_mask(
+        //     device,
+        //     queue,
+        //     &prepared.bit_mask,
+        //     prepared.input_layer_tile_count,
+        // );
+        // unsafe { device.stop_graphics_debugger_capture() };
 
         let max_distance = (prepared.total_pixels as f32).sqrt().ceil() as u32;
         let iterations = (max_distance as f32).log2().ceil() as u32 + 1;
@@ -412,16 +487,28 @@ impl Bucket {
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
         }
 
-        queue.submit([ec.finish()]);
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("composite_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.composite_pipeline);
+            pass.set_bind_group(0, &prepared.composite_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
+        }
 
         unsafe { device.start_graphics_debugger_capture() };
-        debug_bit_mask(
-            device,
-            queue,
-            &prepared.ccl_output,
-            prepared.input_layer_tile_count,
-        );
+        queue.submit([ec.finish()]);
         unsafe { device.stop_graphics_debugger_capture() };
+
+        // unsafe { device.start_graphics_debugger_capture() };
+        // debug_bit_mask(
+        //     device,
+        //     queue,
+        //     &prepared.ccl_output,
+        //     prepared.input_layer_tile_count,
+        // );
+        // unsafe { device.stop_graphics_debugger_capture() };
     }
 }
 

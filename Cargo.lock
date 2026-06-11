@@ -1801,6 +1801,7 @@ dependencies = [
 name = "cyancia_bucket_tool"
 version = "0.1.0"
 dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_render",

@@ -1,8 +1,9 @@
-use cyancia_canvas::CanvasAppExt;
+use bevy_math::IRect;
+use cyancia_canvas::{CanvasAppExt, event::CanvasUpdated};
 use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner};
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
-use glam::Vec2;
+use glam::{IVec2, Vec2, Vec4};
 use gpui::{
     AnyElement, App, AppContext, Context, IntoElement, MouseUpEvent, ParentElement, Styled, Window,
 };
@@ -53,9 +54,10 @@ impl ToolFunction for BucketTool {
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
-        let Some(canvas) = cx.read_current_canvas() else {
+        let Some(canvas_entity) = cx.current_canvas().and_then(|e| e.upgrade()) else {
             return;
         };
+        let canvas = canvas_entity.read(cx);
 
         let position_ws = Vec2::new(mouse.position.x.into(), mouse.position.y.into());
         let Some(position_ps) = canvas.transform.window_to_pixel(position_ws) else {
@@ -71,24 +73,44 @@ impl ToolFunction for BucketTool {
 
         let tiles = cx.global::<GpuTileStorage>();
         let render_context = cx.global::<RenderContext>();
+        // TODO Reference other layers
         let ref_layer_id = canvas.image.active_layer;
         let ref_layer = tiles.get_layer_binding_or_empty(ref_layer_id).unwrap();
         let ref_layer_info = tiles.get_layer_info(ref_layer_id).unwrap();
 
+        let output_layer_id = canvas.image.active_layer;
+        let output_layer = tiles.get_layer_binding_or_empty(output_layer_id).unwrap();
+        let output_layer_info = tiles.get_layer_info(output_layer_id).unwrap();
+
         let params = BucketParams {
             seed: position_ps.as_uvec2(),
+            fill_color: Vec4::new(0.5, 0.5, 0.0, 1.0),
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
         };
 
-        let bucket = Bucket::new(&render_context.device, ref_layer_info.texel_type);
+        let bucket = Bucket::new(
+            &render_context.device,
+            ref_layer_info.texel_type,
+            output_layer_info.texel_type,
+        );
         let prepared = bucket.prepare(
             &render_context.device,
             &render_context.queue,
             &params,
             &ref_layer,
+            &output_layer,
         );
         bucket.dispatch(&render_context.device, &render_context.queue, prepared);
+
+        // TODO compute actual dirty tiles
+        let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {
+            min: IVec2::ZERO,
+            max: canvas.image.size().as_ivec2(),
+        });
+        canvas_entity.update(cx, |_, cx| {
+            cx.emit(CanvasUpdated { dirty_tiles });
+        });
     }
 
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
