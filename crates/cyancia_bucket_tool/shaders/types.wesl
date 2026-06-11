@@ -4,3 +4,5 @@ struct BucketParams {
     threshold: f32,
     alpha_threshold: f32,
 }
+
+const INVALID_LABEL: u32 = 0xFFFFFFFFu;

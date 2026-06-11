@@ -1,17 +1,13 @@
 import image::image_tiling::{TileInfo, TILE_SIZE};
-import package::types::BucketParams;
+import package::types::{BucketParams, INVALID_LABEL};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
-@group(0) @binding(1) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var mask: texture_storage_2d_array<r32uint, read_write>;
 @group(0) @binding(2) var<storage, read_write> labels: array<atomic<u32>>;
-@group(0) @binding(3) var<storage, read_write> output: array<atomic<u32>>;
-@group(0) @binding(4) var<storage> tile_info: array<TileInfo>;
+@group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
 
-fn get_bit(tile_idx: u32, local_coord: vec2u) -> bool {
-    let bit_index = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let array_index = bit_index / 32u;
-    let bit_offset = bit_index % 32u;
-    return (input[array_index] & (1u << bit_offset)) != 0u;
+fn get_label(tile_idx: u32, local_coord: vec2u) -> u32 {
+    return textureLoad(mask, local_coord, tile_idx).r;
 }
 
 fn get_linear_index(tile_idx: u32, local_coord: vec2u) -> u32 {
@@ -57,20 +53,6 @@ fn union_labels(idx_a: u32, idx_b: u32) {
 }
 
 @compute @workgroup_size(16, 16)
-fn ccl_init(@builtin(global_invocation_id) gid: vec3u) {
-    let tile_idx = gid.z;
-    if tile_idx >= arrayLength(&tile_info) { return; }
-
-    let local_coord = gid.xy;
-    if any(local_coord >= vec2u(TILE_SIZE)) { return; }
-
-    if !get_bit(tile_idx, local_coord) { return; }
-
-    let idx = get_linear_index(tile_idx, local_coord);
-    atomicStore(&labels[idx], idx);
-}
-
-@compute @workgroup_size(16, 16)
 fn ccl_merge(@builtin(global_invocation_id) gid: vec3u) {
     let tile_idx = gid.z;
     if tile_idx >= arrayLength(&tile_info) { return; }
@@ -79,11 +61,12 @@ fn ccl_merge(@builtin(global_invocation_id) gid: vec3u) {
     let local_coord = gid.xy;
     if any(local_coord >= vec2u(TILE_SIZE)) { return; }
 
-    if !get_bit(tile_idx, local_coord) { return; }
+    let idx = get_label(tile_idx, local_coord);
+    if idx == INVALID_LABEL { return; }
 
-    let idx = get_linear_index(tile_idx, local_coord);
+    atomicStore(&labels[idx], idx);
+
     let global_coord = info.origin + vec2i(local_coord);
-
     let offsets = array<vec2i, 2>(vec2i(-1, 0), vec2i(0, -1));
 
     for (var i = 0; i < 2; i++) {
@@ -95,8 +78,8 @@ fn ccl_merge(@builtin(global_invocation_id) gid: vec3u) {
         let neighbor_info = tile_info[neighbor_tile_idx];
         let neighbor_local = vec2u(neighbor_global - neighbor_info.origin);
 
-        if get_bit(u32(neighbor_tile_idx), neighbor_local) {
-            let neighbor_idx = get_linear_index(u32(neighbor_tile_idx), neighbor_local);
+        let neighbor_idx = get_label(u32(neighbor_tile_idx), neighbor_local);
+        if neighbor_idx != INVALID_LABEL {
             union_labels(idx, neighbor_idx);
         }
     }
@@ -110,9 +93,11 @@ fn ccl_compress(@builtin(global_invocation_id) gid: vec3u) {
     let local_coord = gid.xy;
     if any(local_coord >= vec2u(TILE_SIZE)) { return; }
 
-    let idx = get_linear_index(tile_idx, local_coord);
-    let root = find_root(idx);
-    atomicStore(&labels[idx], root);
+    let idx = get_label(tile_idx, local_coord);
+    if idx != INVALID_LABEL {
+        let root = find_root(idx);
+        atomicStore(&labels[idx], root);
+    }
 }
 
 @compute @workgroup_size(16, 16)
@@ -120,25 +105,23 @@ fn ccl_extract(@builtin(global_invocation_id) gid: vec3u) {
     let tile_idx = gid.z;
     if tile_idx >= arrayLength(&tile_info) { return; }
 
-    let info = tile_info[tile_idx];
     let local_coord = gid.xy;
     if any(local_coord >= vec2u(TILE_SIZE)) { return; }
-
-    let global_coord = info.origin + vec2i(local_coord);
 
     let seed_tile = find_tile_for_coord(vec2i(params.seed));
     if seed_tile < 0 { return; }
 
     let seed_info = tile_info[seed_tile];
     let seed_local = vec2u(vec2i(params.seed) - seed_info.origin);
-    let seed_idx = get_linear_index(u32(seed_tile), seed_local);
+    let seed_idx = get_label(u32(seed_tile), seed_local);
+    if seed_idx == INVALID_LABEL { return; }
+
     let seed_root = atomicLoad(&labels[seed_idx]);
 
-    let idx = get_linear_index(tile_idx, local_coord);
-    if atomicLoad(&labels[idx]) == seed_root {
-        let bit_index = idx;
-        let array_index = bit_index / 32u;
-        let bit_offset = bit_index % 32u;
-        atomicOr(&output[array_index], 1u << bit_offset);
+    let idx = get_label(tile_idx, local_coord);
+    if idx != INVALID_LABEL && atomicLoad(&labels[idx]) == seed_root {
+        textureStore(mask, local_coord, tile_idx, vec4u(bitcast<u32>(1.0)));
+    } else {
+        textureStore(mask, local_coord, tile_idx, vec4u(bitcast<u32>(0.0)));
     }
 }
