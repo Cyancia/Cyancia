@@ -29,10 +29,18 @@ const _: () = {
     }
 };
 
-#[derive(Default)]
 pub struct BucketTool {
     threshold: f32,
     alpha_threshold: f32,
+}
+
+impl Default for BucketTool {
+    fn default() -> Self {
+        Self {
+            threshold: 0.08,
+            alpha_threshold: 0.02,
+        }
+    }
 }
 
 impl ToolFunction for BucketTool {
