@@ -50,8 +50,8 @@ pub struct PreparedBucket {
     input_layer_tile_count: u32,
     thresholding_bind_group: BindGroup,
     ccl_bind_group: BindGroup,
+    ccl_iterations: u32,
     smaa_bind_group: BindGroup,
-    total_pixels: u32,
     composite_bind_group: BindGroup,
 }
 
@@ -460,6 +460,9 @@ impl Bucket {
             ],
         });
 
+        let max_distance = (total_pixels as f32).sqrt().ceil() as u32;
+        let ccl_iterations = (max_distance as f32).log2().ceil() as u32 + 1;
+
         let smaa_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("smaa_bind_group"),
             layout: &self.smaa_layout,
@@ -506,8 +509,8 @@ impl Bucket {
             input_layer_tile_count,
             thresholding_bind_group,
             ccl_bind_group,
+            ccl_iterations,
             smaa_bind_group,
-            total_pixels,
             composite_bind_group,
         }
     }
@@ -539,9 +542,6 @@ impl Bucket {
         // );
         // unsafe { device.stop_graphics_debugger_capture() };
 
-        let max_distance = (prepared.total_pixels as f32).sqrt().ceil() as u32;
-        let iterations = (max_distance as f32).log2().ceil() as u32 + 1;
-
         let mut ec = device.create_command_encoder(&Default::default());
 
         {
@@ -551,7 +551,7 @@ impl Bucket {
             });
             pass.set_pipeline(&self.ccl_merge_pipeline);
             pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
-            for _ in 0..iterations {
+            for _ in 0..prepared.ccl_iterations {
                 pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
             }
         }
