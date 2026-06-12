@@ -3,7 +3,7 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
 @group(0) @binding(1) var input: texture_storage_2d_array<r32uint, read>;
-@group(0) @binding(2) var mask: texture_storage_2d_array<r32uint, write>;
+@group(0) @binding(2) var<storage, read_write> labels: array<u32>;
 @group(0) @binding(3) var<storage> input_tile_info: array<TileInfo>;
 
 @compute
@@ -31,7 +31,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
 
     let linear_idx = tile_index * TILE_SIZE * TILE_SIZE + pixel_index.y * TILE_SIZE + pixel_index.x;
     let value = select(INVALID_LABEL, linear_idx, matches);
-    textureStore(mask, pixel_index, tile_index, vec4u(value));
+    labels[linear_idx] = value;
 }
 
 fn get_seed_color() -> vec4f {

@@ -2,12 +2,12 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 import package::types::{BucketParams, INVALID_LABEL};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
-@group(0) @binding(1) var mask: texture_storage_2d_array<r32uint, read_write>;
+@group(0) @binding(1) var mask: texture_storage_2d_array<r32float, write>;
 @group(0) @binding(2) var<storage, read_write> labels: array<atomic<u32>>;
 @group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
 
 fn get_label(tile_idx: u32, local_coord: vec2u) -> u32 {
-    return textureLoad(mask, local_coord, tile_idx).r;
+    return atomicLoad(&labels[get_linear_index(tile_idx, local_coord)]);
 }
 
 fn get_linear_index(tile_idx: u32, local_coord: vec2u) -> u32 {
@@ -29,7 +29,9 @@ fn find_root(idx: u32) -> u32 {
     var root = atomicLoad(&labels[idx]);
     while root != idx {
         let parent = atomicLoad(&labels[root]);
-        if parent == root { break; }
+        if parent == root {
+            break;
+        }
         root = parent;
     }
     return root;
@@ -42,27 +44,37 @@ fn union_labels(idx_a: u32, idx_b: u32) {
     while root_a != root_b {
         if root_a < root_b {
             let old = atomicMin(&labels[root_b], root_a);
-            if old == root_b { break; }
+            if old == root_b {
+                break;
+            }
             root_b = find_root(root_b);
         } else {
             let old = atomicMin(&labels[root_a], root_b);
-            if old == root_a { break; }
+            if old == root_a {
+                break;
+            }
             root_a = find_root(root_a);
         }
     }
 }
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(16, 16, 1)
 fn ccl_merge(@builtin(global_invocation_id) gid: vec3u) {
     let tile_idx = gid.z;
-    if tile_idx >= arrayLength(&tile_info) { return; }
+    if tile_idx >= arrayLength(&tile_info) {
+        return;
+    }
 
     let info = tile_info[tile_idx];
     let local_coord = gid.xy;
-    if any(local_coord >= vec2u(TILE_SIZE)) { return; }
+    if any(local_coord >= vec2u(TILE_SIZE)) {
+        return;
+    }
 
     let idx = get_label(tile_idx, local_coord);
-    if idx == INVALID_LABEL { return; }
+    if idx == INVALID_LABEL {
+        return;
+    }
 
     atomicStore(&labels[idx], idx);
 
@@ -73,7 +85,9 @@ fn ccl_merge(@builtin(global_invocation_id) gid: vec3u) {
         let neighbor_global = global_coord + offsets[i];
         let neighbor_tile_idx = find_tile_for_coord(neighbor_global);
 
-        if neighbor_tile_idx < 0 { continue; }
+        if neighbor_tile_idx < 0 {
+            continue;
+        }
 
         let neighbor_info = tile_info[neighbor_tile_idx];
         let neighbor_local = vec2u(neighbor_global - neighbor_info.origin);
@@ -85,13 +99,17 @@ fn ccl_merge(@builtin(global_invocation_id) gid: vec3u) {
     }
 }
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(16, 16, 1)
 fn ccl_compress(@builtin(global_invocation_id) gid: vec3u) {
     let tile_idx = gid.z;
-    if tile_idx >= arrayLength(&tile_info) { return; }
+    if tile_idx >= arrayLength(&tile_info) {
+        return;
+    }
 
     let local_coord = gid.xy;
-    if any(local_coord >= vec2u(TILE_SIZE)) { return; }
+    if any(local_coord >= vec2u(TILE_SIZE)) {
+        return;
+    }
 
     let idx = get_label(tile_idx, local_coord);
     if idx != INVALID_LABEL {
@@ -100,28 +118,33 @@ fn ccl_compress(@builtin(global_invocation_id) gid: vec3u) {
     }
 }
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(16, 16, 1)
 fn ccl_extract(@builtin(global_invocation_id) gid: vec3u) {
     let tile_idx = gid.z;
-    if tile_idx >= arrayLength(&tile_info) { return; }
+    if tile_idx >= arrayLength(&tile_info) {
+        return;
+    }
 
     let local_coord = gid.xy;
-    if any(local_coord >= vec2u(TILE_SIZE)) { return; }
+    if any(local_coord >= vec2u(TILE_SIZE)) {
+        return;
+    }
 
     let seed_tile = find_tile_for_coord(vec2i(params.seed));
-    if seed_tile < 0 { return; }
+    if seed_tile < 0 {
+        return;
+    }
 
     let seed_info = tile_info[seed_tile];
     let seed_local = vec2u(vec2i(params.seed) - seed_info.origin);
     let seed_idx = get_label(u32(seed_tile), seed_local);
-    if seed_idx == INVALID_LABEL { return; }
+    if seed_idx == INVALID_LABEL {
+        return;
+    }
 
     let seed_root = atomicLoad(&labels[seed_idx]);
 
     let idx = get_label(tile_idx, local_coord);
-    if idx != INVALID_LABEL && atomicLoad(&labels[idx]) == seed_root {
-        textureStore(mask, local_coord, tile_idx, vec4u(bitcast<u32>(1.0)));
-    } else {
-        textureStore(mask, local_coord, tile_idx, vec4u(bitcast<u32>(0.0)));
-    }
+    let value = select(0.0, 1.0, idx != INVALID_LABEL && atomicLoad(&labels[idx]) == seed_root);
+    textureStore(mask, local_coord, tile_idx, vec4f(value, 0.0, 0.0, 0.0));
 }

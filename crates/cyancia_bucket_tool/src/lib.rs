@@ -22,14 +22,6 @@ pub fn init(cx: &mut App) {
     cx.add_tool_function::<BucketTool>();
 }
 
-const _: () = {
-    if GpuTileStorageInner::TILE_SIZE % 32 != 0 {
-        panic!(
-            "Tile size must be divisible by 32, otherwise computations in shaders will be incorrect"
-        );
-    }
-};
-
 pub struct BucketTool {
     threshold: f32,
     alpha_threshold: f32,
