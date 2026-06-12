@@ -1,20 +1,19 @@
 use cyancia_image::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::buffer::DynamicBuffer;
-use encase::{DynamicUniformBuffer, ShaderType};
+use encase::ShaderType;
 use glam::{UVec2, Vec4};
 use wesl::include_wesl;
 use wgpu::{
-    include_wgsl,
-    wgt::{BufferDescriptor, TextureDescriptor},
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TextureDimension, TextureFormat, TextureUsages, TextureView,
+    StorageTextureAccess, Texture, TextureDimension, TextureFormat, TextureUsages,
     TextureViewDimension,
+    wgt::{BufferDescriptor, TextureDescriptor},
 };
 
 // TODO Use 16 bit/8 bit if possible
@@ -28,12 +27,30 @@ pub struct BucketParams {
     pub alpha_threshold: f32,
 }
 
+#[derive(ShaderType, Debug, Clone, Copy)]
+pub struct SmaaParams {
+    pub blend_strength: f32,
+    pub diagonal_weight: f32,
+    pub corner_preserve_strength: f32,
+    pub edge_search_steps: u32,
+}
+
+impl Default for SmaaParams {
+    fn default() -> Self {
+        Self {
+            blend_strength: 0.45,
+            diagonal_weight: 0.5,
+            corner_preserve_strength: 0.75,
+            edge_search_steps: 4,
+        }
+    }
+}
+
 pub struct PreparedBucket {
     input_layer_tile_count: u32,
-    params_buffer: Buffer,
-    mask_buffer: Buffer,
     thresholding_bind_group: BindGroup,
     ccl_bind_group: BindGroup,
+    smaa_bind_group: BindGroup,
     total_pixels: u32,
     composite_bind_group: BindGroup,
 }
@@ -45,6 +62,8 @@ pub struct Bucket {
     ccl_merge_pipeline: ComputePipeline,
     ccl_compress_pipeline: ComputePipeline,
     ccl_extract_pipeline: ComputePipeline,
+    smaa_layout: BindGroupLayout,
+    smaa_pipeline: ComputePipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
 }
@@ -200,6 +219,70 @@ impl Bucket {
             cache: None,
         });
 
+        let smaa_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("smaa_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: MASK_TEXTURE_FORMAT,
+                        view_dimension: TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: MASK_TEXTURE_FORMAT,
+                        view_dimension: TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(GpuTileInfo::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(SmaaParams::min_size()),
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let smaa_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("smaa_pipeline_layout"),
+            bind_group_layouts: &[&smaa_layout],
+            push_constant_ranges: &[],
+        });
+        let smaa_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("smaa_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("smaa").into()),
+        });
+        let smaa_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("smaa_pipeline"),
+            layout: Some(&smaa_pipeline_layout),
+            module: &smaa_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         let composite_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("composite_layout"),
             entries: &[
@@ -261,6 +344,8 @@ impl Bucket {
             ccl_merge_pipeline,
             ccl_compress_pipeline,
             ccl_extract_pipeline,
+            smaa_layout,
+            smaa_pipeline,
             composite_layout,
             composite_pipeline,
         }
@@ -280,6 +365,11 @@ impl Bucket {
             DynamicBuffer::new(Some("bucket_params_buffer"), BufferUsages::UNIFORM);
         params_buffer.push(params);
         params_buffer.write_buffer(device, queue);
+
+        let mut smaa_params_buffer =
+            DynamicBuffer::new(Some("smaa_params_buffer"), BufferUsages::UNIFORM);
+        smaa_params_buffer.push(&SmaaParams::default());
+        smaa_params_buffer.write_buffer(device, queue);
 
         let total_pixels = input_layer_tile_count
             * GpuTileStorageInner::TILE_SIZE
@@ -307,6 +397,22 @@ impl Bucket {
             view_formats: &[],
         });
         let mask_texture_view = mask_texture.create_view(&Default::default());
+
+        let smoothed_mask_texture = device.create_texture(&TextureDescriptor {
+            label: Some("smoothed_mask_texture"),
+            size: Extent3d {
+                width: GpuTileStorageInner::TILE_SIZE,
+                height: GpuTileStorageInner::TILE_SIZE,
+                depth_or_array_layers: input_layer_tile_count,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: MASK_TEXTURE_FORMAT,
+            usage: TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let smoothed_mask_texture_view = smoothed_mask_texture.create_view(&Default::default());
 
         let thresholding_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("thresholding_bind_group"),
@@ -354,6 +460,29 @@ impl Bucket {
             ],
         });
 
+        let smaa_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("smaa_bind_group"),
+            layout: &self.smaa_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&mask_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&smoothed_mask_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: ref_layer.tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: smaa_params_buffer.binding().unwrap(),
+                },
+            ],
+        });
+
         let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("composite_bind_group"),
             layout: &self.composite_layout,
@@ -364,7 +493,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask_texture_view),
+                    resource: BindingResource::TextureView(&smoothed_mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -375,10 +504,9 @@ impl Bucket {
 
         PreparedBucket {
             input_layer_tile_count,
-            params_buffer: params_buffer.into_inner_buffer().unwrap(),
-            mask_buffer: labels_buffer,
             thresholding_bind_group,
             ccl_bind_group,
+            smaa_bind_group,
             total_pixels,
             composite_bind_group,
         }
@@ -445,6 +573,16 @@ impl Bucket {
             });
             pass.set_pipeline(&self.ccl_extract_pipeline);
             pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
+        }
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("smaa_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.smaa_pipeline);
+            pass.set_bind_group(0, &prepared.smaa_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
         }
 
