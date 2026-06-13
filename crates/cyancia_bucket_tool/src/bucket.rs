@@ -1,6 +1,6 @@
 use cyancia_image::{
     texel::TexelType,
-    tile::{GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::buffer::DynamicBuffer;
 use encase::ShaderType;
@@ -45,15 +45,6 @@ impl Default for SmaaParams {
             edge_search_steps: 4,
         }
     }
-}
-
-pub struct PreparedBucket {
-    input_layer_tile_count: u32,
-    thresholding_bind_group: BindGroup,
-    ccl_bind_group: BindGroup,
-    ccl_iterations: u32,
-    smaa_bind_group: BindGroup,
-    composite_bind_group: BindGroup,
 }
 
 pub struct Bucket {
@@ -352,14 +343,15 @@ impl Bucket {
         }
     }
 
-    pub fn prepare(
+    pub fn dispatch(
         &self,
         device: &Device,
         queue: &Queue,
         params: &BucketParams,
         ref_layer: &LayerBindingData,
-        output_layer: &LayerBindingData,
-    ) -> PreparedBucket {
+        output_layer: &mut DynamicLayerStorage,
+    ) {
+        let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
         let input_layer_tile_count = ref_layer.texture.texture().depth_or_array_layers();
 
         let mut params_buffer =
@@ -415,6 +407,8 @@ impl Bucket {
         });
         let smoothed_mask_texture_view = smoothed_mask_texture.create_view(&Default::default());
 
+        let mut ec = device.create_command_encoder(&Default::default());
+
         let thresholding_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("thresholding_bind_group"),
             layout: &self.thresholding_layout,
@@ -437,6 +431,26 @@ impl Bucket {
                 },
             ],
         });
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("thresholding_pass"),
+                timestamp_writes: None,
+            });
+
+            pass.set_pipeline(&self.thresholding_pipeline);
+            pass.set_bind_group(0, &thresholding_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, input_layer_tile_count);
+        }
+
+        // unsafe { device.start_graphics_debugger_capture() };
+        // debug_bit_mask(
+        //     device,
+        //     queue,
+        //     &prepared.bit_mask,
+        //     prepared.input_layer_tile_count,
+        // );
+        // unsafe { device.stop_graphics_debugger_capture() };
 
         let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("ccl_bind_group"),
@@ -461,8 +475,39 @@ impl Bucket {
             ],
         });
 
-        let max_distance = (total_pixels as f32).sqrt().ceil() as u32;
-        let ccl_iterations = (max_distance as f32).log2().ceil() as u32 + 1;
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("ccl_merge_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.ccl_merge_pipeline);
+            pass.set_bind_group(0, &ccl_bind_group, &[]);
+            let max_distance = (total_pixels as f32).sqrt().ceil() as u32;
+            let ccl_iterations = (max_distance as f32).log2().ceil() as u32 + 1;
+            for _ in 0..ccl_iterations {
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, input_layer_tile_count);
+            }
+        }
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("ccl_compress_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.ccl_compress_pipeline);
+            pass.set_bind_group(0, &ccl_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, input_layer_tile_count);
+        }
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("ccl_extract_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.ccl_extract_pipeline);
+            pass.set_bind_group(0, &ccl_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, input_layer_tile_count);
+        }
 
         let smaa_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("smaa_bind_group"),
@@ -487,6 +532,20 @@ impl Bucket {
             ],
         });
 
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("smaa_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.smaa_pipeline);
+            pass.set_bind_group(0, &smaa_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, input_layer_tile_count);
+        }
+
+        let Some(output_texture) = output_layer.texture() else {
+            return;
+        };
+
         let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("composite_bind_group"),
             layout: &self.composite_layout,
@@ -501,91 +560,10 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&output_layer.texture),
+                    resource: BindingResource::TextureView(&output_texture),
                 },
             ],
         });
-
-        PreparedBucket {
-            input_layer_tile_count,
-            thresholding_bind_group,
-            ccl_bind_group,
-            ccl_iterations,
-            smaa_bind_group,
-            composite_bind_group,
-        }
-    }
-
-    pub fn dispatch(&self, device: &Device, queue: &Queue, prepared: PreparedBucket) {
-        let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
-
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("thresholding_pass"),
-                timestamp_writes: None,
-            });
-
-            pass.set_pipeline(&self.thresholding_pipeline);
-            pass.set_bind_group(0, &prepared.thresholding_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
-        }
-
-        queue.submit([ec.finish()]);
-
-        // unsafe { device.start_graphics_debugger_capture() };
-        // debug_bit_mask(
-        //     device,
-        //     queue,
-        //     &prepared.bit_mask,
-        //     prepared.input_layer_tile_count,
-        // );
-        // unsafe { device.stop_graphics_debugger_capture() };
-
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("ccl_merge_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.ccl_merge_pipeline);
-            pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
-            for _ in 0..prepared.ccl_iterations {
-                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
-            }
-        }
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("ccl_compress_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.ccl_compress_pipeline);
-            pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
-        }
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("ccl_extract_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.ccl_extract_pipeline);
-            pass.set_bind_group(0, &prepared.ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
-        }
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("smaa_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.smaa_pipeline);
-            pass.set_bind_group(0, &prepared.smaa_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
-        }
 
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
@@ -593,8 +571,8 @@ impl Bucket {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.composite_pipeline);
-            pass.set_bind_group(0, &prepared.composite_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, prepared.input_layer_tile_count);
+            pass.set_bind_group(0, &composite_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, input_layer_tile_count);
         }
 
         unsafe { device.start_graphics_debugger_capture() };

@@ -69,12 +69,11 @@ impl ToolFunction for BucketTool {
         let render_context = cx.global::<RenderContext>();
         // TODO Reference other layers
         let ref_layer_id = canvas.image.active_layer;
-        let ref_layer = tiles.get_layer_binding_or_empty(ref_layer_id).unwrap();
         let ref_layer_info = tiles.get_layer_info(ref_layer_id).unwrap();
+        let ref_layer = tiles.get_layer_binding_or_empty(ref_layer_id).unwrap();
 
         let output_layer_id = canvas.image.active_layer;
-        let output_layer = tiles.get_layer_binding_or_empty(output_layer_id).unwrap();
-        let output_layer_info = tiles.get_layer_info(output_layer_id).unwrap();
+        let mut output_layer = tiles.get_layer_mut(output_layer_id).unwrap();
 
         let params = BucketParams {
             seed: position_ps.as_uvec2(),
@@ -87,16 +86,16 @@ impl ToolFunction for BucketTool {
         let bucket = Bucket::new(
             &render_context.device,
             ref_layer_info.texel_type,
-            output_layer_info.texel_type,
+            output_layer.layer_info().texel_type,
         );
-        let prepared = bucket.prepare(
+        bucket.dispatch(
             &render_context.device,
             &render_context.queue,
             &params,
             &ref_layer,
-            &output_layer,
+            &mut output_layer,
         );
-        bucket.dispatch(&render_context.device, &render_context.queue, prepared);
+        drop(output_layer);
 
         // TODO compute actual dirty tiles
         let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {

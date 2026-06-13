@@ -24,6 +24,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
             matches = true;
         }
     } else {
+        // TODO Filling transparent pixels often requires to grow the target layer
         if current_color.a <= params.alpha_threshold {
             matches = true;
         }
