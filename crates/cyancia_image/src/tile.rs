@@ -177,6 +177,12 @@ impl GpuTileStorageInner {
         self.layers.get(&layer_id).map(|l| l.layer_info().clone())
     }
 
+    pub fn get_layer_tiles(&self, layer_id: LayerId) -> Option<Vec<IVec2>> {
+        self.layers
+            .get(&layer_id)
+            .map(|l| l.tiles.keys().cloned().collect())
+    }
+
     pub fn get_layer(
         &self,
         layer_id: LayerId,

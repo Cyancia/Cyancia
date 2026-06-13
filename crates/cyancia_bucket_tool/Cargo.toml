@@ -15,7 +15,10 @@ gpui.workspace = true
 cyancia_canvas.workspace = true
 gpui-component.workspace = true
 bevy_math.workspace = true
+indexmap.workspace = true
+bytemuck.workspace = true
 
 [build-dependencies]
 wesl.workspace = true
 cyancia_image.workspace = true
+cyancia_render.workspace = true

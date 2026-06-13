@@ -3,19 +3,35 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
 @group(0) @binding(1) var mask: texture_storage_2d_array<r32float, read>;
-@group(0) @binding(2) var output: texture_storage_2d_array<r32uint, read_write>;
+@group(0) @binding(2) var<storage> mask_tile_info: array<TileInfo>;
+@group(0) @binding(3) var output: texture_storage_2d_array<r32uint, read_write>;
+@group(0) @binding(4) var<storage> output_tile_info: array<TileInfo>;
+
+fn find_dst_layer_index(tile_index: vec2i) -> i32 {
+    for (var i = 0u; i < arrayLength(&output_tile_info); i += 1u) {
+        if all(output_tile_info[i].index == tile_index) {
+            return i32(i);
+        }
+    }
+    return -1;
+}
 
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3u) {
-    let tile_index = global_id.z;
-    let pixel_index = global_id.xy;
+    let src_tile_index = global_id.z;
+    let local_index = global_id.xy;
 
-    let linear_index = tile_index * TILE_SIZE * TILE_SIZE + pixel_index.y * TILE_SIZE + pixel_index.x;
-    let mask_value = textureLoad(mask, pixel_index, tile_index).x;
+    let global_index = mask_tile_info[src_tile_index].origin + vec2i(local_index);
+    let mask_value = textureLoad(mask, local_index, src_tile_index).x;
     let src_color = mix(vec4f(0.0), params.fill_color, mask_value);
-    let dst_color = image::texture_unpack::unpack_rgba8_texel(textureLoad(output, pixel_index, tile_index));
+
+    let dst_layer_index = find_dst_layer_index(mask_tile_info[src_tile_index].index);
+    if dst_layer_index == -1 {
+        return;
+    }
+    let dst_color = image::texture_unpack::unpack_rgba8_texel(textureLoad(output, local_index, dst_layer_index));
 
     let color = image::blend_modes::blend_normal(src_color, dst_color);
-    textureStore(output, pixel_index, tile_index, image::texture_unpack::pack_rgba8_texel(color));
+    textureStore(output, local_index, dst_layer_index, image::texture_unpack::pack_rgba8_texel(color));
 }

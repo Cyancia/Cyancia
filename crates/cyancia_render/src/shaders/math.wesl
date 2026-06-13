@@ -186,3 +186,10 @@ fn bezier_tangent_eval(p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> ve
          + 6.0 * mt * t * (p2 - p1)
          + 3.0 * t * t * (p3 - p2);
 }
+
+fn circle_rectangle_intersect(circle_center: vec2f, circle_radius: f32, rect_min: vec2f, rect_max: vec2f) -> bool {
+    let xn = max(rect_min.x, min(circle_center.x, rect_max.x));
+    let yn = max(rect_min.y, min(circle_center.y, rect_max.y));
+    let d = length(vec2f(xn, yn) - circle_center);
+    return d < circle_radius;
+}
