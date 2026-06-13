@@ -25,6 +25,7 @@ pub fn init(cx: &mut App) {
 pub struct BucketTool {
     threshold: f32,
     alpha_threshold: f32,
+    grow: i32,
 }
 
 impl Default for BucketTool {
@@ -32,6 +33,7 @@ impl Default for BucketTool {
         Self {
             threshold: 0.08,
             alpha_threshold: 0.02,
+            grow: 0,
         }
     }
 }
@@ -79,6 +81,7 @@ impl ToolFunction for BucketTool {
             fill_color: Vec4::new(0.5, 0.5, 0.0, 1.0),
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
+            grow: self.grow,
         };
 
         let bucket = Bucket::new(
@@ -237,8 +240,66 @@ impl ToolFunction for BucketTool {
             },
         );
 
+        let grow_state = window.use_keyed_state(
+            format!("{}-{}", *Self::id(), "grow-input"),
+            cx,
+            |window, cx| {
+                let state = cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .mask_pattern(MaskPattern::Number {
+                            separator: None,
+                            fraction: Some(2),
+                        })
+                        .default_value(self.grow.to_string())
+                });
+
+                cx.subscribe_in(&state, window, {
+                    let entity = bucket_entity.clone();
+
+                    move |_, state, event: &InputEvent, window, cx| match event {
+                        InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                            entity
+                                .update(cx, |bucket, cx| {
+                                    state.update(cx, |state, cx| {
+                                        let value =
+                                            state.value().parse::<i32>().unwrap_or(bucket.grow);
+                                        bucket.grow = value.clamp(-64, 64);
+                                        state.set_value(bucket.grow.to_string(), window, cx);
+                                    });
+                                })
+                                .ok();
+                        }
+                        InputEvent::Change | InputEvent::Focus => {}
+                    }
+                })
+                .detach();
+
+                cx.subscribe_in(&state, window, {
+                    let entity = bucket_entity.clone();
+                    move |_, state, event: &NumberInputEvent, window, cx| {
+                        let step = match event {
+                            NumberInputEvent::Step(StepAction::Increment) => 1,
+                            NumberInputEvent::Step(StepAction::Decrement) => -1,
+                        };
+                        entity
+                            .update(cx, |bucket, cx| {
+                                state.update(cx, |state, cx| {
+                                    bucket.grow = (bucket.grow + step).clamp(-64, 64);
+                                    state.set_value(bucket.grow.to_string(), window, cx);
+                                });
+                            })
+                            .ok();
+                    }
+                })
+                .detach();
+
+                state
+            },
+        );
+
         let threshold_state = threshold_state.read(cx);
         let alpha_threshold_state = alpha_threshold_state.read(cx);
+        let grow_state = grow_state.read(cx);
 
         v_flex()
             .size_full()
@@ -257,7 +318,12 @@ impl ToolFunction for BucketTool {
                             .label("Alpha Threshold")
                             .child(NumberInput::new(alpha_threshold_state).small()),
                     )
-                    .small(),
+                    .small()
+                    .child(
+                        field()
+                            .label("Grow")
+                            .child(NumberInput::new(grow_state).small()),
+                    ),
             )
             .into_any_element()
     }

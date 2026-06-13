@@ -25,6 +25,7 @@ pub struct BucketParams {
     pub fill_color: Vec4,
     pub threshold: f32,
     pub alpha_threshold: f32,
+    pub grow: i32,
 }
 
 #[derive(ShaderType, Debug, Clone, Copy)]
