@@ -76,12 +76,14 @@ impl ToolFunction for BucketTool {
         let output_layer_id = canvas.image.active_layer;
         let mut output_layer = tiles.get_layer_mut(output_layer_id).unwrap();
 
+        let image_size = canvas.image.size();
         let params = BucketParams {
             seed: position_ps.as_uvec2(),
             fill_color: Vec4::new(0.5, 0.5, 0.0, 1.0),
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
             grow: self.grow,
+            image_size,
         };
 
         let bucket = Bucket::new(

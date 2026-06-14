@@ -4,6 +4,8 @@ struct BucketParams {
     threshold: f32,
     alpha_threshold: f32,
     grow: i32,
+    image_size: vec2u,
+    transparent_mode: u32,
 }
 
 const INVALID_LABEL: u32 = 0xFFFFFFFFu;

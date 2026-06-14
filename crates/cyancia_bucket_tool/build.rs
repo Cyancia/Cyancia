@@ -11,6 +11,7 @@ fn main() {
         &"package::thresholding.wesl".parse().unwrap(),
         "thresholding",
     );
+    compiler.build_artifact(&"package::seed_mode.wesl".parse().unwrap(), "seed_mode");
     compiler.build_artifact(
         &"package::debug_bit_mask.wesl".parse().unwrap(),
         "debug_bit_mask",
