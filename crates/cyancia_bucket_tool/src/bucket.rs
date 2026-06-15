@@ -104,9 +104,9 @@ pub struct Bucket {
     grow_pipeline: ComputePipeline,
     smaa_layout: BindGroupLayout,
     smaa_pipeline: ComputePipeline,
-    feather_layout: BindGroupLayout,
-    feather_seed_pipeline: ComputePipeline,
-    feather_jump_pipeline: ComputePipeline,
+    close_gap_and_feather_layout: BindGroupLayout,
+    close_gap_and_feather_seed_pipeline: ComputePipeline,
+    close_gap_and_feather_jump_pipeline: ComputePipeline,
     feather_resolve_pipeline: ComputePipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
@@ -530,8 +530,8 @@ impl Bucket {
             cache: None,
         });
 
-        let feather_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("feather_layout"),
+        let close_gap_and_feather_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("close_gap_and_feather_layout"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -596,36 +596,36 @@ impl Bucket {
             ],
         });
 
-        let feather_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("feather_pipeline_layout"),
-            bind_group_layouts: &[&feather_layout],
+        let close_gap_and_feather_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("close_gap_and_feather_pipeline_layout"),
+            bind_group_layouts: &[&close_gap_and_feather_layout],
             push_constant_ranges: &[],
         });
-        let feather_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("feather_shader"),
-            source: ShaderSource::Wgsl(include_wesl!("feather").into()),
+        let close_gap_and_feather_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("close_gap_and_feather_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("close_gap_and_feather").into()),
         });
-        let feather_seed_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("feather_seed_pipeline"),
-            layout: Some(&feather_pipeline_layout),
-            module: &feather_shader,
+        let close_gap_and_feather_seed_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("close_gap_and_feather_seed_pipeline"),
+            layout: Some(&close_gap_and_feather_pipeline_layout),
+            module: &close_gap_and_feather_shader,
             entry_point: Some("seed_edges"),
             compilation_options: Default::default(),
             cache: None,
         });
-        let feather_jump_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("feather_jump_pipeline"),
-            layout: Some(&feather_pipeline_layout),
-            module: &feather_shader,
+        let close_gap_and_feather_jump_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("close_gap_and_feather_jump_pipeline"),
+            layout: Some(&close_gap_and_feather_pipeline_layout),
+            module: &close_gap_and_feather_shader,
             entry_point: Some("jfa_jump"),
             compilation_options: Default::default(),
             cache: None,
         });
         let feather_resolve_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some("feather_resolve_pipeline"),
-            layout: Some(&feather_pipeline_layout),
-            module: &feather_shader,
-            entry_point: Some("resolve_alpha"),
+            layout: Some(&close_gap_and_feather_pipeline_layout),
+            module: &close_gap_and_feather_shader,
+            entry_point: Some("feather_resolve_alpha"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -720,9 +720,9 @@ impl Bucket {
             grow_pipeline,
             smaa_layout,
             smaa_pipeline,
-            feather_layout,
-            feather_seed_pipeline,
-            feather_jump_pipeline,
+            close_gap_and_feather_layout,
+            close_gap_and_feather_seed_pipeline,
+            close_gap_and_feather_jump_pipeline,
             feather_resolve_pipeline,
             composite_layout,
             composite_pipeline,
@@ -1314,12 +1314,12 @@ impl Bucket {
 
                     let a_to_b_group = device.create_bind_group(&BindGroupDescriptor {
                         label: Some("feather_seed_a_to_b_bind_group"),
-                        layout: &self.feather_layout,
+                        layout: &self.close_gap_and_feather_layout,
                         entries: &a_to_b_entries,
                     });
                     let b_to_a_group = device.create_bind_group(&BindGroupDescriptor {
                         label: Some("feather_seed_b_to_a_bind_group"),
-                        layout: &self.feather_layout,
+                        layout: &self.close_gap_and_feather_layout,
                         entries: &b_to_a_entries,
                     });
 
@@ -1332,7 +1332,7 @@ impl Bucket {
                         label: Some("feather_seed_edges_pass"),
                         timestamp_writes: None,
                     });
-                    pass.set_pipeline(&self.feather_seed_pipeline);
+                    pass.set_pipeline(&self.close_gap_and_feather_seed_pipeline);
                     pass.set_bind_group(0, &bind_groups[1], &[jump_params_offsets[0]]);
                     pass.dispatch_workgroups(
                         dispatch_xy,
@@ -1346,7 +1346,7 @@ impl Bucket {
                         label: Some("feather_jfa_pass"),
                         timestamp_writes: None,
                     });
-                    pass.set_pipeline(&self.feather_jump_pipeline);
+                    pass.set_pipeline(&self.close_gap_and_feather_jump_pipeline);
                     for i in 0..jump_iterations {
                         pass.set_bind_group(0, &bind_groups[i % 2], &[jump_params_offsets[i]]);
                         pass.dispatch_workgroups(

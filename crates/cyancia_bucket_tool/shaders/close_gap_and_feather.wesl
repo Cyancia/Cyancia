@@ -122,7 +122,7 @@ fn jfa_jump(@builtin(global_invocation_id) global_id: vec3u) {
 
 @compute
 @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE, 1)
-fn resolve_alpha(@builtin(global_invocation_id) global_id: vec3u) {
+fn feather_resolve_alpha(@builtin(global_invocation_id) global_id: vec3u) {
     let tile_index = global_id.z;
     let local_coord = global_id.xy;
     if tile_index >= arrayLength(&tile_info) || any(local_coord >= vec2u(TILE_SIZE)) {
