@@ -14,7 +14,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::bucket::{Bucket, BucketParams};
+use crate::bucket::{Bucket, BucketAntialiasApproach, BucketParams};
 
 pub mod bucket;
 
@@ -88,6 +88,11 @@ impl ToolFunction for BucketTool {
             alpha_threshold: self.alpha_threshold,
             close_gap: self.close_gap,
             grow: self.grow,
+            aa_approach: if self.feather > 0 {
+                BucketAntialiasApproach::Feather(self.feather)
+            } else {
+                BucketAntialiasApproach::Smaa
+            },
             image_size,
         };
 

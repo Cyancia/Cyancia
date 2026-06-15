@@ -5,6 +5,7 @@ struct BucketParams {
     alpha_threshold: f32,
     close_gap: u32,
     grow: i32,
+    feather: u32,
     image_size: vec2u,
     transparent_mode: u32,
 }

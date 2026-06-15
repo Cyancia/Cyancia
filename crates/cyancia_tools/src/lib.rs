@@ -149,6 +149,7 @@ impl ToolProxy {
         Self { state: None }
     }
 
+    // TODO: Preserve tool state when switching between tools
     pub fn switch_tool(&mut self, tool: ToolId, cx: &mut App) {
         let last = match self.state.take() {
             Some(mut st) => {
