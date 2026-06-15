@@ -82,14 +82,14 @@ fn row_disk_x_limit(dy: i32, radius: i32, radius_squared: i32) -> i32 {
     return x_limit;
 }
 
-fn dilate_pixel(global_coord: vec2i, radius: i32, target_value: f32) -> bool {
+fn dilate_pixel(global_coord: vec2i, radius: i32) -> bool {
     let radius_squared = radius * radius;
 
     for (var dy = -radius; dy <= radius; dy = dy + 1) {
         let x_limit = row_disk_x_limit(dy, radius, radius_squared);
         for (var dx = -x_limit; dx <= x_limit; dx = dx + 1) {
             if dx * dx + dy * dy <= radius_squared &&
-               load_source_mask_global(global_coord + vec2i(dx, dy)) == target_value {
+               load_source_mask_global(global_coord + vec2i(dx, dy)) == MASK_FILLABLE {
                 return true;
             }
         }
@@ -98,48 +98,20 @@ fn dilate_pixel(global_coord: vec2i, radius: i32, target_value: f32) -> bool {
     return false;
 }
 
-fn erode_pixel(global_coord: vec2i, radius: i32, target_value: f32) -> bool {
+fn erode_pixel(global_coord: vec2i, radius: i32) -> bool {
     let radius_squared = radius * radius;
 
     for (var dy = -radius; dy <= radius; dy = dy + 1) {
         let x_limit = row_disk_x_limit(dy, radius, radius_squared);
         for (var dx = -x_limit; dx <= x_limit; dx = dx + 1) {
             if dx * dx + dy * dy <= radius_squared &&
-               load_source_mask_global(global_coord + vec2i(dx, dy)) != target_value {
+               load_source_mask_global(global_coord + vec2i(dx, dy)) != MASK_FILLABLE {
                 return false;
             }
         }
     }
 
     return true;
-}
-
-@compute
-@workgroup_size(16, 16, 1)
-fn close_gap_erode(@builtin(global_invocation_id) global_id: vec3u) {
-    let tile_index = global_id.z;
-    let local_coord = global_id.xy;
-
-    let tile = tile_info[tile_index];
-    let global_coord = tile.origin + vec2i(local_coord);
-
-    let should_erode = erode_pixel(global_coord, i32(params.close_gap), MASK_FILLABLE);
-    let value = select(MASK_BARRIER, MASK_FILLABLE, should_erode);
-    textureStore(destination_mask, local_coord, tile_index, vec4f(value, 0.0, 0.0, 0.0));
-}
-
-@compute
-@workgroup_size(16, 16, 1)
-fn close_gap_dilate(@builtin(global_invocation_id) global_id: vec3u) {
-    let tile_index = global_id.z;
-    let local_coord = global_id.xy;
-
-    let tile = tile_info[tile_index];
-    let global_coord = tile.origin + vec2i(local_coord);
-
-    let should_dilate = dilate_pixel(global_coord, i32(params.close_gap), MASK_FILLABLE);
-    let value = select(MASK_BARRIER, MASK_FILLABLE, should_dilate);
-    textureStore(destination_mask, local_coord, tile_index, vec4f(value, 0.0, 0.0, 0.0));
 }
 
 @compute
@@ -157,10 +129,10 @@ fn grow(@builtin(global_invocation_id) global_id: vec3u) {
 
     var value = 0.0;
     if params.grow > 0 {
-        let should_dilate = dilate_pixel(global_coord, params.grow, MASK_FILLABLE);
+        let should_dilate = dilate_pixel(global_coord, params.grow);
         value = select(MASK_BARRIER, MASK_FILLABLE, should_dilate);
     } else if params.grow < 0 {
-        let should_erode = erode_pixel(global_coord, -params.grow, MASK_FILLABLE);
+        let should_erode = erode_pixel(global_coord, -params.grow);
         value = select(MASK_FILLABLE, MASK_BARRIER, should_erode);
     }
 

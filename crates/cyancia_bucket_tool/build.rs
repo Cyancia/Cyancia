@@ -16,10 +16,7 @@ fn main() {
         &"package::debug_bit_mask.wesl".parse().unwrap(),
         "debug_bit_mask",
     );
-    compiler.build_artifact(
-        &"package::close_gap_and_grow.wesl".parse().unwrap(),
-        "close_gap_and_grow",
-    );
+    compiler.build_artifact(&"package::grow.wesl".parse().unwrap(), "grow");
     compiler.build_artifact(&"package::ccl.wesl".parse().unwrap(), "ccl");
     compiler.build_artifact(&"package::composite.wesl".parse().unwrap(), "composite");
     compiler.build_artifact(&"package::smaa.wesl".parse().unwrap(), "smaa");
