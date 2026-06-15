@@ -116,20 +116,6 @@ fn erode_pixel(global_coord: vec2i, radius: i32, target_value: f32) -> bool {
 
 @compute
 @workgroup_size(16, 16, 1)
-fn close_gap_dilate(@builtin(global_invocation_id) global_id: vec3u) {
-    let tile_index = global_id.z;
-    let local_coord = global_id.xy;
-
-    let tile = tile_info[tile_index];
-    let global_coord = tile.origin + vec2i(local_coord);
-
-    let should_dilate = dilate_pixel(global_coord, i32(params.close_gap), MASK_BARRIER);
-    let value = select(MASK_FILLABLE, MASK_BARRIER, should_dilate);
-    textureStore(destination_mask, local_coord, tile_index, vec4f(value, 0.0, 0.0, 0.0));
-}
-
-@compute
-@workgroup_size(16, 16, 1)
 fn close_gap_erode(@builtin(global_invocation_id) global_id: vec3u) {
     let tile_index = global_id.z;
     let local_coord = global_id.xy;
@@ -137,8 +123,22 @@ fn close_gap_erode(@builtin(global_invocation_id) global_id: vec3u) {
     let tile = tile_info[tile_index];
     let global_coord = tile.origin + vec2i(local_coord);
 
-    let should_erode = erode_pixel(global_coord, i32(params.close_gap), MASK_BARRIER);
-    let value = select(MASK_FILLABLE, MASK_BARRIER, should_erode);
+    let should_erode = erode_pixel(global_coord, i32(params.close_gap), MASK_FILLABLE);
+    let value = select(MASK_BARRIER, MASK_FILLABLE, should_erode);
+    textureStore(destination_mask, local_coord, tile_index, vec4f(value, 0.0, 0.0, 0.0));
+}
+
+@compute
+@workgroup_size(16, 16, 1)
+fn close_gap_dilate(@builtin(global_invocation_id) global_id: vec3u) {
+    let tile_index = global_id.z;
+    let local_coord = global_id.xy;
+
+    let tile = tile_info[tile_index];
+    let global_coord = tile.origin + vec2i(local_coord);
+
+    let should_dilate = dilate_pixel(global_coord, i32(params.close_gap), MASK_FILLABLE);
+    let value = select(MASK_BARRIER, MASK_FILLABLE, should_dilate);
     textureStore(destination_mask, local_coord, tile_index, vec4f(value, 0.0, 0.0, 0.0));
 }
 

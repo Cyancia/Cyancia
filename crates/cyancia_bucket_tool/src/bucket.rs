@@ -901,8 +901,8 @@ impl Bucket {
                 ..Default::default()
             });
 
-        let close_gap_dilate_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("close_gap_dilate_bind_group"),
+        let close_gap_erode_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("close_gap_erode_bind_group"),
             layout: &self.close_gap_and_grow_layout,
             entries: &[
                 BindGroupEntry {
@@ -923,8 +923,8 @@ impl Bucket {
                 },
             ],
         });
-        let close_gap_erode_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("close_gap_erode_bind_group"),
+        let close_gap_dilate_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("close_gap_dilate_bind_group"),
             layout: &self.close_gap_and_grow_layout,
             entries: &[
                 BindGroupEntry {
@@ -952,15 +952,15 @@ impl Bucket {
                 ..Default::default()
             });
 
-            pass.push_debug_group("close_gap_dilate_pass");
-            pass.set_pipeline(&self.close_gap_dilate_pipeline);
-            pass.set_bind_group(0, &close_gap_dilate_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
-            pass.pop_debug_group();
-
             pass.push_debug_group("close_gap_erode_pass");
             pass.set_pipeline(&self.close_gap_erode_pipeline);
             pass.set_bind_group(0, &close_gap_erode_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.pop_debug_group();
+
+            pass.push_debug_group("close_gap_dilate_pass");
+            pass.set_pipeline(&self.close_gap_dilate_pipeline);
+            pass.set_bind_group(0, &close_gap_dilate_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
             pass.pop_debug_group();
         }
