@@ -84,6 +84,7 @@ impl ToolFunction for BucketTool {
             fill_color: Vec4::new(0.5, 0.5, 0.0, 1.0),
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
+            close_gap: self.close_gap,
             grow: self.grow,
             image_size,
         };

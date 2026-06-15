@@ -38,6 +38,7 @@ pub struct BucketParams {
     pub fill_color: Vec4,
     pub threshold: f32,
     pub alpha_threshold: f32,
+    pub close_gap: u32,
     pub grow: i32,
     pub image_size: UVec2,
 }
@@ -48,6 +49,7 @@ struct BucketParamsInner {
     pub fill_color: Vec4,
     pub threshold: f32,
     pub alpha_threshold: f32,
+    pub close_gap: u32,
     pub grow: i32,
     pub image_size: UVec2,
     pub transparent_mode: u32,
@@ -79,12 +81,14 @@ pub struct Bucket {
     thresholding_pipeline: ComputePipeline,
     scan_pixels_layout: BindGroupLayout,
     scan_pixels_pipeline: ComputePipeline,
+    close_gap_and_grow_layout: BindGroupLayout,
+    close_gap_dilate_pipeline: ComputePipeline,
+    close_gap_erode_pipeline: ComputePipeline,
     ccl_layout: BindGroupLayout,
     ccl_merge_pipeline: ComputePipeline,
     ccl_compress_pipeline: ComputePipeline,
     ccl_extract_pipeline: ComputePipeline,
-    grow_layout: BindGroupLayout,
-    grow: ComputePipeline,
+    grow_pipeline: ComputePipeline,
     smaa_layout: BindGroupLayout,
     smaa_pipeline: ComputePipeline,
     composite_layout: BindGroupLayout,
@@ -286,6 +290,84 @@ impl Bucket {
             cache: None,
         });
 
+        let close_gap_and_grow_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("close_gap_and_grow_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("close_gap_and_grow").into()),
+        });
+
+        let close_gap_and_grow_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("close_gap_and_grow_layout"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: Some(BucketParamsInner::min_size()),
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::ReadOnly,
+                            format: MASK_TEXTURE_FORMAT,
+                            view_dimension: TextureViewDimension::D2Array,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: MASK_TEXTURE_FORMAT,
+                            view_dimension: TextureViewDimension::D2Array,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: Some(GpuTileInfo::min_size()),
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let close_gap_and_grow_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("close_gap_and_grow_pipeline_layout"),
+                bind_group_layouts: &[&close_gap_and_grow_layout],
+                push_constant_ranges: &[],
+            });
+
+        let close_gap_dilate_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("close_gap_dilate_pipeline"),
+                layout: Some(&close_gap_and_grow_pipeline_layout),
+                module: &close_gap_and_grow_shader,
+                entry_point: Some("close_gap_dilate"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+        let close_gap_erode_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("close_gap_erode_pipeline"),
+            layout: Some(&close_gap_and_grow_pipeline_layout),
+            module: &close_gap_and_grow_shader,
+            entry_point: Some("close_gap_erode"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         let ccl_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("ccl_layout"),
             entries: &[
@@ -370,68 +452,11 @@ impl Bucket {
             cache: None,
         });
 
-        let grow_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("grow_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(BucketParamsInner::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: MASK_TEXTURE_FORMAT,
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::WriteOnly,
-                        format: MASK_TEXTURE_FORMAT,
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-            ],
-        });
-
-        let grow_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("grow_pipeline_layout"),
-            bind_group_layouts: &[&grow_layout],
-            push_constant_ranges: &[],
-        });
-
-        let grow_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("grow_shader"),
-            source: ShaderSource::Wgsl(include_wesl!("grow").into()),
-        });
-
-        let grow = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("grow"),
-            layout: Some(&grow_pipeline_layout),
-            module: &grow_shader,
-            entry_point: Some("main"),
+        let grow_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("grow_pipeline"),
+            layout: Some(&close_gap_and_grow_pipeline_layout),
+            module: &close_gap_and_grow_shader,
+            entry_point: Some("grow"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -581,12 +606,14 @@ impl Bucket {
             thresholding_pipeline,
             scan_pixels_layout,
             scan_pixels_pipeline,
+            close_gap_and_grow_layout,
+            close_gap_dilate_pipeline,
+            close_gap_erode_pipeline,
             ccl_layout,
             ccl_merge_pipeline,
             ccl_compress_pipeline,
             ccl_extract_pipeline,
-            grow_layout,
-            grow,
+            grow_pipeline,
             smaa_layout,
             smaa_pipeline,
             composite_layout,
@@ -610,6 +637,7 @@ impl Bucket {
             fill_color: params.fill_color,
             threshold: params.threshold,
             alpha_threshold: params.alpha_threshold,
+            close_gap: params.close_gap,
             grow: params.grow,
             image_size: params.image_size,
             transparent_mode: 0,
@@ -853,6 +881,77 @@ impl Bucket {
         // );
         // unsafe { device.stop_graphics_debugger_capture() };
 
+        let close_gap_intermediate_texture = device.create_texture(&TextureDescriptor {
+            label: Some("close_gap_intermediate_texture"),
+            size: mask_texture.size(),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: MASK_TEXTURE_FORMAT,
+            usage: TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let close_gap_intermediate_texture_view =
+            close_gap_intermediate_texture.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
+
+        let close_gap_dilate_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("close_gap_dilate_bind_group"),
+            layout: &self.close_gap_and_grow_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&mask_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&close_gap_intermediate_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: mask_tile_info_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let close_gap_erode_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("close_gap_erode_bind_group"),
+            layout: &self.close_gap_and_grow_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&close_gap_intermediate_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&mask_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: mask_tile_info_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor::default());
+            pass.set_pipeline(&self.close_gap_erode_pipeline);
+
+            pass.set_bind_group(0, &close_gap_dilate_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.set_bind_group(0, &close_gap_erode_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+        }
+
         let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("ccl_bind_group"),
             layout: &self.ccl_layout,
@@ -934,7 +1033,7 @@ impl Bucket {
 
             let grow_bind_group = device.create_bind_group(&BindGroupDescriptor {
                 label: Some("grow_bind_group"),
-                layout: &self.grow_layout,
+                layout: &self.close_gap_and_grow_layout,
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
@@ -962,7 +1061,7 @@ impl Bucket {
                     label: Some("grow_pass"),
                     timestamp_writes: None,
                 });
-                pass.set_pipeline(&self.grow);
+                pass.set_pipeline(&self.grow_pipeline);
                 pass.set_bind_group(0, &grow_bind_group, &[]);
                 pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
             }
