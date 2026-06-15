@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    sync::{Arc, mpsc},
+    sync::{mpsc, Arc},
 };
 
 use cyancia_image::{
@@ -20,12 +20,12 @@ use glam::{IVec2, UVec2, Vec4};
 use indexmap::{IndexMap, IndexSet};
 use wesl::include_wesl;
 use wgpu::{
+    wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode,
     PipelineLayoutDescriptor, PollType, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TextureDimension, TextureFormat, TextureUsages, TextureViewDimension,
-    wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
 
 // TODO Use 16 bit/8 bit if possible
@@ -1033,13 +1033,10 @@ impl Bucket {
         };
 
         if params.close_gap > 0 {
-            let jump_iterations = params.close_gap.next_power_of_two() as usize;
-            let (jump_params_buffer, jump_params_offsets) = create_jfa_params(
-                device,
-                queue,
-                jump_iterations as u32,
-                "close_gap_jump_params",
-            );
+            let max_jump = params.close_gap.next_power_of_two();
+            let (jump_params_buffer, jump_params_offsets) =
+                create_jfa_params(device, queue, max_jump, "close_gap_jump_params");
+            let jump_iterations = jump_params_offsets.len();
 
             let common_entries = vec![
                 BindGroupEntry {
@@ -1361,13 +1358,10 @@ impl Bucket {
                     break 'a;
                 }
 
-                let jump_iterations = radius.next_power_of_two() as usize;
-                let (jump_params_buffer, jump_params_offsets) = create_jfa_params(
-                    &device,
-                    &queue,
-                    jump_iterations as u32,
-                    "feather_jump_params",
-                );
+                let max_jump = radius.next_power_of_two();
+                let (jump_params_buffer, jump_params_offsets) =
+                    create_jfa_params(&device, &queue, max_jump, "feather_jump_params");
+                let jump_iterations = jump_params_offsets.len();
 
                 let common_entries = vec![
                     BindGroupEntry {
@@ -1607,14 +1601,16 @@ impl Bucket {
 fn create_jfa_params(
     device: &Device,
     queue: &Queue,
-    iterations: u32,
+    max_jump: u32,
     label: &'static str,
 ) -> (DynamicBuffer<JumpParams>, Vec<u32>) {
     let mut jump_params_buffer = DynamicBuffer::new(Some(label), BufferUsages::UNIFORM);
-    let mut jump_params_offsets = Vec::with_capacity(iterations as usize);
-    for i in (0..iterations).rev() {
-        let offset = jump_params_buffer.push(&JumpParams { jump: i as u32 });
+    let mut jump_params_offsets = Vec::new();
+    let mut jump = max_jump.max(1);
+    while jump > 0 {
+        let offset = jump_params_buffer.push(&JumpParams { jump });
         jump_params_offsets.push(offset as u32);
+        jump /= 2;
     }
     jump_params_buffer.write_buffer(device, queue);
 
