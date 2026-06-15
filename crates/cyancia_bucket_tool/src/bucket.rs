@@ -630,6 +630,7 @@ impl Bucket {
         ref_layer_tile_info: IndexSet<IVec2>,
         output_layer: &mut DynamicLayerStorage,
     ) {
+        unsafe { device.start_graphics_debugger_capture() };
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
 
         let mut params = BucketParamsInner {
@@ -794,7 +795,10 @@ impl Bucket {
         });
 
         {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor::default());
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("scan_pixels_pass"),
+                ..Default::default()
+            });
             pass.set_pipeline(&self.scan_pixels_pipeline);
             pass.set_bind_group(0, &scan_pixels_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
@@ -943,13 +947,21 @@ impl Bucket {
         });
 
         {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor::default());
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("close_gap"),
+                ..Default::default()
+            });
             pass.set_pipeline(&self.close_gap_erode_pipeline);
 
+            pass.push_debug_group("close_gap_dilate_pass");
             pass.set_bind_group(0, &close_gap_dilate_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.pop_debug_group();
+
+            pass.push_debug_group("close_gap_erode_pass");
             pass.set_bind_group(0, &close_gap_erode_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.pop_debug_group();
         }
 
         let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -977,9 +989,11 @@ impl Bucket {
 
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("ccl_merge_pass"),
+                label: Some("ccl_pass"),
                 timestamp_writes: None,
             });
+
+            pass.push_debug_group("ccl_merge_pass");
             pass.set_pipeline(&self.ccl_merge_pipeline);
             pass.set_bind_group(0, &ccl_bind_group, &[]);
             let max_distance = (total_pixels as f32).sqrt().ceil() as u32;
@@ -987,26 +1001,19 @@ impl Bucket {
             for _ in 0..ccl_iterations {
                 pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
             }
-        }
+            pass.pop_debug_group();
 
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("ccl_compress_pass"),
-                timestamp_writes: None,
-            });
+            pass.push_debug_group("ccl_compress_pass");
             pass.set_pipeline(&self.ccl_compress_pipeline);
             pass.set_bind_group(0, &ccl_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
-        }
+            pass.pop_debug_group();
 
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("ccl_extract_pass"),
-                timestamp_writes: None,
-            });
+            pass.push_debug_group("ccl_extract_pass");
             pass.set_pipeline(&self.ccl_extract_pipeline);
             pass.set_bind_group(0, &ccl_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.pop_debug_group();
         }
 
         queue.submit([ec.finish()]);
@@ -1166,8 +1173,8 @@ impl Bucket {
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
         }
 
-        unsafe { device.start_graphics_debugger_capture() };
         queue.submit([ec.finish()]);
+
         unsafe { device.stop_graphics_debugger_capture() };
 
         // unsafe { device.start_graphics_debugger_capture() };
