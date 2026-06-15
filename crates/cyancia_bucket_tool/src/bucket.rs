@@ -85,6 +85,7 @@ pub struct Bucket {
     close_gap_dilate_pipeline: ComputePipeline,
     close_gap_erode_pipeline: ComputePipeline,
     ccl_layout: BindGroupLayout,
+    ccl_init_pipeline: ComputePipeline,
     ccl_merge_pipeline: ComputePipeline,
     ccl_compress_pipeline: ComputePipeline,
     ccl_extract_pipeline: ComputePipeline,
@@ -187,10 +188,10 @@ impl Bucket {
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: MASK_TEXTURE_FORMAT,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
@@ -385,7 +386,7 @@ impl Bucket {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::WriteOnly,
+                        access: StorageTextureAccess::ReadWrite,
                         format: MASK_TEXTURE_FORMAT,
                         view_dimension: TextureViewDimension::D2Array,
                     },
@@ -423,6 +424,15 @@ impl Bucket {
         let ccl_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("ccl_shader"),
             source: ShaderSource::Wgsl(include_wesl!("ccl").into()),
+        });
+
+        let ccl_init_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("ccl_init_pipeline"),
+            layout: Some(&ccl_pipeline_layout),
+            module: &ccl_shader,
+            entry_point: Some("ccl_init"),
+            compilation_options: Default::default(),
+            cache: None,
         });
 
         let ccl_merge_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
@@ -610,6 +620,7 @@ impl Bucket {
             close_gap_dilate_pipeline,
             close_gap_erode_pipeline,
             ccl_layout,
+            ccl_init_pipeline,
             ccl_merge_pipeline,
             ccl_compress_pipeline,
             ccl_extract_pipeline,
@@ -744,7 +755,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: labels_buffer.as_entire_binding(),
+                    resource: BindingResource::TextureView(&mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -951,14 +962,15 @@ impl Bucket {
                 label: Some("close_gap"),
                 ..Default::default()
             });
-            pass.set_pipeline(&self.close_gap_erode_pipeline);
 
             pass.push_debug_group("close_gap_dilate_pass");
+            pass.set_pipeline(&self.close_gap_dilate_pipeline);
             pass.set_bind_group(0, &close_gap_dilate_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
             pass.pop_debug_group();
 
             pass.push_debug_group("close_gap_erode_pass");
+            pass.set_pipeline(&self.close_gap_erode_pipeline);
             pass.set_bind_group(0, &close_gap_erode_bind_group, &[]);
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
             pass.pop_debug_group();
@@ -992,6 +1004,12 @@ impl Bucket {
                 label: Some("ccl_pass"),
                 timestamp_writes: None,
             });
+
+            pass.push_debug_group("ccl_init_pass");
+            pass.set_pipeline(&self.ccl_init_pipeline);
+            pass.set_bind_group(0, &ccl_bind_group, &[]);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.pop_debug_group();
 
             pass.push_debug_group("ccl_merge_pass");
             pass.set_pipeline(&self.ccl_merge_pipeline);

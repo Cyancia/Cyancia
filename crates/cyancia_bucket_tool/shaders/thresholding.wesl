@@ -3,7 +3,7 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
 @group(0) @binding(1) var input: texture_storage_2d_array<r32uint, read>;
-@group(0) @binding(2) var<storage, read_write> labels: array<u32>;
+@group(0) @binding(2) var mask: texture_storage_2d_array<r32float, write>;
 @group(0) @binding(3) var<storage> input_tile_info: array<TileInfo>;
 @group(0) @binding(4) var<storage> mask_tile_info: array<TileInfo>;
 
@@ -16,31 +16,25 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
         return;
     }
 
-    let linear_idx = tile_index * TILE_SIZE * TILE_SIZE + pixel_index.y * TILE_SIZE + pixel_index.x;
     let mask_info = mask_tile_info[tile_index];
     let global_coord = mask_info.origin + vec2i(pixel_index);
     if is_outside_image(global_coord) {
-        labels[linear_idx] = INVALID_LABEL;
+        textureStore(mask, pixel_index, tile_index, vec4f(0.0));
         return;
     }
 
     let current_color = load_input_color(global_coord);
 
-    var matches = false;
     if params.transparent_mode == 0u {
         let seed_color = get_seed_color();
         if distance(seed_color.rgb, current_color.rgb) <= params.threshold {
-            matches = true;
+            textureStore(mask, pixel_index, tile_index, vec4f(1.0));
         }
     } else {
-        // TODO Filling transparent pixels often requires to grow the target layer
         if current_color.a <= params.alpha_threshold {
-            matches = true;
+            textureStore(mask, pixel_index, tile_index, vec4f(1.0));
         }
     }
-
-    let value = select(INVALID_LABEL, linear_idx, matches);
-    labels[linear_idx] = value;
 }
 
 fn is_outside_image(coord: vec2i) -> bool {

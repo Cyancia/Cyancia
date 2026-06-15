@@ -2,7 +2,7 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 import package::types::{BucketParams, INVALID_LABEL};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
-@group(0) @binding(1) var mask: texture_storage_2d_array<r32float, write>;
+@group(0) @binding(1) var mask: texture_storage_2d_array<r32float, read_write>;
 @group(0) @binding(2) var<storage, read_write> labels: array<atomic<u32>>;
 @group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
 
@@ -56,6 +56,16 @@ fn union_labels(idx_a: u32, idx_b: u32) {
             root_a = find_root(root_a);
         }
     }
+}
+
+@compute @workgroup_size(16, 16, 1)
+fn ccl_init(@builtin(global_invocation_id) gid: vec3u) {
+    let tile_idx = gid.z;
+    let pixel_idx = gid.xy;
+
+    let linear_idx = tile_idx * TILE_SIZE * TILE_SIZE + pixel_idx.y * TILE_SIZE + pixel_idx.x;
+    let mask_value = textureLoad(mask, pixel_idx, tile_idx).r;
+    labels[linear_idx] = select(INVALID_LABEL, linear_idx, mask_value == 1.0);
 }
 
 @compute @workgroup_size(16, 16, 1)
