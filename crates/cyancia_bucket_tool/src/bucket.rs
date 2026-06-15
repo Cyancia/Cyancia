@@ -710,17 +710,6 @@ impl Bucket {
         smaa_params_buffer.push(&SmaaParams::default());
         smaa_params_buffer.write_buffer(device, queue);
 
-        let total_pixels = mask_tile_indices.len() as u32
-            * GpuTileStorageInner::TILE_SIZE
-            * GpuTileStorageInner::TILE_SIZE;
-
-        let labels_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("labels_buffer"),
-            size: (total_pixels * 4) as u64,
-            usage: BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-
         let mut mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("mask_texture"),
             size: Extent3d {
@@ -975,6 +964,17 @@ impl Bucket {
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
             pass.pop_debug_group();
         }
+
+        let total_pixels = mask_tile_indices.len() as u32
+            * GpuTileStorageInner::TILE_SIZE
+            * GpuTileStorageInner::TILE_SIZE;
+
+        let labels_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("labels_buffer"),
+            size: (total_pixels * 4) as u64,
+            usage: BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
 
         let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("ccl_bind_group"),

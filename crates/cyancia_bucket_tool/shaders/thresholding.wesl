@@ -25,16 +25,19 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
 
     let current_color = load_input_color(global_coord);
 
+    var value = 0.0;
     if params.transparent_mode == 0u {
         let seed_color = get_seed_color();
         if distance(seed_color.rgb, current_color.rgb) <= params.threshold {
-            textureStore(mask, pixel_index, tile_index, vec4f(1.0));
+            value = 1.0;
         }
     } else {
         if current_color.a <= params.alpha_threshold {
-            textureStore(mask, pixel_index, tile_index, vec4f(1.0));
+            value = 1.0;
         }
     }
+
+    textureStore(mask, pixel_index, tile_index, vec4f(value, 0.0, 0.0, 0.0));
 }
 
 fn is_outside_image(coord: vec2i) -> bool {
