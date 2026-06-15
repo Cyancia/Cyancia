@@ -73,7 +73,7 @@ pub struct SmaaParams {
 }
 
 #[derive(ShaderType, Debug, Clone, Copy)]
-pub struct FeatherJumpParams {
+pub struct JumpParams {
     pub jump: u32,
 }
 
@@ -95,6 +95,7 @@ pub struct Bucket {
     thresholding_pipeline: ComputePipeline,
     scan_pixels_layout: BindGroupLayout,
     scan_pixels_pipeline: ComputePipeline,
+    close_gap_resolve_pipeline: ComputePipeline,
     ccl_layout: BindGroupLayout,
     ccl_init_pipeline: ComputePipeline,
     ccl_merge_pipeline: ComputePipeline,
@@ -530,97 +531,101 @@ impl Bucket {
             cache: None,
         });
 
-        let close_gap_and_feather_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("close_gap_and_feather_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(BucketParamsInner::min_size()),
+        let close_gap_and_feather_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("close_gap_and_feather_layout"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: Some(BucketParamsInner::min_size()),
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: MASK_TEXTURE_FORMAT,
-                        view_dimension: TextureViewDimension::D2Array,
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::ReadWrite,
+                            format: MASK_TEXTURE_FORMAT,
+                            view_dimension: TextureViewDimension::D2Array,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: TextureFormat::Rg32Float,
-                        view_dimension: TextureViewDimension::D2Array,
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::ReadOnly,
+                            format: TextureFormat::Rg32Float,
+                            view_dimension: TextureViewDimension::D2Array,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::WriteOnly,
-                        format: TextureFormat::Rg32Float,
-                        view_dimension: TextureViewDimension::D2Array,
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rg32Float,
+                            view_dimension: TextureViewDimension::D2Array,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: Some(GpuTileInfo::min_size()),
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: Some(FeatherJumpParams::min_size()),
+                    BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: true,
+                            min_binding_size: Some(JumpParams::min_size()),
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let close_gap_and_feather_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("close_gap_and_feather_pipeline_layout"),
-            bind_group_layouts: &[&close_gap_and_feather_layout],
-            push_constant_ranges: &[],
-        });
+        let close_gap_and_feather_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("close_gap_and_feather_pipeline_layout"),
+                bind_group_layouts: &[&close_gap_and_feather_layout],
+                push_constant_ranges: &[],
+            });
         let close_gap_and_feather_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("close_gap_and_feather_shader"),
             source: ShaderSource::Wgsl(include_wesl!("close_gap_and_feather").into()),
         });
-        let close_gap_and_feather_seed_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("close_gap_and_feather_seed_pipeline"),
-            layout: Some(&close_gap_and_feather_pipeline_layout),
-            module: &close_gap_and_feather_shader,
-            entry_point: Some("seed_edges"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
-        let close_gap_and_feather_jump_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("close_gap_and_feather_jump_pipeline"),
-            layout: Some(&close_gap_and_feather_pipeline_layout),
-            module: &close_gap_and_feather_shader,
-            entry_point: Some("jfa_jump"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let close_gap_and_feather_seed_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("close_gap_and_feather_seed_pipeline"),
+                layout: Some(&close_gap_and_feather_pipeline_layout),
+                module: &close_gap_and_feather_shader,
+                entry_point: Some("seed_edges"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let close_gap_and_feather_jump_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("close_gap_and_feather_jump_pipeline"),
+                layout: Some(&close_gap_and_feather_pipeline_layout),
+                module: &close_gap_and_feather_shader,
+                entry_point: Some("jfa_jump"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
         let feather_resolve_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some("feather_resolve_pipeline"),
             layout: Some(&close_gap_and_feather_pipeline_layout),
@@ -629,6 +634,15 @@ impl Bucket {
             compilation_options: Default::default(),
             cache: None,
         });
+        let close_gap_resolve_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("close_gap_resolve_pipeline"),
+                layout: Some(&close_gap_and_feather_pipeline_layout),
+                module: &close_gap_and_feather_shader,
+                entry_point: Some("close_gap_resolve"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let composite_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("composite_layout"),
@@ -711,6 +725,7 @@ impl Bucket {
             thresholding_pipeline,
             scan_pixels_layout,
             scan_pixels_pipeline,
+            close_gap_resolve_pipeline,
             ccl_layout,
             ccl_init_pipeline,
             ccl_merge_pipeline,
@@ -978,30 +993,159 @@ impl Bucket {
             })
         };
 
-        let original_mask = device.create_texture(&TextureDescriptor {
-            label: Some("original_mask"),
-            size: mask_texture_view.texture().size(),
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: MASK_TEXTURE_FORMAT,
-            usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let original_mask_view = original_mask.create_view(&TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::D2Array),
-            ..Default::default()
-        });
-        ec.copy_texture_to_texture(
-            mask_texture_view.texture().as_image_copy(),
-            original_mask.as_image_copy(),
-            mask_texture_view.texture().size(),
-        );
+        queue.submit([ec.finish()]);
 
         for index in mask_tile_indices.iter().copied() {
             output_layer.get_tile_or_allocate(index);
         }
 
+        let seed_texture_a_view = {
+            let t = device.create_texture(&TextureDescriptor {
+                label: Some("feather_seed_texture_a"),
+                size: mask_texture_view.texture().size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rg32Float,
+                usage: TextureUsages::STORAGE_BINDING,
+                view_formats: &[],
+            });
+            t.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            })
+        };
+        let seed_texture_b_view = {
+            let seed_texture_b = device.create_texture(&TextureDescriptor {
+                label: Some("feather_seed_texture_b"),
+                size: mask_texture_view.texture().size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rg32Float,
+                usage: TextureUsages::STORAGE_BINDING,
+                view_formats: &[],
+            });
+            seed_texture_b.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            })
+        };
+
+        if params.close_gap > 0 {
+            let jump_iterations = params.close_gap.next_power_of_two() as usize;
+            let (jump_params_buffer, jump_params_offsets) = create_jfa_params(
+                device,
+                queue,
+                jump_iterations as u32,
+                "close_gap_jump_params",
+            );
+
+            let common_entries = vec![
+                BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&mask_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: mask_tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: jump_params_buffer.binding().unwrap(),
+                },
+            ];
+
+            let bind_groups = {
+                let a_to_b_entries = common_entries
+                    .clone()
+                    .into_iter()
+                    .chain([
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: BindingResource::TextureView(&seed_texture_a_view),
+                        },
+                        BindGroupEntry {
+                            binding: 3,
+                            resource: BindingResource::TextureView(&seed_texture_b_view),
+                        },
+                    ])
+                    .collect::<Vec<_>>();
+                let b_to_a_entries = common_entries
+                    .into_iter()
+                    .chain([
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: BindingResource::TextureView(&seed_texture_b_view),
+                        },
+                        BindGroupEntry {
+                            binding: 3,
+                            resource: BindingResource::TextureView(&seed_texture_a_view),
+                        },
+                    ])
+                    .collect::<Vec<_>>();
+
+                let a_to_b_group = device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("close_gap_seed_a_to_b_bind_group"),
+                    layout: &self.close_gap_and_feather_layout,
+                    entries: &a_to_b_entries,
+                });
+                let b_to_a_group = device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("close_gap_seed_b_to_a_bind_group"),
+                    layout: &self.close_gap_and_feather_layout,
+                    entries: &b_to_a_entries,
+                });
+
+                [a_to_b_group, b_to_a_group]
+            };
+
+            let mut ec = device.create_command_encoder(&Default::default());
+            {
+                let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("close_gap_seed_edges_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.close_gap_and_feather_seed_pipeline);
+                pass.set_bind_group(0, &bind_groups[1], &[jump_params_offsets[0]]);
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            }
+
+            {
+                let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("close_gap_jfa_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.close_gap_and_feather_jump_pipeline);
+                for i in 0..jump_iterations {
+                    pass.set_bind_group(0, &bind_groups[i % 2], &[jump_params_offsets[i]]);
+                    pass.dispatch_workgroups(
+                        dispatch_xy,
+                        dispatch_xy,
+                        mask_tile_indices.len() as u32,
+                    );
+                }
+            }
+
+            {
+                let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("close_gap_resolve_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.close_gap_resolve_pipeline);
+                pass.set_bind_group(
+                    0,
+                    &bind_groups[jump_iterations % 2],
+                    &[jump_params_offsets[jump_iterations - 1]],
+                );
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            }
+
+            queue.submit([ec.finish()]);
+        }
         // unsafe { device.start_graphics_debugger_capture() };
         // debug_bit_mask(
         //     device,
@@ -1044,6 +1188,8 @@ impl Bucket {
                 },
             ],
         });
+
+        let mut ec = device.create_command_encoder(&Default::default());
 
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
@@ -1215,54 +1361,13 @@ impl Bucket {
                     break 'a;
                 }
 
-                let seed_texture_a = device.create_texture(&TextureDescriptor {
-                    label: Some("feather_seed_texture_a"),
-                    size: Extent3d {
-                        width: GpuTileStorageInner::TILE_SIZE,
-                        height: GpuTileStorageInner::TILE_SIZE,
-                        depth_or_array_layers: mask_tile_indices.len() as u32,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::Rg32Float,
-                    usage: TextureUsages::STORAGE_BINDING,
-                    view_formats: &[],
-                });
-                let seed_texture_b = device.create_texture(&TextureDescriptor {
-                    label: Some("feather_seed_texture_b"),
-                    size: seed_texture_a.size(),
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::Rg32Float,
-                    usage: TextureUsages::STORAGE_BINDING,
-                    view_formats: &[],
-                });
-                let seed_texture_a_view = seed_texture_a.create_view(&TextureViewDescriptor {
-                    dimension: Some(TextureViewDimension::D2Array),
-                    ..Default::default()
-                });
-                let seed_texture_b_view = seed_texture_b.create_view(&TextureViewDescriptor {
-                    dimension: Some(TextureViewDimension::D2Array),
-                    ..Default::default()
-                });
-
                 let jump_iterations = radius.next_power_of_two() as usize;
-                let (jump_params_buffer, jump_params_offsets) = {
-                    let mut jump_params_buffer = DynamicBuffer::new(
-                        Some("feather_jump_params_buffer"),
-                        BufferUsages::UNIFORM,
-                    );
-                    let mut jump_params_offsets = Vec::with_capacity(jump_iterations as usize);
-                    for i in (0..jump_iterations).rev() {
-                        let offset = jump_params_buffer.push(&FeatherJumpParams { jump: i as u32 });
-                        jump_params_offsets.push(offset as u32);
-                    }
-                    jump_params_buffer.write_buffer(device, queue);
-
-                    (jump_params_buffer, jump_params_offsets)
-                };
+                let (jump_params_buffer, jump_params_offsets) = create_jfa_params(
+                    &device,
+                    &queue,
+                    jump_iterations as u32,
+                    "feather_jump_params",
+                );
 
                 let common_entries = vec![
                     BindGroupEntry {
@@ -1497,6 +1602,23 @@ impl Bucket {
 
         seed_mode == 1
     }
+}
+
+fn create_jfa_params(
+    device: &Device,
+    queue: &Queue,
+    iterations: u32,
+    label: &'static str,
+) -> (DynamicBuffer<JumpParams>, Vec<u32>) {
+    let mut jump_params_buffer = DynamicBuffer::new(Some(label), BufferUsages::UNIFORM);
+    let mut jump_params_offsets = Vec::with_capacity(iterations as usize);
+    for i in (0..iterations).rev() {
+        let offset = jump_params_buffer.push(&JumpParams { jump: i as u32 });
+        jump_params_offsets.push(offset as u32);
+    }
+    jump_params_buffer.write_buffer(device, queue);
+
+    (jump_params_buffer, jump_params_offsets)
 }
 
 fn tile_info_for_index(index: IVec2) -> GpuTileInfo {

@@ -7,7 +7,7 @@ const MASK_ON = 1.0;
 const NO_TILE = -1;
 const INVALID_SEED = vec2f(-1.0, -1.0);
 
-struct FeatherJumpParams {
+struct JumpParams {
     jump: u32,
 }
 
@@ -16,7 +16,7 @@ struct FeatherJumpParams {
 @group(0) @binding(2) var seed_src: texture_storage_2d_array<rg32float, read>;
 @group(0) @binding(3) var seed_dst: texture_storage_2d_array<rg32float, write>;
 @group(0) @binding(4) var<storage> tile_info: array<TileInfo>;
-@group(0) @binding(5) var<uniform> jump_params: FeatherJumpParams;
+@group(0) @binding(5) var<uniform> jump_params: JumpParams;
 
 fn is_outside_image(coord: vec2i) -> bool {
     return params.transparent_mode != 0u &&
@@ -133,16 +133,83 @@ fn feather_resolve_alpha(@builtin(global_invocation_id) global_id: vec3u) {
     let global_coord = tile.origin + vec2i(local_coord);
     let center = load_mask_global(global_coord);
     if center <= 0.5 {
-        textureStore(mask, local_coord, tile_index, vec4f(MASK_OFF, 0.0, 0.0, 0.0));
         return;
     }
 
     let seed = load_seed_global(global_coord);
     if !is_valid_seed(seed) {
-        textureStore(mask, local_coord, tile_index, vec4f(MASK_ON, 0.0, 0.0, 0.0));
         return;
     }
 
     let alpha = clamp(distance(vec2f(global_coord), seed) / f32(params.feather), MASK_OFF, MASK_ON);
     textureStore(mask, local_coord, tile_index, vec4f(alpha, 0.0, 0.0, 0.0));
+}
+
+@compute
+@workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE, 1)
+fn close_gap_resolve(@builtin(global_invocation_id) global_id: vec3u) {
+    let tile_index = global_id.z;
+    let local_coord = global_id.xy;
+    if tile_index >= arrayLength(&tile_info) || any(local_coord >= vec2u(TILE_SIZE)) {
+        return;
+    }
+
+    let tile = tile_info[tile_index];
+    let global_coord = tile.origin + vec2i(local_coord);
+    let global_coordf = vec2f(global_coord);
+
+    let seed = load_seed_global(global_coord);
+
+    if !is_valid_seed(seed) {
+        return;
+    }
+
+    let cur_dist = distance(global_coordf, seed);
+    if cur_dist > f32(params.close_gap) {
+        return;
+    }
+
+    let seed_dir = normalize(seed - global_coordf);
+    let neighbor_dir = vec2f(-seed_dir.y, seed_dir.x);
+    let left_coord = vec2i(global_coordf - neighbor_dir);
+    let right_coord = vec2i(global_coordf + neighbor_dir);
+    let left_seed = load_seed_global(left_coord);
+    let right_seed = load_seed_global(right_coord);
+    if !is_valid_seed(left_seed) || !is_valid_seed(right_seed) {
+        return;
+    }
+
+    let left_dist = distance(vec2f(left_coord), left_seed);
+    let right_dist = distance(vec2f(right_coord), right_seed);
+
+    if cur_dist > left_dist && cur_dist > right_dist {
+        var p0 = vec2i(left_seed);
+        let p1 = vec2i(right_seed);
+        let delta = abs(p1 - p0);
+        let step = vec2i(select(-1, 1, p0.x < p1.x), select(-1, 1, p0.y < p1.y));
+        var err = delta.x - delta.y;
+
+        loop {
+            let line_tile_index = find_tile_for_coord(p0);
+            if line_tile_index != NO_TILE {
+                let line_tile = tile_info[u32(line_tile_index)];
+                let line_local_coord = vec2u(p0 - line_tile.origin);
+                textureStore(mask, line_local_coord, u32(line_tile_index), vec4f(MASK_OFF, 0.0, 0.0, 0.0));
+            }
+
+            if all(p0 == p1) {
+                break;
+            }
+
+            let err2 = err * 2;
+            if err2 > -delta.y {
+                err = err - delta.y;
+                p0.x = p0.x + step.x;
+            }
+            if err2 < delta.x {
+                err = err + delta.x;
+                p0.y = p0.y + step.y;
+            }
+        }
+    }
 }
