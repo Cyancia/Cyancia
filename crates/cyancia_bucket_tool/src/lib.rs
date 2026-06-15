@@ -27,6 +27,7 @@ pub struct BucketTool {
     alpha_threshold: f32,
     grow: i32,
     close_gap: u32,
+    feather: u32,
 }
 
 impl Default for BucketTool {
@@ -36,6 +37,7 @@ impl Default for BucketTool {
             alpha_threshold: 0.02,
             grow: 0,
             close_gap: 0,
+            feather: 0,
         }
     }
 }
@@ -366,10 +368,68 @@ impl ToolFunction for BucketTool {
             },
         );
 
+        let feather_state = window.use_keyed_state(
+            format!("{}-{}", *Self::id(), "feather-input"),
+            cx,
+            |window, cx| {
+                let state = cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .mask_pattern(MaskPattern::Number {
+                            separator: None,
+                            fraction: Some(2),
+                        })
+                        .default_value(self.feather.to_string())
+                });
+
+                cx.subscribe_in(&state, window, {
+                    let entity = bucket_entity.clone();
+
+                    move |_, state, event: &InputEvent, window, cx| match event {
+                        InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                            entity
+                                .update(cx, |bucket, cx| {
+                                    state.update(cx, |state, cx| {
+                                        let value =
+                                            state.value().parse::<u32>().unwrap_or(bucket.feather);
+                                        bucket.feather = value.clamp(0, 64);
+                                        state.set_value(bucket.feather.to_string(), window, cx);
+                                    });
+                                })
+                                .ok();
+                        }
+                        InputEvent::Change | InputEvent::Focus => {}
+                    }
+                })
+                .detach();
+
+                cx.subscribe_in(&state, window, {
+                    let entity = bucket_entity.clone();
+                    move |_, state, event: &NumberInputEvent, window, cx| {
+                        let step = match event {
+                            NumberInputEvent::Step(StepAction::Increment) => 1,
+                            NumberInputEvent::Step(StepAction::Decrement) => -1,
+                        };
+                        entity
+                            .update(cx, |bucket, cx| {
+                                state.update(cx, |state, cx| {
+                                    bucket.feather = (bucket.feather + step as u32).clamp(0, 64);
+                                    state.set_value(bucket.feather.to_string(), window, cx);
+                                });
+                            })
+                            .ok();
+                    }
+                })
+                .detach();
+
+                state
+            },
+        );
+
         let threshold_state = threshold_state.read(cx);
         let alpha_threshold_state = alpha_threshold_state.read(cx);
         let grow_state = grow_state.read(cx);
         let close_gap_state = close_gap_state.read(cx);
+        let feather_state = feather_state.read(cx);
 
         v_flex()
             .size_full()
@@ -398,6 +458,11 @@ impl ToolFunction for BucketTool {
                         field()
                             .label("Close Gap")
                             .child(NumberInput::new(close_gap_state).small()),
+                    )
+                    .child(
+                        field()
+                            .label("Feather")
+                            .child(NumberInput::new(feather_state).small()),
                     ),
             )
             .into_any_element()
