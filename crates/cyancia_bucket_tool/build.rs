@@ -20,4 +20,5 @@ fn main() {
     compiler.build_artifact(&"package::ccl.wesl".parse().unwrap(), "ccl");
     compiler.build_artifact(&"package::composite.wesl".parse().unwrap(), "composite");
     compiler.build_artifact(&"package::smaa.wesl".parse().unwrap(), "smaa");
+    compiler.build_artifact(&"package::scan_pixels.wesl".parse().unwrap(), "scan_pixels");
 }

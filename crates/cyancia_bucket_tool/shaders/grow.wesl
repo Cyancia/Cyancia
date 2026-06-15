@@ -9,24 +9,10 @@ const MASK_THRESHOLD = 0.5;
 const NO_TILE = -1;
 const ACTIVE_TILE_BIT = 1u << 8u;
 
-const OFFSETS: array<vec2i, 8> = array<vec2i, 8>(
-    vec2i(-1, -1),
-    vec2i(0, -1),
-    vec2i(1, -1),
-    vec2i(1, 0),
-    vec2i(1, 1),
-    vec2i(0, 1),
-    vec2i(-1, 1),
-    vec2i(-1, 0)
-);
-
 @group(0) @binding(0) var<uniform> params: BucketParams;
 @group(0) @binding(1) var source_mask: texture_storage_2d_array<r32float, read>;
 @group(0) @binding(2) var destination_mask: texture_storage_2d_array<r32float, write>;
-@group(0) @binding(3) var<storage> source_tile_info: array<TileInfo>;
-@group(0) @binding(4) var<storage> destination_tile_info: array<TileInfo>;
-// (allocate_info[i] & (1 << j)) != 0 means the tile i should grow in the j-th direction
-@group(0) @binding(5) var<storage, read_write> allocate_info: array<atomic<u32>>;
+@group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
 
 fn is_outside_image(coord: vec2i) -> bool {
     return params.transparent_mode != 0u &&
@@ -43,8 +29,8 @@ fn is_tile_outside_image(tile_coord: vec2i) -> bool {
 }
 
 fn find_source_tile_for_coord(coord: vec2i) -> i32 {
-    for (var i = 0u; i < arrayLength(&source_tile_info); i = i + 1u) {
-        let info = source_tile_info[i];
+    for (var i = 0u; i < arrayLength(&tile_info); i = i + 1u) {
+        let info = tile_info[i];
         if coord.x >= info.origin.x && coord.x < info.origin.x + i32(TILE_SIZE) &&
            coord.y >= info.origin.y && coord.y < info.origin.y + i32(TILE_SIZE) {
             return i32(i);
@@ -63,7 +49,7 @@ fn load_source_mask_global(coord: vec2i) -> f32 {
         return MASK_OFF;
     }
 
-    let info = source_tile_info[u32(tile_index)];
+    let info = tile_info[u32(tile_index)];
     let local_coord = vec2u(coord - info.origin);
     return textureLoad(source_mask, local_coord, u32(tile_index)).x;
 }
@@ -137,57 +123,15 @@ fn erode_pixel(global_coord: vec2i, center: f32, radius: i32) -> f32 {
 }
 
 @compute
-@workgroup_size(16, 16, 1)
-fn estimate(@builtin(global_invocation_id) global_id: vec3u) {
-    let tile_index = global_id.z;
-    let local_coord = global_id.xy;
-    if tile_index >= arrayLength(&source_tile_info) || any(local_coord >= vec2u(TILE_SIZE)) {
-        return;
-    }
-
-    let global_coord = source_tile_info[tile_index].origin + vec2i(local_coord);
-    if is_outside_image(global_coord) {
-        return;
-    }
-
-    let mask_value = textureLoad(source_mask, local_coord, u32(tile_index)).x;
-    if mask_value < MASK_THRESHOLD {
-        return;
-    }
-
-    atomicOr(&allocate_info[tile_index], ACTIVE_TILE_BIT);
-
-    if params.grow <= 0 {
-        return;
-    }
-
-    for (var i = 0u; i < 8u; i += 1u) {
-        let tile_coord = source_tile_info[tile_index].index + OFFSETS[i];
-        if is_tile_outside_image(tile_coord) {
-            continue;
-        }
-
-        let tile_min = tile_coord * vec2i(TILE_SIZE);
-        let tile_max = tile_min + vec2i(TILE_SIZE);
-        if !circle_rectangle_intersect(vec2f(global_coord), f32(params.grow + 1), vec2f(tile_min), vec2f(tile_max)) {
-            // Not intersected, won't affect
-            continue;
-        }
-
-        atomicOr(&allocate_info[tile_index], 1u << i);
-    }
-}
-
-@compute
 @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3u) {
     let tile_index = global_id.z;
     let local_coord = global_id.xy;
-    if tile_index >= arrayLength(&destination_tile_info) || any(local_coord >= vec2u(TILE_SIZE)) {
+    if tile_index >= arrayLength(&tile_info) || any(local_coord >= vec2u(TILE_SIZE)) {
         return;
     }
 
-    let tile = destination_tile_info[tile_index];
+    let tile = tile_info[tile_index];
     let global_coord = tile.origin + vec2i(local_coord);
     if is_outside_image(global_coord) {
         textureStore(destination_mask, local_coord, tile_index, vec4f(MASK_OFF, 0.0, 0.0, 0.0));

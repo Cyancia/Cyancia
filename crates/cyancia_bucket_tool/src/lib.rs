@@ -98,7 +98,7 @@ impl ToolFunction for BucketTool {
             &render_context.queue,
             &params,
             &ref_layer,
-            ref_layer_info,
+            ref_layer_info.into_iter().collect(),
             &mut output_layer,
         );
         drop(output_layer);
