@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use cyancia_assets::AssetAppExt;
 use futures::executor::block_on;
-use gpui::App;
-use wgpu::{Backends, Device, Features, Limits, Queue, TextureFormat};
+use gpui::{App, AppContext};
+use wgpu::{Backends, Device, Features, Limits, PollType, Queue, TextureFormat};
 
 use crate::{
     render_context::RenderContext,
@@ -14,10 +14,12 @@ use crate::{
 };
 
 pub mod buffer;
+pub mod readback;
 pub mod render_context;
 pub mod resources;
 pub mod texture;
 pub mod texture_atlas;
+pub mod util;
 
 pub fn init(cx: &mut App) {
     cx.set_global(RenderContext::request_new());

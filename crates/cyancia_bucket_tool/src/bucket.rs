@@ -7,7 +7,14 @@ use cyancia_image::{
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData, TileIndex},
 };
-use cyancia_render::buffer::{BufferVec, DynamicBuffer};
+use cyancia_render::{
+    buffer::{BufferVec, DynamicBuffer},
+    readback::{
+        create_readback_buffer_and_schedule_copy, readback_buffer_async,
+        readback_buffer_on_submit_async,
+    },
+    util::DevicePollExt,
+};
 use encase::ShaderType;
 use glam::{IVec2, UVec2, Vec4};
 use indexmap::IndexMap;
@@ -1169,12 +1176,6 @@ impl Bucket {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let seed_mode_readback_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("seed_mode_readback_buffer"),
-            size: seed_mode_buffer.size(),
-            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
 
         let seed_mode_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("seed_mode_bind_group"),
@@ -1210,33 +1211,15 @@ impl Bucket {
             pass.dispatch_workgroups(1, 1, 1);
         }
 
-        ec.copy_buffer_to_buffer(
-            &seed_mode_buffer,
-            0,
-            &seed_mode_readback_buffer,
-            0,
-            seed_mode_buffer.size(),
-        );
+        let seed_mode_readback_buffer =
+            create_readback_buffer_and_schedule_copy(device, &mut ec, &seed_mode_buffer);
+        let seed_mode_readback =
+            readback_buffer_on_submit_async::<u32, _>(&mut ec, &seed_mode_readback_buffer, ..);
 
-        let submission_index = queue.submit([ec.finish()]);
-        let seed_mode_slice = seed_mode_readback_buffer.slice(..);
-        let (tx, rx) = mpsc::channel();
-        seed_mode_slice.map_async(MapMode::Read, move |result| {
-            tx.send(result).ok();
-        });
-        device
-            .poll(PollType::Wait {
-                submission_index: Some(submission_index),
-                timeout: None,
-            })
-            .unwrap();
-        rx.recv().unwrap().unwrap();
+        let si = queue.submit([ec.finish()]);
+        device.poll_indefinitely_for(si).unwrap();
 
-        let mapped = seed_mode_slice.get_mapped_range();
-        let buffer = mapped.to_vec();
-        let seed_mode = bytemuck::cast_slice::<_, u32>(&buffer)[0];
-        drop(mapped);
-        seed_mode_readback_buffer.unmap();
+        let seed_mode = seed_mode_readback.block_on().unwrap();
 
         seed_mode == 1
     }
