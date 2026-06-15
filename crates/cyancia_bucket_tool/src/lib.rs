@@ -6,9 +6,11 @@ use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use glam::{IVec2, Vec2, Vec4};
 use gpui::{
     AnyElement, App, AppContext, Context, IntoElement, MouseUpEvent, ParentElement, Styled, Window,
+    prelude::FluentBuilder,
 };
 use gpui_component::{
-    Sizable,
+    Selectable, Sizable,
+    button::{Button, ButtonGroup},
     form::{field, v_form},
     input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
     v_flex,
@@ -27,7 +29,8 @@ pub struct BucketTool {
     alpha_threshold: f32,
     grow: i32,
     close_gap: u32,
-    feather: u32,
+    cached_feather: u32,
+    aa_approach: BucketAntialiasApproach,
 }
 
 impl Default for BucketTool {
@@ -37,7 +40,8 @@ impl Default for BucketTool {
             alpha_threshold: 0.02,
             grow: 0,
             close_gap: 0,
-            feather: 0,
+            cached_feather: 0,
+            aa_approach: BucketAntialiasApproach::Smaa,
         }
     }
 }
@@ -88,10 +92,11 @@ impl ToolFunction for BucketTool {
             alpha_threshold: self.alpha_threshold,
             close_gap: self.close_gap,
             grow: self.grow,
-            aa_approach: if self.feather > 0 {
-                BucketAntialiasApproach::Feather(self.feather)
-            } else {
-                BucketAntialiasApproach::Smaa
+            aa_approach: match self.aa_approach {
+                BucketAntialiasApproach::Feather(_) => {
+                    BucketAntialiasApproach::Feather(self.cached_feather)
+                }
+                _ => self.aa_approach,
             },
             image_size,
         };
@@ -373,6 +378,36 @@ impl ToolFunction for BucketTool {
             },
         );
 
+        let aa_approach_buttons = ButtonGroup::new("aa-approach-buttons")
+            .child(
+                Button::new("none")
+                    .selected(matches!(self.aa_approach, BucketAntialiasApproach::None))
+                    .label("None")
+                    .on_click(cx.listener(|bucket, _, window, cx| {
+                        bucket.aa_approach = BucketAntialiasApproach::None;
+                    })),
+            )
+            .child(
+                Button::new("smaa")
+                    .selected(matches!(self.aa_approach, BucketAntialiasApproach::Smaa))
+                    .label("SMAA")
+                    .on_click(cx.listener(|bucket, _, window, cx| {
+                        bucket.aa_approach = BucketAntialiasApproach::Smaa;
+                    })),
+            )
+            .child(
+                Button::new("feather")
+                    .selected(matches!(
+                        self.aa_approach,
+                        BucketAntialiasApproach::Feather(_)
+                    ))
+                    .label("Feather")
+                    .on_click(cx.listener(|bucket, _, window, cx| {
+                        bucket.aa_approach =
+                            BucketAntialiasApproach::Feather(bucket.cached_feather);
+                    })),
+            );
+
         let feather_state = window.use_keyed_state(
             format!("{}-{}", *Self::id(), "feather-input"),
             cx,
@@ -383,7 +418,7 @@ impl ToolFunction for BucketTool {
                             separator: None,
                             fraction: Some(2),
                         })
-                        .default_value(self.feather.to_string())
+                        .default_value(self.cached_feather.to_string())
                 });
 
                 cx.subscribe_in(&state, window, {
@@ -394,10 +429,16 @@ impl ToolFunction for BucketTool {
                             entity
                                 .update(cx, |bucket, cx| {
                                     state.update(cx, |state, cx| {
-                                        let value =
-                                            state.value().parse::<u32>().unwrap_or(bucket.feather);
-                                        bucket.feather = value.clamp(0, 64);
-                                        state.set_value(bucket.feather.to_string(), window, cx);
+                                        let value = state
+                                            .value()
+                                            .parse::<u32>()
+                                            .unwrap_or(bucket.cached_feather);
+                                        bucket.cached_feather = value.clamp(0, 64);
+                                        state.set_value(
+                                            bucket.cached_feather.to_string(),
+                                            window,
+                                            cx,
+                                        );
                                     });
                                 })
                                 .ok();
@@ -417,8 +458,9 @@ impl ToolFunction for BucketTool {
                         entity
                             .update(cx, |bucket, cx| {
                                 state.update(cx, |state, cx| {
-                                    bucket.feather = (bucket.feather + step as u32).clamp(0, 64);
-                                    state.set_value(bucket.feather.to_string(), window, cx);
+                                    bucket.cached_feather =
+                                        (bucket.cached_feather + step as u32).clamp(0, 64);
+                                    state.set_value(bucket.cached_feather.to_string(), window, cx);
                                 });
                             })
                             .ok();
@@ -443,6 +485,7 @@ impl ToolFunction for BucketTool {
                 v_form()
                     .size_full()
                     .text_sm()
+                    .small()
                     .child(
                         field()
                             .label("Threshold")
@@ -453,7 +496,6 @@ impl ToolFunction for BucketTool {
                             .label("Alpha Threshold")
                             .child(NumberInput::new(alpha_threshold_state).small()),
                     )
-                    .small()
                     .child(
                         field()
                             .label("Grow")
@@ -466,8 +508,18 @@ impl ToolFunction for BucketTool {
                     )
                     .child(
                         field()
-                            .label("Feather")
-                            .child(NumberInput::new(feather_state).small()),
+                            .label("Antialiasing Approach")
+                            .child(aa_approach_buttons),
+                    )
+                    .when(
+                        matches!(self.aa_approach, BucketAntialiasApproach::Feather(_)),
+                        |f| {
+                            f.child(
+                                field()
+                                    .label("Feather")
+                                    .child(NumberInput::new(feather_state).small()),
+                            )
+                        },
                     ),
             )
             .into_any_element()

@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    sync::{mpsc, Arc},
+    sync::{Arc, mpsc},
 };
 
 use cyancia_image::{
@@ -20,12 +20,12 @@ use glam::{IVec2, UVec2, Vec4};
 use indexmap::{IndexMap, IndexSet};
 use wesl::include_wesl;
 use wgpu::{
-    wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode,
     PipelineLayoutDescriptor, PollType, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TextureDimension, TextureFormat, TextureUsages, TextureViewDimension,
+    wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
 
 // TODO Use 16 bit/8 bit if possible
@@ -35,6 +35,7 @@ const MAX_FEATHER_RADIUS: u32 = 64;
 
 #[derive(Debug, Clone, Copy)]
 pub enum BucketAntialiasApproach {
+    None,
     Smaa,
     Feather(u32),
 }
@@ -756,20 +757,14 @@ impl Bucket {
         unsafe { device.start_graphics_debugger_capture() };
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
 
-        let aa_approach = match params.aa_approach {
-            BucketAntialiasApproach::Smaa => BucketAntialiasApproach::Smaa,
-            BucketAntialiasApproach::Feather(radius) => {
-                BucketAntialiasApproach::Feather(radius.min(MAX_FEATHER_RADIUS))
-            }
-        };
-        let mut params = BucketParamsInner {
+        let mut inner_params = BucketParamsInner {
             seed: params.seed,
             fill_color: params.fill_color,
             threshold: params.threshold,
             alpha_threshold: params.alpha_threshold,
             close_gap: params.close_gap,
             grow: params.grow,
-            feather: match aa_approach {
+            feather: match params.aa_approach {
                 BucketAntialiasApproach::Feather(f) => f,
                 _ => 0,
             },
@@ -779,20 +774,20 @@ impl Bucket {
 
         let mut seed_params_buffer =
             DynamicBuffer::new(Some("bucket_seed_params_buffer"), BufferUsages::UNIFORM);
-        seed_params_buffer.push(&params);
+        seed_params_buffer.push(&inner_params);
         seed_params_buffer.write_buffer(device, queue);
 
         let seed_transparent_mode =
             self.classify_seed_mode(device, queue, &seed_params_buffer, ref_layer);
-        params.transparent_mode = u32::from(seed_transparent_mode);
+        inner_params.transparent_mode = u32::from(seed_transparent_mode);
 
         let mut params_buffer =
             DynamicBuffer::new(Some("bucket_params_buffer"), BufferUsages::UNIFORM);
-        params_buffer.push(&params);
+        params_buffer.push(&inner_params);
         params_buffer.write_buffer(device, queue);
 
         let (mut mask_tile_indices, mut mask_tile_info_buffer) = if seed_transparent_mode {
-            let image_tile_count = GpuTileStorageInner::calc_tile_count(params.image_size);
+            let image_tile_count = GpuTileStorageInner::calc_tile_count(inner_params.image_size);
             let mut mask_tile_indices =
                 IndexSet::with_capacity(image_tile_count.element_product() as usize);
             let mut tile_info_buffer = BufferVec::new(
@@ -1032,8 +1027,8 @@ impl Bucket {
             })
         };
 
-        if params.close_gap > 0 {
-            let max_jump = params.close_gap.next_power_of_two();
+        if inner_params.close_gap > 0 {
+            let max_jump = inner_params.close_gap.next_power_of_two();
             let (jump_params_buffer, jump_params_offsets) =
                 create_jfa_params(device, queue, max_jump, "close_gap_jump_params");
             let jump_iterations = jump_params_offsets.len();
@@ -1225,7 +1220,7 @@ impl Bucket {
 
         queue.submit([ec.finish()]);
 
-        if params.grow > 0 {
+        if inner_params.grow > 0 {
             let grown_mask_texture = device.create_texture(&TextureDescriptor {
                 label: Some("grown_mask_texture"),
                 size: Extent3d {
@@ -1285,7 +1280,8 @@ impl Bucket {
             mask_texture_view = grown_mask_texture_view;
         }
 
-        match aa_approach {
+        match params.aa_approach {
+            BucketAntialiasApproach::None => {}
             BucketAntialiasApproach::Smaa => {
                 let mut smaa_params_buffer =
                     DynamicBuffer::new(Some("smaa_params_buffer"), BufferUsages::UNIFORM);
