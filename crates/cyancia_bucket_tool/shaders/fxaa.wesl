@@ -18,10 +18,28 @@ struct FxaaParams {
     image_size: vec2u,
 };
 
-@group(0) @binding(0) var input: texture_storage_2d_array<r32float, read>;
-@group(0) @binding(1) var output: texture_storage_2d_array<r32float, write>;
+@group(0) @binding(0) var<storage> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<atomic<u32>>;
 @group(0) @binding(2) var<storage> tile_info: array<TileInfo>;
 @group(0) @binding(3) var<uniform> params: FxaaParams;
+
+fn load_mask(tile_idx: u32, local_coord: vec2u) -> f32 {
+    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
+    let index = linear / 4u;
+    let offset = (linear % 4u) * 8u;
+    let value = (input[index] >> offset) & 0xFFu;
+    return f32(value) / 255.0;
+}
+
+fn store_mask(tile_idx: u32, local_coord: vec2u, value: f32) {
+    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
+    let index = linear / 4u;
+    let offset = (linear % 4u) * 8u;
+    let value_u32 = u32(value * 255.0) & 0xFFu;
+    let byte_mask = 0xFFu << offset;
+    atomicAnd(&output[index], ~byte_mask);
+    atomicOr(&output[index], value_u32 << offset);
+}
 
 fn find_tile_for_coord(coord: vec2i) -> i32 {
     for (var i = 0u; i < arrayLength(&tile_info); i = i + 1u) {
@@ -42,7 +60,7 @@ fn load_mask_global(coord: vec2i) -> f32 {
 
     let info = tile_info[u32(tile_index)];
     let local_coord = vec2u(coord - info.origin);
-    return textureLoad(input, local_coord, u32(tile_index)).x;
+    return load_mask(u32(tile_index), local_coord);
 }
 
 fn sample_mask_global_linear(coord: vec2f) -> f32 {
@@ -101,7 +119,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
 
     // If the luma variation is lower that a threshold (or if we are in a really dark area), we are not on an edge, don't perform any AA.
     if (lumaRange < max(params.edge_threshold_min, lumaMax * params.edge_threshold_max)) {
-        textureStore(output, local_coord, tile_index, vec4f(centerSample, 0.0, 0.0, 0.0));
+        store_mask(tile_index, local_coord, centerSample);
         return;
     }
 
@@ -273,5 +291,5 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
 
     // Read the color at the new coordinates, and use it.
     var finalColor = sample_mask_global_linear(finalCoord);
-    textureStore(output, local_coord, tile_index, vec4f(finalColor, 0.0, 0.0, 0.0));
+    store_mask(tile_index, local_coord, finalColor);
 }
