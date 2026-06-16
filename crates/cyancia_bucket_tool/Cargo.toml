@@ -17,6 +17,7 @@ gpui-component.workspace = true
 bevy_math.workspace = true
 indexmap.workspace = true
 bytemuck.workspace = true
+tracing.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

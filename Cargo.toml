@@ -97,3 +97,4 @@ schemars = "1"
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
 bevy_color = "0.18"
 serde_json = "1"
+tracing = "0.1"

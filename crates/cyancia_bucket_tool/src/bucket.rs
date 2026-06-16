@@ -149,6 +149,12 @@ pub struct Bucket {
     composite_pipeline: ComputePipeline,
 }
 
+impl std::fmt::Debug for Bucket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bucket").finish()
+    }
+}
+
 impl Bucket {
     pub fn new(device: &Device, ref_texel_type: TexelType, output_texel_type: TexelType) -> Self {
         let seed_mode_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -780,6 +786,7 @@ impl Bucket {
         }
     }
 
+    #[tracing::instrument(name = "bucket_dispatch", skip_all)]
     pub fn dispatch(
         &self,
         device: &Device,

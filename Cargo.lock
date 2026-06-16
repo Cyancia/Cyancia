@@ -1812,6 +1812,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "indexmap",
+ "tracing",
  "wesl",
  "wgpu 27.0.1",
 ]
