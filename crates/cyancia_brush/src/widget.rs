@@ -2,8 +2,8 @@ use cyancia_assets::{asset::AssetHandle, store::AssetRegistry};
 use cyancia_shader_graph::save::SerializableGraphFunction;
 use gpui::{App, Context, IntoElement, ParentElement, RenderOnce, Window};
 use gpui_component::{
-    list::{ListDelegate, ListItem, ListState},
     IndexPath, Selectable,
+    list::{ListDelegate, ListItem, ListState},
 };
 
 use crate::asset::BrushPreset;

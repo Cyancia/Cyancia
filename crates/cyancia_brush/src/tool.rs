@@ -15,7 +15,8 @@ use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use glam::{FloatExt, Vec2};
 use gpui::{
-    AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Styled, WeakEntity, Window
+    AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
 use ringbuffer::{AllocRingBuffer, RingBuffer};

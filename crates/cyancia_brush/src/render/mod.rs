@@ -223,8 +223,11 @@ impl BrushPresetOperator {
         renderer.update(
             &self.device,
             &self.queue,
-            self.input_processor
-                .flush(final_input, self.instance.required_spacing_graph().read(cx), cx),
+            self.input_processor.flush(
+                final_input,
+                self.instance.required_spacing_graph().read(cx),
+                cx,
+            ),
             self.instance.main_graph().read(cx),
             cx.global::<GpuTileStorage>(),
             intermediate_buffers,

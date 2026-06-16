@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, ItemImpl};
+use syn::{ItemImpl, parse_macro_input};
 
 #[proc_macro_attribute]
 pub fn stateless(_attr: TokenStream, item: TokenStream) -> TokenStream {

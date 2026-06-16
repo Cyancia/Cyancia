@@ -7,7 +7,8 @@ use serde::de::DeserializeOwned;
 use crate::{
     brush::OpenBrushEditorAction,
     canvas_control::{
-        SwitchToBrushToolAction, SwitchToBucketToolAction, SwitchToPanToolAction, SwitchToRotateToolAction, SwitchToZoomToolAction
+        SwitchToBrushToolAction, SwitchToBucketToolAction, SwitchToPanToolAction,
+        SwitchToRotateToolAction, SwitchToZoomToolAction,
     },
     file::OpenFileAction,
     layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},

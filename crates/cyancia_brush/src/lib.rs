@@ -6,7 +6,12 @@ use cyancia_tools::ToolsAppExt;
 use gpui::App;
 use parking_lot::Mutex;
 
-use crate::{asset::{BrushPreset, BrushPresetSerializer}, instance::BrushPresetInstance, render::BrushPresetOperator, tool::{BrushTool, CurrentBrushPresetOperator}};
+use crate::{
+    asset::{BrushPreset, BrushPresetSerializer},
+    instance::BrushPresetInstance,
+    render::BrushPresetOperator,
+    tool::{BrushTool, CurrentBrushPresetOperator},
+};
 
 pub mod asset;
 pub mod editor;
