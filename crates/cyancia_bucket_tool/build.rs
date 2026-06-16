@@ -12,10 +12,6 @@ fn main() {
         "thresholding",
     );
     compiler.build_artifact(&"package::seed_mode.wesl".parse().unwrap(), "seed_mode");
-    compiler.build_artifact(
-        &"package::debug_bit_mask.wesl".parse().unwrap(),
-        "debug_bit_mask",
-    );
     compiler.build_artifact(&"package::grow.wesl".parse().unwrap(), "grow");
     compiler.build_artifact(&"package::ccl.wesl".parse().unwrap(), "ccl");
     compiler.build_artifact(&"package::composite.wesl".parse().unwrap(), "composite");
