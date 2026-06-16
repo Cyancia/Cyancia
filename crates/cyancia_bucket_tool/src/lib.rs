@@ -41,7 +41,7 @@ impl Default for BucketTool {
             grow: 0,
             close_gap: 0,
             cached_feather: 0,
-            aa_approach: BucketAntialiasApproach::Smaa,
+            aa_approach: BucketAntialiasApproach::Fxaa,
         }
     }
 }
@@ -388,11 +388,11 @@ impl ToolFunction for BucketTool {
                     })),
             )
             .child(
-                Button::new("smaa")
-                    .selected(matches!(self.aa_approach, BucketAntialiasApproach::Smaa))
-                    .label("SMAA")
+                Button::new("fxaa")
+                    .selected(matches!(self.aa_approach, BucketAntialiasApproach::Fxaa))
+                    .label("FXAA")
                     .on_click(cx.listener(|bucket, _, window, cx| {
-                        bucket.aa_approach = BucketAntialiasApproach::Smaa;
+                        bucket.aa_approach = BucketAntialiasApproach::Fxaa;
                     })),
             )
             .child(

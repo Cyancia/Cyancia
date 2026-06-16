@@ -36,7 +36,7 @@ const MAX_FEATHER_RADIUS: u32 = 64;
 #[derive(Debug, Clone, Copy)]
 pub enum BucketAntialiasApproach {
     None,
-    Smaa,
+    Fxaa,
     Feather(u32),
 }
 
@@ -65,28 +65,68 @@ struct BucketParamsInner {
     pub transparent_mode: u32,
 }
 
+pub struct FxaaParams {
+    pub edge_threshold_min: f32,
+    pub edge_threshold_max: f32,
+    pub iterations: u32,
+    pub subpixel_quality: f32,
+}
+
+impl Default for FxaaParams {
+    fn default() -> Self {
+        Self::HIGH
+    }
+}
+
+impl FxaaParams {
+    pub const LOW: Self = Self {
+        edge_threshold_min: 0.0833,
+        edge_threshold_max: 0.250,
+        iterations: 12,
+        subpixel_quality: 0.75,
+    };
+
+    pub const MEDIUM: Self = Self {
+        edge_threshold_min: 0.0625,
+        edge_threshold_max: 0.166,
+        iterations: 12,
+        subpixel_quality: 0.75,
+    };
+
+    pub const HIGH: Self = Self {
+        edge_threshold_min: 0.0312,
+        edge_threshold_max: 0.125,
+        iterations: 12,
+        subpixel_quality: 0.75,
+    };
+
+    pub const ULTRA: Self = Self {
+        edge_threshold_min: 0.0156,
+        edge_threshold_max: 0.063,
+        iterations: 12,
+        subpixel_quality: 0.75,
+    };
+
+    pub const EXTREME: Self = Self {
+        edge_threshold_min: 0.0078,
+        edge_threshold_max: 0.031,
+        iterations: 12,
+        subpixel_quality: 0.75,
+    };
+}
+
 #[derive(ShaderType, Debug, Clone, Copy)]
-pub struct SmaaParams {
-    pub blend_strength: f32,
-    pub diagonal_weight: f32,
-    pub corner_preserve_strength: f32,
-    pub edge_search_steps: u32,
+struct FxaaParamsInner {
+    edge_threshold_min: f32,
+    edge_threshold_max: f32,
+    iterations: u32,
+    subpixel_quality: f32,
+    image_size: UVec2,
 }
 
 #[derive(ShaderType, Debug, Clone, Copy)]
 pub struct JumpParams {
     pub jump: u32,
-}
-
-impl Default for SmaaParams {
-    fn default() -> Self {
-        Self {
-            blend_strength: 0.45,
-            diagonal_weight: 0.5,
-            corner_preserve_strength: 0.75,
-            edge_search_steps: 4,
-        }
-    }
 }
 
 pub struct Bucket {
@@ -104,8 +144,8 @@ pub struct Bucket {
     ccl_extract_pipeline: ComputePipeline,
     grow_layout: BindGroupLayout,
     grow_pipeline: ComputePipeline,
-    smaa_layout: BindGroupLayout,
-    smaa_pipeline: ComputePipeline,
+    fxaa_layout: BindGroupLayout,
+    fxaa_pipeline: ComputePipeline,
     close_gap_and_feather_layout: BindGroupLayout,
     close_gap_and_feather_seed_pipeline: ComputePipeline,
     close_gap_and_feather_jump_pipeline: ComputePipeline,
@@ -468,8 +508,8 @@ impl Bucket {
             cache: None,
         });
 
-        let smaa_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("smaa_layout"),
+        let fxaa_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("fxaa_layout"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -507,26 +547,26 @@ impl Bucket {
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: Some(SmaaParams::min_size()),
+                        min_binding_size: Some(FxaaParamsInner::min_size()),
                     },
                     count: None,
                 },
             ],
         });
 
-        let smaa_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("smaa_pipeline_layout"),
-            bind_group_layouts: &[&smaa_layout],
+        let fxaa_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("fxaa_pipeline_layout"),
+            bind_group_layouts: &[&fxaa_layout],
             push_constant_ranges: &[],
         });
-        let smaa_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("smaa_shader"),
-            source: ShaderSource::Wgsl(include_wesl!("smaa").into()),
+        let fxaa_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("fxaa_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("fxaa").into()),
         });
-        let smaa_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("smaa_pipeline"),
-            layout: Some(&smaa_pipeline_layout),
-            module: &smaa_shader,
+        let fxaa_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("fxaa_pipeline"),
+            layout: Some(&fxaa_pipeline_layout),
+            module: &fxaa_shader,
             entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
@@ -734,8 +774,8 @@ impl Bucket {
             ccl_extract_pipeline,
             grow_layout,
             grow_pipeline,
-            smaa_layout,
-            smaa_pipeline,
+            fxaa_layout,
+            fxaa_pipeline,
             close_gap_and_feather_layout,
             close_gap_and_feather_seed_pipeline,
             close_gap_and_feather_jump_pipeline,
@@ -749,7 +789,7 @@ impl Bucket {
         &self,
         device: &Device,
         queue: &Queue,
-        params: &BucketParams,
+        bucket_params: &BucketParams,
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
         output_layer: &mut DynamicLayerStorage,
@@ -758,17 +798,17 @@ impl Bucket {
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
 
         let mut inner_params = BucketParamsInner {
-            seed: params.seed,
-            fill_color: params.fill_color,
-            threshold: params.threshold,
-            alpha_threshold: params.alpha_threshold,
-            close_gap: params.close_gap,
-            grow: params.grow,
-            feather: match params.aa_approach {
+            seed: bucket_params.seed,
+            fill_color: bucket_params.fill_color,
+            threshold: bucket_params.threshold,
+            alpha_threshold: bucket_params.alpha_threshold,
+            close_gap: bucket_params.close_gap,
+            grow: bucket_params.grow,
+            feather: match bucket_params.aa_approach {
                 BucketAntialiasApproach::Feather(f) => f,
                 _ => 0,
             },
-            image_size: params.image_size,
+            image_size: bucket_params.image_size,
             transparent_mode: 0,
         };
 
@@ -781,10 +821,10 @@ impl Bucket {
             self.classify_seed_mode(device, queue, &seed_params_buffer, ref_layer);
         inner_params.transparent_mode = u32::from(seed_transparent_mode);
 
-        let mut params_buffer =
+        let mut bucket_params_buffer =
             DynamicBuffer::new(Some("bucket_params_buffer"), BufferUsages::UNIFORM);
-        params_buffer.push(&inner_params);
-        params_buffer.write_buffer(device, queue);
+        bucket_params_buffer.push(&inner_params);
+        bucket_params_buffer.write_buffer(device, queue);
 
         let (mut mask_tile_indices, mut mask_tile_info_buffer) = if seed_transparent_mode {
             let image_tile_count = GpuTileStorageInner::calc_tile_count(inner_params.image_size);
@@ -850,7 +890,7 @@ impl Bucket {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: params_buffer.binding().unwrap(),
+                    resource: bucket_params_buffer.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -1036,7 +1076,7 @@ impl Bucket {
             let common_entries = vec![
                 BindGroupEntry {
                     binding: 0,
-                    resource: params_buffer.binding().unwrap(),
+                    resource: bucket_params_buffer.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -1164,7 +1204,7 @@ impl Bucket {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: params_buffer.binding().unwrap(),
+                    resource: bucket_params_buffer.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -1246,7 +1286,7 @@ impl Bucket {
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: params_buffer.binding().unwrap(),
+                        resource: bucket_params_buffer.binding().unwrap(),
                     },
                     BindGroupEntry {
                         binding: 1,
@@ -1280,13 +1320,20 @@ impl Bucket {
             mask_texture_view = grown_mask_texture_view;
         }
 
-        match params.aa_approach {
+        match bucket_params.aa_approach {
             BucketAntialiasApproach::None => {}
-            BucketAntialiasApproach::Smaa => {
-                let mut smaa_params_buffer =
-                    DynamicBuffer::new(Some("smaa_params_buffer"), BufferUsages::UNIFORM);
-                smaa_params_buffer.push(&SmaaParams::default());
-                smaa_params_buffer.write_buffer(device, queue);
+            BucketAntialiasApproach::Fxaa => {
+                let fxaa_params = FxaaParams::default();
+                let mut fxaa_params_buffer =
+                    DynamicBuffer::new(Some("fxaa_params_buffer"), BufferUsages::UNIFORM);
+                fxaa_params_buffer.push(&FxaaParamsInner {
+                    edge_threshold_min: fxaa_params.edge_threshold_min,
+                    edge_threshold_max: fxaa_params.edge_threshold_max,
+                    iterations: fxaa_params.iterations,
+                    subpixel_quality: fxaa_params.subpixel_quality,
+                    image_size: bucket_params.image_size,
+                });
+                fxaa_params_buffer.write_buffer(device, queue);
 
                 let smoothed_mask_texture = device.create_texture(&TextureDescriptor {
                     label: Some("smoothed_mask_texture"),
@@ -1308,9 +1355,9 @@ impl Bucket {
                         ..Default::default()
                     });
 
-                let smaa_bind_group = device.create_bind_group(&BindGroupDescriptor {
-                    label: Some("smaa_bind_group"),
-                    layout: &self.smaa_layout,
+                let fxaa_bind_group = device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("fxaa_bind_group"),
+                    layout: &self.fxaa_layout,
                     entries: &[
                         BindGroupEntry {
                             binding: 0,
@@ -1326,7 +1373,7 @@ impl Bucket {
                         },
                         BindGroupEntry {
                             binding: 3,
-                            resource: smaa_params_buffer.binding().unwrap(),
+                            resource: fxaa_params_buffer.binding().unwrap(),
                         },
                     ],
                 });
@@ -1337,8 +1384,8 @@ impl Bucket {
                         label: Some("smaa_pass"),
                         timestamp_writes: None,
                     });
-                    pass.set_pipeline(&self.smaa_pipeline);
-                    pass.set_bind_group(0, &smaa_bind_group, &[]);
+                    pass.set_pipeline(&self.fxaa_pipeline);
+                    pass.set_bind_group(0, &fxaa_bind_group, &[]);
                     pass.dispatch_workgroups(
                         dispatch_xy,
                         dispatch_xy,
@@ -1362,7 +1409,7 @@ impl Bucket {
                 let common_entries = vec![
                     BindGroupEntry {
                         binding: 0,
-                        resource: params_buffer.binding().unwrap(),
+                        resource: bucket_params_buffer.binding().unwrap(),
                     },
                     BindGroupEntry {
                         binding: 1,
@@ -1487,7 +1534,7 @@ impl Bucket {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: params_buffer.binding().unwrap(),
+                    resource: bucket_params_buffer.binding().unwrap(),
                 },
                 BindGroupEntry {
                     binding: 1,

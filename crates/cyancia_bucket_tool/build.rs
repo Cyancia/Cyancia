@@ -15,7 +15,7 @@ fn main() {
     compiler.build_artifact(&"package::grow.wesl".parse().unwrap(), "grow");
     compiler.build_artifact(&"package::ccl.wesl".parse().unwrap(), "ccl");
     compiler.build_artifact(&"package::composite.wesl".parse().unwrap(), "composite");
-    compiler.build_artifact(&"package::smaa.wesl".parse().unwrap(), "smaa");
+    compiler.build_artifact(&"package::fxaa.wesl".parse().unwrap(), "fxaa");
     compiler.build_artifact(
         &"package::close_gap_and_feather.wesl".parse().unwrap(),
         "close_gap_and_feather",
