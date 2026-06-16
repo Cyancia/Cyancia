@@ -54,8 +54,8 @@ impl BrushMainPipeline {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("brush main pipeline layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout)],
+            ..Default::default()
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
@@ -181,8 +181,8 @@ impl BrushPostProcessPipeline {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("brush postprocess pipeline layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout)],
+            ..Default::default()
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {

@@ -267,8 +267,8 @@ impl CanvasRenderPipeline {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("canvas pipeline layout"),
-            bind_group_layouts: &[&main_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&main_layout)],
+            ..Default::default()
         });
 
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {

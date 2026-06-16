@@ -208,8 +208,8 @@ impl Bucket {
 
         let seed_mode_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("seed_mode_pipeline_layout"),
-            bind_group_layouts: &[&seed_mode_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&seed_mode_layout)],
+            ..Default::default()
         });
         let seed_mode_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("seed_mode_shader_module"),
@@ -283,8 +283,8 @@ impl Bucket {
         let thresholding_pipeline_layout =
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("thresholding_pipeline_layout"),
-                bind_group_layouts: &[&thresholding_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&thresholding_layout)],
+                ..Default::default()
             });
         let thresholding_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("thresholding_shader_module"),
@@ -337,8 +337,8 @@ impl Bucket {
         let scan_pixels_pipeline_layout =
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("scan_pixels_pipeline_layout"),
-                bind_group_layouts: &[&scan_pixels_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&scan_pixels_layout)],
+                ..Default::default()
             });
         let scan_pixels_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("scan_pixels_shader"),
@@ -401,8 +401,8 @@ impl Bucket {
 
         let ccl_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("ccl_pipeline_layout"),
-            bind_group_layouts: &[&ccl_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&ccl_layout)],
+            ..Default::default()
         });
 
         let ccl_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -499,8 +499,8 @@ impl Bucket {
 
         let grow_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("grow_pipeline_layout"),
-            bind_group_layouts: &[&grow_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&grow_layout)],
+            ..Default::default()
         });
 
         let grow_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
@@ -560,8 +560,8 @@ impl Bucket {
 
         let fxaa_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("fxaa_pipeline_layout"),
-            bind_group_layouts: &[&fxaa_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&fxaa_layout)],
+            ..Default::default()
         });
         let fxaa_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fxaa_shader"),
@@ -646,8 +646,8 @@ impl Bucket {
         let close_gap_and_feather_pipeline_layout =
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("close_gap_and_feather_pipeline_layout"),
-                bind_group_layouts: &[&close_gap_and_feather_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&close_gap_and_feather_layout)],
+                ..Default::default()
             });
         let close_gap_and_feather_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("close_gap_and_feather_shader"),
@@ -747,8 +747,8 @@ impl Bucket {
 
         let composite_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("composite_pipeline_layout"),
-            bind_group_layouts: &[&composite_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&composite_layout)],
+            ..Default::default()
         });
         let composite_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("composite_shader"),

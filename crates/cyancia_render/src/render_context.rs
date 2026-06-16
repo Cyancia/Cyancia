@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gpui::{Global, block_on};
-use wgpu::{Adapter, Backends, Device, Features, Instance, Queue};
+use wgpu::{Adapter, Backends, Device, Features, Instance, InstanceDescriptor, Queue};
 
 pub struct RenderContext {
     pub instance: Instance,
@@ -15,12 +15,10 @@ impl Global for RenderContext {}
 impl RenderContext {
     pub fn request_new() -> Self {
         block_on(async {
-            let instance =
-                wgpu::util::new_instance_with_webgpu_detection(&wgpu::InstanceDescriptor {
-                    backends: Backends::from_env().unwrap_or_default(),
-                    ..Default::default()
-                })
-                .await;
+            let instance = wgpu::util::new_instance_with_webgpu_detection(
+                InstanceDescriptor::new_without_display_handle_from_env(),
+            )
+            .await;
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::HighPerformance,

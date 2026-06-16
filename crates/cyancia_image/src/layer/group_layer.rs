@@ -171,8 +171,8 @@ impl Layer for GroupLayer {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: "layer blend pipeline layout".into(),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout)],
+            ..Default::default()
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
