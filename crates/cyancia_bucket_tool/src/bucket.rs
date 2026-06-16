@@ -798,7 +798,7 @@ impl Bucket {
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
         output_layer: &mut DynamicLayerStorage,
-    ) {
+    ) -> Vec<IVec2> {
         unsafe { device.start_graphics_debugger_capture() };
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
 
@@ -864,7 +864,7 @@ impl Bucket {
         };
 
         if mask_tile_indices.is_empty() {
-            return;
+            return Vec::new();
         }
 
         let mut mask_buffer = device.create_buffer(&BufferDescriptor {
@@ -1116,14 +1116,6 @@ impl Bucket {
 
             queue.submit([ec.finish()]);
         }
-        // unsafe { device.start_graphics_debugger_capture() };
-        // debug_bit_mask(
-        //     device,
-        //     queue,
-        //     &prepared.bit_mask,
-        //     prepared.input_layer_tile_count,
-        // );
-        // unsafe { device.stop_graphics_debugger_capture() };
 
         let total_pixels = mask_tile_indices.len() as u32
             * GpuTileStorageInner::TILE_SIZE
@@ -1449,7 +1441,7 @@ impl Bucket {
         let (Some(output_texture), Some(output_tile_info)) =
             (output_layer.texture(), output_layer.tile_info_buffer())
         else {
-            return;
+            return Vec::new();
         };
 
         let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -1495,14 +1487,7 @@ impl Bucket {
 
         info!("Filled {} tiles: {:?}", filled_tiles.len(), filled_tiles);
 
-        // unsafe { device.start_graphics_debugger_capture() };
-        // debug_bit_mask(
-        //     device,
-        //     queue,
-        //     &prepared.ccl_output,
-        //     prepared.input_layer_tile_count,
-        // );
-        // unsafe { device.stop_graphics_debugger_capture() };
+        filled_tiles
     }
 
     fn classify_seed_mode(

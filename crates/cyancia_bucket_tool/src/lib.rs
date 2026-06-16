@@ -87,6 +87,7 @@ impl ToolFunction for BucketTool {
         let image_size = canvas.image.size();
         let params = BucketParams {
             seed: position_ps.as_uvec2(),
+            // TODO Connect this to foreground color.
             fill_color: Vec4::new(0.5, 0.5, 0.0, 1.0),
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
@@ -106,7 +107,7 @@ impl ToolFunction for BucketTool {
             ref_layer_info_buffer.texel_type,
             output_layer.layer_info().texel_type,
         );
-        bucket.dispatch(
+        let dirty_tiles = bucket.dispatch(
             &render_context.device,
             &render_context.queue,
             &params,
@@ -116,14 +117,21 @@ impl ToolFunction for BucketTool {
         );
         drop(output_layer);
 
-        // TODO compute actual dirty tiles
-        let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {
-            min: IVec2::ZERO,
-            max: canvas.image.size().as_ivec2(),
-        });
-        canvas_entity.update(cx, |_, cx| {
-            cx.emit(CanvasUpdated { dirty_tiles });
-        });
+        if !dirty_tiles.is_empty() {
+            let mut min = IVec2::MAX;
+            let mut max = IVec2::MIN;
+            for dirty_tile in dirty_tiles {
+                min = min.min(dirty_tile);
+                max = max.max(dirty_tile);
+            }
+            let dirty_tile_rect = IRect { min, max: max + 1 };
+
+            canvas_entity.update(cx, |_, cx| {
+                cx.emit(CanvasUpdated {
+                    dirty_tiles: dirty_tile_rect,
+                });
+            });
+        }
     }
 
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
