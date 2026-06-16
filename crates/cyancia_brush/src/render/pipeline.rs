@@ -1,29 +1,18 @@
-use std::{
-    borrow::Cow,
-    num::{NonZeroU32, NonZeroU64},
-};
+use std::borrow::Cow;
 
 use bevy_math::URect;
-use bytemuck::Contiguous;
 use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner};
-use cyancia_render::{buffer::DynamicBuffer, texture_atlas::TextureAtlas};
+use cyancia_render::buffer::DynamicBuffer;
 use encase::ShaderType;
-use glam::{UVec3, UVec4};
-use toml::de;
-use wesl::{VirtualResolver, Wesl};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferAddress, BufferBindingType,
-    BufferUsages, CommandEncoder, ComputePass, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StorageTextureAccess, TextureFormat, TextureSampleType,
-    TextureView, TextureViewDimension,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureFormat,
+    TextureSampleType, TextureView, TextureViewDimension,
 };
 
-use crate::render::{
-    ComputedPenInput, DabInfo, EXTERNAL_VARIABLE_BASE_BINDING, StrokePostprocessData,
-    StrokeResources,
-};
+use crate::render::{ComputedPenInput, DabInfo, StrokePostprocessData, StrokeResources};
 
 pub struct BrushMainPipeline {
     layout: BindGroupLayout,
@@ -126,7 +115,7 @@ impl BrushMainPipeline {
                 pass.push_debug_group(&format!("brush preset main dispatch {}", i));
                 pass.set_bind_group(
                     0,
-                    if *round % 2 == 0 {
+                    if (*round).is_multiple_of(2) {
                         &bind_group_even
                     } else {
                         &bind_group_odd
@@ -217,7 +206,7 @@ impl BrushPostProcessPipeline {
             None,
             Some(stroke_pp_data),
             dab_infos,
-            *round % 2 == 0,
+            (*round).is_multiple_of(2),
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess bind group"),
@@ -342,7 +331,7 @@ fn bind_group_layout_entries(
         },
     ];
     entries.extend(external_var);
-    if !is_postprocess {}
+
     entries
 }
 
@@ -402,22 +391,22 @@ fn bind_group_entries<'a>(
         entries.extend([
             BindGroupEntry {
                 binding: 6,
-                resource: BindingResource::TextureView(&intermediate_buffers[0].texture().unwrap()),
+                resource: BindingResource::TextureView(intermediate_buffers[0].texture().unwrap()),
             },
             BindGroupEntry {
                 binding: 7,
-                resource: BindingResource::TextureView(&intermediate_buffers[1].texture().unwrap()),
+                resource: BindingResource::TextureView(intermediate_buffers[1].texture().unwrap()),
             },
         ]);
     } else {
         entries.extend([
             BindGroupEntry {
                 binding: 6,
-                resource: BindingResource::TextureView(&intermediate_buffers[1].texture().unwrap()),
+                resource: BindingResource::TextureView(intermediate_buffers[1].texture().unwrap()),
             },
             BindGroupEntry {
                 binding: 7,
-                resource: BindingResource::TextureView(&intermediate_buffers[0].texture().unwrap()),
+                resource: BindingResource::TextureView(intermediate_buffers[0].texture().unwrap()),
             },
         ]);
     }

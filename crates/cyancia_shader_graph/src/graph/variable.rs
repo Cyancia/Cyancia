@@ -1,16 +1,9 @@
-use std::{
-    any::Any,
-    collections::{BTreeMap, HashMap},
-};
+use std::collections::{BTreeMap, HashMap};
 
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
-use gpui::AnyElement;
 
-use crate::graph::{
-    GraphData,
-    slot::{ErasedGraphValueType, GraphInlineLiteralRenderContext, GraphValueType},
-};
+use crate::graph::slot::{ErasedGraphValueType, GraphValueType};
 
 #[derive(Default, Clone)]
 pub struct GraphTypeRegistry {
@@ -24,8 +17,8 @@ impl GraphTypeRegistry {
         self.types.insert(ty.name(), Box::new(ty));
     }
 
-    pub fn get_type(&self, name: &str) -> Option<&Box<dyn ErasedGraphValueType>> {
-        self.types.get(name)
+    pub fn get_type(&self, name: &str) -> Option<&dyn ErasedGraphValueType> {
+        self.types.get(name).map(Box::as_ref)
     }
 
     pub fn register_caster<T: GraphVariableCaster + Default>(&mut self) {
@@ -44,7 +37,7 @@ impl GraphTypeRegistry {
         &self,
         from_type: &dyn ErasedGraphValueType,
         to_type: &dyn ErasedGraphValueType,
-        identifier: &String,
+        identifier: &str,
     ) -> Option<String> {
         Some(
             self.casters
@@ -58,7 +51,7 @@ impl GraphTypeRegistry {
         &self,
         from_type: &dyn ErasedGraphValueType,
         to_type: &dyn ErasedGraphValueType,
-        value: &Box<dyn GraphLiteralValue>,
+        value: &dyn GraphLiteralValue,
     ) -> Option<Box<dyn GraphLiteralValue>> {
         Some(
             self.casters
@@ -98,7 +91,7 @@ impl GraphTypeRegistry {
 pub trait GraphVariableCaster: Send + Sync + 'static + Clone {
     type FromType: GraphValueType + Default;
     type ToType: GraphValueType + Default;
-    fn wgsl_cast(&self, variable: &String) -> String;
+    fn wgsl_cast(&self, variable: &str) -> String;
     fn cast(
         &self,
         value: &<Self::FromType as GraphValueType>::AssociatedLiteralType,
@@ -106,18 +99,18 @@ pub trait GraphVariableCaster: Send + Sync + 'static + Clone {
 }
 
 pub trait ErasedGraphVariableCaster: Send + Sync + 'static + DynClone {
-    fn wgsl_cast(&self, variable: &String) -> String;
-    fn cast(&self, value: &Box<dyn GraphLiteralValue>) -> Box<dyn GraphLiteralValue>;
+    fn wgsl_cast(&self, variable: &str) -> String;
+    fn cast(&self, value: &dyn GraphLiteralValue) -> Box<dyn GraphLiteralValue>;
 }
 
 dyn_clone::clone_trait_object!(ErasedGraphVariableCaster);
 
 impl<T: GraphVariableCaster> ErasedGraphVariableCaster for T {
-    fn wgsl_cast(&self, variable: &String) -> String {
+    fn wgsl_cast(&self, variable: &str) -> String {
         self.wgsl_cast(variable)
     }
 
-    fn cast(&self, value: &Box<dyn GraphLiteralValue>) -> Box<dyn GraphLiteralValue> {
+    fn cast(&self, value: &dyn GraphLiteralValue) -> Box<dyn GraphLiteralValue> {
         let from_value = value
             .downcast_ref::<<T::FromType as GraphValueType>::AssociatedLiteralType>()
             .expect("Failed to downcast value for casting");
@@ -167,12 +160,14 @@ impl GraphLiteral {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn as_ref<T: GraphLiteralValue>(&self) -> &T {
         self.value
             .downcast_ref::<T>()
             .expect("Failed to downcast Literal")
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn as_mut<T: GraphLiteralValue>(&mut self) -> &mut T {
         self.value
             .downcast_mut::<T>()
@@ -187,12 +182,12 @@ impl GraphLiteral {
         self.value.downcast_mut::<T>()
     }
 
-    pub fn ty(&self) -> &Box<dyn ErasedGraphValueType> {
-        &self.ty
+    pub fn ty(&self) -> &dyn ErasedGraphValueType {
+        self.ty.as_ref()
     }
 
-    pub fn value(&self) -> &Box<dyn GraphLiteralValue> {
-        &self.value
+    pub fn value(&self) -> &dyn GraphLiteralValue {
+        self.value.as_ref()
     }
 
     pub fn set<T: GraphLiteralValue>(&mut self, value: T) {
@@ -212,11 +207,11 @@ impl GraphLiteral {
     }
 
     pub fn to_code(&self) -> Option<String> {
-        self.ty.literal_to_code(&self.value)
+        self.ty.literal_to_code(self.value.as_ref())
     }
 
     pub fn try_write_into_shader_buffer(&self) -> Option<Vec<u8>> {
-        self.ty.try_write_into_shader_buffer(&self.value)
+        self.ty.try_write_into_shader_buffer(self.value.as_ref())
     }
 }
 
@@ -242,7 +237,7 @@ impl GraphVariable {
         &self.identifier
     }
 
-    pub fn ty(&self) -> &Box<dyn ErasedGraphValueType> {
-        &self.ty
+    pub fn ty(&self) -> &dyn ErasedGraphValueType {
+        self.ty.as_ref()
     }
 }

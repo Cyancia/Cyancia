@@ -342,11 +342,7 @@ ORDER BY l.relative_path ASC;
         )?;
 
         let rows = stmt.query_map(
-            params![
-                filter.ty,
-                filter.tag.as_ref().map(|t| t),
-                filter.bundle.as_ref().map(|b| b),
-            ],
+            params![filter.ty, filter.tag.as_ref(), filter.bundle.as_ref(),],
             |row| {
                 Ok(AssetMetadata {
                     asset_id: row.get(0)?,

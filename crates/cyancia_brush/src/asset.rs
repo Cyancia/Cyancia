@@ -1,22 +1,9 @@
 use std::io::{Cursor, Read, Write};
 
-use bevy_math::IRect;
-use cyancia_assets::{
-    asset::{Asset, AssetHandle, AssetId},
-    loader::AssetSerializer,
-};
+use cyancia_assets::{asset::Asset, loader::AssetSerializer};
 use cyancia_render::texture::ImageSerializerError;
-use cyancia_shader_graph::save::{
-    GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
-    SerializableGraphLiteral,
-};
-use image::{DynamicImage, ImageFormat};
+use cyancia_shader_graph::save::{SerializableExternalVariable, SerializableGraph};
 use serde::{Deserialize, Serialize};
-use wgpu::{
-    Device, Extent3d, Queue, Texture, TextureDimension, TextureFormat, TextureUsages,
-    util::DeviceExt,
-    wgt::{TextureDataOrder, TextureDescriptor},
-};
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
 pub struct BrushPreset {

@@ -1,30 +1,12 @@
-use std::{
-    any::Any,
-    collections::{HashMap, hash_map::Entry},
-    sync::Arc,
-};
+use std::{any::Any, collections::HashMap};
 
 use bevy_math::IRect;
 use dyn_clone::DynClone;
-use encase::ShaderType;
-use glam::{IVec2, UVec2, UVec3};
+use glam::IVec2;
 use gpui::Global;
-use wesl::{VirtualResolver, Wesl};
-use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyTextureInfo, TextureView, TextureViewDimension,
-};
+use wgpu::{Buffer, ComputePassDescriptor, Device, Queue, TextureView};
 
-use crate::{
-    CImage,
-    dynamic_intermediate_buffer::IntermediateBuffer,
-    layer::{LayerData, LayerId, LayerStackNode},
-    texel::TexelType,
-    tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
-};
+use crate::{CImage, layer::LayerId, tile::GpuTileStorage};
 
 pub trait BlendFunction: Send + Sync + DynClone + 'static {
     fn name(&self) -> String;
@@ -70,7 +52,7 @@ impl ImageCompositor {
     pub fn composite(
         &mut self,
         overriders: &LayerPreviewOverriders,
-        dirty_tiles: IRect,
+        __tiles: IRect,
         image: &CImage,
         tiles: &GpuTileStorage,
         device: &Device,

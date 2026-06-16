@@ -1,21 +1,19 @@
 use std::any::TypeId;
 
 use encase::ShaderType;
-use glam::{IVec2, UVec2, UVec3};
+use glam::UVec3;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyTextureInfo, TextureDescriptor, TextureDimension, TextureUsages,
-    TextureView, TextureViewDimension, wgt::TextureViewDescriptor,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
+    TextureViewDimension,
 };
 
 use crate::{
     CImage,
     composite::{ImageCompositor, LayerPreviewOverriders, PixelPreviewOverrider},
-    dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
     layer::{Layer, LayerData, LayerStackNode},
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage},
@@ -25,7 +23,7 @@ use crate::{
 pub struct PixelLayer;
 
 impl Layer for PixelLayer {
-    fn can_have_children_of(&self, ty: TypeId) -> bool {
+    fn can_have_children_of(&self, _: TypeId) -> bool {
         false
     }
 
@@ -36,30 +34,27 @@ impl Layer for PixelLayer {
     fn create_blend_cache(
         &self,
         compositor: &mut ImageCompositor,
-        overriders: &mut LayerPreviewOverriders,
+        _: &mut LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
-        node: &LayerStackNode,
+        _: &LayerStackNode,
         tiles: &GpuTileStorage,
         device: &Device,
-        queue: &Queue,
+        _: &Queue,
     ) {
         let layer_info = tiles.get_layer_info(layer.id()).unwrap();
 
-        if let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer.id()) {
-            if cache.blend_func_name == layer.blend_func.name()
-                && cache.layer_texel_type == layer_info.texel_type
-                && cache.image_texel_type == image.texel_type()
-            {
-                return;
-            }
+        if let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer.id())
+            && cache.blend_func_name == layer.blend_func.name()
+            && cache.layer_texel_type == layer_info.texel_type
+            && cache.image_texel_type == image.texel_type()
+        {
+            return;
         }
 
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
-            &layer
-                .blend_func
-                .wgsl_function_call("src".into(), "dst".into()),
+            &layer.blend_func.wgsl_function_call("src", "dst"),
         );
 
         let mut resolver = VirtualResolver::new();
@@ -254,14 +249,14 @@ impl Layer for PixelLayer {
         overriders: &LayerPreviewOverriders,
         image: &CImage,
         layer: &LayerData,
-        node: &LayerStackNode,
+        _: &LayerStackNode,
         tiles: &GpuTileStorage,
         dst_buffer: &TextureView,
         dst_tile_info: &Buffer,
         output: &TextureView,
         output_tile_info: &Buffer,
         device: &Device,
-        queue: &Queue,
+        _: &Queue,
     ) {
         let src = tiles.get_layer_binding_or_empty(layer.id).unwrap();
         let Some(cache) = compositor.get_blend_cache_mut::<PixelBlendCache>(&layer.id()) else {
@@ -357,10 +352,10 @@ impl Layer for PixelLayer {
         &self,
         compositor: &ImageCompositor,
         pass: &mut ComputePass,
-        image: &CImage,
+        _: &CImage,
         layer: &LayerData,
-        node: &LayerStackNode,
-        tiles: &GpuTileStorage,
+        _: &LayerStackNode,
+        _: &GpuTileStorage,
     ) {
         let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer.id()) else {
             log::error!("BlendCache is not created for layer {:?}", layer.id());

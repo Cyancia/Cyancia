@@ -1,27 +1,15 @@
-use std::{rc::Rc, sync::Arc, time::Duration};
-
-use bevy_math::{IRect, Rect};
 use cyancia_canvas::{
-    CanvasAppExt, CanvasId, CanvasManager, GlobalCanvasEvents,
-    event::{CanvasCreated, CanvasUpdated, CurrentCanvasChanged},
+    CanvasAppExt, CanvasId,
+    event::CurrentCanvasChanged,
     tools::PanTool,
     widget::{canvas::CanvasWidget, layer_stack::LayerStackWidget},
 };
-use cyancia_image::{
-    composite::{ImageCompositor, LayerPreviewOverriders},
-    tile::{GpuTileStorage, GpuTileStorageInner},
-};
-use cyancia_render::render_context::RenderContext;
-use cyancia_tools::{ToolFunction, ToolProxies, ToolProxy, ToolProxyId};
-use glam::IVec2;
+use cyancia_tools::{ToolFunction, ToolProxies, ToolProxyId};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
-    SharedString, Styled, WeakEntity, Window, div,
+    IntoElement, Render, SharedString, Window, div,
 };
 use gpui_component::dock::{Panel, PanelEvent};
-use image::imageops;
-use parking_lot::Mutex;
 
 macro_rules! test_dummy_dock {
     ($name:ident) => {
@@ -46,13 +34,13 @@ macro_rules! test_dummy_dock {
         impl EventEmitter<PanelEvent> for $name {}
 
         impl Focusable for $name {
-            fn focus_handle(&self, cx: &App) -> FocusHandle {
+            fn focus_handle(&self, _: &App) -> FocusHandle {
                 self.focus_handle.clone()
             }
         }
 
         impl Render for $name {
-            fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
                 format!("Hello {}", stringify!($name))
             }
         }
@@ -64,7 +52,6 @@ test_dummy_dock!(FiltersDock);
 
 pub struct CanvasDock {
     canvas: CanvasId,
-    tool_proxy: ToolProxyId,
     focus_handle: FocusHandle,
     canvas_state: Entity<CanvasWidget>,
 }
@@ -91,7 +78,6 @@ impl CanvasDock {
 
         Self {
             canvas: canvas_id,
-            tool_proxy: tool_proxy_id,
             focus_handle: cx.focus_handle(),
             canvas_state,
         }
@@ -101,7 +87,7 @@ impl CanvasDock {
 impl EventEmitter<PanelEvent> for CanvasDock {}
 
 impl Focusable for CanvasDock {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
@@ -111,7 +97,7 @@ impl Panel for CanvasDock {
         construct_canvas_dock_id(self.canvas).leak()
     }
 
-    fn tab_name(&self, cx: &App) -> Option<SharedString> {
+    fn tab_name(&self, _: &App) -> Option<SharedString> {
         // TODO Record the filename of an image and display it
         Some(format!("Canvas {}", self.canvas).into())
     }
@@ -122,7 +108,7 @@ pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
 }
 
 impl Render for CanvasDock {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         self.canvas_state.clone()
     }
 }
@@ -156,7 +142,7 @@ impl CurrentCanvasLayersDock {
 impl EventEmitter<PanelEvent> for CurrentCanvasLayersDock {}
 
 impl Focusable for CurrentCanvasLayersDock {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
@@ -166,13 +152,13 @@ impl Panel for CurrentCanvasLayersDock {
         "current_canvas_layers"
     }
 
-    fn tab_name(&self, cx: &App) -> Option<SharedString> {
+    fn tab_name(&self, _: &App) -> Option<SharedString> {
         Some("Current Canvas Layers".into())
     }
 }
 
 impl Render for CurrentCanvasLayersDock {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         self.widget
             .as_ref()
             .map(|w| w.clone().into_any_element())
@@ -185,7 +171,7 @@ pub struct ToolOptionsDock {
 }
 
 impl ToolOptionsDock {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
         }
@@ -195,7 +181,7 @@ impl ToolOptionsDock {
 impl EventEmitter<PanelEvent> for ToolOptionsDock {}
 
 impl Focusable for ToolOptionsDock {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
@@ -205,7 +191,7 @@ impl Panel for ToolOptionsDock {
         "tool_options"
     }
 
-    fn title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         "Tool Options"
     }
 }

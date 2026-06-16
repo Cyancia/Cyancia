@@ -1,30 +1,22 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, mpsc},
-};
-
 use cyancia_image::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData, TileIndex},
+    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},
-    readback::{
-        create_readback_buffer_and_schedule_copy, readback_buffer_async,
-        readback_buffer_on_submit_async,
-    },
+    readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
     util::DevicePollExt,
 };
 use encase::ShaderType;
 use glam::{IVec2, UVec2, Vec4};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexSet;
 use tracing::info;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode,
-    PipelineLayoutDescriptor, PollType, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TextureDimension, TextureFormat, TextureUsages, TextureViewDimension,
     wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
@@ -941,7 +933,7 @@ impl Bucket {
             );
             for index in mask_tile_indices.iter().copied() {
                 b.push(&GpuTileInfo {
-                    index: index,
+                    index,
                     origin: GpuTileStorageInner::TILE_SIZE as i32 * index,
                 });
             }
@@ -1308,7 +1300,7 @@ impl Bucket {
 
                 let max_jump = radius.next_power_of_two();
                 let (jump_params_buffer, jump_params_offsets) =
-                    create_jfa_params(&device, &queue, max_jump, "feather_jump_params");
+                    create_jfa_params(device, queue, max_jump, "feather_jump_params");
                 let jump_iterations = jump_params_offsets.len();
 
                 let common_entries = vec![
@@ -1462,7 +1454,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: BindingResource::TextureView(&output_texture),
+                    resource: BindingResource::TextureView(output_texture),
                 },
                 BindGroupEntry {
                     binding: 4,

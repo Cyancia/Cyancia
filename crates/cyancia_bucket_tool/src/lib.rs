@@ -1,6 +1,6 @@
 use bevy_math::IRect;
 use cyancia_canvas::{CanvasAppExt, event::CanvasUpdated};
-use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner};
+use cyancia_image::tile::GpuTileStorage;
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use glam::{IVec2, Vec2, Vec4};
@@ -47,7 +47,7 @@ impl Default for BucketTool {
 }
 
 impl ToolFunction for BucketTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -391,7 +391,7 @@ impl ToolFunction for BucketTool {
                 Button::new("none")
                     .selected(matches!(self.aa_approach, BucketAntialiasApproach::None))
                     .label("None")
-                    .on_click(cx.listener(|bucket, _, window, cx| {
+                    .on_click(cx.listener(|bucket, _, _, _| {
                         bucket.aa_approach = BucketAntialiasApproach::None;
                     })),
             )
@@ -399,7 +399,7 @@ impl ToolFunction for BucketTool {
                 Button::new("fxaa")
                     .selected(matches!(self.aa_approach, BucketAntialiasApproach::Fxaa))
                     .label("FXAA")
-                    .on_click(cx.listener(|bucket, _, window, cx| {
+                    .on_click(cx.listener(|bucket, _, _, _| {
                         bucket.aa_approach = BucketAntialiasApproach::Fxaa;
                     })),
             )
@@ -410,7 +410,7 @@ impl ToolFunction for BucketTool {
                         BucketAntialiasApproach::Feather(_)
                     ))
                     .label("Feather")
-                    .on_click(cx.listener(|bucket, _, window, cx| {
+                    .on_click(cx.listener(|bucket, _, _, _| {
                         bucket.aa_approach =
                             BucketAntialiasApproach::Feather(bucket.cached_feather);
                     })),

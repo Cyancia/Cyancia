@@ -1,9 +1,4 @@
-use std::sync::Arc;
-
-use anyhow::bail;
-use cyancia_canvas::{
-    CCanvas, CanvasId, CanvasManager, event::CanvasCreated, render::CanvasRenderer,
-};
+use cyancia_canvas::{CCanvas, CanvasManager};
 use cyancia_image::{
     CImage,
     blend_modes::BlendMode,
@@ -11,13 +6,10 @@ use cyancia_image::{
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
 };
-use cyancia_tools::{ToolId, ToolProxies, ToolProxy};
+use cyancia_tools::{ToolProxies, ToolProxy};
 use glam::UVec2;
-use gpui::{Action, App, AppContext, actions};
+use gpui::{App, actions};
 use rfd::AsyncFileDialog;
-use schemars::JsonSchema;
-use serde::Serialize;
-use uuid::Uuid;
 
 use crate::ActionFunction;
 
@@ -42,20 +34,20 @@ impl ActionFunction for OpenFileAction {
 
             let width = img.width();
             let height = img.height();
-            let layer = cx.read_global::<GpuTileStorage, _>(|tiles, cx| {
+            let layer = cx.read_global::<GpuTileStorage, _>(|tiles, _| {
                 LayerData::from_image("Background".into(), img, tiles, Box::new(BlendMode::Normal))
             });
 
             let image = CImage::from_layer(UVec2::new(width, height), layer);
 
-            let tool_proxy_id = cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            let tool_proxy_id = cx.update_global::<ToolProxies, _>(|tool_proxies, _| {
                 // Tool switch is handled in canvas dock, which is outside of async environment.
-                tool_proxies.add(ToolProxy::new())
+                tool_proxies.add(ToolProxy::default())
             });
             let canvas = CCanvas::new(image, tool_proxy_id);
 
             // TODO this should not be done here
-            cx.read_global::<GpuTileStorage, _>(|tiles, cx| {
+            cx.read_global::<GpuTileStorage, _>(|tiles, _| {
                 for layer in canvas.image.layer_stack().iter_layers() {
                     tiles.declare_layer(
                         layer.id(),

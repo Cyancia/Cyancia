@@ -1,25 +1,21 @@
-use std::{collections::HashMap, rc::Rc, sync::Arc};
+use std::rc::Rc;
 
 use bevy_math::Rect;
 use cyancia_render::buffer::DynamicBuffer;
-use cyancia_utils::{random_oklch, wrapper};
+use cyancia_utils::random_oklch;
 use glam::{Vec2, Vec4};
 use gpui::{
     AnyElement, App, AppContext, Context, ElementId, Entity, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Rgba, Styled, Window, div, px, rgb,
+    ParentElement, Pixels, Rgba, Styled, Window, div, px,
 };
 use gpui_component::{
     Sizable,
     input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
 };
-use indexmap::IndexMap;
-use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::graph::{
-    GraphData,
-    slot::{GraphInlineLiteralRenderContext, GraphInputSlotId, GraphValueType},
+    slot::{GraphInlineLiteralRenderContext, GraphValueType},
     texture::TextureId,
     variable::GraphLiteralValue,
 };
@@ -268,10 +264,7 @@ impl GraphValueType for TextureType {
         None
     }
 
-    fn try_write_into_shader_buffer(
-        &self,
-        literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>> {
+    fn try_write_into_shader_buffer(&self, _: &Self::AssociatedLiteralType) -> Option<Vec<u8>> {
         None
     }
 
@@ -281,8 +274,8 @@ impl GraphValueType for TextureType {
 
     fn render_inline(
         &self,
-        literal: &Self::AssociatedLiteralType,
-        ctx: GraphInlineLiteralRenderContext<'_>,
+        _: &Self::AssociatedLiteralType,
+        _: GraphInlineLiteralRenderContext<'_>,
     ) -> AnyElement {
         div().into_any_element()
     }

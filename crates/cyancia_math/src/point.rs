@@ -1,4 +1,4 @@
-use gpui::{Length, Pixels, Point};
+use gpui::{Pixels, Point};
 
 pub trait PointExt {
     fn magnitude_squared(&self) -> f64;

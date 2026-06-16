@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cyancia_shader_graph::{
     editor::GraphEditor,
-    graph::{Graph, GraphData, GraphResources, node::GraphNodeRegistry},
+    graph::{Graph, GraphData, GraphResources},
     wgsl_std::{
         builtin_nodes, builtin_types,
         nodes::{GraphInputNode, GraphOutputNode},
@@ -13,7 +13,7 @@ use gpui::{
     SharedString, Styled, Window, WindowOptions, div,
 };
 use gpui_component::{
-    ActiveTheme, GlobalState, Root, Theme, ThemeMode, ThemeRegistry, TitleBar, menu::AppMenuBar,
+    ActiveTheme, GlobalState, Root, Theme, ThemeRegistry, TitleBar, menu::AppMenuBar,
 };
 use gpui_platform::application;
 
@@ -25,27 +25,24 @@ impl GraphData for DemoData {}
 struct DemoEditor {
     menu_bar: Entity<AppMenuBar>,
     editor: Entity<GraphEditor<DemoData>>,
-    graph: Entity<Graph<DemoData>>,
 }
 
 impl DemoEditor {
-    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut nodes = builtin_nodes();
         nodes.register::<GraphInputNode>();
         nodes.register::<GraphOutputNode>();
 
-        let graph =
-            cx.new(|cx| Graph::new(GraphResources::default().into(), builtin_types().into()));
+        let graph = cx.new(|_| Graph::new(GraphResources::default(), builtin_types().into()));
         Self {
             menu_bar: menu_bar_init(cx),
             editor: cx.new(|cx| GraphEditor::new(graph.clone(), nodes.into(), cx)),
-            graph,
         }
     }
 }
 
 impl Render for DemoEditor {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
             .w_full()
             .h_full()
@@ -208,7 +205,7 @@ fn load_theme(cx: &mut App) {
     let embedded = embedded_themes();
     let registry = ThemeRegistry::global_mut(cx);
 
-    for (name, content) in embedded {
+    for (_, content) in embedded {
         registry.load_themes_from_str(content).unwrap();
     }
 }
@@ -223,7 +220,7 @@ fn main() {
             cyancia_assets::init(cx);
             cyancia_shader_graph::init(cx);
 
-            cx.open_window(
+            let _ = cx.open_window(
                 WindowOptions {
                     titlebar: None,
                     ..Default::default()

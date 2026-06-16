@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::{
-    asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
+    asset::{ErasedAsset, UntypedAssetId},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId},
     loader::ErasedAssetSerializer,
 };
@@ -141,9 +141,9 @@ impl AssetBundle for StandardAssetBundle {
 
     fn add(
         &self,
-        path: &Path,
-        asset: &dyn ErasedAsset,
-        serializer: &dyn ErasedAssetSerializer,
+        _: &Path,
+        _: &dyn ErasedAsset,
+        _: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, StandardAssetBundleError> {
         Err(StandardAssetBundleError::UnsupportedWriting)
     }

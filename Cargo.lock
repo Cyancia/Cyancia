@@ -1742,6 +1742,7 @@ dependencies = [
  "cyancia_tools",
  "cyancia_utils",
  "cyancia_widgets",
+ "dyn-clone",
  "encase",
  "futures",
  "glam",

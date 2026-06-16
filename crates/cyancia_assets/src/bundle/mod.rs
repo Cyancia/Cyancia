@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    asset::{Asset, AssetMetadata, ErasedAsset, UntypedAssetId},
+    asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
     error::{AssetError, AssetResult},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
 };
@@ -200,10 +200,10 @@ pub fn scan_bundle_assets(
     }
 
     let modified = scan_modified_assets(
-        &assets_root.as_ref(),
+        assets_root.as_ref(),
         &bundle_meta.bundle_id,
         &manifest,
-        &serializers,
+        serializers,
     )?;
     assets.extend(modified);
 
@@ -284,7 +284,7 @@ fn scan_modified_assets_dfs(
                 .to_string_lossy()
                 .to_string();
 
-            let Some(original_path) = restore_original_path(&Path::new(&modified_path)) else {
+            let Some(original_path) = restore_original_path(Path::new(&modified_path)) else {
                 continue;
             };
             let Some(asset_id) = path_to_id.get(&original_path) else {

@@ -4,7 +4,7 @@ use cyancia_utils::{Deref, DerefMut};
 use encase::{ShaderType, internal::CreateFrom};
 use futures::channel::oneshot::{Receiver, Sender};
 use wgpu::{
-    Buffer, BufferAddress, BufferAsyncError, BufferUsages, CommandEncoder, Device, MapMode, Queue,
+    Buffer, BufferAddress, BufferAsyncError, BufferUsages, CommandEncoder, Device, MapMode,
 };
 
 pub fn create_readback_buffer_and_schedule_copy(
@@ -29,7 +29,7 @@ pub struct AsyncBufferReadback<T> {
 
 impl<T> AsyncBufferReadback<T> {
     pub fn block_on(self) -> anyhow::Result<T> {
-        Ok(futures::executor::block_on(self.rx)??)
+        futures::executor::block_on(self.rx)?
     }
 }
 
@@ -44,7 +44,7 @@ where
 {
     let (tx, rx) = futures::channel::oneshot::channel();
     ec.map_buffer_on_submit(
-        &buffer,
+        buffer,
         MapMode::Read,
         bounds.clone(),
         on_buffer_mapped(buffer.clone(), bounds, tx),

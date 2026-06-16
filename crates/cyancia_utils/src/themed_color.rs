@@ -1,8 +1,6 @@
-use std::panic::Location;
-
 use bevy_color::{Oklcha, Srgba};
 use gpui::{App, Rgba};
-use gpui_component::{Theme, animation::Lerp};
+use gpui_component::Theme;
 
 #[macro_export]
 macro_rules! random_oklch {

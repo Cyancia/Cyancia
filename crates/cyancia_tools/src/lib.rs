@@ -1,16 +1,10 @@
-use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc, time::Instant};
+use std::{collections::HashMap, rc::Rc};
 
 use cyancia_utils::wrapper;
-use downcast_rs::Downcast;
-use futures::{
-    SinkExt,
-    channel::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender},
-};
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, Global, IntoElement, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, Window, div,
 };
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
 pub fn init(cx: &mut App) {
@@ -45,13 +39,13 @@ wrapper! {
 pub trait ToolFunction: Send + Sync + 'static + Sized {
     fn new(cx: &mut Context<Self>) -> Self;
     fn id() -> ToolId;
-    fn activate(&mut self, cx: &mut Context<Self>) {}
-    fn hover(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {}
-    fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {}
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {}
-    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {}
-    fn deactivate(&mut self, cx: &mut Context<Self>) {}
-    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn activate(&mut self, _: &mut Context<Self>) {}
+    fn hover(&mut self, _: &MouseMoveEvent, _: &mut Context<Self>) {}
+    fn begin(&mut self, _: &MouseDownEvent, _: &mut Context<Self>) {}
+    fn update(&mut self, _: &MouseMoveEvent, _: &mut Context<Self>) {}
+    fn end(&mut self, _: &MouseUpEvent, _: &mut Context<Self>) {}
+    fn deactivate(&mut self, _: &mut Context<Self>) {}
+    fn tool_option_widget(&mut self, _: &mut Window, _: &mut Context<Self>) -> AnyElement {
         div().into_any_element()
     }
 }
@@ -133,31 +127,21 @@ impl ToolFunctionRegistry {
 // impl Service for ToolFunctionRegistry {}
 
 struct State {
-    last: ToolId,
-    current: ToolId,
-    last_switch: Instant,
     current_function: Box<dyn ErasedToolFunction>,
     is_updating: bool,
 }
 
+#[derive(Default)]
 pub struct ToolProxy {
     state: Option<State>,
 }
 
 impl ToolProxy {
-    pub fn new() -> Self {
-        Self { state: None }
-    }
-
     // TODO: Preserve tool state when switching between tools
     pub fn switch_tool(&mut self, tool: ToolId, cx: &mut App) {
-        let last = match self.state.take() {
-            Some(mut st) => {
-                st.current_function.deactivate(cx);
-                st.current
-            }
-            None => tool,
-        };
+        if let Some(mut st) = self.state.take() {
+            st.current_function.deactivate(cx);
+        }
 
         let registry = ToolFunctionRegistry::global(cx);
         if let Some(new_tool) = registry.spawners.get(&tool).cloned() {
@@ -165,9 +149,6 @@ impl ToolProxy {
             f.activate(cx);
 
             self.state = Some(State {
-                last,
-                current: tool,
-                last_switch: Instant::now(),
                 current_function: f,
                 is_updating: false,
             });

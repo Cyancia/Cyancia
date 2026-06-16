@@ -1,29 +1,24 @@
-use std::{collections::VecDeque, rc::Rc};
+use std::rc::Rc;
 
-use bevy_math::IRect;
 use chrono::{DateTime, Utc};
-use cyancia_assets::{AssetAppExt, store::AssetRegistry};
-use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasId, CanvasManager, event::CanvasUpdated};
+use cyancia_canvas::{CCanvas, CanvasAppExt, event::CanvasUpdated};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,
-    tile::{GpuTileStorage, GpuTileStorageInner},
+    tile::GpuTileStorageInner,
 };
-use cyancia_math::number::LerpAngle;
 use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
-use glam::{FloatExt, Vec2};
+use glam::Vec2;
 use gpui::{
-    AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
+    AnyElement, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
-use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
     input_processing::RawPenInput,
-    instance::BrushPresetInstance,
     render::{BrushPresetOperator, Time},
 };
 
@@ -36,7 +31,7 @@ pub struct BrushTool {
 }
 
 impl ToolFunction for BrushTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -120,9 +115,7 @@ impl ToolFunction for BrushTool {
         };
 
         let maybe_preview = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
-            let Some(brush) = brush.as_mut() else {
-                return None;
-            };
+            let brush = brush.as_mut()?;
             let now = std::time::Instant::now();
             brush.update_stroke(params, cx);
             let preview = brush.generate_preview(cx);
@@ -142,7 +135,7 @@ impl ToolFunction for BrushTool {
                 },
             );
 
-            canvas_entity.update(cx, |canvas, cx| {
+            canvas_entity.update(cx, |_, cx| {
                 cx.emit(CanvasUpdated { dirty_tiles });
             });
         }
@@ -179,9 +172,7 @@ impl ToolFunction for BrushTool {
         };
 
         let dirty_pixels = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
-            let Some(brush) = brush.as_mut() else {
-                return None;
-            };
+            let brush = brush.as_mut()?;
             brush.end_stroke(final_input, active_layer, cx)
         });
 
@@ -190,7 +181,7 @@ impl ToolFunction for BrushTool {
 
         if let Some(dirty_pixels) = dirty_pixels {
             let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(dirty_pixels);
-            canvas_entity.update(cx, |canvas, cx| {
+            canvas_entity.update(cx, |_, cx| {
                 cx.emit(CanvasUpdated { dirty_tiles });
             });
         }

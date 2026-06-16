@@ -1,4 +1,4 @@
-use cyancia_assets::{asset::AssetHandle, store::AssetRegistry};
+use cyancia_assets::asset::AssetHandle;
 use cyancia_shader_graph::save::SerializableGraphFunction;
 use gpui::{App, Context, IntoElement, ParentElement, RenderOnce, Window};
 use gpui_component::{
@@ -37,7 +37,7 @@ impl Selectable for BrushPresetListItem {
 }
 
 impl RenderOnce for BrushPresetListItem {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let Ok(brush) = self.handle.get() else {
             return self
                 .base
@@ -57,10 +57,7 @@ pub struct BrushPresetListDelegate {
 impl BrushPresetListDelegate {
     pub fn new(brushes: Vec<AssetHandle<BrushPreset>>) -> Self {
         Self {
-            items: brushes
-                .into_iter()
-                .map(|brush| BrushPresetListItem::new(brush))
-                .collect(),
+            items: brushes.into_iter().map(BrushPresetListItem::new).collect(),
             selected_index: None,
         }
     }
@@ -73,15 +70,15 @@ impl BrushPresetListDelegate {
 impl ListDelegate for BrushPresetListDelegate {
     type Item = BrushPresetListItem;
 
-    fn items_count(&self, section: usize, cx: &App) -> usize {
+    fn items_count(&self, _: usize, _: &App) -> usize {
         self.items.len()
     }
 
     fn render_item(
         &mut self,
         ix: IndexPath,
-        window: &mut Window,
-        cx: &mut Context<ListState<Self>>,
+        _: &mut Window,
+        _: &mut Context<ListState<Self>>,
     ) -> Option<Self::Item> {
         let item = self.items.get(ix.row)?;
         Some(BrushPresetListItem::new(item.handle.clone()))
@@ -90,8 +87,8 @@ impl ListDelegate for BrushPresetListDelegate {
     fn set_selected_index(
         &mut self,
         ix: Option<IndexPath>,
-        window: &mut Window,
-        cx: &mut Context<ListState<Self>>,
+        _: &mut Window,
+        _: &mut Context<ListState<Self>>,
     ) {
         self.selected_index = ix;
     }
@@ -126,7 +123,7 @@ impl Selectable for BrushFunctionItem {
 }
 
 impl RenderOnce for BrushFunctionItem {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let Ok(func) = self.handle.get() else {
             return self.base.child(format!(
                 "Unable to load brush function {}",
@@ -147,10 +144,7 @@ pub struct BrushFunctionListDelegate {
 impl BrushFunctionListDelegate {
     pub fn new(funcs: Vec<AssetHandle<SerializableGraphFunction>>) -> Self {
         Self {
-            items: funcs
-                .into_iter()
-                .map(|brush| BrushFunctionItem::new(brush))
-                .collect(),
+            items: funcs.into_iter().map(BrushFunctionItem::new).collect(),
             selected_index: None,
         }
     }
@@ -163,15 +157,15 @@ impl BrushFunctionListDelegate {
 impl ListDelegate for BrushFunctionListDelegate {
     type Item = BrushFunctionItem;
 
-    fn items_count(&self, section: usize, cx: &App) -> usize {
+    fn items_count(&self, _: usize, _: &App) -> usize {
         self.items.len()
     }
 
     fn render_item(
         &mut self,
         ix: IndexPath,
-        window: &mut Window,
-        cx: &mut Context<ListState<Self>>,
+        _: &mut Window,
+        _: &mut Context<ListState<Self>>,
     ) -> Option<Self::Item> {
         let item = self.items.get(ix.row)?;
         Some(BrushFunctionItem::new(item.handle.clone()))
@@ -180,8 +174,8 @@ impl ListDelegate for BrushFunctionListDelegate {
     fn set_selected_index(
         &mut self,
         ix: Option<IndexPath>,
-        window: &mut Window,
-        cx: &mut Context<ListState<Self>>,
+        _: &mut Window,
+        _: &mut Context<ListState<Self>>,
     ) {
         self.selected_index = ix;
     }

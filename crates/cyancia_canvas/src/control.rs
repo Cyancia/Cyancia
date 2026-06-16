@@ -1,5 +1,5 @@
 use bevy_math::Rect;
-use glam::{Mat3, UVec2, Vec2};
+use glam::{Mat3, Vec2};
 
 #[derive(Default, Debug, Clone)]
 pub struct CanvasTransform {

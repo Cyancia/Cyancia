@@ -21,8 +21,8 @@ impl View for BrushEditorView {
             },
             |window, cx| {
                 let editor_view = cx.new(|cx| BrushEditorView::new(window, cx));
-                let root = cx.new(|cx| Root::new(editor_view, window, cx));
-                root
+
+                cx.new(|cx| Root::new(editor_view, window, cx))
             },
         )
     }
@@ -36,7 +36,7 @@ impl BrushEditorView {
 }
 
 impl Render for BrushEditorView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         self.editor.clone()
     }
 }

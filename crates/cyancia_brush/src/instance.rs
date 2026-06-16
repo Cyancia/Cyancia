@@ -1,18 +1,15 @@
 use std::{
-    collections::{HashMap, HashSet},
     fmt::Display,
-    io::{Cursor, Read, Write},
-    path::Path,
     sync::{
         Arc, LazyLock,
         atomic::{AtomicU64, Ordering},
     },
 };
 
-use cyancia_assets::asset::{Asset, AssetHandle, AssetId};
+use cyancia_assets::asset::{AssetHandle, AssetId};
 use cyancia_shader_graph::{
     graph::{
-        Graph, GraphCompileError, GraphResources,
+        Graph, GraphResources,
         external::{
             ExternalVariable, ExternalVariableId, GraphExternalVariableStorage,
             generate_external_variable_binding,
@@ -20,16 +17,12 @@ use cyancia_shader_graph::{
         function::{GraphFunction, GraphFunctionStorage},
         node::GraphNodeRegistry,
         texture::{GraphTextureStorage, GraphTextureUsageRecorder, TextureId},
-        variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry},
+        variable::{GraphLiteralValue, GraphTypeRegistry},
     },
-    save::{
-        GraphDeserializeError, GraphSerializable, SerializableExternalVariable, SerializableGraph,
-        SerializableGraphLiteral,
-    },
+    save::{GraphDeserializeError, SerializableExternalVariable},
     wgsl_std::{builtin_nodes, builtin_types, nodes::TimeNode},
 };
-use gpui::{App, AppContext, Entity, WeakEntity};
-use serde::{Deserialize, Serialize};
+use gpui::{App, AppContext, Entity};
 use wesl::{VirtualResolver, Wesl};
 
 use crate::{
@@ -233,10 +226,11 @@ impl BrushPresetInstance {
     ) -> anyhow::Result<CompiledBrushPreset> {
         let mut external_variable_bindings = String::new();
         for entry in self.external_vars.all().iter() {
-            external_variable_bindings.extend(
-                generate_external_variable_binding(0, existing_binding_count, entry.value())
-                    .chars(),
-            );
+            external_variable_bindings.push_str(&generate_external_variable_binding(
+                0,
+                existing_binding_count,
+                entry.value(),
+            ));
             existing_binding_count += 1;
         }
 
@@ -398,7 +392,7 @@ fn compile_template(
     postprocess: bool,
 ) -> anyhow::Result<String> {
     let shader = include_str!("render/brush_template.wesl")
-        .replace("//CODEGENFLAG_COMPILED_GRAPH", &shader)
+        .replace("//CODEGENFLAG_COMPILED_GRAPH", shader)
         .replace(
             "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
             external_variable_bindings,
@@ -430,11 +424,7 @@ fn compile_template_main(
 ) -> anyhow::Result<String> {
     let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage, cx)?;
 
-    Ok(compile_template(
-        &shader,
-        external_variable_bindings,
-        false,
-    )?)
+    compile_template(&shader, external_variable_bindings, false)
 }
 
 fn compile_template_stroke_postprocess<'a>(
@@ -455,14 +445,14 @@ fn compile_template_stroke_postprocess<'a>(
     Ok(compiled_brshes)
 }
 
-pub const BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
-pub const REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+pub static BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
+pub static REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(required_spacing_graph_nodes);
-pub const SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphDataTuple>>> =
+pub static SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphDataTuple>>> =
     LazyLock::new(spacing_factor_graph_nodes);
-pub const MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+pub static MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(main_graph_nodes);
-pub const STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<
+pub static STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<
     Arc<GraphNodeRegistry<BrushGraphPostprocessData>>,
 > = LazyLock::new(stroke_postprocess_graph_nodes);
 

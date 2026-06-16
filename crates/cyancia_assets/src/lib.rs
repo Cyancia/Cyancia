@@ -1,11 +1,10 @@
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
-use futures::executor::block_on;
 use gpui::App;
 
 use crate::{
-    bundle::{AssetBundle, ErasedAssetBundle},
-    loader::{AssetRegistryBuilder, AssetSerializer, AssetSerializerRegistry},
+    bundle::ErasedAssetBundle,
+    loader::{AssetRegistryBuilder, AssetSerializer},
     store::AssetRegistry,
 };
 

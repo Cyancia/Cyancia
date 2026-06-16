@@ -1,9 +1,9 @@
 use cyancia_math::number::AngleDifference;
 use cyancia_tools::{ToolFunction, ToolId};
 use glam::Vec2;
-use gpui::{App, AppContext, Context, MouseDownEvent, MouseMoveEvent, Pixels, Point, px};
+use gpui::{Context, MouseDownEvent, MouseMoveEvent, Pixels, Point, px};
 
-use crate::{CanvasAppExt, CanvasManager, control::CanvasTransform};
+use crate::{CanvasAppExt, control::CanvasTransform};
 
 fn mouse_position(position: Point<Pixels>) -> Vec2 {
     Vec2::new(position.x / px(1.), position.y / px(1.))
@@ -16,7 +16,7 @@ pub struct PanTool {
 }
 
 impl ToolFunction for PanTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -49,7 +49,7 @@ pub struct RotateTool {
 }
 
 impl ToolFunction for RotateTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -87,7 +87,7 @@ pub struct ZoomTool {
 }
 
 impl ToolFunction for ZoomTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 

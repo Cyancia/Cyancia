@@ -5,6 +5,9 @@ edition.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 bevy_color.workspace = true
 cyancia_utils_derive.workspace = true

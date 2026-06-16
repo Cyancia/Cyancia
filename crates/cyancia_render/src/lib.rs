@@ -1,11 +1,7 @@
 wesl::wesl_pkg!(pub render);
 
-use std::sync::Arc;
-
 use cyancia_assets::AssetAppExt;
-use futures::executor::block_on;
-use gpui::{App, AppContext};
-use wgpu::{Backends, Device, Features, Limits, PollType, Queue, TextureFormat};
+use gpui::App;
 
 use crate::{
     render_context::RenderContext,
@@ -23,9 +19,9 @@ pub mod util;
 
 pub fn init(cx: &mut App) {
     cx.set_global(RenderContext::request_new());
-    cx.set_global(GlobalSamplers::from_app(&cx));
+    cx.set_global(GlobalSamplers::from_app(cx));
     cx.add_asset_serializer::<ImageSerializer>();
-    cx.set_global(FullscreenVertex::from_app(&cx));
+    cx.set_global(FullscreenVertex::from_app(cx));
 }
 
 // pub struct RenderPlugin;

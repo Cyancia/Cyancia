@@ -1,15 +1,10 @@
-use std::{any::Any, fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
 use cyancia_brush::tool::BrushTool;
-use cyancia_canvas::{
-    CCanvas, CanvasAppExt, CanvasId, CanvasManager, GlobalCanvasEvents,
-    event::{CanvasCreated, CanvasRemoved},
-    render::CanvasRenderer,
-};
-use cyancia_theme::{SwitchThemeAction, ThemeAsset};
-use cyancia_tools::{ToolFunction, ToolId, ToolProxies, ToolProxy};
+use cyancia_canvas::{CanvasAppExt, GlobalCanvasEvents, event::CanvasCreated};
+use cyancia_theme::SwitchThemeAction;
+use cyancia_tools::{ToolFunction, ToolProxies};
 use cyancia_view::{View, ViewId};
-use glam::UVec2;
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, FocusHandle, InteractiveElement,
     IntoElement, Menu, MenuItem, ParentElement, Render, Styled, WeakEntity, Window, WindowHandle,
@@ -17,11 +12,9 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, GlobalState, Root, Theme, ThemeRegistry, TitleBar,
-    dock::{DockArea, DockItem, DockPlacement, DockState, PanelView},
+    dock::{DockArea, DockItem, DockPlacement},
     menu::AppMenuBar,
 };
-use parking_lot::Mutex;
-use uuid::Uuid;
 
 use crate::dock::{CanvasDock, CurrentCanvasLayersDock, FiltersDock, LayersDock, ToolOptionsDock};
 
@@ -48,7 +41,7 @@ fn default_dock_layout(
     )
 }
 
-pub const MAIN_VIEW_CONTEXT: &'static str = "main_view";
+pub const MAIN_VIEW_CONTEXT: &str = "main_view";
 
 pub struct MainView {
     menu_bar: Entity<AppMenuBar>,
@@ -69,8 +62,8 @@ impl View for MainView {
             },
             |window, cx| {
                 let main_view = cx.new(|cx| MainView::new(window, cx));
-                let root_view = cx.new(|cx| Root::new(main_view, window, cx));
-                root_view
+
+                cx.new(|cx| Root::new(main_view, window, cx))
             },
         )
     }
@@ -92,7 +85,7 @@ impl MainView {
         update_menu_bar(&menu_bar, cx);
         cx.observe_global::<Theme>({
             let menu_bar = menu_bar.clone();
-            move |theme, cx| {
+            move |_, cx| {
                 update_menu_bar(&menu_bar, cx);
             }
         })
@@ -179,7 +172,7 @@ fn build_menu_bar(cx: &App) -> Vec<Menu> {
 }
 
 impl Render for MainView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
             .track_focus(&self.focus_handle)
             .key_context(MAIN_VIEW_CONTEXT)

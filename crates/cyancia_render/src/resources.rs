@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use cyancia_utils::include_shader;
-use futures::executor::block_on;
 use gpui::{App, Global};
 use wgpu::{
-    Adapter, AddressMode, Backends, Device, Features, FilterMode, Instance, Limits,
-    MipmapFilterMode, Queue, Sampler, SamplerDescriptor, ShaderModule, ShaderModuleDescriptor,
-    ShaderSource, VertexState,
+    AddressMode, Device, FilterMode, MipmapFilterMode, Sampler, SamplerDescriptor, ShaderModule,
+    ShaderModuleDescriptor, ShaderSource, VertexState,
 };
 
 use crate::render_context::RenderContext;

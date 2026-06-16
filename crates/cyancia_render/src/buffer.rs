@@ -26,7 +26,7 @@ impl<T: ShaderType + WriteInto> Default for DynamicBuffer<T> {
             buffer: Default::default(),
             wrapper: encase::DynamicStorageBuffer::new(Vec::new()),
             last_written: Default::default(),
-            _marker: Default::default(),
+            _marker: PhantomData,
         }
     }
 }
@@ -89,7 +89,7 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
         } else {
             let buffer = device.create_buffer_init(&BufferInitDescriptor {
                 label: self.label,
-                contents: &contents,
+                contents,
                 usage: self.usage,
             });
             self.buffer = Some(buffer);
@@ -157,8 +157,8 @@ impl<T: ShaderType + WriteInto> Clone for BufferVec<T> {
             label: self.label.clone(),
             data: self.data.clone(),
             buffer: self.buffer.clone(),
-            usage: self.usage.clone(),
-            last_written: self.last_written.clone(),
+            usage: self.usage,
+            last_written: self.last_written,
             _marker: PhantomData,
         }
     }

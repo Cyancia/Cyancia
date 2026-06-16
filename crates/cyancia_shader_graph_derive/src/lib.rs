@@ -4,7 +4,7 @@ use quote::quote;
 use syn::{ItemImpl, parse_macro_input};
 
 #[proc_macro_attribute]
-pub fn stateless(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn stateless(_: TokenStream, item: TokenStream) -> TokenStream {
     let crate_path: TokenStream2 =
         if std::env::var("CARGO_PKG_NAME").as_deref() == Ok("cyancia_shader_graph") {
             quote! { crate }
@@ -69,7 +69,7 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
 
             fn create_inputs(
                 &self,
-                _state: &Self::State,
+                _: &Self::State,
                 ctx: #crate_path::graph::node::GraphNodeCreateSlotsContext<'_, #data_ty>,
             ) -> ::std::vec::Vec<#crate_path::graph::slot::GraphDefaultInputSlot> {
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::create_inputs(self, ctx)
@@ -77,7 +77,7 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
 
             fn create_outputs(
                 &self,
-                _state: &Self::State,
+                _: &Self::State,
                 ctx: #crate_path::graph::node::GraphNodeCreateSlotsContext<'_, #data_ty>,
             ) -> ::std::vec::Vec<#crate_path::graph::slot::GraphDefaultOutputSlot> {
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::create_outputs(self, ctx)
@@ -85,7 +85,7 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
 
             fn render(
                 &self,
-                _state: &Self::State,
+                _: &Self::State,
                 mut ctx: #crate_path::graph::node::GraphNodeRenderContext<'_, '_, #data_ty>,
             ) -> gpui::AnyElement {
                 ctx.render_all_slots()
@@ -93,7 +93,7 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
 
             fn generate_code(
                 &self,
-                _state: &Self::State,
+                _: &Self::State,
                 ctx: #crate_path::graph::node::GraphNodeCodeGenContext<'_, #data_ty>,
             ) -> ::std::result::Result<
                 ::std::string::String,
@@ -104,7 +104,7 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
 
             fn run(
                 &self,
-                _state: &Self::State,
+                _: &Self::State,
                 ctx: #crate_path::graph::node::GraphNodeRunContext<'_, #data_ty>,
             ) -> ::std::result::Result<(), #crate_path::graph::node::GraphNodeRunError> {
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::run(self, ctx)
@@ -112,7 +112,7 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
 
             fn update_signature(
                 &self,
-                _state: &Self::State,
+                _: &Self::State,
                 ctx: #crate_path::graph::node::GraphNodeUpdateSignatureContext<'_, #data_ty>
             ) {
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::update_signature(self, ctx);

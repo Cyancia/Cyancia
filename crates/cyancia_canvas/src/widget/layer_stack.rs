@@ -1,10 +1,8 @@
-use std::rc::Rc;
-
 use cyancia_image::layer::LayerId;
 use gpui::{
-    App, AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement, ParentElement,
-    Pixels, Point, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, WeakEntity, Window, div, prelude::FluentBuilder, px,
+    AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
+    div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
     ActiveTheme, h_flex,
@@ -27,7 +25,7 @@ impl LayerStackWidget {
         let subscriptions = vec![cx.subscribe_in(
             &canvas,
             window,
-            |widget, canvas, _: &CanvasLayerStackUpdated, window, cx| {
+            |_, _, _: &CanvasLayerStackUpdated, _, cx| {
                 cx.notify();
             },
         )];
@@ -42,7 +40,7 @@ impl LayerStackWidget {
 }
 
 impl Render for LayerStackWidget {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(canvas_entity) = self.canvas.upgrade() else {
             return div().into_any_element();
         };
@@ -67,13 +65,13 @@ impl Render for LayerStackWidget {
                         |d| d.child(Input::new(&self.rename_input_state).w_full()),
                         |d| d.child(layer.name.clone()),
                     )
-                    .on_drag(drag_info, |info, position, window, cx| {
-                        cx.new(|cx| info.clone().with_position(position))
+                    .on_drag(drag_info, |info, position, _, cx| {
+                        cx.new(|_| info.clone().with_position(position))
                     })
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
                         let layer_id = layer.id();
-                        move |_, window, cx| {
+                        move |_, _, cx| {
                             canvas_entity
                                 .update(cx, |canvas, cx| {
                                     canvas.image.active_layer = layer_id;
@@ -114,21 +112,12 @@ impl LayerDragInfo {
 }
 
 impl Render for LayerDragInfo {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .bg(cx.theme().background)
             .p_2()
             .child(self.layer_name.clone())
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct LayerItem {
-    id: LayerId,
-    name: String,
-    depth: u32,
-    selected: bool,
-    expanded: ExpandState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

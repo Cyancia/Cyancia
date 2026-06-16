@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use cyancia_canvas::{CanvasAppExt, CanvasManager};
+use cyancia_canvas::CanvasAppExt;
 use cyancia_image::{
     layer::{LayerData, LayerStackNode},
     texel::TexelType,
@@ -61,7 +59,7 @@ impl ActionFunction for CreateNewLayerAction {
 
 impl ActionFunction for GroupActiveLayerAction {
     fn trigger(&self, cx: &mut App) {
-        cx.update_current_canvas(|canvas, cx| {
+        cx.update_current_canvas(|canvas, _| {
             let group_name = canvas.image.next_name_of_layer("Group".to_string());
             let active_layer_id = canvas.image.active_layer;
             let active_layer_parent = canvas.image.parent_of_active_layer();
@@ -94,7 +92,7 @@ impl ActionFunction for GroupActiveLayerAction {
 
 impl ActionFunction for MoveLayerUpAction {
     fn trigger(&self, cx: &mut App) {
-        cx.update_current_canvas(|canvas, cx| {
+        cx.update_current_canvas(|canvas, _| {
             let active_layer_id = canvas.image.active_layer;
             let active_layer_parent = canvas.image.parent_of_active_layer();
             let active_layer_parent_node = canvas
@@ -167,7 +165,7 @@ impl ActionFunction for MoveLayerUpAction {
 
 impl ActionFunction for MoveLayerDownAction {
     fn trigger(&self, cx: &mut App) {
-        cx.update_current_canvas(|canvas, cx| {
+        cx.update_current_canvas(|canvas, _| {
             let active_layer_id = canvas.image.active_layer;
             let active_layer_parent = canvas.image.parent_of_active_layer();
             let active_layer_parent_node = canvas

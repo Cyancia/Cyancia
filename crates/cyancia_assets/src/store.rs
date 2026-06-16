@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use gpui::Global;
 
 use crate::{
-    asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset, UntypedAssetId},
+    asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset},
     bundle::{
         AssetBundle, AssetBundleCache, BundleId, ErasedAssetBundle, modified_bundle_absolute_path,
         scan_bundle_assets,

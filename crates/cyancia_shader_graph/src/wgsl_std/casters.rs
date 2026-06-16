@@ -13,7 +13,7 @@ impl GraphVariableCaster for F32ToVec2FCaster {
 
     type ToType = Vec2FType;
 
-    fn wgsl_cast(&self, variable: &String) -> String {
+    fn wgsl_cast(&self, variable: &str) -> String {
         format!("vec2f({}, 0.0)", variable)
     }
 
@@ -33,7 +33,7 @@ impl GraphVariableCaster for Vec2FToF32Caster {
 
     type ToType = F32Type;
 
-    fn wgsl_cast(&self, variable: &String) -> String {
+    fn wgsl_cast(&self, variable: &str) -> String {
         format!("{}.x", variable)
     }
 

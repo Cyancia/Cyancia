@@ -52,10 +52,7 @@ impl<T: Asset> std::fmt::Debug for AssetId<T> {
 
 impl<T: Asset> Clone for AssetId<T> {
     fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            _marker: PhantomData,
-        }
+        *self
     }
 }
 
@@ -230,6 +227,6 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub fn metadata(&self) -> AssetResult<AssetMetadata> {
-        Ok(self.index_db.get_asset(&self.untyped_id())?)
+        self.index_db.get_asset(&self.untyped_id())
     }
 }

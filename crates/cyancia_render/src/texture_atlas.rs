@@ -1,15 +1,19 @@
 use bevy_math::{URect, UVec2};
 use wgpu::{
-    BindingResource, Buffer, BufferUsages, CommandEncoderDescriptor, Device, Extent3d, Origin3d,
-    Queue, TexelCopyTextureInfo, Texture, TextureAspect, TextureDimension, TextureUsages,
-    TextureView, TextureViewDescriptor,
-    util::{BufferInitDescriptor, DeviceExt},
+    BindingResource, Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo,
+    Texture, TextureAspect, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,
 };
 
 use crate::buffer::BufferVec;
 
 pub struct TextureAtlasBuilder {
     textures: Vec<Texture>,
+}
+
+impl Default for TextureAtlasBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TextureAtlasBuilder {
@@ -165,7 +169,7 @@ impl Skyline {
                 .max()
                 .unwrap_or(0);
 
-            if best.map_or(true, |(_, by)| max_h < by) {
+            if best.is_none_or(|(_, by)| max_h < by) {
                 best = Some((sx, max_h));
             }
         }

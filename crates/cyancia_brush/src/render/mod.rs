@@ -1,51 +1,28 @@
-use std::{
-    collections::{HashSet, VecDeque},
-    num::NonZeroU32,
-    ops::Deref,
-    sync::Arc,
-};
-
 use bevy_math::{IRect, Rect};
-use bytemuck::Contiguous;
 use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
     layer::LayerId,
-    texel::{TexelDepth, TexelFormat, TexelType},
-    tile::{
-        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, Tile,
-        TileIndex,
-    },
+    texel::TexelType,
+    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_math::number::LerpAngle;
 use cyancia_render::{
-    buffer::{BufferVec, DynamicBuffer},
+    buffer::DynamicBuffer,
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
 };
 use cyancia_shader_graph::graph::{Graph, texture::TextureId};
-use cyancia_utils::include_shader;
-use encase::{ShaderType, StorageBuffer};
-use glam::{IVec2, IVec4, UVec2, UVec3, UVec4, Vec2, Vec4Swizzles};
+use encase::ShaderType;
+use glam::{IVec2, Vec2};
 use gpui::App;
-use parking_lot::RwLock;
-use ringbuffer::{AllocRingBuffer, RingBuffer};
-use uuid::Uuid;
-use wesl::{VirtualResolver, Wesl};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferAddress, BufferBindingType,
-    BufferDescriptor, BufferUsages, CommandEncoder, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, Extent3d, MapMode, Origin3d, PipelineLayoutDescriptor,
-    Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
-    TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDimension,
-    naga::StorageAccess,
+    BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+    BufferUsages, ComputePassDescriptor, Device, Extent3d, Origin3d, Queue, ShaderStages,
+    TexelCopyTextureInfo, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureUsages,
     util::{BufferInitDescriptor, DeviceExt},
-    wgt::PollType,
 };
 
 use crate::{
-    asset::BrushPreset,
     input_processing::{InputProcessor, RawPenInput},
     instance::{BrushPresetInstance, CompiledBrushPreset},
     render::{
@@ -149,7 +126,7 @@ impl BrushPresetOperator {
             let renderer = BrushPresetRenderer::new(
                 &self.device,
                 &self.queue,
-                &compiled_brush,
+                compiled_brush,
                 target_layer,
                 target_layer_info.texel_type,
                 cx.assets(),
@@ -273,7 +250,7 @@ impl BrushPresetOperator {
         let result_buffer = intermediate_buffers[self.round as usize % 2].deep_clone();
         let another_buffer = intermediate_buffers[(self.round as usize + 1) % 2].deep_clone();
 
-        let mut new_intermediate_buffers = if round % 2 == 0 {
+        let mut new_intermediate_buffers = if round.is_multiple_of(2) {
             [result_buffer, another_buffer]
         } else {
             [another_buffer, result_buffer]
@@ -299,7 +276,7 @@ impl BrushPresetOperator {
         );
 
         let [result_buffer_a, result_buffer_b] = new_intermediate_buffers;
-        if round % 2 == 0 {
+        if round.is_multiple_of(2) {
             Some((accumulated_pixel_bounds, result_buffer_a))
         } else {
             Some((accumulated_pixel_bounds, result_buffer_b))
@@ -330,7 +307,7 @@ impl BrushPresetRenderer {
         let resources = StrokeResources::new(
             device,
             queue,
-            &brush,
+            brush,
             target_layer_id,
             target_layer_format,
             assets,
@@ -397,7 +374,7 @@ impl BrushPresetRenderer {
             self.samples_offsets
                 .push(self.samples_buffer.push(&sample) as u32);
 
-            let size = bounds.size().as_uvec2();
+            let _ = bounds.size().as_uvec2();
 
             intermediate_buffers[0].ensure_pixel_area(bounds);
             intermediate_buffers[1].ensure_pixel_area(bounds);
@@ -429,7 +406,7 @@ impl BrushPresetRenderer {
                 &self.dab_info_buffer,
                 &self.dab_info_offsets,
                 &self.resources,
-                &intermediate_buffers,
+                intermediate_buffers,
                 round,
             );
         }
@@ -507,7 +484,7 @@ impl BrushPresetRenderer {
                     &target_layer.tile_info_buffer,
                     &self.dab_info_buffer,
                     &self.resources,
-                    &intermediate_buffers,
+                    intermediate_buffers,
                     round,
                 );
             }
@@ -616,8 +593,8 @@ impl StrokeResources {
         assets: &AssetRegistry,
     ) -> Self {
         let mut external_var_layouts = Vec::new();
-        let mut cur_binding = EXTERNAL_VARIABLE_BASE_BINDING;
-        for _ in 0..brush.external_vars.all().len() {
+        for cur_binding in (EXTERNAL_VARIABLE_BASE_BINDING..).take(brush.external_vars.all().len())
+        {
             external_var_layouts.push(BindGroupLayoutEntry {
                 binding: cur_binding,
                 visibility: ShaderStages::COMPUTE,
@@ -628,7 +605,6 @@ impl StrokeResources {
                 },
                 count: None,
             });
-            cur_binding += 1;
         }
 
         let mut external_var_buffers = Vec::new();
@@ -668,8 +644,8 @@ impl StrokeResources {
 
             let handle = assets.handle(AssetId::new(**id)).unwrap();
             let gpu_image = GpuImage::from_asset(
-                &device,
-                &queue,
+                device,
+                queue,
                 &handle.get().unwrap(),
                 // TODO: This is weird but, adding TEXTURE_BINDING usage to avoid vulkan validation error:
                 // VALIDATION [VUID-VkImageViewCreateInfo-image-04441 (0xb75da543)]

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gpui::{Global, block_on};
-use wgpu::{Adapter, Backends, Device, Features, Instance, InstanceDescriptor, Queue};
+use wgpu::{Adapter, Device, Features, Instance, InstanceDescriptor, Queue};
 
 pub struct RenderContext {
     pub instance: Instance,
@@ -46,10 +46,10 @@ impl RenderContext {
             });
 
             RenderContext {
-                instance: instance.into(),
-                adapter: adapter.into(),
-                device: device.into(),
-                queue: queue.into(),
+                instance,
+                adapter,
+                device,
+                queue,
             }
         })
     }

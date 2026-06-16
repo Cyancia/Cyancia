@@ -1,17 +1,13 @@
-use std::{
-    cell::{Cell, RefCell},
-    panic::Location,
-    rc::Rc,
-};
+use std::{panic::Location, rc::Rc};
 
 use cyancia_math::curve::CubicCurve;
 use glam::Vec2;
 use gpui::{
     App, BorderStyle, Bounds, ContentMask, Context, Corners, Element, ElementId, Entity,
     EventEmitter, FocusHandle, GlobalElementId, HitboxBehavior, Hsla, InspectorElementId,
-    InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, PathBuilder, Pixels, Point, RenderOnce,
-    Style, Styled, Window, actions, div, fill, hsla, outline, point, px, relative, size,
+    InteractiveElement, IntoElement, KeyBinding, LayoutId, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, ParentElement, PathBuilder, Pixels, Point, RenderOnce, Style, Styled,
+    Window, actions, div, fill, hsla, outline, point, px, relative, size,
 };
 
 const DEFAULT_ID: &str = "curve-edit-widget";
@@ -129,12 +125,14 @@ pub enum CurveEditEvent {
     ControlPointsChanged,
 }
 
+type CurveEditEventHandler = dyn Fn(CurveEditEvent, &mut Window, &mut App);
+
 #[derive(IntoElement)]
 pub struct CurveEdit {
     id: ElementId,
     style: CurveEditStyle,
     state: Entity<CurveEditState>,
-    on_event: Rc<dyn Fn(CurveEditEvent, &mut Window, &mut App)>,
+    on_event: Rc<CurveEditEventHandler>,
 }
 
 impl CurveEdit {
@@ -249,8 +247,8 @@ impl Element for CurveEditCanvas {
 
     fn request_layout(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
+        _: Option<&GlobalElementId>,
+        __id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Style) {
@@ -265,12 +263,12 @@ impl Element for CurveEditCanvas {
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
+        _: Option<&GlobalElementId>,
+        __id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _: &mut Style,
         window: &mut Window,
-        _cx: &mut App,
+        _: &mut App,
     ) -> Bounds<Pixels> {
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             window.insert_hitbox(bounds, HitboxBehavior::Normal);
@@ -280,19 +278,15 @@ impl Element for CurveEditCanvas {
 
     fn paint(
         &mut self,
-        id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        _: Option<&GlobalElementId>,
+        __id: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
         style: &mut Style,
         bounds: &mut Bounds<Pixels>,
         window: &mut Window,
         cx: &mut App,
     ) {
         let bounds = *bounds;
-
-        let Some(id) = id else {
-            return;
-        };
 
         let palette = CurveEditPalette::new(window);
         let paint_default_background = style.background.is_none();
@@ -487,7 +481,7 @@ impl CurveEditCanvas {
         });
 
         let state = self.state.clone();
-        window.on_mouse_event(move |ev: &MouseMoveEvent, phase, window, cx| {
+        window.on_mouse_event(move |ev: &MouseMoveEvent, phase, _, cx| {
             if !phase.bubble() || !bounds.contains(&ev.position) {
                 return;
             }
@@ -520,7 +514,7 @@ impl CurveEditCanvas {
         });
 
         let state = self.state.clone();
-        window.on_mouse_event(move |_ev: &MouseUpEvent, _phase, window, cx| {
+        window.on_mouse_event(move |_: &MouseUpEvent, _, window, cx| {
             state.update(cx, |state, cx| {
                 if state.drag_index.take().is_some() {
                     window.refresh();

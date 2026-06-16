@@ -1,35 +1,22 @@
-use std::{
-    cell::OnceCell,
-    collections::{HashMap, HashSet},
-    ops::Deref,
-    sync::Arc,
-};
+use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use bevy_math::IRect;
 use cyancia_render::{buffer::BufferVec, render_context::RenderContext};
-use dashmap::{DashMap, DashSet, Entry};
+use dashmap::{DashMap, Entry};
 use encase::ShaderType;
-use glam::{IVec2, Mat3, UVec2};
+use glam::{IVec2, UVec2};
 use gpui::{App, Global};
-use image::{DynamicImage, GenericImageView, RgbaImage};
-use indexmap::{IndexMap, IndexSet};
-use palette::{LinSrgba, Srgb, Srgba};
-use parking_lot::{Mutex, RwLock};
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefIterator, ParallelBridge, ParallelIterator,
-};
-use uuid::Uuid;
+use image::{DynamicImage, GenericImageView};
+use indexmap::IndexMap;
 use wgpu::{
-    BindingResource, Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyBufferInfo,
-    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
-    TextureViewDimension,
-    util::{BufferInitDescriptor, DeviceExt},
+    Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, TextureAspect,
+    TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,
+    TextureViewDimension, util::DeviceExt,
 };
 
 use crate::{
-    layer::{LayerData, LayerId},
-    texel::{RGBA8_FORMAT, TexelDepth, TexelFormat, TexelType},
+    layer::LayerId,
+    texel::{TexelDepth, TexelFormat, TexelType},
 };
 
 // TODO: We are having this wrapper because rendering iced primitives doesn't allow bring external context
@@ -174,7 +161,7 @@ impl GpuTileStorageInner {
     }
 
     pub fn get_layer_info(&self, layer_id: LayerId) -> Option<GpuLayerInfo> {
-        self.layers.get(&layer_id).map(|l| l.layer_info().clone())
+        self.layers.get(&layer_id).map(|l| *l.layer_info())
     }
 
     pub fn get_layer_tiles(&self, layer_id: LayerId) -> Option<Vec<IVec2>> {
@@ -578,13 +565,13 @@ impl DynamicLayerStorage {
         self.tiles.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.tiles.is_empty()
+    }
+
     pub fn deep_clone(&self) -> Self {
         if self.tiles.is_empty() {
-            return Self::new(
-                self.device.clone(),
-                self.queue.clone(),
-                self.layer_info.clone(),
-            );
+            return Self::new(self.device.clone(), self.queue.clone(), self.layer_info);
         }
 
         let texture = self.texture.as_ref().unwrap().texture();
@@ -650,7 +637,7 @@ impl DynamicLayerStorage {
             texture: Some(new_texture_view),
             tiles: new_tiles,
             tile_info_buffer: new_tile_info_buffer,
-            layer_info: self.layer_info.clone(),
+            layer_info: self.layer_info,
         }
     }
 }

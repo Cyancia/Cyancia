@@ -80,7 +80,7 @@ impl CImage {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        Ok(Self::from_image(imagers::open(&path)?, name, tiles))
+        Ok(Self::from_image(imagers::open(path)?, name, tiles))
     }
 
     pub fn from_image(img: imagers::DynamicImage, name: String, tiles: &GpuTileStorage) -> Self {

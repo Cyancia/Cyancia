@@ -3,23 +3,22 @@ use std::{
     sync::Arc,
 };
 
-use gpui::{App, Context, Point};
+use gpui::{App, Point};
 use indexmap::IndexMap;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use uuid::Uuid;
 
 use crate::graph::{
     external::GraphExternalVariableStorage,
     function::GraphFunctionStorage,
     node::{
-        ContextualGraphNodeCodeGenError, ContextualGraphNodeRunError, ErasedGraphNode,
-        ErasedGraphNodeMessage, GraphNode, GraphNodeCodeGenContext, GraphNodeCreateSlotsContext,
-        GraphNodeData, GraphNodeId, GraphNodeRunContext, GraphNodeUpdateSignatureContext,
-        StatefulGraphNode,
+        ContextualGraphNodeCodeGenError, ContextualGraphNodeRunError, ErasedGraphNode, GraphNode,
+        GraphNodeCodeGenContext, GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId,
+        GraphNodeRunContext, GraphNodeUpdateSignatureContext, StatefulGraphNode,
     },
     slot::{
-        ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData,
-        GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
+        GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
+        GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
     },
     texture::{GraphTextureStorage, GraphTextureUsageRecorder},
     variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
@@ -150,9 +149,7 @@ impl<Data: GraphData> Graph<Data> {
 
         if let (Some(from), Some(to)) = (from_slot, to_slot) {
             from.data_ty.name() == to.data.ty().name()
-                || self
-                    .type_registry
-                    .can_cast(&*from.data_ty, to.data.ty().as_ref())
+                || self.type_registry.can_cast(&*from.data_ty, to.data.ty())
         } else {
             false
         }
@@ -631,7 +628,7 @@ impl<Data: GraphData> Graph<Data> {
 
             match node.data.run(context) {
                 Ok(()) => {}
-                Err(err) => {
+                Err(_) => {
                     // log::error!(
                     //     "Error running node {:?} ({:?}): {:?}",
                     //     node_id,
@@ -722,32 +719,6 @@ fn create_output_slots(
     outputs
 }
 
-fn disconnect_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[GraphInputSlotId]) {
-    for input_slot_id in input_slot_ids {
-        if let Some(input_slot) = slots.inputs.get_mut(input_slot_id)
-            && let Some(output_slot) = input_slot
-                .connected
-                .and_then(|output_id| slots.outputs.get_mut(&output_id))
-        {
-            input_slot.connected = None;
-            output_slot.connected.remove(&input_slot_id);
-        }
-    }
-}
-
-fn disconnect_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[GraphOutputSlotId]) {
-    for output_slot_id in output_slot_ids {
-        if let Some(output_slot) = slots.outputs.get_mut(output_slot_id) {
-            for input_slot_id in &output_slot.connected {
-                if let Some(input_slot) = slots.inputs.get_mut(input_slot_id) {
-                    input_slot.connected = None;
-                }
-            }
-            output_slot.connected.clear();
-        }
-    }
-}
-
 fn delete_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[GraphInputSlotId]) {
     for input_slot_id in input_slot_ids {
         if let Some(input_slot) = slots.inputs.remove(input_slot_id)
@@ -755,7 +726,7 @@ fn delete_all_inputs(slots: &mut GraphSlots, input_slot_ids: &[GraphInputSlotId]
                 .connected
                 .and_then(|output_id| slots.outputs.get_mut(&output_id))
         {
-            output_slot.connected.remove(&input_slot_id);
+            output_slot.connected.remove(input_slot_id);
         }
     }
 }

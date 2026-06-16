@@ -7,26 +7,21 @@ use cyancia_assets::{
     asset::{Asset, AssetId},
     loader::AssetSerializer,
 };
-use gpui::{App, AppContext, Context, Point};
+use gpui::{App, AppContext, Point};
 use serde::{Deserialize, Serialize};
-use toml::ser::Buffer;
 
-use crate::{
-    GraphSerializer,
-    graph::{
-        Graph, GraphData, GraphResources, GraphSignature,
-        external::{ExternalVariable, ExternalVariableId, GraphExternalVariableStorage},
-        function::{GraphFunction, GraphFunctionId},
-        node::{
-            GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
-            StatefulGraphNode,
-        },
-        slot::{
-            GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
-            GraphSlots,
-        },
-        variable::{GraphLiteral, GraphTypeRegistry, GraphVariable},
+use crate::graph::{
+    Graph, GraphData, GraphResources,
+    external::{ExternalVariable, ExternalVariableId, GraphExternalVariableStorage},
+    function::{GraphFunction, GraphFunctionId},
+    node::{
+        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
+        StatefulGraphNode,
     },
+    slot::{
+        GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
+    },
+    variable::{GraphLiteral, GraphTypeRegistry},
 };
 
 pub trait GraphSerializable: Sized {
@@ -44,7 +39,7 @@ impl<'de, T: Serialize + Deserialize<'de>> GraphSerializable for T {
 
     fn from_toml(
         value: toml::Value,
-        type_registry: &GraphTypeRegistry,
+        __registry: &GraphTypeRegistry,
     ) -> Result<Self, toml::de::Error> {
         Self::deserialize(value)
     }
@@ -96,7 +91,7 @@ impl<Data: GraphData> Graph<Data> {
         resources: GraphResources<Data>,
         type_registry: Arc<GraphTypeRegistry>,
         node_registry: &GraphNodeRegistry<Data>,
-        external_vars: Arc<GraphExternalVariableStorage>,
+        __vars: Arc<GraphExternalVariableStorage>,
         cx: &App,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let graph = match toml::from_str::<SerializableGraph>(s) {
@@ -191,7 +186,7 @@ impl<Data: GraphData> Graph<Data> {
                         name: default.name,
                         data: GraphLiteral::new_boxed(
                             literal_value,
-                            dyn_clone::clone_box(&**value_type_obj),
+                            dyn_clone::clone_box(value_type_obj),
                         ),
                         connected: slot.connected,
                     },
@@ -216,7 +211,7 @@ impl<Data: GraphData> Graph<Data> {
 
             for (index, default) in raw_outputs.into_iter().enumerate() {
                 let id = ser_node.outputs[index];
-                let Some(_slot) = outputs.get(&id) else {
+                let Some(_) = outputs.get(&id) else {
                     errs.push(GraphDeserializeError::MissingOutputSlot(ser_node.id, id));
                     continue 'node_loop;
                 };
@@ -235,7 +230,7 @@ impl<Data: GraphData> Graph<Data> {
             graph_nodes.insert(
                 ser_node.id,
                 GraphNodeData {
-                    position: ser_node.position.into(),
+                    position: ser_node.position,
                     data: node,
                     inputs: ser_node.inputs.clone(),
                     outputs: ser_node.outputs.clone(),
@@ -269,13 +264,13 @@ impl<Data: GraphData> Graph<Data> {
                 inputs: graph_inputs,
                 outputs: graph_outputs,
             },
-            resources: resources.into(),
+            resources,
             type_registry,
             cached_run_order: Default::default(),
             cached_signature: Default::default(),
         });
 
-        return rs;
+        rs
     }
 
     pub fn as_serialized(&self) -> Result<SerializableGraph, anyhow::Error> {
@@ -285,7 +280,7 @@ impl<Data: GraphData> Graph<Data> {
             .try_fold(Vec::new(), |mut acc, (node_id, node)| {
                 acc.push(SerializableNodeData {
                     id: *node_id,
-                    position: node.position.into(),
+                    position: node.position,
                     inputs: node.inputs.clone(),
                     outputs: node.outputs.clone(),
                     data: GraphNodeTypeId {
@@ -316,8 +311,8 @@ impl<Data: GraphData> Graph<Data> {
         let outputs = self
             .slots
             .outputs
-            .iter()
-            .map(|(id, _)| (*id, SerializableOutputSlotData {}))
+            .keys()
+            .map(|id| (*id, SerializableOutputSlotData {}))
             .collect();
 
         Ok(SerializableGraph {
@@ -409,7 +404,10 @@ impl SerializableGraphLiteral {
 
         let literal_value = ty.deserialize_literal(self.value.clone())?;
 
-        Ok(GraphLiteral::new_boxed(literal_value, ty.clone()))
+        Ok(GraphLiteral::new_boxed(
+            literal_value,
+            dyn_clone::clone_box(ty),
+        ))
     }
 }
 

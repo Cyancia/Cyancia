@@ -1,8 +1,7 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use cyancia_assets::AssetAppExt;
 use gpui::{Action, App, DummyKeyboardMapper, Global, KeyBinding, KeyBindingContextPredicate};
-use serde::de::DeserializeOwned;
 
 use crate::{
     brush::OpenBrushEditorAction,
@@ -63,7 +62,7 @@ pub fn finish(cx: &mut App) {
     let functions = cx.global::<ActionFunctionRegistry>();
 
     // TODO Use the first manifest currently. In the future, this should be confuguable.
-    let manifest_handle = manifests.get(0).expect("No keybinding manifest available");
+    let manifest_handle = manifests.first().expect("No keybinding manifest available");
     let manifest = manifest_handle.get().unwrap();
     log::info!(
         "Loading {} key bindings from manifest {}",

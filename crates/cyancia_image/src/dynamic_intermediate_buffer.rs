@@ -3,8 +3,8 @@ use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use encase::ShaderType;
 use glam::IVec2;
 use wgpu::{
-    Buffer, BufferUsages, Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView, TextureViewDimension, wgt::TextureViewDescriptor,
+    Buffer, BufferUsages, Device, Extent3d, Queue, TextureDescriptor, TextureDimension,
+    TextureUsages, TextureView, TextureViewDimension, wgt::TextureViewDescriptor,
 };
 
 use crate::{
@@ -24,7 +24,6 @@ pub struct DynamicIntermediateBuffer {
     queue: Queue,
     textures: [TextureView; 2],
     tile_info: DynamicBuffer<DynamicGpuTileInfoBuffer>,
-    texel_type: TexelType,
     tiles: u32,
 }
 
@@ -61,7 +60,7 @@ impl DynamicIntermediateBuffer {
             });
 
         let mut info = DynamicBuffer::new(
-            Some("dynamic intermediate buffer".into()),
+            Some("dynamic intermediate buffer"),
             BufferUsages::STORAGE | BufferUsages::COPY_SRC,
         );
         info.push(&DynamicGpuTileInfoBuffer {
@@ -75,7 +74,6 @@ impl DynamicIntermediateBuffer {
             queue,
             textures: [texture_a, texture_b],
             tile_info: info,
-            texel_type,
             tiles: initial,
         }
     }

@@ -41,14 +41,14 @@ pub enum AssetError {
 
 pub struct AssetErrorWithBacktrace {
     error: AssetError,
-    backtrace: Backtrace,
+    backtrace: Box<Backtrace>,
 }
 
 impl From<AssetError> for AssetErrorWithBacktrace {
     fn from(value: AssetError) -> Self {
         Self {
             error: value,
-            backtrace: Backtrace::capture(),
+            backtrace: Box::new(Backtrace::capture()),
         }
     }
 }

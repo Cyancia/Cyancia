@@ -6,8 +6,6 @@ use cyancia_assets::{
     loader::AssetRegistryBuilder,
 };
 use cyancia_view::{View, ViewAppExt, ViewManager};
-use gpui::{AppContext, WindowOptions};
-use gpui_component::Root;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 use crate::{brush_editor_view::BrushEditorView, main_view::MainView};

@@ -1,15 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
-    rc::Rc,
     sync::Arc,
 };
 
 use cyancia_math::point::PointExt;
 use gpui::{
-    Action, AnyElement, App, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    KeyBinding, LinearColorStop, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, PathBuilder, Pixels, Point, Render, SharedString, Size, Styled, Window, actions,
-    canvas, div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, solid_background,
+    Action, App, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement, KeyBinding,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels,
+    Point, Render, SharedString, Size, Styled, Window, actions, canvas, div, linear_color_stop,
+    linear_gradient, prelude::FluentBuilder, px, solid_background,
 };
 use gpui_component::{ActiveTheme, ElementExt, menu::ContextMenuExt};
 use schemars::JsonSchema;
@@ -17,11 +16,9 @@ use serde::Deserialize;
 
 use crate::graph::{
     Graph, GraphData,
-    node::{ErasedGraphNode, GraphNode, GraphNodeId, GraphNodeRegistry},
+    node::{GraphNodeId, GraphNodeRegistry},
     slot::{GraphInputSlotId, GraphOutputSlotId},
-    variable::GraphLiteralValue,
 };
-use uuid::Uuid;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 pub struct AddNodeAction {
@@ -30,7 +27,7 @@ pub struct AddNodeAction {
 
 actions!(graph_editor, [DeleteSelectedNodeAction]);
 
-pub const GRAPH_EDITOR_CONTEXT: &'static str = "graph_editor";
+pub const GRAPH_EDITOR_CONTEXT: &str = "graph_editor";
 
 pub(crate) fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new(
@@ -121,8 +118,8 @@ impl<Data: GraphData> GraphEditor<Data> {
 
     pub fn on_delete_selected_node_action(
         &mut self,
-        event: &DeleteSelectedNodeAction,
-        window: &mut Window,
+        _: &DeleteSelectedNodeAction,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         for node_id in self.selected_nodes.drain() {
@@ -163,9 +160,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx: &mut Context<Self>,
     ) {
         self.pan_start(event, window, cx);
-        if self.pan_state.is_some() {
-            return;
-        }
+        if self.pan_state.is_some() {}
     }
 
     pub fn on_middle_mouse_up(
@@ -254,12 +249,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         self.focus_handle.focus(window, cx);
     }
 
-    pub fn node_drag(
-        &mut self,
-        event: &MouseMoveEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn node_drag(&mut self, _: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(drag) = &mut self.node_drag_state else {
             return;
         };
@@ -279,12 +269,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
-    pub fn node_drag_end(
-        &mut self,
-        event: &MouseUpEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn node_drag_end(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.node_drag_state = None;
         cx.notify();
     }
@@ -315,7 +300,7 @@ impl<Data: GraphData> GraphEditor<Data> {
 
     pub fn marquee_drag(
         &mut self,
-        event: &MouseMoveEvent,
+        _: &MouseMoveEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -342,12 +327,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
-    pub fn marquee_end(
-        &mut self,
-        event: &MouseUpEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn marquee_end(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.marquee_state = None;
         cx.notify();
     }
@@ -361,13 +341,13 @@ impl<Data: GraphData> GraphEditor<Data> {
         let cursor_pos = event.position - self.editor_bounds.origin;
         let mut start_slot = None;
         for (id, pos) in &self.input_slot_pos {
-            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
+            if cursor_pos.relative_to(pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 start_slot = Some(GraphSlotId::Input(*id));
                 break;
             }
         }
         for (id, pos) in &self.output_slot_pos {
-            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
+            if cursor_pos.relative_to(pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 start_slot = Some(GraphSlotId::Output(*id));
                 break;
             }
@@ -388,7 +368,7 @@ impl<Data: GraphData> GraphEditor<Data> {
                     start_slot = GraphSlotId::Output(connected);
                 }
             }
-            GraphSlotId::Output(slot_id) => {}
+            GraphSlotId::Output(__id) => {}
         }
 
         self.slot_connect_state = Some(SlotConnectState { start_slot });
@@ -399,11 +379,11 @@ impl<Data: GraphData> GraphEditor<Data> {
 
     pub fn slot_connect_drag(
         &mut self,
-        event: &MouseMoveEvent,
-        window: &mut Window,
+        _: &MouseMoveEvent,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(slot_connect_state) = &self.slot_connect_state else {
+        let Some(__connect_state) = &self.slot_connect_state else {
             return;
         };
 
@@ -413,7 +393,7 @@ impl<Data: GraphData> GraphEditor<Data> {
     pub fn slot_connect_end(
         &mut self,
         event: &MouseUpEvent,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(slot_connect_state) = self.slot_connect_state.take() else {
@@ -425,13 +405,13 @@ impl<Data: GraphData> GraphEditor<Data> {
         let cursor_pos = event.position - self.editor_bounds.origin;
         let mut end_slot = None;
         for (slot_id, pos) in &self.input_slot_pos {
-            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
+            if cursor_pos.relative_to(pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 end_slot = Some(GraphSlotId::Input(*slot_id));
                 break;
             }
         }
         for (slot_id, pos) in &self.output_slot_pos {
-            if cursor_pos.relative_to(&pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
+            if cursor_pos.relative_to(pos).magnitude_squared() <= SLOT_HIT_TEST_RADIUS_SQUARED {
                 end_slot = Some(GraphSlotId::Output(*slot_id));
                 break;
             }
@@ -452,7 +432,7 @@ impl<Data: GraphData> GraphEditor<Data> {
                     graph.connect_slots(from, to);
                 });
             }
-            _ => return,
+            _ => (),
         }
     }
 
@@ -469,12 +449,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         self.focus_handle.focus(window, cx);
     }
 
-    pub fn pan_drag(
-        &mut self,
-        event: &MouseMoveEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn pan_drag(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
         let Some(pan_state) = &mut self.pan_state else {
             return;
         };
@@ -485,7 +460,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         cx.notify();
     }
 
-    pub fn pan_end(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn pan_end(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
         self.pan_state = None;
     }
 
@@ -714,9 +689,9 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     .children(nodes)
                     .on_children_prepainted({
                         let editor = cx.entity().downgrade();
-                        move |bounds, _window, cx| {
+                        move |bounds, _, cx| {
                             editor
-                                .update(cx, |editor, _cx| {
+                                .update(cx, |editor, _| {
                                     editor.node_bounds.clear();
                                     for (node_id, bounds) in node_ids.iter().zip(bounds) {
                                         editor.node_bounds.insert(
@@ -748,9 +723,9 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
             .on_prepaint({
                 let editor = cx.entity().downgrade();
 
-                move |bounds, window, cx| {
+                move |bounds, _, cx| {
                     editor
-                        .update(cx, |editor, cx| {
+                        .update(cx, |editor, _| {
                             editor.editor_bounds = bounds;
                         })
                         .ok();
@@ -763,7 +738,7 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     "Add Node",
                     window,
                     cx,
-                    move |mut menu, _window, _cx| {
+                    move |mut menu, _, _| {
                         menu = menu.action_context(submenu_focus_handle.clone());
                         for node in all_nodes.iter() {
                             menu = menu.menu(

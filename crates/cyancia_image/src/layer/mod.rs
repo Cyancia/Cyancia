@@ -1,23 +1,20 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    sync::Arc,
 };
 
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
-use glam::UVec2;
 use image::DynamicImage;
 use parse_display::Display;
 use uuid::Uuid;
-use wgpu::{Buffer, ComputePass, Device, Queue, TextureFormat, TextureView};
+use wgpu::{Buffer, ComputePass, Device, Queue, TextureView};
 
 use crate::{
     CImage,
     blend_modes::BlendMode,
     composite::{BlendFunction, ImageCompositor, LayerPreviewOverriders},
     layer::{group_layer::GroupLayer, pixel_layer::PixelLayer},
-    texel::TexelType,
     tile::GpuTileStorage,
 };
 
@@ -213,6 +210,12 @@ pub struct LayerStack {
     layers: HashMap<LayerId, LayerData>,
 }
 
+impl Default for LayerStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LayerStack {
     pub fn new() -> Self {
         let background = LayerData::new_normal_pixel("Background".to_string());
@@ -253,6 +256,10 @@ impl LayerStack {
 
     pub fn len(&self) -> usize {
         self.layers.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.layers.is_empty()
     }
 
     pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<(LayerData, LayerStackNode)> {

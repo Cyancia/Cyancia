@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cyancia_utils::wrapper;
-use gpui::{AnyEntity, App, BorrowAppContext, Entity, Global, Render, WindowHandle};
+use gpui::{App, BorrowAppContext, Global, Render, WindowHandle};
 use gpui_component::Root;
 
 pub fn init(cx: &mut App) {
@@ -93,7 +93,7 @@ impl ViewManager {
 
     pub fn open_view(&mut self, id: ViewId, cx: &mut App) -> ViewOpenResult {
         if let Some(window) = self.opened_view_root_window.get(&id) {
-            return ViewOpenResult::AlreadyOpen(window.clone());
+            return ViewOpenResult::AlreadyOpen(*window);
         }
 
         let Some(launch) = self.registered_views.get(&id) else {
@@ -105,7 +105,7 @@ impl ViewManager {
                 return ViewOpenResult::Error(err);
             }
         };
-        self.opened_view_root_window.insert(id, window.clone());
+        self.opened_view_root_window.insert(id, window);
         ViewOpenResult::New(window)
     }
 
@@ -116,7 +116,7 @@ impl ViewManager {
         }
 
         if let Some(window) = self.opened_view_root_window.remove(&id) {
-            let _ = window.update(cx, |root, window, cx| {
+            let _ = window.update(cx, |_, window, _| {
                 window.remove_window();
             });
         }

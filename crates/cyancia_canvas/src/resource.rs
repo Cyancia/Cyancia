@@ -22,6 +22,12 @@ pub struct CanvasResources {
     resources: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
 }
 
+impl Default for CanvasResources {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CanvasResources {
     pub fn new() -> Self {
         Self {

@@ -1,7 +1,6 @@
 use std::{
     any::Any,
     collections::{BTreeMap, HashMap, hash_map::Entry},
-    convert::identity,
     rc::Rc,
     sync::Arc,
 };
@@ -9,11 +8,10 @@ use std::{
 use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use gpui::{
-    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Pixels, Point, Rgba, Styled, WeakEntity, Window, div, prelude::FluentBuilder, px,
+    AnyElement, App, Context, InteractiveElement, IntoElement, ParentElement, Pixels, Point, Rgba,
+    Styled, WeakEntity, Window, div, prelude::FluentBuilder, px,
 };
-use gpui_component::{ElementExt, text};
-use indexmap::IndexMap;
+use gpui_component::ElementExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -23,10 +21,9 @@ use crate::{
         Graph, GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
             GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInlineLiteralRenderContext,
-            GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
-            GraphSlots, GraphValueType,
+            GraphInputSlotId, GraphOutputSlotId, GraphSlots, GraphValueType,
         },
-        texture::{GraphTextureStorage, GraphTextureUsageRecorder},
+        texture::GraphTextureUsageRecorder,
         variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
     },
     save::GraphSerializable,
@@ -54,12 +51,7 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         state: &Self::State,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot>;
-    fn update_signature(
-        &self,
-        state: &Self::State,
-        ctx: GraphNodeUpdateSignatureContext<'_, Data>,
-    ) {
-    }
+    fn update_signature(&self, _: &Self::State, _: GraphNodeUpdateSignatureContext<'_, Data>) {}
     fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement;
     fn generate_code(
         &self,
@@ -68,8 +60,8 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     ) -> Result<String, GraphNodeCodeGenError>;
     fn run(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeRunContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeRunContext<'_, Data>,
     ) -> Result<(), GraphNodeRunError> {
         Err(GraphNodeRunError::Unavailable)
     }
@@ -331,12 +323,12 @@ pub trait StatelessCommonGraphNode<Data: GraphData>: Send + Sync + 'static + Dyn
         &self,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot>;
-    fn update_signature(&self, ctx: GraphNodeUpdateSignatureContext<'_, Data>) {}
+    fn update_signature(&self, _: GraphNodeUpdateSignatureContext<'_, Data>) {}
     fn generate_code(
         &self,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn run(&self, ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
+    fn run(&self, _: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
         Err(GraphNodeRunError::Unavailable)
     }
 }
@@ -413,7 +405,7 @@ impl<Data: GraphData> GraphNodeUpdateSignatureContext<'_, Data> {
 
         self.signature.outputs.insert(
             *slot_id,
-            GraphVariable::new_boxed(name, slot.data.ty().clone()),
+            GraphVariable::new_boxed(name, dyn_clone::clone_box(slot.data.ty())),
         );
     }
 }
@@ -493,8 +485,8 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                         .rounded(SLOT_DOT_RADIUS)
                         .on_prepaint({
                             let editor = self.editor.clone();
-                            move |bounds, window, cx| {
-                                editor.update(cx, |editor, cx| {
+                            move |bounds, _, cx| {
+                                let _ = editor.update(cx, |editor, _| {
                                     editor.add_input_slot_pos(slot_id, bounds.center());
                                 });
                             }
@@ -510,7 +502,7 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                             on_update: Rc::new({
                                 let graph = self.cx.entity().downgrade();
                                 move |value, cx| {
-                                    graph.update(cx, |graph, cx| {
+                                    let _ = graph.update(cx, |graph, _| {
                                         graph.set_slot_value(slot_id, value);
                                     });
                                 }
@@ -543,8 +535,8 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
                         .rounded(SLOT_DOT_RADIUS)
                         .on_prepaint({
                             let editor = self.editor.clone();
-                            move |bounds, window, cx| {
-                                editor.update(cx, |editor, cx| {
+                            move |bounds, _, cx| {
+                                let _ = editor.update(cx, |editor, _| {
                                     editor.add_output_slot_pos(slot_id, bounds.center());
                                 });
                             }
@@ -591,8 +583,8 @@ impl<'a, Data: GraphData> GraphNodeRunContext<'a, Data> {
                 let casted = self
                     .type_registry
                     .try_cast(
-                        connected_value.ty().as_ref(),
-                        slot.data.ty().as_ref(),
+                        connected_value.ty(),
+                        slot.data.ty(),
                         connected_value.value(),
                     )
                     .ok_or(GraphNodeRunError::FailedToCastVariable)?;
@@ -708,7 +700,7 @@ impl<Data: GraphData> GraphNodeCodeGenContext<'_, Data> {
 
         if output_slot.data_ty.name() != slot.data.ty().name() {
             self.type_registry
-                .try_wgsl_cast(&*output_slot.data_ty, slot.data.ty().as_ref(), ident)
+                .try_wgsl_cast(&*output_slot.data_ty, slot.data.ty(), ident)
                 .ok_or(GraphNodeCodeGenError::FailedToCastVariable)
         } else {
             Ok(ident.clone())

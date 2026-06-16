@@ -1,10 +1,6 @@
-use std::{marker::PhantomData, sync::Arc, time::Instant};
-
-use cyancia_canvas::{CanvasAppExt, CanvasManager};
+use cyancia_canvas::CanvasAppExt;
 use cyancia_tools::{ToolId, ToolProxies};
-use gpui::{Action, App, BorrowAppContext, actions};
-use schemars::JsonSchema;
-use serde::Deserialize;
+use gpui::{App, BorrowAppContext, actions};
 
 use crate::ActionFunction;
 

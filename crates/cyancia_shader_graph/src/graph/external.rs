@@ -1,21 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
-
-use anyhow::anyhow;
 use cyancia_utils::wrapper;
 use dashmap::DashMap;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    graph::{
-        node::{GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError},
-        slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
-        variable::{GraphLiteral, GraphLiteralValue},
-    },
-    save::SerializableGraphLiteral,
-};
+use crate::graph::variable::{GraphLiteral, GraphLiteralValue};
 
 pub fn generate_external_variable_name(var: &ExternalVariable) -> String {
     let sanitized_name = var
@@ -55,11 +44,8 @@ pub struct GraphExternalVariableStorage {
 
 impl GraphExternalVariableStorage {
     pub fn new(variables: Vec<ExternalVariable>) -> Self {
-        let contents = variables
-            .into_iter()
-            .map(|var| (var.id.clone(), var))
-            .collect();
-        Self { contents: contents }
+        let contents = variables.into_iter().map(|var| (var.id, var)).collect();
+        Self { contents }
     }
 
     pub fn get(&self, id: &ExternalVariableId) -> Option<ExternalVariable> {

@@ -1,5 +1,5 @@
 use imagers::DynamicImage;
-use wgpu::{SamplerBindingType, TextureFormat, TextureSampleType};
+use wgpu::{TextureFormat, TextureSampleType};
 
 // TODO: Add rgba16 and rgba32, gray8, gray16, gray32 in the future. Notice that, current render architecture assumes that
 //       all texture buffers are rgba8 to make things simpler. Textures imported externally, such as brush textures, will

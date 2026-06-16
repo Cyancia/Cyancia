@@ -31,7 +31,6 @@ use crate::{CCanvas, CanvasAppExt, CanvasId, event::CanvasUpdated, render::Canva
 //
 //       Edit: But it works in release build, okay nevermind.
 pub struct CanvasWidget {
-    canvas_id: CanvasId,
     tool_proxy_id: ToolProxyId,
     canvas: WeakEntity<CCanvas>,
     renderer: CanvasRenderer,
@@ -61,7 +60,7 @@ impl CanvasWidget {
         cx.subscribe_in(
             &canvas_entity,
             window,
-            |widget, _canvas, event: &CanvasUpdated, window, cx| {
+            |widget, _, event: &CanvasUpdated, _, cx| {
                 widget.dirty_tiles = widget.dirty_tiles.union(event.dirty_tiles);
                 cx.notify();
             },
@@ -69,7 +68,6 @@ impl CanvasWidget {
         .detach();
 
         Some(Self {
-            canvas_id,
             tool_proxy_id,
             canvas: canvas_entity.downgrade(),
             renderer,
@@ -185,7 +183,7 @@ impl CanvasWidget {
 }
 
 impl Render for CanvasWidget {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tool_proxy_id = self.tool_proxy_id;
 
         div()
@@ -196,7 +194,7 @@ impl Render for CanvasWidget {
                 canvas(
                     {
                         let widget = cx.entity().downgrade();
-                        move |bounds, _window, cx| {
+                        move |bounds, _, cx| {
                             let _ = widget.update(cx, |this, cx| {
                                 let pixels = bounds.size;
                                 this.update_output_size(
@@ -206,7 +204,7 @@ impl Render for CanvasWidget {
 
                                 let Ok(last_rect) = this
                                     .canvas
-                                    .read_with(cx, |canvas, cx| canvas.transform.widget_bounds)
+                                    .read_with(cx, |canvas, _| canvas.transform.widget_bounds)
                                 else {
                                     return;
                                 };
@@ -220,7 +218,7 @@ impl Render for CanvasWidget {
 
                                 if last_rect != widget_bounds {
                                     this.canvas
-                                        .update(cx, |canvas, cx| {
+                                        .update(cx, |canvas, _| {
                                             canvas.transform.widget_bounds = widget_bounds;
                                         })
                                         .ok();
@@ -250,7 +248,7 @@ impl Render for CanvasWidget {
 
                             window.on_mouse_event({
                                 let widget = widget.clone();
-                                move |event: &MouseMoveEvent, phase, window, cx| {
+                                move |event: &MouseMoveEvent, phase, _, cx| {
                                     if !phase.capture() {
                                         return;
                                     }
@@ -266,22 +264,15 @@ impl Render for CanvasWidget {
                                 }
                             });
 
-                            window.on_mouse_event(
-                                move |event: &MouseUpEvent, phase, window, cx| {
-                                    if !phase.capture() || event.button != MouseButton::Left {
-                                        return;
-                                    }
+                            window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                                if !phase.capture() || event.button != MouseButton::Left {
+                                    return;
+                                }
 
-                                    update_tool_proxy(
-                                        cx,
-                                        &widget,
-                                        tool_proxy_id,
-                                        |tool_proxy, cx| {
-                                            tool_proxy.mouse_released(event, cx);
-                                        },
-                                    );
-                                },
-                            );
+                                update_tool_proxy(cx, &widget, tool_proxy_id, |tool_proxy, cx| {
+                                    tool_proxy.mouse_released(event, cx);
+                                });
+                            });
                         }
                     },
                 )
@@ -290,7 +281,7 @@ impl Render for CanvasWidget {
             )
             .on_mouse_down(MouseButton::Left, {
                 let widget = cx.entity().downgrade();
-                move |event, window, cx| {
+                move |event, _, cx| {
                     update_tool_proxy(cx, &widget, tool_proxy_id, |tool_proxy, cx| {
                         tool_proxy.mouse_pressed(event, cx);
                     });

@@ -10,7 +10,7 @@ use chrono::DateTime;
 use uuid::Uuid;
 
 use crate::{
-    asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
+    asset::{ErasedAsset, UntypedAssetId},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId},
     loader::ErasedAssetSerializer,
 };
@@ -77,7 +77,7 @@ impl AssetBundle for AssetDirectory {
                 std::fs::remove_file(&path)?;
             }
 
-            let manifest = scan_dir(&self.root, &self.id)?;
+            let manifest = scan_dir(&self.root)?;
             std::fs::write(&path, toml::to_string(&manifest)?)?;
             Ok(manifest)
         } else {
@@ -124,19 +124,15 @@ impl AssetBundle for AssetDirectory {
     }
 }
 
-fn scan_dir(
-    root: &Path,
-    bundle_id: &BundleId,
-) -> Result<HashMap<UntypedAssetId, PathBuf>, DataDirectoryError> {
+fn scan_dir(root: &Path) -> Result<HashMap<UntypedAssetId, PathBuf>, DataDirectoryError> {
     let mut assets = HashMap::new();
-    scan_dir_dfs(root, root, bundle_id, &mut assets)?;
+    scan_dir_dfs(root, root, &mut assets)?;
     Ok(assets)
 }
 
 fn scan_dir_dfs(
     current_path: &Path,
     root: &Path,
-    bundle_id: &BundleId,
     assets: &mut HashMap<UntypedAssetId, PathBuf>,
 ) -> Result<(), DataDirectoryError> {
     let entries = std::fs::read_dir(current_path)?;
@@ -147,7 +143,7 @@ fn scan_dir_dfs(
 
         let path = entry.path();
         if path.is_dir() {
-            let _ = scan_dir_dfs(&path, root, bundle_id, assets)?;
+            scan_dir_dfs(&path, root, assets)?;
         } else {
             let relative_path = path
                 .strip_prefix(root)

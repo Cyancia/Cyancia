@@ -1,26 +1,18 @@
 use std::{
-    any::Any,
     collections::{HashMap, HashSet},
     rc::Rc,
 };
 
-use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::wrapper;
-use downcast_rs::Downcast;
 use dyn_clone::DynClone;
-use encase::{DynamicStorageBuffer, ShaderType, internal::WriteInto};
-use gpui::{AnyElement, App, Context, Hsla, Rgba, Window};
+use gpui::{AnyElement, App, Rgba, Window};
 use parse_display::Display;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 
-use crate::{
-    editor::GraphEditor,
-    graph::{
-        GraphData,
-        node::{GraphNodeData, GraphNodeId},
-        variable::{GraphLiteral, GraphLiteralValue},
-    },
+use crate::graph::{
+    node::GraphNodeId,
+    variable::{GraphLiteral, GraphLiteralValue},
 };
 
 wrapper! {
@@ -144,7 +136,7 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
         literal: &Self::AssociatedLiteralType,
         ctx: GraphInlineLiteralRenderContext<'_>,
     ) -> AnyElement;
-    fn serialize_literal<'a>(
+    fn serialize_literal(
         &self,
         data: &Self::AssociatedLiteralType,
     ) -> Result<toml::Value, toml::ser::Error> {
@@ -163,17 +155,16 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Box<dyn GraphLiteralValue>;
     fn wgsl_type(&self) -> Option<&'static str>;
-    fn try_write_into_shader_buffer(&self, literal: &Box<dyn GraphLiteralValue>)
-    -> Option<Vec<u8>>;
-    fn literal_to_code(&self, data: &Box<dyn GraphLiteralValue>) -> Option<String>;
+    fn try_write_into_shader_buffer(&self, literal: &dyn GraphLiteralValue) -> Option<Vec<u8>>;
+    fn literal_to_code(&self, data: &dyn GraphLiteralValue) -> Option<String>;
     fn render_inline(
         &self,
-        literal: &Box<dyn GraphLiteralValue>,
+        literal: &dyn GraphLiteralValue,
         ctx: GraphInlineLiteralRenderContext<'_>,
     ) -> AnyElement;
-    fn serialize_literal<'a>(
+    fn serialize_literal(
         &self,
-        data: &Box<dyn GraphLiteralValue>,
+        data: &dyn GraphLiteralValue,
     ) -> Result<toml::Value, toml::ser::Error>;
     fn deserialize_literal<'a>(
         &self,
@@ -200,17 +191,14 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
         self.wgsl_type()
     }
 
-    fn try_write_into_shader_buffer(
-        &self,
-        literal: &Box<dyn GraphLiteralValue>,
-    ) -> Option<Vec<u8>> {
+    fn try_write_into_shader_buffer(&self, literal: &dyn GraphLiteralValue) -> Option<Vec<u8>> {
         let literal = literal
             .downcast_ref::<T::AssociatedLiteralType>()
             .expect("Failed to downcast literal.");
         self.try_write_into_shader_buffer(literal)
     }
 
-    fn literal_to_code(&self, data: &Box<dyn GraphLiteralValue>) -> Option<String> {
+    fn literal_to_code(&self, data: &dyn GraphLiteralValue) -> Option<String> {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()
             .expect("Failed to downcast literal.");
@@ -219,7 +207,7 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
 
     fn render_inline(
         &self,
-        literal: &Box<dyn GraphLiteralValue>,
+        literal: &dyn GraphLiteralValue,
         ctx: GraphInlineLiteralRenderContext<'_>,
     ) -> AnyElement {
         let literal = literal
@@ -228,9 +216,9 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
         self.render_inline(literal, ctx)
     }
 
-    fn serialize_literal<'a>(
+    fn serialize_literal(
         &self,
-        data: &Box<dyn GraphLiteralValue>,
+        data: &dyn GraphLiteralValue,
     ) -> Result<toml::Value, toml::ser::Error> {
         let literal = data
             .downcast_ref::<T::AssociatedLiteralType>()

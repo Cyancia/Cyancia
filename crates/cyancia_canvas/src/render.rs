@@ -1,41 +1,29 @@
-use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
+use std::sync::Arc;
 
 use bevy_math::IRect;
 use cyancia_image::{
-    layer::{LayerData, LayerId},
+    layer::LayerId,
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_math::rect_transform::RectTransform;
-use cyancia_render::{
-    buffer::DynamicBuffer,
-    render_context::RenderContext,
-    resources::{FullscreenVertex, GlobalSamplers},
-};
+use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::include_shader;
 use encase::ShaderType;
 use glam::{IVec2, Mat3, UVec2, UVec3};
-use gpui::{App, Global, ImageSource, RenderImage};
+use gpui::{Global, RenderImage};
 use image::{Frame, RgbaImage};
-use parking_lot::{Mutex, RwLock};
-use serde::de;
 use wgpu::{
-    AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
-    Buffer, BufferBindingType, BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, Color,
-    ColorTargetState, ColorWrites, CommandEncoder, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, Extent3d, FilterMode, FragmentState, LoadOp, MapMode,
-    Operations, PipelineLayoutDescriptor, PollType, Queue, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType,
-    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess,
-    StoreOp, SubmissionIndex, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfoBase,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDescriptor, TextureViewDimension, VertexState,
-    util::{BufferInitDescriptor, DeviceExt},
-    wgt::CommandEncoderDescriptor,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+    BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoder,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, SubmissionIndex, TexelCopyBufferInfo, TexelCopyBufferLayout,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension,
 };
 
-use crate::{CCanvas, CanvasId, control::CanvasTransform};
+use crate::control::CanvasTransform;
 
 /// When rendering canvas, we need to first compose all tiles onto a temporary surface.
 /// This surface will be used as storage texture and float sampled texture.
@@ -126,8 +114,8 @@ impl CanvasRenderer {
         });
 
         self.render_pipeline.prepare(
-            &device,
-            &queue,
+            device,
+            queue,
             CanvasUniform {
                 transform: canvas_transform.pixel_to_widget,
                 inv_transform: canvas_transform.pixel_to_widget.inverse(),
@@ -336,7 +324,7 @@ impl CanvasRenderPipeline {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: BindingResource::TextureView(&target),
+                    resource: BindingResource::TextureView(target),
                 },
             ],
         });

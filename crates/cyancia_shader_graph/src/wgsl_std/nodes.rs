@@ -1,36 +1,25 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
-};
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use bevy_math::{Rect, VectorSpace};
-use cyancia_assets::asset::AssetHandle;
+use bevy_math::Rect;
 use cyancia_math::curve::CubicCurve;
-use cyancia_utils::{count, random_oklch, themed_color::themed_oklch, wrapper};
+use cyancia_utils::random_oklch;
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
 use gpui::{
-    AnyElement, App, AppContext, Canvas, Entity, ParentElement, Pixels, Rgba, SharedString, Styled,
-    div, px, rgb, rgba,
+    AnyElement, App, AppContext, Entity, ParentElement, Pixels, Rgba, SharedString, Styled, div, px,
 };
 use gpui_component::{
     IndexPath, Sizable,
     input::{Input, InputEvent, InputState},
     searchable_list::SearchableListItem,
-    select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState},
+    select::{SearchableVec, Select, SelectEvent, SelectState},
 };
-use indexmap::{IndexMap, map::Entry};
-use parking_lot::{RwLock, RwLockReadGuard};
 use parse_display::Display;
-use serde::{Deserialize, Serialize, de::value};
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     graph::{
-        Graph, GraphData, GraphVarIdentGenerator,
+        GraphData, GraphVarIdentGenerator,
         external::{ExternalVariableId, generate_external_variable_name},
         function::GraphFunctionId,
         node::{
@@ -38,11 +27,9 @@ use crate::{
             GraphNodeRenderContext, GraphNodeRunContext, GraphNodeUpdateSignatureContext,
             StatelessCommonGraphNode,
         },
-        slot::{ErasedGraphValueType, GraphDefaultInputSlot, GraphDefaultOutputSlot},
+        slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
         texture::TextureId,
-        variable::GraphTypeRegistry,
     },
-    save::GraphSerializable,
     wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
 };
 
@@ -161,7 +148,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         match state {
             ScalarMathNodeMode::Add | ScalarMathNodeMode::Max | ScalarMathNodeMode::Min => vec![
@@ -222,8 +209,8 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
 
     fn create_outputs(
         &self,
-        _state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Result".into())]
     }
@@ -243,7 +230,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
                         ScalarMathNodeMode::ALL
                             .iter()
                             .position(|mode| mode == state)
-                            .map(|i| IndexPath::new(i)),
+                            .map(IndexPath::new),
                         window,
                         cx,
                     )
@@ -253,20 +240,15 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
                 cx.subscribe_in(
                     &state,
                     window,
-                    move |state: &mut Entity<SelectState<_>>,
-                          select,
-                          event: &SelectEvent<_>,
-                          window,
-                          cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_: &mut Entity<SelectState<_>>, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             let val = *val;
-                            graph.update(cx, |graph, cx| {
+                            let _ = graph.update(cx, |graph, cx| {
                                 graph.update_node_state::<Self>(cx, node_id, move |state| {
                                     *state = val;
                                 });
                             });
                         }
-                        _ => {}
                     },
                 )
                 .detach();
@@ -275,7 +257,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state).small())
+        ctx.render_all_slots_with_header(Select::new(select_state).small())
     }
 
     fn generate_code(
@@ -285,7 +267,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
     ) -> Result<String, GraphNodeCodeGenError> {
         let input_a = ctx.get_input(0)?;
         let input_b = ctx.get_input(1)?;
-        let input_c = ctx.get_input(2)?;
+        let __c = ctx.get_input(2)?;
         let output = ctx.get_output(0)?;
 
         Ok(format!(
@@ -337,7 +319,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
     ) -> Result<(), GraphNodeRunError> {
         let a = ctx.get_input_value::<F32Type>(0)?;
         let b = ctx.get_input_value::<F32Type>(1)?;
-        let c = ctx.get_input_value::<F32Type>(2)?;
+        let _ = ctx.get_input_value::<F32Type>(2)?;
 
         let result = match state {
             ScalarMathNodeMode::Add => a + b,
@@ -502,7 +484,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         match state {
             VectorMathNodeMode::Add | VectorMathNodeMode::Max | VectorMathNodeMode::Min => vec![
@@ -592,7 +574,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
     fn create_outputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         match state {
             VectorMathNodeMode::Add
@@ -655,7 +637,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
                         VectorMathNodeMode::ALL
                             .iter()
                             .position(|mode| mode == state)
-                            .map(|i| IndexPath::new(i)),
+                            .map(IndexPath::new),
                         window,
                         cx,
                     )
@@ -665,20 +647,15 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
                 cx.subscribe_in(
                     &state,
                     window,
-                    move |state: &mut Entity<SelectState<_>>,
-                          select,
-                          event: &SelectEvent<_>,
-                          window,
-                          cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_: &mut Entity<SelectState<_>>, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             let val = *val;
-                            graph.update(cx, |graph, cx| {
+                            let _ = graph.update(cx, |graph, cx| {
                                 graph.update_node_state::<Self>(cx, node_id, move |state| {
                                     *state = val;
                                 });
                             });
                         }
-                        _ => {}
                     },
                 )
                 .detach();
@@ -687,7 +664,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state).small())
+        ctx.render_all_slots_with_header(Select::new(select_state).small())
     }
 
     fn generate_code(
@@ -868,7 +845,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         match state {
             RectMathNodeMode::Union | RectMathNodeMode::Intersection => vec![
@@ -886,8 +863,8 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<RectType>("Result".into())]
     }
@@ -907,7 +884,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
                         RectMathNodeMode::ALL
                             .iter()
                             .position(|mode| mode == state)
-                            .map(|i| IndexPath::new(i)),
+                            .map(IndexPath::new),
                         window,
                         cx,
                     )
@@ -917,12 +894,8 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
                 cx.subscribe_in(
                     &state,
                     window,
-                    move |state: &mut Entity<SelectState<_>>,
-                          select,
-                          event: &SelectEvent<_>,
-                          window,
-                          cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_: &mut Entity<SelectState<_>>, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             let val = *val;
                             graph
                                 .update(cx, |graph, cx| {
@@ -932,8 +905,6 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
                                 })
                                 .ok();
                         }
-
-                        _ => {}
                     },
                 )
                 .detach();
@@ -941,7 +912,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state).small())
+        ctx.render_all_slots_with_header(Select::new(select_state).small())
     }
 
     fn generate_code(
@@ -1066,14 +1037,14 @@ impl<Data: GraphDataWithTime> StatelessCommonGraphNode<Data> for TimeNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>("Now".into()),
@@ -1121,7 +1092,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>("Value".into(), 0.0),
@@ -1132,7 +1103,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Result".into())]
     }
@@ -1176,7 +1147,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>("Edge".into(), 0.0),
@@ -1186,7 +1157,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Result".into())]
     }
@@ -1228,7 +1199,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>("Edge0".into(), 0.0),
@@ -1239,7 +1210,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Result".into())]
     }
@@ -1284,7 +1255,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(
             "Vector".into(),
@@ -1294,7 +1265,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>("X".into()),
@@ -1339,7 +1310,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>("X".into(), 0.0),
@@ -1349,7 +1320,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>("Vector".into())]
     }
@@ -1391,7 +1362,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<F32Type>("R".into(), 0.0),
@@ -1403,7 +1374,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>("Color".into())]
     }
@@ -1449,7 +1420,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<ColorType>(
             "Color".into(),
@@ -1459,7 +1430,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>("R".into()),
@@ -1517,7 +1488,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for GetPixelColorNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<TextureType>("Texture".into(), TextureReference::NULL),
@@ -1527,7 +1498,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for GetPixelColorNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>("Color".into())]
     }
@@ -1568,16 +1539,16 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
 
     fn create_inputs(
         &self,
-        state: &Self::State,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<TextureType>("Texture".into())]
     }
@@ -1610,12 +1581,8 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
                 cx.subscribe_in(
                     &select_state,
                     window,
-                    move |state: &mut Entity<SelectState<_>>,
-                          select,
-                          event: &SelectEvent<_>,
-                          window,
-                          cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_: &mut Entity<SelectState<_>>, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             graph
                                 .update(cx, |graph, cx| {
                                     graph.update_node_state::<Self>(cx, node_id, move |state| {
@@ -1624,8 +1591,6 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
                                 })
                                 .ok();
                         }
-
-                        _ => {}
                     },
                 )
                 .detach();
@@ -1686,7 +1651,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
             GraphDefaultInputSlot::new::<ColorType>("Color A".into(), Vec4::ZERO),
@@ -1697,7 +1662,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<ColorType>("Result".into())]
     }
@@ -1741,7 +1706,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<TextureType>(
             "Texture".into(),
@@ -1751,7 +1716,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>("Size".into())]
     }
@@ -1852,10 +1817,10 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             .signature()
             .inputs
             .iter()
-            .map(|(slot, var)| {
+            .map(|(_, var)| {
                 GraphDefaultInputSlot::new_boxed_default(
                     var.identifier().to_string(),
-                    var.ty().clone(),
+                    dyn_clone::clone_box(var.ty()),
                 )
             })
             .collect()
@@ -1879,8 +1844,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             .signature()
             .outputs
             .iter()
-            .map(|(slot, var)| {
-                GraphDefaultOutputSlot::new_boxed(var.identifier().to_string(), var.ty().clone())
+            .map(|(_, var)| {
+                GraphDefaultOutputSlot::new_boxed(
+                    var.identifier().to_string(),
+                    dyn_clone::clone_box(var.ty()),
+                )
             })
             .collect()
     }
@@ -1896,14 +1864,14 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             .all()
             .iter()
             .map(|(id, graph)| GraphFunctionReference {
-                id: id.clone(),
+                id: *id,
                 name: graph.name.clone(),
             })
             .collect::<Vec<_>>();
         let cur_ref = all_refs
             .iter()
             .position(|r| Some(&r.id) == state.id.as_ref())
-            .map(|i| IndexPath::new(i));
+            .map(IndexPath::new);
         let graph = ctx.cx.entity().downgrade();
 
         let select_state = ctx
@@ -1915,12 +1883,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
                 cx.subscribe_in(
                     &state,
                     window,
-                    move |state: &mut Entity<SelectState<_>>,
-                          select,
-                          event: &SelectEvent<_>,
-                          window,
-                          cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_: &mut Entity<SelectState<_>>, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             let val = *val;
                             graph
                                 .update(cx, |graph, cx| {
@@ -1930,7 +1894,6 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
                                 })
                                 .ok();
                         }
-                        _ => {}
                     },
                 )
                 .detach();
@@ -1939,7 +1902,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             });
 
         let select_state = select_state.read(ctx.cx);
-        ctx.render_all_slots_with_header(Select::new(&select_state).small())
+        ctx.render_all_slots_with_header(Select::new(select_state).small())
     }
 
     fn generate_code(
@@ -1990,10 +1953,10 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         ctx: GraphNodeRunContext<'_, Data>,
     ) -> Result<(), GraphNodeRunError> {
         let Some(id) = state.id.as_ref() else {
-            return Ok(Default::default());
+            return Ok(());
         };
         let Some(func) = ctx.resources.functions.get(id) else {
-            return Ok(Default::default());
+            return Ok(());
         };
 
         let input_values = (0..ctx.inputs.len()).try_fold(
@@ -2044,8 +2007,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
 
     fn create_inputs(
         &self,
-        state: &Self::State,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
@@ -2057,7 +2020,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
     ) -> Vec<GraphDefaultOutputSlot> {
         let Some(ty) = state
             .ty
-            .and_then(|ty| ctx.type_registry.get_type(ty).cloned())
+            .and_then(|ty| ctx.type_registry.get_type(ty))
+            .map(dyn_clone::clone_box)
         else {
             return vec![];
         };
@@ -2104,20 +2068,15 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
 
                 let node_id = ctx.node_id;
                 cx.subscribe_in(&name_state, window, {
-                    let node_id = node_id.clone();
                     let graph = graph.clone();
-                    move |state, input, event: &InputEvent, window, cx| match event {
+                    move |_, input, event: &InputEvent, _, cx| match event {
                         InputEvent::PressEnter { .. } | InputEvent::Blur => {
                             let name = input.read(cx).value();
                             graph
                                 .update(cx, |graph, cx| {
-                                    graph.update_node_state::<Self>(
-                                        cx,
-                                        node_id.clone(),
-                                        move |state| {
-                                            state.name = name.into();
-                                        },
-                                    );
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        state.name = name.into();
+                                    });
                                 })
                                 .ok();
                         }
@@ -2126,23 +2085,17 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
                 })
                 .detach();
                 cx.subscribe_in(&ty_state, window, {
-                    let node_id = node_id.clone();
-                    move |state, select, event: &SelectEvent<_>, window, cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             let val = *val;
                             graph
                                 .update(cx, |graph, cx| {
-                                    graph.update_node_state::<Self>(
-                                        cx,
-                                        node_id.clone(),
-                                        move |state| {
-                                            state.ty = Some(val);
-                                        },
-                                    );
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        state.ty = Some(val);
+                                    });
                                 })
                                 .ok();
                         }
-                        _ => {}
                     }
                 })
                 .detach();
@@ -2157,14 +2110,14 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
                 .flex_col()
                 .gap(NODE_HEADER_FIELD_GAP)
                 .child(Input::new(name_state).small())
-                .child(Select::new(&ty_state).small()),
+                .child(Select::new(ty_state).small()),
         )
     }
 
     fn generate_code(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCodeGenContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(Default::default())
     }
@@ -2197,11 +2150,12 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         let Some(ty) = state
             .ty
-            .and_then(|ty| _ctx.type_registry.get_type(ty).cloned())
+            .and_then(|ty| ctx.type_registry.get_type(ty))
+            .map(dyn_clone::clone_box)
         else {
             return vec![];
         };
@@ -2214,8 +2168,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![]
     }
@@ -2260,18 +2214,14 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
                 cx.subscribe_in(&name_state, window, {
                     let graph = graph.clone();
                     let node_id = ctx.node_id;
-                    move |state, input, event: &InputEvent, window, cx| match event {
+                    move |_, input, event: &InputEvent, _, cx| match event {
                         InputEvent::PressEnter { .. } | InputEvent::Blur => {
                             let name = input.read(cx).value();
                             graph
                                 .update(cx, |graph, cx| {
-                                    graph.update_node_state::<Self>(
-                                        cx,
-                                        node_id.clone(),
-                                        move |state| {
-                                            state.name = name.into();
-                                        },
-                                    );
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        state.name = name.into();
+                                    });
                                 })
                                 .ok();
                         }
@@ -2281,22 +2231,17 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
                 .detach();
                 cx.subscribe_in(&ty_state, window, {
                     let node_id = ctx.node_id;
-                    move |state, select, event: &SelectEvent<_>, window, cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             let val = *val;
                             graph
                                 .update(cx, |graph, cx| {
-                                    graph.update_node_state::<Self>(
-                                        cx,
-                                        node_id.clone(),
-                                        move |state| {
-                                            state.ty = Some(val);
-                                        },
-                                    );
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        state.ty = Some(val);
+                                    });
                                 })
                                 .ok();
                         }
-                        _ => {}
                     }
                 })
                 .detach();
@@ -2311,14 +2256,14 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
                 .flex_col()
                 .gap(NODE_HEADER_FIELD_GAP)
                 .child(Input::new(name_state).small())
-                .child(Select::new(&ty_state).small()),
+                .child(Select::new(ty_state).small()),
         )
     }
 
     fn generate_code(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCodeGenContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(Default::default())
     }
@@ -2358,8 +2303,8 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
 
     fn create_inputs(
         &self,
-        _state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
@@ -2373,7 +2318,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
             match ctx.resources.external_vars.get(id) {
                 Some(var) => vec![GraphDefaultOutputSlot::new_boxed(
                     var.name.clone(),
-                    var.value.ty().clone(),
+                    dyn_clone::clone_box(var.value.ty()),
                 )],
                 None => {
                     let all = ctx
@@ -2435,7 +2380,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
             .all()
             .iter()
             .map(|entry| ExternalVariableReference {
-                id: entry.id.clone(),
+                id: entry.id,
                 name: entry.name.clone(),
             })
             .collect::<Vec<_>>();
@@ -2454,22 +2399,16 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
 
                 let node_id = ctx.node_id;
                 cx.subscribe_in(&state, window, {
-                    let node_id = node_id.clone();
-                    move |state, select, event: &SelectEvent<_>, window, cx| match event {
-                        SelectEvent::Confirm(Some(val)) => {
+                    move |_, _, event: &SelectEvent<_>, _, cx| {
+                        if let SelectEvent::Confirm(Some(val)) = event {
                             graph
                                 .update(cx, |graph, cx| {
-                                    graph.update_node_state::<Self>(
-                                        cx,
-                                        node_id.clone(),
-                                        move |state| {
-                                            *state = Some(*val);
-                                        },
-                                    );
+                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
+                                        *state = Some(*val);
+                                    });
                                 })
                                 .ok();
                         }
-                        _ => {}
                     }
                 })
                 .detach();
@@ -2542,16 +2481,16 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
 
     fn create_inputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<F32Type>("X".into(), 0.0)]
     }
 
     fn create_outputs(
         &self,
-        state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Y".into())]
     }
@@ -2571,11 +2510,11 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
 
                     cx.subscribe_in(&state, window, {
                         let node_id = ctx.node_id;
-                        move |_, edit, event: &CurveEditEvent, window, cx| match event {
+                        move |_, edit, event: &CurveEditEvent, _, cx| match event {
                             CurveEditEvent::ControlPointsChanged => {
                                 let edit = edit.read(cx);
                                 let control_points = edit.value().control_points().to_vec();
-                                graph.update(cx, |graph, cx| {
+                                let _ = graph.update(cx, |graph, cx| {
                                     graph.update_node_state::<Self>(cx, node_id, move |state| {
                                         state.control_points = control_points;
                                     });
@@ -2712,14 +2651,14 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
 
     fn create_inputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<F32Type>("Seed".into(), 0.0)]
     }
 
     fn create_outputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>("Scalar".into()),

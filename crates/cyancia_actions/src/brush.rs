@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use cyancia_view::{ViewAppExt, ViewId};
 use gpui::{Action, App};
 use schemars::JsonSchema;

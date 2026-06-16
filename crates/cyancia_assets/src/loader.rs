@@ -38,18 +38,19 @@ impl AssetRegistryBuilder {
     }
 
     pub fn build(self) -> AssetRegistry {
-        let mut serializers = AssetSerializerRegistry::new();
+        let mut serializers = AssetSerializerRegistry::default();
         for (ext, loader) in self.serializers {
             serializers.serializers.insert(ext, Arc::from(loader));
         }
         let mut registry = AssetRegistry::new(&self.root, serializers.into()).unwrap();
         for bundle in self.bundles {
-            registry.add_erased_bundle(bundle);
+            registry.add_erased_bundle(bundle).unwrap();
         }
         registry
     }
 }
 
+#[derive(Default)]
 pub struct AssetSerializerRegistry {
     serializers: HashMap<&'static str, Arc<dyn ErasedAssetSerializer>>,
 }
@@ -57,12 +58,6 @@ pub struct AssetSerializerRegistry {
 impl Global for AssetSerializerRegistry {}
 
 impl AssetSerializerRegistry {
-    pub fn new() -> Self {
-        Self {
-            serializers: HashMap::new(),
-        }
-    }
-
     pub fn get(&self, ext: &str) -> Option<Arc<dyn ErasedAssetSerializer>> {
         self.serializers.get(ext).cloned()
     }

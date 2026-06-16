@@ -14,8 +14,7 @@ use cyancia_assets::{
         standard::StandardAssetBundle,
     },
     index_db::AssetFilter,
-    loader::{AssetRegistryBuilder, AssetSerializer, AssetSerializerRegistry},
-    store::AssetRegistry,
+    loader::{AssetRegistryBuilder, AssetSerializer},
     tag::{Tag, TagSerializer},
 };
 use serde::{Deserialize, Serialize};
@@ -215,7 +214,7 @@ fn test() {
     init_logger();
 
     let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let _cwd = CwdGuard::enter(&crate_root).unwrap();
+    let _ = CwdGuard::enter(&crate_root).unwrap();
 
     let assets_root = crate_root.join("assets");
     let local_assets_root = assets_root.join("local_assets");
@@ -236,7 +235,7 @@ fn test() {
     restore_guard.snapshot_file(&local_test_hello_path).unwrap();
     restore_guard.snapshot_dir(&local_modified_dir).unwrap();
     restore_guard
-        .snapshot_file(&local_assets_root.join("added_asset.toml"))
+        .snapshot_file(local_assets_root.join("added_asset.toml"))
         .unwrap();
 
     if local_manifest_path.exists() {

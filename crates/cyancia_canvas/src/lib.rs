@@ -1,12 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use bevy_math::IRect;
-use cyancia_image::{CImage, layer::LayerId, tile::GpuTileStorageInner};
+use cyancia_image::CImage;
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_utils::wrapper;
-use glam::IVec2;
 use gpui::{App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, Global, WeakEntity};
-use parking_lot::RwLock;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -16,7 +14,6 @@ use crate::{
     event::{
         CanvasCreated, CanvasLayerStackUpdated, CanvasRemoved, CanvasUpdated, CurrentCanvasChanged,
     },
-    render::CanvasRenderer,
     tools::{PanTool, RotateTool, ZoomTool},
 };
 
@@ -105,11 +102,11 @@ pub trait CanvasAppExt {
 }
 
 impl CanvasAppExt for App {
-    fn add_canvas(&mut self, canvas: CCanvas, cx: &mut App) {
+    fn add_canvas(&mut self, canvas: CCanvas, _: &mut App) {
         self.update_global::<CanvasManager, _>(|cm, cx| cm.add_canvas(canvas, cx));
     }
 
-    fn remove_canvas(&mut self, id: &CanvasId, cx: &mut App) {
+    fn remove_canvas(&mut self, id: &CanvasId, _: &mut App) {
         self.update_global::<CanvasManager, _>(|cm, cx| cm.remove_canvas(id, cx));
     }
 
@@ -192,7 +189,7 @@ impl CanvasManager {
     }
 
     pub fn remove_canvas(&mut self, id: &CanvasId, cx: &mut App) {
-        if let Some(_) = self.canvases.remove(id) {
+        if self.canvases.remove(id).is_some() {
             if self.current_canvas.as_ref() == Some(id) {
                 self.current_canvas = self.canvases.keys().next().copied();
             }

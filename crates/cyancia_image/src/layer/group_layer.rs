@@ -2,14 +2,14 @@ use std::any::TypeId;
 
 use bevy_math::IRect;
 use encase::ShaderType;
-use glam::{IVec2, UVec2, UVec3};
+use glam::{IVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyTextureInfo, TextureView, TextureViewDimension,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
+    TextureViewDimension,
 };
 
 use crate::{
@@ -17,7 +17,6 @@ use crate::{
     composite::{ImageCompositor, LayerPreviewOverriders},
     dynamic_intermediate_buffer::IntermediateBuffer,
     layer::{Layer, LayerData, LayerStackNode},
-    texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
 };
 
@@ -25,7 +24,7 @@ use crate::{
 pub struct GroupLayer;
 
 impl Layer for GroupLayer {
-    fn can_have_children_of(&self, ty: TypeId) -> bool {
+    fn can_have_children_of(&self, _: TypeId) -> bool {
         true
     }
 
@@ -56,20 +55,17 @@ impl Layer for GroupLayer {
             max: image.size().as_ivec2(),
         });
 
-        if let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer.id()) {
-            if cache.blend_func_name == layer.blend_func.name()
-                && cache.intermediate.texel_type() == image.texel_type()
-                && cache.intermediate.tile_rect() == tile_rect
-            {
-                return;
-            }
+        if let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer.id())
+            && cache.blend_func_name == layer.blend_func.name()
+            && cache.intermediate.texel_type() == image.texel_type()
+            && cache.intermediate.tile_rect() == tile_rect
+        {
+            return;
         }
 
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
-            &layer
-                .blend_func
-                .wgsl_function_call("src".into(), "dst".into()),
+            &layer.blend_func.wgsl_function_call("src", "dst"),
         );
 
         let mut resolver = VirtualResolver::new();

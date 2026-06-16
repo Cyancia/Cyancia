@@ -5,6 +5,9 @@ edition.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow.workspace = true
 bevy_math.workspace = true
@@ -20,6 +23,7 @@ cyancia_shader_graph.workspace = true
 cyancia_tools.workspace = true
 cyancia_utils.workspace = true
 cyancia_widgets.workspace = true
+dyn-clone.workspace = true
 encase.workspace = true
 futures.workspace = true
 glam.workspace = true

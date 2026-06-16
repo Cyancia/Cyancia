@@ -1,10 +1,6 @@
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
 
-use bevy_math::IRect;
-use cyancia_assets::{
-    asset::{Asset, AssetHandle, AssetId},
-    loader::AssetSerializer,
-};
+use cyancia_assets::{asset::Asset, loader::AssetSerializer};
 use image::{DynamicImage, ImageFormat};
 use serde::{Deserialize, Serialize};
 use wgpu::{
@@ -12,7 +8,7 @@ use wgpu::{
     util::DeviceExt,
     wgt::{TextureDataOrder, TextureDescriptor},
 };
-use zip::{ZipArchive, ZipWriter, write::FileOptions};
+use zip::ZipArchive;
 
 pub struct Image {
     pub metadata: ImageMetadata,
@@ -91,11 +87,7 @@ impl AssetSerializer for ImageSerializer {
         })
     }
 
-    fn write(
-        &self,
-        asset: &Self::Asset,
-        writer: &mut dyn std::io::Write,
-    ) -> Result<(), Self::Error> {
+    fn write(&self, _: &Self::Asset, _: &mut dyn std::io::Write) -> Result<(), Self::Error> {
         todo!()
     }
 }

@@ -26,6 +26,10 @@ publish = false
 edition = "2024"
 rust-version = "1.96"
 
+[workspace.lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+
 [workspace.dependencies]
 cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
 cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }

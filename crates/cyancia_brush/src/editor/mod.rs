@@ -1,28 +1,21 @@
 use std::{
     collections::HashMap,
-    fs::read_to_string,
-    ops::Deref,
     rc::Rc,
     str::FromStr,
     sync::{Arc, LazyLock},
 };
 
-use cyancia_assets::{
-    AssetAppExt,
-    asset::{AssetHandle, AssetId},
-    bundle::BundleId,
-    store::AssetRegistry,
-};
+use cyancia_assets::{AssetAppExt, asset::AssetId, bundle::BundleId};
 use cyancia_render::{render_context::RenderContext, texture::Image};
 use cyancia_shader_graph::{
     editor::GraphEditor,
     graph::{
-        Graph, GraphData, GraphResources,
+        Graph, GraphResources,
         external::{ExternalVariable, ExternalVariableId},
         function::{GraphFunction, GraphFunctionId, GraphFunctionStorage},
         node::GraphNodeRegistry,
         slot::GraphInlineLiteralRenderContext,
-        texture::{GraphTextureStorage, TextureId, TextureObject},
+        texture::GraphTextureStorage,
         variable::{GraphLiteral, GraphTypeRegistry},
     },
     save::{SerializableGraph, SerializableGraphFunction},
@@ -33,32 +26,29 @@ use cyancia_shader_graph::{
 };
 use gpui::{
     Action, App, AppContext, Axis, BorrowAppContext, ClickEvent, Context, Entity,
-    InteractiveElement, IntoElement, KeyBinding, MouseClickEvent, ParentElement, Render, Styled,
-    Window, actions, div, px, relative,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, Styled, Window, actions,
+    div, px,
 };
 use gpui_component::{
-    IconName, IndexPath, Selectable, Sizable,
+    IconName, Selectable,
     button::{Button, ButtonGroup},
-    clipboard,
     form::{field, v_form},
     h_flex,
     input::{Input, InputEvent, InputState},
-    list::{List, ListDelegate, ListEvent, ListState},
+    list::{List, ListEvent, ListState},
     menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem},
     scroll::ScrollableElement,
-    select::{SearchableVec, Select, SelectState},
+    select::{Select, SelectState},
     v_flex,
 };
-use parking_lot::RwLock;
 use uuid::Uuid;
-use wgpu::{Device, Queue};
 
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
     input_processing::InputProcessor,
     instance::{
         BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES,
-        REQUIRED_SPACING_GRAPH_NODES, SPACING_FACTOR_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
+        REQUIRED_SPACING_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
     render::{
         BrushPresetOperator,
@@ -68,7 +58,7 @@ use crate::{
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
 
-const FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+static FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(|| {
         let mut registry = GraphNodeRegistry::default();
 
@@ -79,7 +69,7 @@ const FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphDat
         registry.into()
     });
 
-const FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(|| {
+static FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(|| {
     let mut registry = GraphTypeRegistry::default();
 
     registry.merge(builtin_types());
@@ -171,7 +161,7 @@ impl BrushEditor {
                         funcs.set_selected_index(None, window, cx);
                     });
 
-                    let Some(brush) = brushes_entity.update(cx, |brushes, cx| {
+                    let Some(brush) = brushes_entity.update(cx, |brushes, _| {
                         let item = brushes.delegate().get(*ix)?;
                         Some(item.handle.clone())
                     }) else {
@@ -236,7 +226,7 @@ impl BrushEditor {
                         brushes.set_selected_index(None, window, cx);
                     });
 
-                    let Some(func) = functions_entity.update(cx, |funcs, cx| {
+                    let Some(func) = functions_entity.update(cx, |funcs, _| {
                         let item = funcs.delegate().get(*ix)?;
                         Some(item.handle.clone())
                     }) else {
@@ -290,7 +280,7 @@ impl BrushEditor {
             &name_input_state,
             window,
             |editor, input_state, event: &InputEvent, window, cx| match event {
-                InputEvent::PressEnter { secondary } => {
+                InputEvent::PressEnter { secondary: _ } => {
                     if let Some(selected) = &mut editor.selected {
                         let name = input_state.read(cx).value();
                         match selected {
@@ -343,7 +333,7 @@ impl BrushEditor {
         cx.subscribe_in(
             &rename_ext_var_input_state,
             window,
-            |editor, _, event: &InputEvent, _window, cx| match event {
+            |editor, _, event: &InputEvent, _, cx| match event {
                 InputEvent::PressEnter { secondary: _ } => {
                     if let Some(id) = editor.renaming_ext_var {
                         editor.confirm_external_var_rename(id, cx);
@@ -394,7 +384,7 @@ impl BrushEditor {
     pub fn on_save_current_item_action(
         &mut self,
         _: &SaveCurrentItem,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(selected) = &mut self.selected else {
@@ -445,7 +435,7 @@ impl BrushEditor {
         log::info!("Saved current item.")
     }
 
-    fn on_new_item(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_new_item(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         match self.pane_selection {
             PaneSelection::Brush => {
                 let new_brush = BrushPreset {
@@ -465,13 +455,13 @@ impl BrushEditor {
                         BundleId::new(
                             Uuid::from_str("b92c20f6-8cdb-42b8-efae-a92705efd029").unwrap(),
                         ),
-                        "unnamed_brush.cbp".to_string(),
+                        "unnamed_brush.cbp",
                         new_brush.clone(),
                     )
                     .unwrap();
                 let handle = assets.handle(id).unwrap();
 
-                let (instance, err) = BrushPresetInstance::from_asset(
+                let (instance, _) = BrushPresetInstance::from_asset(
                     &handle,
                     self.texture_storage.clone(),
                     self.main_function_storage.clone(),
@@ -545,14 +535,14 @@ impl BrushEditor {
                         .main_graph()
                         .read(cx)
                         .type_registry()
-                        .get_type(*ty_name)
+                        .get_type(ty_name)
                 })
             else {
                 return;
             };
 
             let id = ExternalVariableId::new(Uuid::new_v4());
-            let value = GraphLiteral::new_boxed(ty.default_literal(), ty.clone());
+            let value = GraphLiteral::new_boxed(ty.default_literal(), dyn_clone::clone_box(ty));
 
             let Some(name) = self.new_ext_var_name_input_state.update(cx, |state, cx| {
                 let name = state.value();
@@ -589,14 +579,14 @@ impl BrushEditor {
                     .child(
                         Button::new(format!("confirm-external-variable-rename-button-{}", id))
                             .icon(IconName::Check)
-                            .on_click(cx.listener(move |editor, _, window, cx| {
+                            .on_click(cx.listener(move |editor, _, _, cx| {
                                 editor.confirm_external_var_rename(id, cx);
                             })),
                     )
                     .child(
                         Button::new(format!("cancel-external-variable-rename-button-{}", id))
                             .icon(IconName::Close)
-                            .on_click(cx.listener(move |editor, _, window, cx| {
+                            .on_click(cx.listener(move |editor, _, _, _| {
                                 editor.renaming_ext_var = None;
                             })),
                     )
@@ -605,7 +595,7 @@ impl BrushEditor {
                 let drop_down = {
                     let editor = cx.entity().downgrade();
                     let name = name.clone();
-                    move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
+                    move |menu: PopupMenu, _: &mut Window, _: &mut Context<PopupMenu>| {
                         menu.item(PopupMenuItem::new("Rename").on_click({
                             let editor = editor.clone();
                             let name = name.clone();
@@ -621,7 +611,7 @@ impl BrushEditor {
                         }))
                         .item(PopupMenuItem::new("Remove").on_click({
                             let editor = editor.clone();
-                            move |_, _window, cx| {
+                            move |_, _, cx| {
                                 editor
                                     .update(cx, |editor, cx| {
                                         let Some(Selected::Brush(_)) = editor.selected.as_ref()
@@ -734,7 +724,7 @@ impl BrushEditor {
                 (0..instance.stroke_postprocess_graphs().len()).map(|index| {
                     let context_menu = {
                         let editor = cx.entity().downgrade();
-                        move |menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
+                        move |menu: PopupMenu, _: &mut Window, _: &mut Context<PopupMenu>| {
                             menu.item(PopupMenuItem::new("Remove").on_click({
                                 let editor = editor.upgrade().unwrap();
                                 move |_, _, cx| {
@@ -745,7 +735,7 @@ impl BrushEditor {
                                         };
 
                                         cx.update_global::<CurrentBrushPresetOperator, _>(
-                                            |op, cx| {
+                                            |op, _| {
                                                 let Some(op) = op.as_mut() else {
                                                     return;
                                                 };
@@ -789,7 +779,7 @@ impl BrushEditor {
             .child(
                 Button::new("new-stroke-pp-graph-button")
                     .label("New Stroke Postprocess")
-                    .on_click(cx.listener(|editor, _, window, cx| {
+                    .on_click(cx.listener(|editor, _, _, cx| {
                         let Some(Selected::Brush(brush)) = &mut editor.selected else {
                             return;
                         };
@@ -816,7 +806,7 @@ impl BrushEditor {
     fn on_select_required_spacing_graph(
         &mut self,
         _: &ClickEvent,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
@@ -838,12 +828,7 @@ impl BrushEditor {
         });
     }
 
-    fn on_select_main_graph(
-        &mut self,
-        _: &ClickEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_select_main_graph(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
             let Some(op) = op.as_ref() else {
                 return;
@@ -867,7 +852,7 @@ impl BrushEditor {
         &mut self,
         index: usize,
         _: &ClickEvent,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
@@ -900,7 +885,7 @@ impl Render for BrushEditor {
                     .child(
                         Button::new("brushes-button")
                             .label("Brushes")
-                            .on_click(cx.listener(|editor, _, window, cx| {
+                            .on_click(cx.listener(|editor, _, _, _| {
                                 editor.pane_selection = PaneSelection::Brush;
                             }))
                             .selected(self.pane_selection == PaneSelection::Brush),
@@ -908,7 +893,7 @@ impl Render for BrushEditor {
                     .child(
                         Button::new("functions-button")
                             .label("Functions")
-                            .on_click(cx.listener(|editor, _, window, cx| {
+                            .on_click(cx.listener(|editor, _, _, _| {
                                 editor.pane_selection = PaneSelection::Function;
                             }))
                             .selected(self.pane_selection == PaneSelection::Function),
@@ -972,7 +957,7 @@ impl Render for BrushEditor {
                         };
 
                         let instance = op.instance();
-                        let brush_extra = self.render_brush_extra_panes(&instance, window, cx);
+                        let brush_extra = self.render_brush_extra_panes(instance, window, cx);
                         h_flex()
                             .gap_2()
                             .size_full()
