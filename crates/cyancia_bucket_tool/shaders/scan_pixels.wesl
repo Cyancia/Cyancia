@@ -20,7 +20,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     let local_mask_tile_info = mask_tile_info[tile_index];
 
     let mask_value = load_mask(tile_index, local_index);
-    if mask_value == 1.0 {
+    if mask_value > 0.0 {
         is_not_empty[tile_index] = 1u;
     }
 }

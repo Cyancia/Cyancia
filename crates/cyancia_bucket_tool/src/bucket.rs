@@ -18,15 +18,18 @@ use cyancia_render::{
 use encase::ShaderType;
 use glam::{IVec2, UVec2, Vec4};
 use indexmap::{IndexMap, IndexSet};
+use tracing::info;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode,
     PipelineLayoutDescriptor, PollType, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TextureDimension, TextureFormat, TextureUsages, TextureViewDimension,
     wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
+
+// TODO Using packed buffer indeed reduced vram usage, but makes it almost impossible for renderdoc debug.
 
 #[derive(Debug, Clone, Copy)]
 pub enum BucketAntialiasApproach {
@@ -910,62 +913,23 @@ impl Bucket {
             pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
         }
 
-        let is_not_empty_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("is_not_empty_buffer"),
-            size: mask_tile_indices.len() as u64 * 4,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
+        queue.submit([ec.finish()]);
 
-        let scan_pixels_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("scan_pixels_bind_group"),
-            layout: &self.scan_pixels_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: mask_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: mask_tile_info_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: is_not_empty_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("scan_pixels_pass"),
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.scan_pixels_pipeline);
-            pass.set_bind_group(0, &scan_pixels_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
-        }
-
-        let is_not_empty_readback =
-            create_readback_buffer_and_schedule_copy(device, &mut ec, &is_not_empty_buffer);
-        let is_not_empty_readback_async =
-            readback_buffer_on_submit_async::<Vec<u32>, _>(&mut ec, &is_not_empty_readback, ..);
-
-        let si = queue.submit([ec.finish()]);
-        device.poll_indefinitely_for(si).unwrap();
-
-        let is_not_empty = is_not_empty_readback_async.block_on().unwrap();
-        for not_empty_index in is_not_empty {
-            let not_empty_tile_index = *mask_tile_indices
-                .get_index(not_empty_index as usize)
-                .unwrap();
+        let existing_mask_tiles = self.get_unempty_tiles(
+            device,
+            queue,
+            &mask_buffer,
+            &mask_tile_info_buffer,
+            &mask_tile_indices,
+        );
+        for index in existing_mask_tiles {
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     if dx == 0 && dy == 0 {
                         continue;
                     }
 
-                    mask_tile_indices.insert(not_empty_tile_index + IVec2::new(dx, dy));
+                    mask_tile_indices.insert(index + IVec2::new(dx, dy));
                 }
             }
         }
@@ -999,10 +963,6 @@ impl Bucket {
         };
 
         queue.submit([ec.finish()]);
-
-        for index in mask_tile_indices.iter().copied() {
-            output_layer.get_tile_or_allocate(index);
-        }
 
         let seed_texture_a_view = {
             let t = device.create_texture(&TextureDescriptor {
@@ -1473,6 +1433,17 @@ impl Bucket {
             }
         };
 
+        let filled_tiles = self.get_unempty_tiles(
+            device,
+            queue,
+            &mask_buffer,
+            &mask_tile_info_buffer,
+            &mask_tile_indices,
+        );
+        for index in &filled_tiles {
+            output_layer.get_tile_or_allocate(*index);
+        }
+
         let mut ec = device.create_command_encoder(&Default::default());
 
         let (Some(output_texture), Some(output_tile_info)) =
@@ -1521,6 +1492,8 @@ impl Bucket {
         queue.submit([ec.finish()]);
 
         unsafe { device.stop_graphics_debugger_capture() };
+
+        info!("Filled {} tiles: {:?}", filled_tiles.len(), filled_tiles);
 
         // unsafe { device.start_graphics_debugger_capture() };
         // debug_bit_mask(
@@ -1591,6 +1564,72 @@ impl Bucket {
         let seed_mode = seed_mode_readback.block_on().unwrap();
 
         seed_mode == 1
+    }
+
+    fn get_unempty_tiles(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        mask_buffer: &Buffer,
+        mask_tile_info_buffer: &Buffer,
+        mask_tile_indices: &IndexSet<IVec2>,
+    ) -> Vec<IVec2> {
+        let mut ec = device.create_command_encoder(&Default::default());
+
+        let is_not_empty_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("is_not_empty_buffer"),
+            size: mask_tile_indices.len() as u64 * 4,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let scan_pixels_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("scan_pixels_bind_group"),
+            layout: &self.scan_pixels_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: mask_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: mask_tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: is_not_empty_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("scan_pixels_pass"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.scan_pixels_pipeline);
+            pass.set_bind_group(0, &scan_pixels_bind_group, &[]);
+            pass.dispatch_workgroups(
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                mask_tile_indices.len() as u32,
+            );
+        }
+
+        let is_not_empty_readback =
+            create_readback_buffer_and_schedule_copy(device, &mut ec, &is_not_empty_buffer);
+        let is_not_empty_readback_async =
+            readback_buffer_on_submit_async::<Vec<u32>, _>(&mut ec, &is_not_empty_readback, ..);
+
+        let si = queue.submit([ec.finish()]);
+        device.poll_indefinitely_for(si).unwrap();
+
+        let is_not_empty = is_not_empty_readback_async.block_on().unwrap();
+        mask_tile_indices
+            .iter()
+            .zip(is_not_empty)
+            .filter_map(|(i, is_not_empty)| if is_not_empty == 1 { Some(*i) } else { None })
+            .collect::<Vec<_>>()
     }
 }
 
