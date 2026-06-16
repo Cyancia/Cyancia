@@ -1,7 +1,8 @@
 [package]
 name = "cyancia_bucket_tool"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 bevy_math.workspace = true
