@@ -21,77 +21,77 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
-cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
-cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
-cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
-cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
-cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
-cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
-cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
-cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
 cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
+cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
+cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
+cyancia_bucket_tool = { version = "0.1.0", path = "crates/cyancia_bucket_tool" }
+cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
+cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
+cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
+cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
 cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
 cyancia_shader_graph_derive = { version = "0.1.0", path = "crates/cyancia_shader_graph_derive" }
-cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
-cyancia_view = { version = "0.1.0", path = "crates/cyancia_view" }
 cyancia_theme = { version = "0.1.0", path = "crates/cyancia_theme" }
-cyancia_bucket_tool = { version = "0.1.0", path = "crates/cyancia_bucket_tool" }
+cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
+cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
+cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
+cyancia_view = { version = "0.1.0", path = "crates/cyancia_view" }
+cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
 
-uuid = { version = "1", features = ["v4", "serde"] }
-syn = "2"
-quote = "1"
-proc-macro2 = "1"
-thiserror = "2"
-num-traits = "0.2"
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
-serde = { version = "1", features = ["derive", "rc"] }
-smallvec = "1"
-toml = "1"
-log = "0.4"
-downcast-rs = "2"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-indexmap = { version = "2", features = ["serde"] }
-parking_lot = { version = "0.12", features = ["deadlock_detection"] }
-futures = "0.3"
-bitflags = "2"
-wgpu = "27"
-glam = { version = "0.30", features = ["encase", "serde", "bytemuck"] }
-dashmap = "6"
-wesl = { version = "0.3", features = ["package", "naga-ext"] }
-encase = "0.12"
-bytemuck = { version = "1", features = ["derive"] }
-image = "0.25"
-palette = "0.7"
-rayon = "1"
-half = "2"
-rfd = "0.17"
 anyhow = "1"
-dyn-clone = "1"
-chrono = { version = "0.4", features = ["serde"] }
 atomicow = "1"
-md5 = "0.8"
-zip = "8"
-parse-display = "0.11"
-env_logger = "0.11"
-path-clean = "1"
-winit = "0.30"
-rustc-hash = "1"
-rusqlite = { version = "0.40", features = ["bundled-full"] }
+bevy_color = "0.18"
 bevy_math = { version = "0.18", git = "https://github.com/443eb9/bevy.git", branch = "release-0.18.1", features = [
     "serialize",
     "std",
     "curve",
     "encase",
 ] }
-ringbuffer = "0.16"
+bitflags = "2"
+bytemuck = { version = "1", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+dashmap = "6"
+downcast-rs = "2"
+dyn-clone = "1"
+encase = "0.12"
+env_logger = "0.11"
 fs_extra = "1"
-smol = "2"
+futures = "0.3"
+glam = { version = "0.30", features = ["encase", "serde", "bytemuck"] }
 gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "ccc1e7689203d09bfc88a0aae29473d1c289fa0c" }
-schemars = "1"
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
-bevy_color = "0.18"
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
+half = "2"
+image = "0.25"
+indexmap = { version = "2", features = ["serde"] }
+log = "0.4"
+md5 = "0.8"
+num-traits = "0.2"
+palette = "0.7"
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }
+parse-display = "0.11"
+path-clean = "1"
+proc-macro2 = "1"
+quote = "1"
+rayon = "1"
+rfd = "0.17"
+ringbuffer = "0.16"
+rusqlite = { version = "0.40", features = ["bundled-full"] }
+rustc-hash = "1"
+schemars = "1"
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
+smallvec = "1"
+smol = "2"
+syn = "2"
+thiserror = "2"
+toml = "1"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+wesl = { version = "0.3", features = ["package", "naga-ext"] }
+wgpu = "27"
+winit = "0.30"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zip = "8"

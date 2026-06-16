@@ -4,30 +4,30 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dashmap.workspace = true
-cyancia_utils.workspace = true
-glam.workspace = true
-parking_lot.workspace = true
-wgpu.workspace = true
-uuid.workspace = true
-image.workspace = true
-bytemuck.workspace = true
-log.workspace = true
-palette.workspace = true
-rayon.workspace = true
-half.workspace = true
 bevy_math.workspace = true
-wesl.workspace = true
-parse-display.workspace = true
-serde.workspace = true
+bytemuck.workspace = true
 cyancia_render.workspace = true
-encase.workspace = true
-indexmap.workspace = true
 cyancia_shader_graph.workspace = true
+cyancia_utils.workspace = true
 cyancia_widgets.workspace = true
+dashmap.workspace = true
 dyn-clone.workspace = true
+encase.workspace = true
+glam.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+half.workspace = true
+image.workspace = true
+indexmap.workspace = true
+log.workspace = true
+palette.workspace = true
+parking_lot.workspace = true
+parse-display.workspace = true
+rayon.workspace = true
+serde.workspace = true
+uuid.workspace = true
+wesl.workspace = true
+wgpu.workspace = true
 
 [build-dependencies]
 wesl.workspace = true

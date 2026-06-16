@@ -4,13 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-parking_lot.workspace = true
-# cyancia_input.workspace = true
-glam.workspace = true
 cyancia_math.workspace = true
 cyancia_utils.workspace = true
-uuid.workspace = true
-log.workspace = true
-futures.workspace = true
-gpui.workspace = true
 downcast-rs.workspace = true
+futures.workspace = true
+glam.workspace = true
+gpui.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+uuid.workspace = true

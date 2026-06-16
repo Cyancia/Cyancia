@@ -4,22 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bevy_math.workspace = true
+bytemuck.workspace = true
+cyancia_canvas.workspace = true
+cyancia_image.workspace = true
+cyancia_render.workspace = true
+cyancia_tools.workspace = true
+encase.workspace = true
+glam.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+indexmap.workspace = true
+tracing.workspace = true
 wesl.workspace = true
 wgpu.workspace = true
-cyancia_image.workspace = true
-encase.workspace = true
-cyancia_render.workspace = true
-glam.workspace = true
-cyancia_tools.workspace = true
-gpui.workspace = true
-cyancia_canvas.workspace = true
-gpui-component.workspace = true
-bevy_math.workspace = true
-indexmap.workspace = true
-bytemuck.workspace = true
-tracing.workspace = true
 
 [build-dependencies]
-wesl.workspace = true
 cyancia_image.workspace = true
 cyancia_render.workspace = true
+wesl.workspace = true

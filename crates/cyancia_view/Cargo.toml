@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-log.workspace = true
-uuid.workspace = true
-gpui.workspace = true
-gpui_platform.workspace = true
-gpui-component.workspace = true
-thiserror.workspace = true
-cyancia_utils.workspace = true
 anyhow.workspace = true
+cyancia_utils.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+gpui_platform.workspace = true
+log.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

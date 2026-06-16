@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bevy_color.workspace = true
 cyancia_utils_derive.workspace = true
-dyn-clone.workspace = true
 downcast-rs.workspace = true
+dyn-clone.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
-bevy_color.workspace = true
