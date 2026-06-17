@@ -23,9 +23,9 @@ pub struct TileReplaceCommand {
     pub reason: Cow<'static, str>,
     pub canvas: CanvasId,
     pub layer: LayerId,
-    // If this is empty, means the tiles does not exist before replacement.
+    // The final update rect on undo/redo would be the union of these two.
+    // When replacing tiles with one source, tiles only exist in another source will be cleared.
     pub old_tiles: Option<(Texture, Vec<IVec2>)>,
-    // If this is empty, means the tiles are cleared after replacement.
     pub new_tiles: Option<(Texture, Vec<IVec2>)>,
 }
 
@@ -40,12 +40,15 @@ impl TileReplaceCommand {
         new_tile_indices: Vec<IVec2>,
         new_tiles: Texture,
     ) -> Self {
-        let old_tiles = layer_storage.texture().map(|layer_texture| {
+        let old_tiles = layer_storage.texture().and_then(|layer_texture| {
             let old_tile_indices = new_tile_indices
                 .iter()
                 .copied()
                 .filter(|i| layer_storage.get_tile(*i).is_some())
                 .collect::<Vec<_>>();
+            if old_tile_indices.is_empty() {
+                return None;
+            }
             let old_texture = device.create_texture(&TextureDescriptor {
                 label: Some("old_texture"),
                 size: Extent3d {
@@ -92,7 +95,7 @@ impl TileReplaceCommand {
 
             queue.submit([ec.finish()]);
 
-            (old_texture, old_tile_indices)
+            Some((old_texture, old_tile_indices))
         });
 
         Self {
@@ -109,106 +112,89 @@ fn apply_tile_replace(
     cx: &mut App,
     canvas: CanvasId,
     layer: LayerId,
-    tile_indices: &Vec<IVec2>,
-    tiles: &Texture,
+    replace_tile: &Option<(Texture, Vec<IVec2>)>,
+    clear_tile_indices: Vec<IVec2>,
 ) {
-    let render_context = cx.global::<RenderContext>().clone();
-    let device = render_context.device.clone();
-    let queue = render_context.queue.clone();
-
-    let tile_storage = cx.global_mut::<GpuTileStorage>();
-    let mut layer = tile_storage.get_layer_mut(layer).unwrap();
-
-    for index in tile_indices {
-        layer.get_tile_or_allocate(*index);
-    }
-
-    let layer_texture = layer.texture().unwrap().texture();
-
-    let mut ec = device.create_command_encoder(&Default::default());
-    for (src_layer, tile_index) in tile_indices.iter().enumerate() {
-        let dst_layer = layer.get_tile_layer(*tile_index).unwrap();
-        ec.copy_texture_to_texture(
-            TexelCopyTextureInfo {
-                texture: tiles,
-                mip_level: 0,
-                origin: Origin3d {
-                    x: 0,
-                    y: 0,
-                    z: src_layer as u32,
-                },
-                aspect: TextureAspect::All,
-            },
-            TexelCopyTextureInfo {
-                texture: &layer_texture,
-                mip_level: 0,
-                origin: Origin3d {
-                    x: 0,
-                    y: 0,
-                    z: dst_layer,
-                },
-                aspect: TextureAspect::All,
-            },
-            GpuTileStorageInner::TILE_COPY_SIZE,
-        );
-    }
-    queue.submit([ec.finish()]);
-
-    drop(layer);
-
-    cx.update_canvas(&canvas, |_, cx| {
-        let mut min = IVec2::MAX;
-        let mut max = IVec2::ZERO;
-        for tile_index in tile_indices {
-            min = min.min(*tile_index);
-            max = max.max(*tile_index);
-        }
-
-        cx.emit(CanvasUpdated {
-            dirty_tiles: IRect { min, max: max + 1 },
-        });
-    });
-}
-
-fn clear_tiles(cx: &mut App, canvas: CanvasId, layer: LayerId, tile_indices: &Vec<IVec2>) {
     let render_context = cx.global::<RenderContext>();
     let device = render_context.device.clone();
     let queue = render_context.queue.clone();
 
-    let tile_storage = cx.global_mut::<GpuTileStorage>();
-    let layer = tile_storage.get_layer_mut(layer).unwrap();
+    let mut dirty_min = IVec2::MAX;
+    let mut dirty_max = IVec2::MIN;
 
-    let Some(layer_texture) = layer.texture().map(|v| v.texture()) else {
-        return;
-    };
+    let tile_storage = cx.global_mut::<GpuTileStorage>();
+    let mut layer = tile_storage.get_layer_mut(layer).unwrap();
 
     let mut ec = device.create_command_encoder(&Default::default());
-    for tile_index in tile_indices {
-        let dst_layer = layer.get_tile_layer(*tile_index).unwrap();
+
+    if let Some((tiles, tile_indices)) = replace_tile {
+        for index in tile_indices {
+            layer.get_tile_or_allocate(*index);
+        }
+
+        let layer_texture = layer.texture().unwrap().texture();
+
+        for (src_layer, tile_index) in tile_indices.iter().enumerate() {
+            let dst_layer = layer.get_tile_layer(*tile_index).unwrap();
+            ec.copy_texture_to_texture(
+                TexelCopyTextureInfo {
+                    texture: tiles,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: src_layer as u32,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfo {
+                    texture: &layer_texture,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: dst_layer,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                GpuTileStorageInner::TILE_COPY_SIZE,
+            );
+
+            dirty_min = dirty_min.min(*tile_index);
+            dirty_max = dirty_max.max(*tile_index);
+        }
+    }
+
+    for tile_index in clear_tile_indices {
+        let Some(dst_layer) = layer.get_tile_layer(tile_index) else {
+            continue;
+        };
+
         ec.clear_texture(
-            layer_texture,
+            layer.texture().unwrap().texture(),
             &ImageSubresourceRange {
                 aspect: TextureAspect::All,
                 base_mip_level: 0,
                 mip_level_count: None,
-                base_array_layer: dst_layer as u32,
+                base_array_layer: dst_layer,
                 array_layer_count: Some(1),
             },
         );
+
+        dirty_min = dirty_min.min(tile_index);
+        dirty_max = dirty_max.max(tile_index);
     }
+
     queue.submit([ec.finish()]);
 
     drop(layer);
 
     cx.update_canvas(&canvas, |_, cx| {
-        let mut min = IVec2::MAX;
-        let mut max = IVec2::ZERO;
-        for tile_index in tile_indices {
-            min = min.min(*tile_index);
-            max = max.max(*tile_index);
-        }
         cx.emit(CanvasUpdated {
-            dirty_tiles: IRect { min, max: max + 1 },
+            dirty_tiles: IRect {
+                min: dirty_min,
+                max: dirty_max + 1,
+            },
         });
     });
 }
@@ -219,44 +205,38 @@ impl UndoCommand for TileReplaceCommand {
     }
 
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        if let Some((texture, tiles)) = &self.new_tiles {
-            apply_tile_replace(cx, self.canvas, self.layer, tiles, texture);
-            info!(
-                "{}: Replaced {} tiles: {:?}",
-                self.reason,
-                tiles.len(),
-                tiles
-            );
-        } else if let Some((_, tiles)) = &self.old_tiles {
-            clear_tiles(cx, self.canvas, self.layer, tiles);
-            info!(
-                "{}: Cleared {} tiles: {:?}",
-                self.reason,
-                tiles.len(),
-                tiles
-            );
-        }
+        let to_clear = self
+            .old_tiles
+            .as_ref()
+            .map(|(_, i)| match &self.new_tiles {
+                Some(new_tiles) => i
+                    .iter()
+                    .copied()
+                    .filter(|old| !new_tiles.1.contains(old))
+                    .collect::<Vec<_>>(),
+                None => i.clone(),
+            })
+            .unwrap_or_default();
+
+        apply_tile_replace(cx, self.canvas, self.layer, &self.new_tiles, to_clear);
         Ok(())
     }
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        if let Some((texture, tiles)) = &self.old_tiles {
-            apply_tile_replace(cx, self.canvas, self.layer, tiles, texture);
-            info!(
-                "{}: Undo replaced {} tiles: {:?}",
-                self.reason,
-                tiles.len(),
-                tiles
-            );
-        } else if let Some((_, tiles)) = &self.new_tiles {
-            clear_tiles(cx, self.canvas, self.layer, tiles);
-            info!(
-                "{}: Undo cleared {} tiles: {:?}",
-                self.reason,
-                tiles.len(),
-                tiles
-            );
-        }
+        let to_clear = self
+            .new_tiles
+            .as_ref()
+            .map(|(_, i)| match &self.old_tiles {
+                Some(old_tiles) => i
+                    .iter()
+                    .copied()
+                    .filter(|new| !old_tiles.1.contains(new))
+                    .collect::<Vec<_>>(),
+                None => i.clone(),
+            })
+            .unwrap_or_default();
+
+        apply_tile_replace(cx, self.canvas, self.layer, &self.old_tiles, to_clear);
         Ok(())
     }
 }
