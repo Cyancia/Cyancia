@@ -220,146 +220,191 @@ impl UndoCommand for GroupLayerCommand {
 
 impl ActionFunction for MoveLayerUpAction {
     fn trigger(&self, cx: &mut App) {
-        cx.update_current_canvas(|canvas, _| {
-            let active_layer_id = canvas.image.active_layer;
-            let active_layer_parent = canvas.image.parent_of_active_layer();
-            let active_layer_parent_node = canvas
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+        let active_layer_id = canvas.image.active_layer;
+        let active_layer_parent = canvas.image.parent_of_active_layer();
+        let active_layer_parent_node = canvas
+            .image
+            .layer_stack()
+            .find_node(active_layer_parent)
+            .expect("Parent of active layer should always exist");
+        let active_layer_index = active_layer_parent_node
+            .children()
+            .iter()
+            .position(|child| child.id() == active_layer_id)
+            .expect("Active layer should always be a child of its parent");
+
+        let (new_parent, new_index) = if let Some(sibling_id) = active_layer_parent_node
+            .child_above(active_layer_id)
+            .map(|s| s.id())
+        {
+            // Parent node has a sibling. So the node won't go out of parent node.
+            if canvas
                 .image
                 .layer_stack()
-                .find_node(active_layer_parent)
-                .expect("Parent of active layer should always exist");
-            let active_layer_index = active_layer_parent_node
-                .children()
-                .iter()
-                .position(|child| child.id() == active_layer_id)
-                .expect("Active layer should always be a child of its parent");
-
-            if let Some(sibling_id) = active_layer_parent_node
-                .child_above(active_layer_id)
-                .map(|s| s.id())
+                .can_have_children_of(sibling_id, active_layer_id)
+                .expect("Sibling layer should always exist")
             {
-                // Parent node has a sibling. So the node won't go out of parent node.
-                if canvas
-                    .image
-                    .layer_stack()
-                    .can_have_children_of(sibling_id, active_layer_id)
-                    .expect("Sibling layer should always exist")
-                {
-                    // Sibling node can have active layer as children, so move active layer into sibling node.
-                    let active_layer_parent_node = canvas
-                        .image
-                        .layer_stack_mut()
-                        .find_node_mut(active_layer_parent)
-                        .expect("Parent of active layer should always exist");
-                    let active_layer_node = active_layer_parent_node
-                        .remove_child_at(active_layer_index)
-                        .expect("Active layer should always be a child of its parent");
-                    let sibling_node = canvas
-                        .image
-                        .layer_stack_mut()
-                        .find_node_mut(sibling_id)
-                        .expect("Sibling layer should always exist");
-                    sibling_node.insert_background_child(active_layer_node);
-                } else {
-                    // If can't, swap them.
-                    let active_layer_parent_node = canvas
-                        .image
-                        .layer_stack_mut()
-                        .find_node_mut(active_layer_parent)
-                        .expect("Parent of active layer should always exist");
-                    active_layer_parent_node.swap_children(active_layer_id, sibling_id);
-                }
-            } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent() {
-                // Active node is the last child, so we are moving it out of its parent.
+                // Sibling node can have active layer as children, so move active layer into sibling node.
+                (sibling_id, 0)
+            } else {
+                // If can't, swap them.
                 let active_layer_parent_node = canvas
                     .image
-                    .layer_stack_mut()
-                    .find_node_mut(active_layer_parent)
+                    .layer_stack()
+                    .find_node(active_layer_parent)
                     .expect("Parent of active layer should always exist");
-                let active_layer_node = active_layer_parent_node
-                    .remove_child_at(active_layer_index)
-                    .expect("Active layer should always be a child of its parent");
-                let active_layer_parent_parent_node = canvas
-                    .image
-                    .layer_stack_mut()
-                    .find_node_mut(active_layer_parent_parent)
-                    .expect("Parent of parent of active layer should always exist");
-                active_layer_parent_parent_node
-                    .insert_child_above(active_layer_parent, active_layer_node);
+                (
+                    active_layer_parent,
+                    active_layer_parent_node.child_index(sibling_id).unwrap(),
+                )
             }
-        });
+        } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent() {
+            // Active node is the last child, so we are moving it out of its parent.
+            let active_layer_parent_parent_node = canvas
+                .image
+                .layer_stack()
+                .find_node(active_layer_parent_parent)
+                .expect("Parent of parent of active layer should always exist");
+            (
+                active_layer_parent_parent,
+                active_layer_parent_parent_node
+                    .child_index(active_layer_parent)
+                    .unwrap()
+                    + 1,
+            )
+        } else {
+            return;
+        };
+
+        cx.push_undo_command_to_current(MoveLayerCommand {
+            canvas: canvas.id(),
+            layer: active_layer_id,
+            original_parent: active_layer_parent,
+            original_index: active_layer_index,
+            new_parent,
+            new_index,
+        })
+        .log_err();
     }
 }
 
 impl ActionFunction for MoveLayerDownAction {
     fn trigger(&self, cx: &mut App) {
-        cx.update_current_canvas(|canvas, _| {
-            let active_layer_id = canvas.image.active_layer;
-            let active_layer_parent = canvas.image.parent_of_active_layer();
-            let active_layer_parent_node = canvas
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+
+        let active_layer_id = canvas.image.active_layer;
+        let active_layer_parent = canvas.image.parent_of_active_layer();
+        let active_layer_parent_node = canvas
+            .image
+            .layer_stack()
+            .find_node(active_layer_parent)
+            .expect("Parent of active layer should always exist");
+        let active_layer_index = active_layer_parent_node
+            .children()
+            .iter()
+            .position(|child| child.id() == active_layer_id)
+            .expect("Active layer should always be a child of its parent");
+
+        let (new_parent, new_index) = if let Some(sibling_id) = active_layer_parent_node
+            .child_below(active_layer_id)
+            .map(|s| s.id())
+        {
+            // Parent node has a sibling. So the node won't go out of parent node.
+            if canvas
                 .image
                 .layer_stack()
-                .find_node(active_layer_parent)
-                .expect("Parent of active layer should always exist");
-            let active_layer_index = active_layer_parent_node
-                .children()
-                .iter()
-                .position(|child| child.id() == active_layer_id)
-                .expect("Active layer should always be a child of its parent");
-
-            if let Some(sibling_id) = active_layer_parent_node
-                .child_below(active_layer_id)
-                .map(|s| s.id())
+                .can_have_children_of(sibling_id, active_layer_id)
+                .expect("Sibling layer should always exist")
             {
-                // Parent node has a sibling. So the node won't go out of parent node.
-                if canvas
+                // Sibling node can have active layer as children, so move active layer into sibling node.
+                let sibling_node = canvas
                     .image
                     .layer_stack()
-                    .can_have_children_of(sibling_id, active_layer_id)
-                    .expect("Sibling layer should always exist")
-                {
-                    // Sibling node can have active layer as children, so move active layer into sibling node.
-                    let active_layer_parent_node = canvas
-                        .image
-                        .layer_stack_mut()
-                        .find_node_mut(active_layer_parent)
-                        .expect("Parent of active layer should always exist");
-                    let active_layer_node = active_layer_parent_node
-                        .remove_child_at(active_layer_index)
-                        .expect("Active layer should always be a child of its parent");
-                    let sibling_node = canvas
-                        .image
-                        .layer_stack_mut()
-                        .find_node_mut(sibling_id)
-                        .expect("Sibling layer should always exist");
-                    sibling_node.insert_foreground_child(active_layer_node);
-                } else {
-                    // If can't, swap them.
-                    let active_layer_parent_node = canvas
-                        .image
-                        .layer_stack_mut()
-                        .find_node_mut(active_layer_parent)
-                        .expect("Parent of active layer should always exist");
-                    active_layer_parent_node.swap_children(active_layer_id, sibling_id);
-                }
-            } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent() {
-                // Active node is the first child, so we are moving it out of its parent.
+                    .find_node(sibling_id)
+                    .expect("Sibling layer should always exist");
+                (sibling_id, sibling_node.n_children())
+            } else {
+                // If can't, swap them.
                 let active_layer_parent_node = canvas
                     .image
-                    .layer_stack_mut()
-                    .find_node_mut(active_layer_parent)
+                    .layer_stack()
+                    .find_node(active_layer_parent)
                     .expect("Parent of active layer should always exist");
-                let active_layer_node = active_layer_parent_node
-                    .remove_child_at(active_layer_index)
-                    .expect("Active layer should always be a child of its parent");
-                let active_layer_parent_parent_node = canvas
-                    .image
-                    .layer_stack_mut()
-                    .find_node_mut(active_layer_parent_parent)
-                    .expect("Parent of parent of active layer should always exist");
-                active_layer_parent_parent_node
-                    .insert_child_below(active_layer_parent, active_layer_node);
+                (
+                    active_layer_parent,
+                    active_layer_parent_node.child_index(sibling_id).unwrap(),
+                )
             }
+        } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent() {
+            // Active node is the first child, so we are moving it out of its parent.
+            let active_layer_parent_parent_node = canvas
+                .image
+                .layer_stack()
+                .find_node(active_layer_parent_parent)
+                .expect("Parent of parent of active layer should always exist");
+            (
+                active_layer_parent_parent,
+                active_layer_parent_parent_node
+                    .child_index(active_layer_parent)
+                    .unwrap(),
+            )
+        } else {
+            return;
+        };
+
+        cx.push_undo_command_to_current(MoveLayerCommand {
+            canvas: canvas.id(),
+            layer: active_layer_id,
+            original_parent: active_layer_parent,
+            original_index: active_layer_index,
+            new_parent,
+            new_index,
+        })
+        .log_err();
+    }
+}
+
+pub struct MoveLayerCommand {
+    pub canvas: CanvasId,
+    pub layer: LayerId,
+    pub original_parent: LayerId,
+    pub original_index: usize,
+    pub new_parent: LayerId,
+    pub new_index: usize,
+}
+
+impl UndoCommand for MoveLayerCommand {
+    fn label(&self) -> Cow<'static, str> {
+        "Move Layer".into()
+    }
+
+    fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
+        cx.update_canvas(&self.canvas, |canvas, _| {
+            canvas
+                .image
+                .layer_stack_mut()
+                .move_layer(self.layer, self.new_parent, self.new_index);
         });
+        cx.refresh_windows();
+
+        Ok(())
+    }
+
+    fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
+        cx.update_canvas(&self.canvas, |canvas, _| {
+            canvas.image.layer_stack_mut().move_layer(
+                self.layer,
+                self.original_parent,
+                self.original_index,
+            );
+        });
+        cx.refresh_windows();
+
+        Ok(())
     }
 }
