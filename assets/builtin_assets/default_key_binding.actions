@@ -54,6 +54,16 @@
       "shortcut": "ctrl-shift-down",
       "action_name": "MoveLayerDownAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-z",
+      "action_name": "UndoAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-shift-z",
+      "action_name": "RedoAction",
+      "context": "main_view"
     }
   ]
 }

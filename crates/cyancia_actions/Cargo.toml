@@ -15,6 +15,7 @@ cyancia_bucket_tool.workspace = true
 cyancia_canvas.workspace = true
 cyancia_image.workspace = true
 cyancia_tools.workspace = true
+cyancia_undo.workspace = true
 cyancia_utils.workspace = true
 cyancia_view.workspace = true
 futures.workspace = true

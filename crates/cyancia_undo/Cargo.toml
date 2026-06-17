@@ -6,7 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+cyancia_utils.workspace = true
+tracing.workspace = true
 gpui.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

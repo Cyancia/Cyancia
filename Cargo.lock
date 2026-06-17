@@ -1647,6 +1647,7 @@ dependencies = [
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_tools",
+ "cyancia_undo",
  "cyancia_utils",
  "cyancia_view",
  "futures",
@@ -1681,6 +1682,7 @@ dependencies = [
  "cyancia_shader_graph",
  "cyancia_theme",
  "cyancia_tools",
+ "cyancia_undo",
  "cyancia_view",
  "cyancia_widgets",
  "fs_extra",
@@ -1788,6 +1790,7 @@ dependencies = [
 name = "cyancia_canvas"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "bytemuck",
  "cyancia_assets",
@@ -1795,6 +1798,7 @@ dependencies = [
  "cyancia_math",
  "cyancia_render",
  "cyancia_tools",
+ "cyancia_undo",
  "cyancia_utils",
  "encase",
  "futures",
@@ -1943,7 +1947,11 @@ dependencies = [
 name = "cyancia_undo"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "cyancia_utils",
  "gpui",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1956,6 +1964,7 @@ dependencies = [
  "dyn-clone",
  "gpui",
  "gpui-component",
+ "tracing",
 ]
 
 [[package]]

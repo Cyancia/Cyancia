@@ -44,6 +44,7 @@ cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph"
 cyancia_shader_graph_derive = { version = "0.1.0", path = "crates/cyancia_shader_graph_derive" }
 cyancia_theme = { version = "0.1.0", path = "crates/cyancia_theme" }
 cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
+cyancia_undo = { version = "0.1.0", path = "crates/cyancia_undo" }
 cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
 cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
 cyancia_view = { version = "0.1.0", path = "crates/cyancia_view" }

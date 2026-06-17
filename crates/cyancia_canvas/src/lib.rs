@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use anyhow::bail;
 use bevy_math::IRect;
 use cyancia_image::CImage;
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
+use cyancia_undo::{UndoCommand, UndoStack, UndoStacks};
 use cyancia_utils::wrapper;
 use gpui::{App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, Global, WeakEntity};
 use parse_display::Display;
@@ -85,6 +87,7 @@ pub trait CanvasAppExt {
     fn add_canvas(&mut self, canvas: CCanvas, cx: &mut App);
     fn remove_canvas(&mut self, id: &CanvasId, cx: &mut App);
     fn global_canvas_events_entity(&self) -> Entity<GlobalCanvasEvents>;
+    fn current_canvas_id(&self) -> Option<CanvasId>;
     fn current_canvas(&self) -> Option<WeakEntity<CCanvas>>;
     fn read_current_canvas(&self) -> Option<&CCanvas>;
     fn update_current_canvas<R>(
@@ -112,6 +115,10 @@ impl CanvasAppExt for App {
 
     fn global_canvas_events_entity(&self) -> Entity<GlobalCanvasEvents> {
         self.global::<CanvasManager>().event_emitter()
+    }
+
+    fn current_canvas_id(&self) -> Option<CanvasId> {
+        self.global::<CanvasManager>().current_id()
     }
 
     fn current_canvas(&self) -> Option<WeakEntity<CCanvas>> {
@@ -257,5 +264,80 @@ impl CanvasManager {
 
     pub fn event_emitter(&self) -> Entity<GlobalCanvasEvents> {
         self.event_emitter.clone()
+    }
+}
+
+pub trait CanvasUndoStackAppExt {
+    fn current_canvas_undo_stack(&self) -> Option<&UndoStack>;
+    fn current_canvas_undo_stack_mut(&mut self) -> Option<&mut UndoStack>;
+    fn undo_stack(&self, id: &CanvasId) -> Option<&UndoStack>;
+    fn undo_stack_mut(&mut self, id: &CanvasId) -> Option<&mut UndoStack>;
+    fn push_undo_command_to_current<C: UndoCommand>(&mut self, command: C) -> anyhow::Result<()>;
+    fn push_undo_command<C: UndoCommand>(
+        &mut self,
+        id: &CanvasId,
+        command: C,
+    ) -> anyhow::Result<()>;
+    fn push_undo_command_boxed_to_current(
+        &mut self,
+        command: Box<dyn UndoCommand>,
+    ) -> anyhow::Result<()>;
+    fn push_undo_command_boxed(
+        &mut self,
+        id: &CanvasId,
+        command: Box<dyn UndoCommand>,
+    ) -> anyhow::Result<()>;
+}
+
+impl CanvasUndoStackAppExt for App {
+    fn current_canvas_undo_stack(&self) -> Option<&UndoStack> {
+        self.undo_stack(&self.current_canvas_id()?)
+    }
+
+    fn current_canvas_undo_stack_mut(&mut self) -> Option<&mut UndoStack> {
+        self.undo_stack_mut(&self.current_canvas_id()?)
+    }
+
+    fn undo_stack(&self, id: &CanvasId) -> Option<&UndoStack> {
+        self.global::<UndoStacks>().get(id)
+    }
+
+    fn undo_stack_mut(&mut self, id: &CanvasId) -> Option<&mut UndoStack> {
+        self.global_mut::<UndoStacks>().get_mut(id)
+    }
+
+    fn push_undo_command_to_current<C: UndoCommand>(&mut self, command: C) -> anyhow::Result<()> {
+        self.push_undo_command_boxed_to_current(Box::new(command))
+    }
+
+    fn push_undo_command<C: UndoCommand>(
+        &mut self,
+        id: &CanvasId,
+        command: C,
+    ) -> anyhow::Result<()> {
+        self.push_undo_command_boxed(id, Box::new(command))
+    }
+
+    fn push_undo_command_boxed_to_current(
+        &mut self,
+        command: Box<dyn UndoCommand>,
+    ) -> anyhow::Result<()> {
+        let cur = self
+            .current_canvas_id()
+            .ok_or_else(|| anyhow::anyhow!("No current canvas"))?;
+        self.push_undo_command_boxed(&cur, command)
+    }
+
+    fn push_undo_command_boxed(
+        &mut self,
+        id: &CanvasId,
+        command: Box<dyn UndoCommand>,
+    ) -> anyhow::Result<()> {
+        self.update_global::<UndoStacks, _>(|stacks, cx| {
+            let stack = stacks
+                .get_mut(id)
+                .ok_or_else(|| anyhow::anyhow!("Undo stack for canvas {} not found", id))?;
+            stack.push_boxed(command, cx)
+        })
     }
 }

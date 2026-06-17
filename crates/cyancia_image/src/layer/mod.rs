@@ -206,6 +206,7 @@ dyn_clone::clone_trait_object!(Layer);
 
 #[derive(Debug, Clone)]
 pub struct LayerStack {
+    // TODO Move layer data into node
     root: LayerStackNode,
     layers: HashMap<LayerId, LayerData>,
 }
@@ -242,10 +243,10 @@ impl LayerStack {
         &self.root
     }
 
-    pub fn add_layer(&mut self, parent_id: LayerId, layer: LayerData) {
+    pub fn add_layer(&mut self, parent_id: LayerId, index: usize, layer: LayerData) {
         let parent_node = self.find_node_mut(parent_id);
         if let Some(parent_node) = parent_node {
-            parent_node.insert_foreground_child(LayerStackNode::new(layer.id));
+            parent_node.insert_child(index, LayerStackNode::new(layer.id));
             self.layers.insert(layer.id, layer);
         }
     }
@@ -260,6 +261,23 @@ impl LayerStack {
 
     pub fn is_empty(&self) -> bool {
         self.layers.is_empty()
+    }
+
+    pub fn move_layer(&mut self, layer_id: LayerId, parent_id: LayerId, index: usize) {
+        let Some(node) = self.find_node(layer_id) else {
+            return;
+        };
+
+        let Some(parent) = node.parent().and_then(|parent| self.find_node_mut(parent)) else {
+            return;
+        };
+
+        let removed_node = parent.remove_child(layer_id).unwrap();
+
+        let Some(new_parent) = self.find_node_mut(parent_id) else {
+            return;
+        };
+        new_parent.insert_child(index, removed_node);
     }
 
     pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<(LayerData, LayerStackNode)> {
@@ -433,6 +451,12 @@ impl LayerStackNode {
     pub fn insert_foreground_child(&mut self, mut child: LayerStackNode) {
         child.parent = Some(self.id);
         self.children.push(child);
+    }
+
+    pub fn child_index(&self, child_id: LayerId) -> Option<usize> {
+        self.children
+            .iter()
+            .position(|child| child.id() == child_id)
     }
 
     pub fn insert_child(&mut self, index: usize, mut child: LayerStackNode) {

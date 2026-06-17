@@ -47,6 +47,7 @@ fn main() {
             cyancia_shader_graph::init(cx);
             cyancia_theme::init(cx);
             cyancia_view::init(cx);
+            cyancia_undo::init(cx);
             cyancia_bucket_tool::init(cx);
 
             {

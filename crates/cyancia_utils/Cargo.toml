@@ -15,3 +15,4 @@ downcast-rs.workspace = true
 dyn-clone.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+tracing.workspace = true

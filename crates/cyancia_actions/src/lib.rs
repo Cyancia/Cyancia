@@ -12,6 +12,7 @@ use crate::{
     file::OpenFileAction,
     layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
     manifest::{KeyBindingDefManifest, KeyBindingDefManifestLoader},
+    undo::{RedoAction, UndoAction},
 };
 
 pub mod brush;
@@ -19,6 +20,7 @@ pub mod canvas_control;
 pub mod file;
 pub mod layer;
 pub mod manifest;
+pub mod undo;
 
 // pub struct ActionPlugin;
 
@@ -52,6 +54,8 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<MoveLayerDownAction>();
     cx.add_action_function::<GroupActiveLayerAction>();
     cx.add_action_function::<OpenBrushEditorAction>();
+    cx.add_action_function::<UndoAction>();
+    cx.add_action_function::<RedoAction>();
 }
 
 pub fn finish(cx: &mut App) {
