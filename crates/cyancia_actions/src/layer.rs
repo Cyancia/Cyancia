@@ -41,7 +41,7 @@ impl ActionFunction for CreateNewLayerAction {
                     canvas: canvas.id(),
                     layer: new_layer,
                     parent_id: parent,
-                    index,
+                    index: index + 1,
                     previous_active_layer: active_layer_id,
                 }
             })
