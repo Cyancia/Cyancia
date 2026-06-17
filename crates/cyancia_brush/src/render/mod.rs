@@ -228,7 +228,7 @@ impl BrushPresetOperator {
             &mut self.accumulated_pixel_bounds,
             cx,
         );
-        renderer.copy_last_surface(&self.device, &self.queue, intermediate_buffers, self.round)
+        renderer.last_surface(intermediate_buffers, self.round)
     }
 
     pub fn generate_preview(&mut self, cx: &mut App) -> Option<(IRect, DynamicLayerStorage)> {
@@ -484,45 +484,18 @@ impl BrushPresetRenderer {
         queue.submit([ec.finish()]);
     }
 
-    pub fn copy_last_surface(
+    pub fn last_surface(
         &self,
-        device: &Device,
-        queue: &Queue,
         intermediate_buffers: &[DynamicLayerStorage; 2],
         round: u32,
     ) -> Option<(Texture, Vec<IVec2>)> {
         let result_buffer = &intermediate_buffers[round as usize % 2];
         let result_texture = result_buffer.texture()?;
 
-        let output_tiles = result_buffer
-            .iter_tiles()
-            .map(|(i, _, _)| i)
-            .collect::<Vec<_>>();
-
-        let output = device.create_texture(&TextureDescriptor {
-            label: Some("brush_stroke_output"),
-            size: Extent3d {
-                width: GpuTileStorageInner::TILE_SIZE,
-                height: GpuTileStorageInner::TILE_SIZE,
-                depth_or_array_layers: output_tiles.len() as u32,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: self.resources.target_layer_format.wgpu_format(),
-            usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-
-        let mut ec = device.create_command_encoder(&Default::default());
-        ec.copy_texture_to_texture(
-            result_texture.texture().as_image_copy(),
-            output.as_image_copy(),
-            output.size(),
-        );
-        queue.submit([ec.finish()]);
-
-        Some((output, output_tiles))
+        Some((
+            result_texture.texture().clone(),
+            result_buffer.iter_tiles().map(|(i, _, _)| i).collect(),
+        ))
     }
 }
 
