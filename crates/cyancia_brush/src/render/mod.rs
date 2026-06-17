@@ -123,6 +123,8 @@ impl BrushPresetOperator {
 
         let renderer = self.renderer.get_or_insert_with(|| {
             let now = std::time::Instant::now();
+            // FIXME target layer is initialize once, so strokes on other layers
+            //       with the same texel type will be composited with the wrong layer.
             let renderer = BrushPresetRenderer::new(
                 &self.device,
                 &self.queue,
