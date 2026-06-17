@@ -32,7 +32,7 @@ impl UndoStack {
         mut cmd: Box<dyn UndoCommand>,
         cx: &mut App,
     ) -> anyhow::Result<()> {
-        info!("Pushed command {}", cmd.label());
+        info!("Push command {}", cmd.label());
         self.history.truncate(self.cursor);
 
         cmd.redo(cx).logged_err()?;
@@ -58,13 +58,17 @@ impl UndoStack {
             ));
         }
 
-        while cursor > self.history.len() {
-            let mut data = self.history.pop().unwrap();
+        while self.cursor < cursor {
+            self.cursor += 1;
+
+            let data = &mut self.history[self.cursor - 1];
             info!("Redo {}", data.command.label());
             data.command.redo(cx).logged_err()?;
         }
-        while cursor < self.history.len() {
-            let mut data = self.history.pop().unwrap();
+        while self.cursor > cursor {
+            self.cursor -= 1;
+
+            let data = &mut self.history[self.cursor];
             info!("Undo {}", data.command.label());
             data.command.undo(cx).logged_err()?;
         }
