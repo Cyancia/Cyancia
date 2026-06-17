@@ -380,6 +380,8 @@ impl GraphValueType for RectType {
     }
 }
 
+// TODO: This causes problems when the value is rendered in multiple places
+//       and one of them modifies the value.
 struct LiteralNumberInputState {
     input_state: Entity<InputState>,
     value: f32,
