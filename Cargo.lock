@@ -1776,6 +1776,7 @@ dependencies = [
  "cyancia_image",
  "cyancia_render",
  "cyancia_tools",
+ "cyancia_utils",
  "encase",
  "glam",
  "gpui",

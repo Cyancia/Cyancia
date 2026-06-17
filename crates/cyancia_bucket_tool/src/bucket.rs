@@ -1,6 +1,6 @@
 use cyancia_image::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},
@@ -17,7 +17,8 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TextureDimension, TextureFormat, TextureUsages, TextureViewDimension,
+    StorageTextureAccess, Texture, TextureDimension, TextureFormat, TextureUsages,
+    TextureViewDimension,
     wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
 
@@ -718,7 +719,7 @@ impl Bucket {
                     binding: 3,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
+                        access: StorageTextureAccess::WriteOnly,
                         format: output_texel_type.wgpu_format(),
                         view_dimension: TextureViewDimension::D2Array,
                     },
@@ -726,6 +727,26 @@ impl Bucket {
                 },
                 BindGroupLayoutEntry {
                     binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(GpuTileInfo::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: output_texel_type.wgpu_format(),
+                        view_dimension: TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 6,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -789,8 +810,8 @@ impl Bucket {
         bucket_params: &BucketParams,
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
-        output_layer: &mut DynamicLayerStorage,
-    ) -> Vec<IVec2> {
+        dst_layer: &LayerBindingData,
+    ) -> Option<(Texture, Vec<IVec2>)> {
         unsafe { device.start_graphics_debugger_capture() };
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
 
@@ -856,7 +877,7 @@ impl Bucket {
         };
 
         if mask_tile_indices.is_empty() {
-            return Vec::new();
+            return None;
         }
 
         let mut mask_buffer = device.create_buffer(&BufferDescriptor {
@@ -1417,24 +1438,53 @@ impl Bucket {
             }
         };
 
-        let filled_tiles = self.get_unempty_tiles(
+        let output_tiles = self.get_unempty_tiles(
             device,
             queue,
             &mask_buffer,
             &mask_tile_info_buffer,
             &mask_tile_indices,
         );
-        for index in &filled_tiles {
-            output_layer.get_tile_or_allocate(*index);
+        if output_tiles.is_empty() {
+            return None;
         }
 
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        let (Some(output_texture), Some(output_tile_info)) =
-            (output_layer.texture(), output_layer.tile_info_buffer())
-        else {
-            return Vec::new();
+        let output_texture = device.create_texture(&TextureDescriptor {
+            label: Some("bucket_output_texture"),
+            size: Extent3d {
+                width: GpuTileStorageInner::TILE_SIZE,
+                height: GpuTileStorageInner::TILE_SIZE,
+                depth_or_array_layers: output_tiles.len() as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: dst_layer.texture.texture().format(),
+            usage: TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let output_texture_view = output_texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let output_tile_info_buffer = {
+            let mut b = BufferVec::new(
+                Some("bucket_output_tile_info_buffer".to_string()),
+                BufferUsages::STORAGE,
+            );
+            for i in output_tiles.iter().copied() {
+                b.push(&GpuTileInfo {
+                    index: i,
+                    origin: i * GpuTileStorageInner::TILE_SIZE as i32,
+                });
+            }
+            b.write_buffer(device, queue);
+            b.into_inner_buffer().unwrap()
         };
+
+        let mut ec = device.create_command_encoder(&Default::default());
 
         let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("composite_bind_group"),
@@ -1454,11 +1504,19 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: BindingResource::TextureView(output_texture),
+                    resource: BindingResource::TextureView(&output_texture_view),
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: output_tile_info.as_entire_binding(),
+                    resource: output_tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&dst_layer.texture),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: dst_layer.tile_info_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1477,9 +1535,9 @@ impl Bucket {
 
         unsafe { device.stop_graphics_debugger_capture() };
 
-        info!("Filled {} tiles: {:?}", filled_tiles.len(), filled_tiles);
+        info!("Filled {} tiles: {:?}", output_tiles.len(), output_tiles);
 
-        filled_tiles
+        Some((output_texture, output_tiles))
     }
 
     fn classify_seed_mode(

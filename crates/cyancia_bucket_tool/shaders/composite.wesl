@@ -4,10 +4,21 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 @group(0) @binding(0) var<uniform> params: BucketParams;
 @group(0) @binding(1) var<storage> mask: array<u32>;
 @group(0) @binding(2) var<storage> mask_tile_info: array<TileInfo>;
-@group(0) @binding(3) var output: texture_storage_2d_array<r32uint, read_write>;
+@group(0) @binding(3) var output: texture_storage_2d_array<r32uint, write>;
 @group(0) @binding(4) var<storage> output_tile_info: array<TileInfo>;
+@group(0) @binding(5) var dst: texture_storage_2d_array<r32uint, read>;
+@group(0) @binding(6) var<storage> dst_tile_info: array<TileInfo>;
 
 fn find_dst_layer_index(tile_index: vec2i) -> i32 {
+    for (var i = 0u; i < arrayLength(&dst_tile_info); i += 1u) {
+        if all(dst_tile_info[i].index == tile_index) {
+            return i32(i);
+        }
+    }
+    return -1;
+}
+
+fn find_output_layer_index(tile_index: vec2i) -> i32 {
     for (var i = 0u; i < arrayLength(&output_tile_info); i += 1u) {
         if all(output_tile_info[i].index == tile_index) {
             return i32(i);
@@ -38,8 +49,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     if dst_layer_index == -1 {
         return;
     }
-    let dst_color = image::texture_unpack::unpack_rgba8_texel(textureLoad(output, local_index, dst_layer_index));
+    let output_layer_index = find_output_layer_index(mask_tile_info[src_tile_index].index);
+    if output_layer_index == -1 {
+        return;
+    }
+    let dst_color = image::texture_unpack::unpack_rgba8_texel(textureLoad(dst, local_index, dst_layer_index));
 
     let color = image::blend_modes::blend_normal(src_color, dst_color);
-    textureStore(output, local_index, dst_layer_index, image::texture_unpack::pack_rgba8_texel(color));
+    textureStore(output, local_index, output_layer_index, image::texture_unpack::pack_rgba8_texel(color));
 }

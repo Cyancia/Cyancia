@@ -1,8 +1,11 @@
 use bevy_math::IRect;
-use cyancia_canvas::{CanvasAppExt, event::CanvasUpdated};
+use cyancia_canvas::{
+    CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand, event::CanvasUpdated,
+};
 use cyancia_image::tile::GpuTileStorage;
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
+use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2, Vec4};
 use gpui::{
     AnyElement, App, AppContext, Context, IntoElement, MouseUpEvent, ParentElement, Styled, Window,
@@ -60,6 +63,7 @@ impl ToolFunction for BucketTool {
             return;
         };
         let canvas = canvas_entity.read(cx);
+        let canvas_id = canvas.id();
 
         let position_ws = Vec2::new(mouse.position.x.into(), mouse.position.y.into());
         let Some(position_ps) = canvas.transform.window_to_pixel(position_ws) else {
@@ -82,7 +86,8 @@ impl ToolFunction for BucketTool {
         let ref_layer = tiles.get_layer_binding_or_empty(ref_layer_id).unwrap();
 
         let output_layer_id = canvas.image.active_layer;
-        let mut output_layer = tiles.get_layer_mut(output_layer_id).unwrap();
+        let output_layer_info = tiles.get_layer_info(output_layer_id).unwrap();
+        let output_layer = tiles.get_layer_binding_or_empty(output_layer_id).unwrap();
 
         let image_size = canvas.image.size();
         let params = BucketParams {
@@ -105,32 +110,31 @@ impl ToolFunction for BucketTool {
         let bucket = Bucket::new(
             &render_context.device,
             ref_layer_info_buffer.texel_type,
-            output_layer.layer_info().texel_type,
+            output_layer_info.texel_type,
         );
-        let dirty_tiles = bucket.dispatch(
+        let result = bucket.dispatch(
             &render_context.device,
             &render_context.queue,
             &params,
             &ref_layer,
             ref_layer_info.into_iter().collect(),
-            &mut output_layer,
+            &output_layer,
         );
-        drop(output_layer);
 
-        if !dirty_tiles.is_empty() {
-            let mut min = IVec2::MAX;
-            let mut max = IVec2::MIN;
-            for dirty_tile in dirty_tiles {
-                min = min.min(dirty_tile);
-                max = max.max(dirty_tile);
-            }
-            let dirty_tile_rect = IRect { min, max: max + 1 };
-
-            canvas_entity.update(cx, |_, cx| {
-                cx.emit(CanvasUpdated {
-                    dirty_tiles: dirty_tile_rect,
-                });
-            });
+        if let Some((new_tiles, new_tile_indices)) = result {
+            let output_layer = tiles.get_layer(output_layer_id).unwrap();
+            let cmd = TileReplaceCommand::new(
+                "Bucket Fill".into(),
+                canvas_id,
+                &render_context.device,
+                &render_context.queue,
+                output_layer_id,
+                &output_layer,
+                new_tile_indices,
+                new_tiles,
+            );
+            drop(output_layer);
+            cx.push_undo_command_to_current(cmd).log_err();
         }
     }
 

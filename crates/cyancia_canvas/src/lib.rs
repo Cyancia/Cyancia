@@ -19,6 +19,7 @@ use crate::{
     tools::{PanTool, RotateTool, ZoomTool},
 };
 
+pub mod command;
 pub mod control;
 pub mod event;
 pub mod render;
