@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
 use anyhow::bail;
-use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasId, CanvasUndoStackAppExt};
+use cyancia_canvas::{
+    CCanvas, CanvasAppExt, CanvasId, CanvasUndoStackAppExt,
+    command::{GroupLayerCommand, GroupedLayer, InsertLayerCommand, MoveLayerCommand},
+};
 use cyancia_image::{
     layer::{LayerData, LayerId, LayerStackNode},
     texel::TexelType,
@@ -61,48 +64,6 @@ impl ActionFunction for CreateNewLayerAction {
     }
 }
 
-pub struct InsertLayerCommand {
-    pub canvas: CanvasId,
-    pub layer: LayerData,
-    pub parent_id: LayerId,
-    pub index: usize,
-    pub previous_active_layer: LayerId,
-}
-
-impl UndoCommand for InsertLayerCommand {
-    fn label(&self) -> Cow<'static, str> {
-        "Create Layer".into()
-    }
-
-    fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            canvas.image.layer_stack_mut().add_layer(
-                self.parent_id,
-                self.index,
-                self.layer.clone(),
-            );
-            canvas.image.active_layer = self.layer.id();
-        })
-        .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
-        .log_err();
-        cx.refresh_windows();
-
-        Ok(())
-    }
-
-    fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            canvas.image.layer_stack_mut().remove_layer(self.layer.id());
-            canvas.image.active_layer = self.previous_active_layer;
-        })
-        .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
-        .log_err();
-        cx.refresh_windows();
-
-        Ok(())
-    }
-}
-
 impl ActionFunction for GroupActiveLayerAction {
     fn trigger(&self, cx: &mut App) {
         let cmd = cx
@@ -136,85 +97,6 @@ impl ActionFunction for GroupActiveLayerAction {
             .unwrap();
 
         cx.push_undo_command_to_current(cmd).log_err();
-    }
-}
-
-pub struct GroupLayerCommand {
-    pub canvas: CanvasId,
-    pub group: LayerData,
-    pub children: Vec<GroupedLayer>,
-    pub parent_id: LayerId,
-    pub index: usize,
-    pub previous_active_layer: LayerId,
-}
-
-pub struct GroupedLayer {
-    pub id: LayerId,
-    pub original_parent: LayerId,
-    pub original_index: usize,
-}
-
-impl UndoCommand for GroupLayerCommand {
-    fn label(&self) -> Cow<'static, str> {
-        "Group Layer".into()
-    }
-
-    fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            canvas.image.layer_stack_mut().add_layer(
-                self.parent_id,
-                self.index,
-                self.group.clone(),
-            );
-            for (i, child) in self.children.iter().enumerate() {
-                canvas
-                    .image
-                    .layer_stack_mut()
-                    .move_layer(child.id, self.group.id(), i);
-            }
-        })
-        .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
-        .log_err();
-        cx.refresh_windows();
-
-        Ok(())
-    }
-
-    fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            let children = self
-                .children
-                .iter()
-                .map(|ch| canvas.image.layer_stack_mut().remove_layer(ch.id).unwrap())
-                .collect::<Vec<_>>();
-            // This must be done before moving children, because on of the children has
-            // same parent with the group layer, AND it's before the group layer index,
-            // then the original index of the child will be incorrect.
-            canvas
-                .image
-                .layer_stack_mut()
-                .remove_layer(self.group.id())
-                .unwrap();
-            // TODO: Here's actually a pitfall. We have to ensure the children are stored in correct order.
-            //       If child A at index 0 is before child B at index 1, they should be stored in the order
-            //       child A and child B, then this insertion works.
-            //       Otherwise B will be inserted before A, which is incorrect.
-            //       Sort it first probably.
-            for (child, (data, node)) in self.children.iter().zip(children) {
-                let original_parent = canvas
-                    .image
-                    .layer_stack_mut()
-                    .find_node_mut(child.original_parent)
-                    .unwrap();
-                original_parent.insert_child(child.original_index, node);
-                canvas.image.layer_stack_mut().insert_isolated_layer(data);
-            }
-        })
-        .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
-        .log_err();
-        cx.refresh_windows();
-
-        Ok(())
     }
 }
 
@@ -366,45 +248,5 @@ impl ActionFunction for MoveLayerDownAction {
             new_index,
         })
         .log_err();
-    }
-}
-
-pub struct MoveLayerCommand {
-    pub canvas: CanvasId,
-    pub layer: LayerId,
-    pub original_parent: LayerId,
-    pub original_index: usize,
-    pub new_parent: LayerId,
-    pub new_index: usize,
-}
-
-impl UndoCommand for MoveLayerCommand {
-    fn label(&self) -> Cow<'static, str> {
-        "Move Layer".into()
-    }
-
-    fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            canvas
-                .image
-                .layer_stack_mut()
-                .move_layer(self.layer, self.new_parent, self.new_index);
-        });
-        cx.refresh_windows();
-
-        Ok(())
-    }
-
-    fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            canvas.image.layer_stack_mut().move_layer(
-                self.layer,
-                self.original_parent,
-                self.original_index,
-            );
-        });
-        cx.refresh_windows();
-
-        Ok(())
     }
 }
