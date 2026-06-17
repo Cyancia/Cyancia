@@ -13,6 +13,7 @@ members = [
     "crates/cyancia_shader_graph_derive",
     "crates/cyancia_theme",
     "crates/cyancia_tools",
+    "crates/cyancia_undo",
     "crates/cyancia_utils",
     "crates/cyancia_utils_derive",
     "crates/cyancia_view",

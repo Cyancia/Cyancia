@@ -1940,6 +1940,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_undo"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+]
+
+[[package]]
 name = "cyancia_utils"
 version = "0.1.0"
 dependencies = [
