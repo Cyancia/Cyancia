@@ -7,7 +7,7 @@ use cyancia_image::{
     tile::{GpuLayerInfo, GpuTileStorage},
 };
 use cyancia_tools::{ToolProxies, ToolProxy};
-use cyancia_undo::UndoStacks;
+use cyancia_undo::{UndoStack, UndoStacks};
 use glam::UVec2;
 use gpui::{App, actions};
 use rfd::AsyncFileDialog;
@@ -47,7 +47,7 @@ impl ActionFunction for OpenFileAction {
             });
             let canvas = CCanvas::new(image, tool_proxy_id);
             cx.update_global::<UndoStacks, _>(|undo_stacks, _| {
-                undo_stacks.insert(*canvas.id(), Default::default())
+                undo_stacks.insert(*canvas.id(), UndoStack::new(5))
             });
 
             // TODO this should not be done here

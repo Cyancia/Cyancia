@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, time::Instant};
+use std::{borrow::Cow, collections::{HashMap, VecDeque}, time::Instant};
 
 use cyancia_utils::{Deref, DerefMut, log_err::LogErr};
 use gpui::{App, Global};
@@ -16,13 +16,21 @@ pub struct UndoStacks {
 
 impl Global for UndoStacks {}
 
-#[derive(Default)]
 pub struct UndoStack {
     cursor: usize,
-    history: Vec<UndoCommandData>,
+    history: VecDeque<UndoCommandData>,
+    max_history: usize,
 }
 
 impl UndoStack {
+    pub fn new(max_history: usize) -> Self {
+        Self {
+            cursor: 0,
+            history: VecDeque::new(),
+            max_history,
+        }
+    }
+
     pub fn push<C: UndoCommand>(&mut self, cmd: C, cx: &mut App) -> anyhow::Result<()> {
         self.push_boxed(Box::new(cmd), cx)
     }
@@ -35,8 +43,12 @@ impl UndoStack {
         info!("Push command {}", cmd.label());
         self.history.truncate(self.cursor);
 
+        if self.history.len() == self.max_history {
+            self.history.pop_front();
+        }
+
         cmd.redo(cx).logged_err()?;
-        self.history.push(UndoCommandData {
+        self.history.push_back(UndoCommandData {
             pushed_at: Instant::now(),
             command: cmd,
         });
