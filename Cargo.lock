@@ -1950,6 +1950,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cyancia_utils",
+ "downcast-rs 2.0.2",
  "gpui",
  "tracing",
  "uuid",

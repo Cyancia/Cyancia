@@ -1,6 +1,11 @@
-use std::{borrow::Cow, collections::{HashMap, VecDeque}, time::Instant};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, VecDeque},
+    time::Instant,
+};
 
 use cyancia_utils::{Deref, DerefMut, log_err::LogErr};
+use downcast_rs::Downcast;
 use gpui::{App, Global};
 use tracing::info;
 use uuid::Uuid;
@@ -43,17 +48,24 @@ impl UndoStack {
         info!("Push command {}", cmd.label());
         self.history.truncate(self.cursor);
 
-        if self.history.len() == self.max_history {
-            self.history.pop_front();
+        if let Some(rhs) = self.history.back()
+            && rhs.command.can_cancel_out(cmd.as_ref())
+        {
+            cmd.redo(cx).logged_err()?;
+            self.history.pop_back();
+        } else {
+            if self.history.len() == self.max_history {
+                self.history.pop_front();
+            }
+
+            cmd.redo(cx).logged_err()?;
+            self.history.push_back(UndoCommandData {
+                pushed_at: Instant::now(),
+                command: cmd,
+            });
         }
 
-        cmd.redo(cx).logged_err()?;
-        self.history.push_back(UndoCommandData {
-            pushed_at: Instant::now(),
-            command: cmd,
-        });
         self.cursor = self.len();
-
         Ok(())
     }
 
@@ -136,8 +148,12 @@ pub struct UndoCommandData {
     command: Box<dyn UndoCommand>,
 }
 
-pub trait UndoCommand: 'static {
+pub trait UndoCommand: 'static + Downcast {
     fn label(&self) -> Cow<'static, str>;
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()>;
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()>;
+    fn can_cancel_out(&self, rhs: &dyn UndoCommand) -> bool {
+        false
+    }
 }
+downcast_rs::impl_downcast!(UndoCommand);

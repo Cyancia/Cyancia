@@ -400,4 +400,17 @@ impl UndoCommand for MoveLayerCommand {
 
         Ok(())
     }
+
+    fn can_cancel_out(&self, rhs: &dyn UndoCommand) -> bool {
+        let Some(rhs) = rhs.downcast_ref::<Self>() else {
+            return false;
+        };
+
+        self.canvas == rhs.canvas
+            && self.layer == rhs.layer
+            && self.new_parent == rhs.original_parent
+            && self.new_index == rhs.original_index
+            && self.original_parent == rhs.new_parent
+            && self.original_index == rhs.new_index
+    }
 }
