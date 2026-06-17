@@ -1,16 +1,19 @@
 use std::rc::Rc;
 
 use chrono::{DateTime, Utc};
-use cyancia_canvas::{CCanvas, CanvasAppExt, event::CanvasUpdated};
+use cyancia_canvas::{
+    CCanvas, CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand, event::CanvasUpdated,
+};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,
-    tile::GpuTileStorageInner,
+    tile::{GpuTileStorage, GpuTileStorageInner},
 };
+use cyancia_render::render_context::RenderContext;
 use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
-use cyancia_utils::wrapper;
-use glam::Vec2;
+use cyancia_utils::{log_err::LogErr, wrapper};
+use glam::{IVec2, Vec2};
 use gpui::{
     AnyElement, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
@@ -142,7 +145,7 @@ impl ToolFunction for BrushTool {
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
-        let Some((canvas_entity, active_layer)) = self.target_layer.take() else {
+        let Some((canvas_entity, active_layer_id)) = self.target_layer.take() else {
             return;
         };
 
@@ -150,6 +153,7 @@ impl ToolFunction for BrushTool {
             return;
         };
         let canvas = canvas_entity.read(cx);
+        let canvas_id = canvas.id();
 
         let Some(position) = canvas
             .transform
@@ -171,19 +175,32 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let dirty_pixels = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+        let result = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
             let brush = brush.as_mut()?;
-            brush.end_stroke(final_input, active_layer, cx)
+            brush.end_stroke(final_input, cx)
         });
 
         let overriders = cx.global_mut::<LayerPreviewOverriders>();
-        overriders.remove_overrider(&active_layer);
+        overriders.remove_overrider(&active_layer_id);
 
-        if let Some(dirty_pixels) = dirty_pixels {
-            let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(dirty_pixels);
-            canvas_entity.update(cx, |_, cx| {
-                cx.emit(CanvasUpdated { dirty_tiles });
-            });
+        if let Some((new_tiles, new_tile_indices)) = result {
+            let render_context = cx.global::<RenderContext>();
+            let active_layer = cx
+                .global::<GpuTileStorage>()
+                .get_layer(active_layer_id)
+                .unwrap();
+            let cmd = TileReplaceCommand::new(
+                "Brush Stroke".into(),
+                canvas_id,
+                &render_context.device,
+                &render_context.queue,
+                active_layer_id,
+                &active_layer,
+                new_tile_indices,
+                new_tiles,
+            );
+            drop(active_layer);
+            cx.push_undo_command_to_current(cmd).log_err();
         }
     }
 
