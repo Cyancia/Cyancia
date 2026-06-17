@@ -1,12 +1,9 @@
-use bevy_math::IRect;
-use cyancia_canvas::{
-    CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand, event::CanvasUpdated,
-};
+use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
 use cyancia_image::tile::GpuTileStorage;
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use cyancia_utils::log_err::LogErr;
-use glam::{IVec2, Vec2, Vec4};
+use glam::{Vec2, Vec4};
 use gpui::{
     AnyElement, App, AppContext, Context, IntoElement, MouseUpEvent, ParentElement, Styled, Window,
     prelude::FluentBuilder,

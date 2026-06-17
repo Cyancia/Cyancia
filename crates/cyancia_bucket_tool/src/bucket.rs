@@ -1,6 +1,6 @@
 use cyancia_image::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},

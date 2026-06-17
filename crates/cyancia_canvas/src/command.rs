@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use bevy_math::IRect;
 use cyancia_image::{
-    dynamic_intermediate_buffer::DynamicGpuTileInfoBuffer,
     layer::{LayerData, LayerId},
     tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner},
 };
@@ -11,7 +10,6 @@ use cyancia_undo::UndoCommand;
 use cyancia_utils::log_err::LogErr;
 use glam::IVec2;
 use gpui::App;
-use log::info;
 use wgpu::{
     Device, Extent3d, ImageSubresourceRange, Origin3d, Queue, TexelCopyTextureInfo, Texture,
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
@@ -148,7 +146,7 @@ fn apply_tile_replace(
                     aspect: TextureAspect::All,
                 },
                 TexelCopyTextureInfo {
-                    texture: &layer_texture,
+                    texture: layer_texture,
                     mip_level: 0,
                     origin: Origin3d {
                         x: 0,

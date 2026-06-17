@@ -1,4 +1,4 @@
-use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
+use cyancia_canvas::CanvasAppExt;
 use cyancia_undo::UndoStacks;
 use cyancia_utils::log_err::LogErr;
 use gpui::{App, BorrowAppContext, actions};

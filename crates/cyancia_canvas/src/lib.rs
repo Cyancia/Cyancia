@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::bail;
 use bevy_math::IRect;
 use cyancia_image::CImage;
 use cyancia_tools::{ToolProxyId, ToolsAppExt};

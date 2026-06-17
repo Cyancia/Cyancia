@@ -3,7 +3,7 @@ use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
     layer::LayerId,
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, GpuTileStorageInner},
+    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_render::{
     buffer::DynamicBuffer,
@@ -16,9 +16,8 @@ use glam::{IVec2, Vec2};
 use gpui::App;
 use wgpu::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
-    BufferUsages, ComputePassDescriptor, Device, Extent3d, Origin3d, Queue, ShaderStages,
-    TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages,
+    BufferUsages, ComputePassDescriptor, Device, Extent3d, Queue, ShaderStages, Texture,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
     util::{BufferInitDescriptor, DeviceExt},
 };
 

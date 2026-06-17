@@ -1,18 +1,14 @@
-use std::borrow::Cow;
-
-use anyhow::bail;
 use cyancia_canvas::{
-    CCanvas, CanvasAppExt, CanvasId, CanvasUndoStackAppExt,
+    CanvasAppExt, CanvasUndoStackAppExt,
     command::{GroupLayerCommand, GroupedLayer, InsertLayerCommand, MoveLayerCommand},
 };
 use cyancia_image::{
-    layer::{LayerData, LayerId, LayerStackNode},
+    layer::LayerData,
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
 };
-use cyancia_undo::UndoCommand;
 use cyancia_utils::log_err::LogErr;
-use gpui::{App, WeakEntity, actions};
+use gpui::{App, actions};
 
 use crate::ActionFunction;
 

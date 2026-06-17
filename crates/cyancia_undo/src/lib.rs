@@ -60,7 +60,7 @@ impl UndoStack {
 
             cmd.redo(cx).logged_err()?;
             self.history.push_back(UndoCommandData {
-                pushed_at: Instant::now(),
+                _pushed_at: Instant::now(),
                 command: cmd,
             });
         }
@@ -144,7 +144,7 @@ impl std::fmt::Debug for UndoStack {
 
 pub struct UndoCommandData {
     // TODO: Merge commands based on this.
-    pushed_at: Instant,
+    _pushed_at: Instant,
     command: Box<dyn UndoCommand>,
 }
 
@@ -152,7 +152,7 @@ pub trait UndoCommand: 'static + Downcast {
     fn label(&self) -> Cow<'static, str>;
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()>;
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()>;
-    fn can_cancel_out(&self, rhs: &dyn UndoCommand) -> bool {
+    fn can_cancel_out(&self, _rhs: &dyn UndoCommand) -> bool {
         false
     }
 }

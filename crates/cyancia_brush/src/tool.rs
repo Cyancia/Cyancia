@@ -13,7 +13,7 @@ use cyancia_render::render_context::RenderContext;
 use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::{log_err::LogErr, wrapper};
-use glam::{IVec2, Vec2};
+use glam::Vec2;
 use gpui::{
     AnyElement, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
