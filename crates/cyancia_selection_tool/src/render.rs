@@ -19,14 +19,14 @@ use indexmap::IndexSet;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferDescriptor,
-    BufferUsages, Color, ColorTargetState, ColorWrites, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, Extent3d, FragmentState, IndexFormat, LoadOp, Operations,
-    PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor,
-    RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, StoreOp, Texture, TextureDimension, TextureFormat, TextureUsages,
-    TextureView, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat,
-    VertexState, VertexStepMode,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+    BufferDescriptor, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoder,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
+    FragmentState, IndexFormat, LoadOp, Operations, PipelineLayoutDescriptor, Queue,
+    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, StoreOp, Texture,
+    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDimension,
+    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::{TextureDescriptor, TextureViewDescriptor},
 };
@@ -311,18 +311,49 @@ impl SelectionPipeline {
         target_selection: LayerBindingData,
         target_selection_tile_indices: IndexSet<IVec2>,
     ) -> Option<(Texture, Vec<IVec2>)> {
+        let mut ec = device.create_command_encoder(&Default::default());
+
+        let (output_buffer, output_tiles, output_tile_info_buffer) = self.render(
+            device,
+            queue,
+            &mut ec,
+            tile_aabb,
+            vertices,
+            indices,
+            &target_selection,
+            target_selection_tile_indices,
+        )?;
+        self.composite(
+            device,
+            queue,
+            &mut ec,
+            op,
+            &output_buffer,
+            &output_tiles,
+            &output_tile_info_buffer,
+            &target_selection,
+        );
+
+        queue.submit([ec.finish()]);
+
+        Some((output_buffer, output_tiles.into_iter().collect()))
+    }
+
+    pub fn render(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        ec: &mut CommandEncoder,
+        tile_aabb: IRect,
+        vertices: &[Vec2],
+        // Must be in counter-clockwise order
+        indices: &[u32],
+        target_selection: &LayerBindingData,
+        target_selection_tile_indices: IndexSet<IVec2>,
+    ) -> Option<(Texture, IndexSet<IVec2>, Buffer)> {
         if indices.is_empty() || vertices.is_empty() || tile_aabb.is_empty() {
             return None;
         }
-
-        let composite_params_buffer = {
-            let mut b = DynamicBuffer::new(Some("selection_params_buffer"), BufferUsages::UNIFORM);
-            b.push(&SelectionParams {
-                operation_ty: op as u32,
-            });
-            b.write_buffer(device, queue);
-            b
-        };
 
         assert_eq!(indices.len() % 3, 0);
 
@@ -403,8 +434,6 @@ impl SelectionPipeline {
             }],
         });
 
-        let mut ec = device.create_command_encoder(&Default::default());
-
         for (tile_index, index_buffer_offset) in cur_rendering_indices
             .into_iter()
             .zip(cur_rendering_index_offsets)
@@ -439,6 +468,29 @@ impl SelectionPipeline {
             pass.set_index_buffer(indices_buffer.slice(..), IndexFormat::Uint32);
             pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
         }
+
+        Some((output_buffer, output_tiles, output_tile_info_buffer))
+    }
+
+    fn composite(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        ec: &mut CommandEncoder,
+        op: SelectionOperation,
+        output_buffer: &Texture,
+        output_tiles: &IndexSet<IVec2>,
+        output_tile_info_buffer: &Buffer,
+        target_selection: &LayerBindingData,
+    ) {
+        let composite_params_buffer = {
+            let mut b = DynamicBuffer::new(Some("selection_params_buffer"), BufferUsages::UNIFORM);
+            b.push(&SelectionParams {
+                operation_ty: op as u32,
+            });
+            b.write_buffer(device, queue);
+            b
+        };
 
         let output_buffer_view = output_buffer.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2Array),
@@ -483,13 +535,9 @@ impl SelectionPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                n_output_tiles,
+                output_tiles.len() as u32,
             );
         }
-
-        queue.submit([ec.finish()]);
-
-        Some((output_buffer, output_tiles.into_iter().collect()))
     }
 }
 
