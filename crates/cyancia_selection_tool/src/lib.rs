@@ -10,6 +10,7 @@ use crate::{
 };
 
 pub mod freehand;
+pub mod magic_wand;
 pub mod render;
 pub mod shape;
 

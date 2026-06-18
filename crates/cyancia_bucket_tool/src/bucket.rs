@@ -17,7 +17,7 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, Texture, TextureDimension, TextureFormat, TextureUsages,
+    StorageTextureAccess, Texture, TextureDimension, TextureFormat, TextureUsages, TextureView,
     TextureViewDimension,
     wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
@@ -118,6 +118,17 @@ struct FxaaParamsInner {
 #[derive(ShaderType, Debug, Clone, Copy)]
 pub struct JumpParams {
     pub jump: u32,
+}
+
+struct BucketResultInternal {
+    bucket_params_buffer: DynamicBuffer<BucketParamsInner>,
+    mask_buffer: Buffer,
+    mask_tile_indices: IndexSet<IVec2>,
+    mask_tile_info_buffer: Buffer,
+    output_tiles: Vec<IVec2>,
+    output_texture: Texture,
+    output_texture_view: TextureView,
+    output_tile_info_buffer: Buffer,
 }
 
 pub struct Bucket {
@@ -802,8 +813,8 @@ impl Bucket {
         }
     }
 
-    #[tracing::instrument(name = "bucket_dispatch", skip_all)]
-    pub fn dispatch(
+    #[tracing::instrument(name = "bucket_dispatch_composite", skip_all)]
+    pub fn dispatch_composite(
         &self,
         device: &Device,
         queue: &Queue,
@@ -813,6 +824,120 @@ impl Bucket {
         dst_layer: &LayerBindingData,
     ) -> Option<(Texture, Vec<IVec2>)> {
         unsafe { device.start_graphics_debugger_capture() };
+
+        let BucketResultInternal {
+            bucket_params_buffer,
+            mask_buffer,
+            mask_tile_indices,
+            mask_tile_info_buffer,
+            output_tiles,
+            output_texture,
+            output_texture_view,
+            output_tile_info_buffer,
+        } = self.dispatch_mask_internal(
+            device,
+            queue,
+            bucket_params,
+            ref_layer,
+            ref_layer_tile_info,
+            dst_layer.texture.texture().format(),
+        )?;
+
+        let mut ec = device.create_command_encoder(&Default::default());
+
+        let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("composite_bind_group"),
+            layout: &self.composite_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: bucket_params_buffer.binding().unwrap(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: mask_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: mask_tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&output_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: output_tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&dst_layer.texture),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: dst_layer.tile_info_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("composite_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.composite_pipeline);
+            pass.set_bind_group(0, &composite_bind_group, &[]);
+            pass.dispatch_workgroups(
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                mask_tile_indices.len() as u32,
+            );
+        }
+
+        queue.submit([ec.finish()]);
+
+        unsafe { device.stop_graphics_debugger_capture() };
+
+        info!("Filled {} tiles: {:?}", output_tiles.len(), output_tiles);
+
+        Some((output_texture, output_tiles))
+    }
+
+    #[tracing::instrument(name = "bucket_dispatch_mask", skip_all)]
+    pub fn dispatch_mask(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        bucket_params: &BucketParams,
+        ref_layer: &LayerBindingData,
+        ref_layer_tile_info: IndexSet<IVec2>,
+    ) -> Option<(Texture, Vec<IVec2>)> {
+        let BucketResultInternal {
+            output_tiles,
+            output_texture,
+            ..
+        } = self.dispatch_mask_internal(
+            device,
+            queue,
+            bucket_params,
+            ref_layer,
+            ref_layer_tile_info,
+            // TODO This will change if target layer is not 8bit
+            TexelType::A8.wgpu_format(),
+        )?;
+
+        Some((output_texture, output_tiles))
+    }
+
+    fn dispatch_mask_internal(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        bucket_params: &BucketParams,
+        ref_layer: &LayerBindingData,
+        ref_layer_tile_info: IndexSet<IVec2>,
+        output_format: TextureFormat,
+    ) -> Option<BucketResultInternal> {
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
 
         let mut inner_params = BucketParamsInner {
@@ -1459,7 +1584,7 @@ impl Bucket {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: dst_layer.texture.texture().format(),
+            format: output_format,
             usage: TextureUsages::COPY_DST
                 | TextureUsages::COPY_SRC
                 | TextureUsages::STORAGE_BINDING,
@@ -1484,60 +1609,16 @@ impl Bucket {
             b.into_inner_buffer().unwrap()
         };
 
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("composite_bind_group"),
-            layout: &self.composite_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: bucket_params_buffer.binding().unwrap(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: mask_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: mask_tile_info_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: BindingResource::TextureView(&output_texture_view),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: output_tile_info_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 5,
-                    resource: BindingResource::TextureView(&dst_layer.texture),
-                },
-                BindGroupEntry {
-                    binding: 6,
-                    resource: dst_layer.tile_info_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("composite_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.composite_pipeline);
-            pass.set_bind_group(0, &composite_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
-        }
-
-        queue.submit([ec.finish()]);
-
-        unsafe { device.stop_graphics_debugger_capture() };
-
-        info!("Filled {} tiles: {:?}", output_tiles.len(), output_tiles);
-
-        Some((output_texture, output_tiles))
+        Some(BucketResultInternal {
+            bucket_params_buffer,
+            mask_buffer,
+            mask_tile_indices,
+            mask_tile_info_buffer,
+            output_tiles,
+            output_texture,
+            output_texture_view,
+            output_tile_info_buffer,
+        })
     }
 
     fn classify_seed_mode(

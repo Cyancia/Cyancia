@@ -109,7 +109,7 @@ impl ToolFunction for BucketTool {
             ref_layer_info_buffer.texel_type,
             output_layer_info.texel_type,
         );
-        let result = bucket.dispatch(
+        let result = bucket.dispatch_composite(
             &render_context.device,
             &render_context.queue,
             &params,
