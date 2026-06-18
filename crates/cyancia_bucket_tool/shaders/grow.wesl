@@ -8,28 +8,9 @@ const NO_TILE = -1;
 const ACTIVE_TILE_BIT = 1u << 8u;
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
-@group(0) @binding(1) var<storage> source_mask: array<u32>;
-@group(0) @binding(2) var<storage, read_write> destination_mask: array<atomic<u32>>;
+@group(0) @binding(1) var source_mask: texture_storage_2d_array<r8unorm, read>;
+@group(0) @binding(2) var destination_mask: texture_storage_2d_array<r8unorm, write>;
 @group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
-
-fn load_mask(tile_idx: u32, local_coord: vec2u) -> f32 {
-    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let index = linear / 4u;
-    let offset = (linear % 4u) * 8u;
-    let value = (source_mask[index] >> offset) & 0xFFu;
-    return f32(value) / 255.0;
-}
-
-fn store_mask(tile_idx: u32, local_coord: vec2u, value: f32) {
-    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let index = linear / 4u;
-    let offset = (linear % 4u) * 8u;
-    let value_u32 = u32(value * 255.0) & 0xFFu;
-    let byte_mask = 0xFFu << offset;
-    atomicAnd(&destination_mask[index], ~byte_mask);
-    atomicOr(&destination_mask[index], value_u32 << offset);
-}
-
 
 fn is_outside_image(coord: vec2i) -> bool {
     return params.transparent_mode != 0u &&
@@ -68,7 +49,7 @@ fn load_source_mask_global(coord: vec2i) -> f32 {
 
     let info = tile_info[u32(tile_index)];
     let local_coord = vec2u(coord - info.origin);
-    return load_mask(u32(tile_index), local_coord);
+    return textureLoad(source_mask, local_coord, tile_index).r;
 }
 
 fn squared_distance_to_tile(local_coord: vec2i, neighbor_offset: vec2i) -> i32 {
@@ -142,7 +123,7 @@ fn grow(@builtin(global_invocation_id) global_id: vec3u) {
     let tile = tile_info[tile_index];
     let global_coord = tile.origin + vec2i(local_coord);
     if is_outside_image(global_coord) {
-        store_mask(tile_index, local_coord, MASK_BARRIER);
+        textureStore(destination_mask, local_coord, tile_index, vec4f(MASK_BARRIER, 0.0, 0.0, 0.0));
         return;
     }
 
@@ -155,5 +136,5 @@ fn grow(@builtin(global_invocation_id) global_id: vec3u) {
         value = select(MASK_FILLABLE, MASK_BARRIER, should_erode);
     }
 
-    store_mask(tile_index, local_coord, value);
+    textureStore(destination_mask, local_coord, tile_index, vec4f(value, 0.0, 0.0, 1.0));
 }

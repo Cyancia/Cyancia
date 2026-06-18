@@ -12,29 +12,11 @@ struct JumpParams {
 }
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
-@group(0) @binding(1) var<storage, read_write> mask: array<atomic<u32>>;
+@group(0) @binding(1) var mask: texture_storage_2d_array<r8unorm, read_write>;
 @group(0) @binding(2) var seed_src: texture_storage_2d_array<rg32float, read>;
 @group(0) @binding(3) var seed_dst: texture_storage_2d_array<rg32float, write>;
 @group(0) @binding(4) var<storage> tile_info: array<TileInfo>;
 @group(0) @binding(5) var<uniform> jump_params: JumpParams;
-
-fn load_mask(tile_idx: u32, local_coord: vec2u) -> f32 {
-    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let index = linear / 4u;
-    let offset = (linear % 4u) * 8u;
-    let value = (atomicLoad(&mask[index]) >> offset) & 0xFFu;
-    return f32(value) / 255.0;
-}
-
-fn store_mask(tile_idx: u32, local_coord: vec2u, value: f32) {
-    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let index = linear / 4u;
-    let offset = (linear % 4u) * 8u;
-    let value_u32 = u32(value * 255.0) & 0xFFu;
-    let byte_mask = 0xFFu << offset;
-    atomicAnd(&mask[index], ~byte_mask);
-    atomicOr(&mask[index], value_u32 << offset);
-}
 
 fn is_outside_image(coord: vec2i) -> bool {
     return params.transparent_mode != 0u &&
@@ -65,7 +47,7 @@ fn load_mask_global(coord: vec2i) -> f32 {
 
     let info = tile_info[u32(tile_index)];
     let local_coord = vec2u(coord - info.origin);
-    return load_mask(u32(tile_index), local_coord);
+    return textureLoad(mask, local_coord, tile_index).r;
 }
 
 fn load_seed_global(coord: vec2i) -> vec2f {
@@ -160,7 +142,7 @@ fn feather_resolve_alpha(@builtin(global_invocation_id) global_id: vec3u) {
     }
 
     let alpha = clamp(distance(vec2f(global_coord), seed) / f32(params.feather), MASK_OFF, MASK_ON);
-    store_mask(tile_index, local_coord, alpha);
+    textureStore(mask, local_coord, tile_index, vec4f(alpha, 0.0, 0.0, 0.0));
 }
 
 @compute
@@ -212,7 +194,7 @@ fn close_gap_resolve(@builtin(global_invocation_id) global_id: vec3u) {
             if line_tile_index != NO_TILE {
                 let line_tile = tile_info[u32(line_tile_index)];
                 let line_local_coord = vec2u(p0 - line_tile.origin);
-                store_mask(u32(line_tile_index), line_local_coord, MASK_OFF);
+                textureStore(mask, line_local_coord, u32(line_tile_index), vec4f(MASK_OFF, 0.0, 0.0, 0.0));
             }
 
             if all(p0 == p1) {

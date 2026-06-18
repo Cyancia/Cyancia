@@ -2,27 +2,9 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 import package::types::{BucketParams, INVALID_LABEL};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
-@group(0) @binding(1) var<storage, read_write> mask: array<atomic<u32>>;
+@group(0) @binding(1) var mask: texture_storage_2d_array<r8unorm, read_write>;
 @group(0) @binding(2) var<storage, read_write> labels: array<atomic<u32>>;
 @group(0) @binding(3) var<storage> tile_info: array<TileInfo>;
-
-fn load_mask(tile_idx: u32, local_coord: vec2u) -> f32 {
-    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let index = linear / 4u;
-    let offset = (linear % 4u) * 8u;
-    let value = (atomicLoad(&mask[index]) >> offset) & 0xFFu;
-    return f32(value) / 255.0;
-}
-
-fn store_mask(tile_idx: u32, local_coord: vec2u, value: f32) {
-    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let index = linear / 4u;
-    let offset = (linear % 4u) * 8u;
-    let value_u32 = u32(value * 255.0) & 0xFFu;
-    let byte_mask = 0xFFu << offset;
-    atomicAnd(&mask[index], ~byte_mask);
-    atomicOr(&mask[index], value_u32 << offset);
-}
 
 fn get_label(tile_idx: u32, local_coord: vec2u) -> u32 {
     return atomicLoad(&labels[get_linear_index(tile_idx, local_coord)]);
@@ -82,7 +64,7 @@ fn ccl_init(@builtin(global_invocation_id) gid: vec3u) {
     let pixel_idx = gid.xy;
 
     let linear_idx = tile_idx * TILE_SIZE * TILE_SIZE + pixel_idx.y * TILE_SIZE + pixel_idx.x;
-    let mask_value = load_mask(tile_idx, pixel_idx);
+    let mask_value = textureLoad(mask, pixel_idx, tile_idx).r;
     labels[linear_idx] = select(INVALID_LABEL, linear_idx, mask_value == 1.0);
 }
 
@@ -174,5 +156,5 @@ fn ccl_extract(@builtin(global_invocation_id) gid: vec3u) {
 
     let idx = get_label(tile_idx, local_coord);
     let value = select(0.0, 1.0, idx != INVALID_LABEL && atomicLoad(&labels[idx]) == seed_root);
-    store_mask(tile_idx, local_coord, value);
+    textureStore(mask, local_coord, tile_idx, vec4f(value, 0.0, 0.0, 0.0));
 }

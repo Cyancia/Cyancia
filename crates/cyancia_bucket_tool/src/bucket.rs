@@ -1,5 +1,5 @@
 use cyancia_image::{
-    texel::TexelType,
+    texel::{TexelFormat, TexelType},
     tile::{GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::{
@@ -21,8 +21,6 @@ use wgpu::{
     TextureViewDimension,
     wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
-
-// TODO Using packed buffer indeed reduced vram usage, but makes it almost impossible for renderdoc debug.
 
 #[derive(Debug, Clone, Copy)]
 pub enum BucketAntialiasApproach {
@@ -122,7 +120,8 @@ pub struct JumpParams {
 
 struct BucketResultInternal {
     bucket_params_buffer: DynamicBuffer<BucketParamsInner>,
-    mask_buffer: Buffer,
+    mask_texture: Texture,
+    mask_texture_view: TextureView,
     mask_tile_indices: IndexSet<IVec2>,
     mask_tile_info_buffer: Buffer,
     output_tiles: Vec<IVec2>,
@@ -154,6 +153,8 @@ pub struct Bucket {
     feather_resolve_pipeline: ComputePipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
+
+    mask_format: TextureFormat,
 }
 
 impl std::fmt::Debug for Bucket {
@@ -164,6 +165,12 @@ impl std::fmt::Debug for Bucket {
 
 impl Bucket {
     pub fn new(device: &Device, ref_texel_type: TexelType, output_texel_type: TexelType) -> Self {
+        let mask_format = TexelType {
+            format: TexelFormat::Alpha,
+            depth: ref_texel_type.depth,
+        }
+        .wgpu_format();
+
         let seed_mode_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("seed_mode_layout"),
             entries: &[
@@ -254,10 +261,10 @@ impl Bucket {
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: mask_format,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
@@ -309,10 +316,10 @@ impl Bucket {
                 BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: mask_format,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
@@ -373,10 +380,10 @@ impl Bucket {
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        format: mask_format,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
@@ -471,20 +478,20 @@ impl Bucket {
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: mask_format,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: mask_format,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
@@ -522,20 +529,20 @@ impl Bucket {
                 BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: mask_format,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: mask_format,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
@@ -597,10 +604,10 @@ impl Bucket {
                     BindGroupLayoutEntry {
                         binding: 1,
                         visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: Some(u32::min_size()),
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::ReadWrite,
+                            format: TextureFormat::R8Unorm,
+                            view_dimension: TextureViewDimension::D2Array,
                         },
                         count: None,
                     },
@@ -709,10 +716,10 @@ impl Bucket {
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: TextureFormat::R8Unorm,
+                        view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
@@ -810,6 +817,7 @@ impl Bucket {
             feather_resolve_pipeline,
             composite_layout,
             composite_pipeline,
+            mask_format,
         }
     }
 
@@ -827,13 +835,14 @@ impl Bucket {
 
         let BucketResultInternal {
             bucket_params_buffer,
-            mask_buffer,
+            mask_texture_view,
             mask_tile_indices,
             mask_tile_info_buffer,
             output_tiles,
             output_texture,
             output_texture_view,
             output_tile_info_buffer,
+            ..
         } = self.dispatch_mask_internal(
             device,
             queue,
@@ -855,7 +864,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: mask_buffer.as_entire_binding(),
+                    resource: BindingResource::TextureView(&mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -1006,12 +1015,25 @@ impl Bucket {
             return None;
         }
 
-        let mut mask_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("mask_buffer"),
-            size: mask_buffer_size(mask_tile_indices.len() as u32),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
+        let mut mask_texture = device.create_texture(&TextureDescriptor {
+            label: Some("mask_texture"),
+            size: Extent3d {
+                width: GpuTileStorageInner::TILE_SIZE,
+                height: GpuTileStorageInner::TILE_SIZE,
+                depth_or_array_layers: mask_tile_indices.len() as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: self.mask_format,
+            usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_SRC,
+            view_formats: &[],
         });
+        let mut mask_texture_view = mask_texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
         let mut ec = device.create_command_encoder(&Default::default());
 
         let thresholding_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -1028,7 +1050,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: mask_buffer.as_entire_binding(),
+                    resource: BindingResource::TextureView(&mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -1057,7 +1079,7 @@ impl Bucket {
         let existing_mask_tiles = self.get_unempty_tiles(
             device,
             queue,
-            &mask_buffer,
+            &mask_texture_view,
             &mask_tile_info_buffer,
             &mask_tile_indices,
         );
@@ -1090,15 +1112,33 @@ impl Bucket {
 
         let mut ec = device.create_command_encoder(&Default::default());
 
-        mask_buffer = {
-            let b = device.create_buffer(&BufferDescriptor {
-                label: Some("mask_buffer"),
-                size: mask_buffer_size(mask_tile_indices.len() as u32),
-                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-                mapped_at_creation: false,
+        (mask_texture, mask_texture_view) = {
+            let t = device.create_texture(&TextureDescriptor {
+                label: Some("mask_texture"),
+                size: Extent3d {
+                    width: GpuTileStorageInner::TILE_SIZE,
+                    height: GpuTileStorageInner::TILE_SIZE,
+                    depth_or_array_layers: mask_tile_indices.len() as u32,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: self.mask_format,
+                usage: TextureUsages::STORAGE_BINDING
+                    | TextureUsages::COPY_DST
+                    | TextureUsages::COPY_SRC,
+                view_formats: &[],
             });
-            ec.copy_buffer_to_buffer(&mask_buffer, 0, &b, 0, mask_buffer.size());
-            b
+            let v = t.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
+            ec.copy_texture_to_texture(
+                mask_texture.as_image_copy(),
+                t.as_image_copy(),
+                mask_texture.size(),
+            );
+            (t, v)
         };
 
         queue.submit([ec.finish()]);
@@ -1157,7 +1197,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: mask_buffer.as_entire_binding(),
+                    resource: BindingResource::TextureView(&mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 4,
@@ -1277,7 +1317,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: mask_buffer.as_entire_binding(),
+                    resource: BindingResource::TextureView(&mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -1330,11 +1370,19 @@ impl Bucket {
         queue.submit([ec.finish()]);
 
         if inner_params.grow > 0 {
-            let grown_mask_buffer = device.create_buffer(&BufferDescriptor {
-                label: Some("grown_mask_buffer"),
-                size: mask_buffer_size(mask_tile_indices.len() as u32),
-                usage: BufferUsages::STORAGE,
-                mapped_at_creation: false,
+            let grown_mask_texture = device.create_texture(&TextureDescriptor {
+                label: Some("grown_mask_texture"),
+                size: mask_texture.size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: self.mask_format,
+                usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let grown_mask_texture_view = grown_mask_texture.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
             });
 
             let grow_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -1347,11 +1395,11 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: mask_buffer.as_entire_binding(),
+                        resource: BindingResource::TextureView(&mask_texture_view),
                     },
                     BindGroupEntry {
                         binding: 2,
-                        resource: grown_mask_buffer.as_entire_binding(),
+                        resource: BindingResource::TextureView(&grown_mask_texture_view),
                     },
                     BindGroupEntry {
                         binding: 3,
@@ -1374,7 +1422,8 @@ impl Bucket {
 
             queue.submit([ec.finish()]);
 
-            mask_buffer = grown_mask_buffer;
+            mask_texture = grown_mask_texture;
+            mask_texture_view = grown_mask_texture_view;
         }
 
         match bucket_params.aa_approach {
@@ -1392,12 +1441,21 @@ impl Bucket {
                 });
                 fxaa_params_buffer.write_buffer(device, queue);
 
-                let smoothed_mask_buffer = device.create_buffer(&BufferDescriptor {
-                    label: Some("smoothed_mask_buffer"),
-                    size: mask_buffer_size(mask_tile_indices.len() as u32),
-                    usage: BufferUsages::STORAGE,
-                    mapped_at_creation: false,
+                let smoothed_mask_texture = device.create_texture(&TextureDescriptor {
+                    label: Some("smoothed_mask_texture"),
+                    size: mask_texture.size(),
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: self.mask_format,
+                    usage: TextureUsages::STORAGE_BINDING,
+                    view_formats: &[self.mask_format],
                 });
+                let smoothed_mask_texture_view =
+                    smoothed_mask_texture.create_view(&TextureViewDescriptor {
+                        dimension: Some(TextureViewDimension::D2Array),
+                        ..Default::default()
+                    });
 
                 let fxaa_bind_group = device.create_bind_group(&BindGroupDescriptor {
                     label: Some("fxaa_bind_group"),
@@ -1405,11 +1463,11 @@ impl Bucket {
                     entries: &[
                         BindGroupEntry {
                             binding: 0,
-                            resource: mask_buffer.as_entire_binding(),
+                            resource: BindingResource::TextureView(&mask_texture_view),
                         },
                         BindGroupEntry {
                             binding: 1,
-                            resource: smoothed_mask_buffer.as_entire_binding(),
+                            resource: BindingResource::TextureView(&smoothed_mask_texture_view),
                         },
                         BindGroupEntry {
                             binding: 2,
@@ -1438,7 +1496,8 @@ impl Bucket {
                 }
                 queue.submit([ec.finish()]);
 
-                mask_buffer = smoothed_mask_buffer;
+                mask_texture = smoothed_mask_texture;
+                mask_texture_view = smoothed_mask_texture_view;
             }
             BucketAntialiasApproach::Feather(radius) => 'a: {
                 if radius == 0 {
@@ -1457,7 +1516,7 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: mask_buffer.as_entire_binding(),
+                        resource: BindingResource::TextureView(&mask_texture_view),
                     },
                     BindGroupEntry {
                         binding: 4,
@@ -1567,7 +1626,7 @@ impl Bucket {
         let output_tiles = self.get_unempty_tiles(
             device,
             queue,
-            &mask_buffer,
+            &mask_texture_view,
             &mask_tile_info_buffer,
             &mask_tile_indices,
         );
@@ -1612,7 +1671,8 @@ impl Bucket {
 
         Some(BucketResultInternal {
             bucket_params_buffer,
-            mask_buffer,
+            mask_texture,
+            mask_texture_view,
             mask_tile_indices,
             mask_tile_info_buffer,
             output_tiles,
@@ -1687,7 +1747,7 @@ impl Bucket {
         &self,
         device: &Device,
         queue: &Queue,
-        mask_buffer: &Buffer,
+        mask_texture_view: &TextureView,
         mask_tile_info_buffer: &Buffer,
         mask_tile_indices: &IndexSet<IVec2>,
     ) -> Vec<IVec2> {
@@ -1706,7 +1766,7 @@ impl Bucket {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: mask_buffer.as_entire_binding(),
+                    resource: BindingResource::TextureView(&mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 1,

@@ -3,19 +3,9 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 
 @group(0) @binding(0) var<uniform> params: BucketParams;
 @group(0) @binding(1) var input: texture_storage_2d_array<r32uint, read>;
-@group(0) @binding(2) var<storage, read_write> mask: array<atomic<u32>>;
+@group(0) @binding(2) var mask: texture_storage_2d_array<r8unorm, write>;
 @group(0) @binding(3) var<storage> input_tile_info: array<TileInfo>;
 @group(0) @binding(4) var<storage> mask_tile_info: array<TileInfo>;
-
-fn store_mask(tile_idx: u32, local_coord: vec2u, value: f32) {
-    let linear = tile_idx * TILE_SIZE * TILE_SIZE + local_coord.y * TILE_SIZE + local_coord.x;
-    let index = linear / 4u;
-    let offset = (linear % 4u) * 8u;
-    let value_u32 = u32(value * 255.0) & 0xFFu;
-    let byte_mask = 0xFFu << offset;
-    atomicAnd(&mask[index], ~byte_mask);
-    atomicOr(&mask[index], value_u32 << offset);
-}
 
 @compute
 @workgroup_size(16, 16, 1)
@@ -29,7 +19,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     let mask_info = mask_tile_info[tile_index];
     let global_coord = mask_info.origin + vec2i(pixel_index);
     if is_outside_image(global_coord) {
-        store_mask(tile_index, pixel_index, 0.0);
+        textureStore(mask, pixel_index, tile_index, vec4f(0.0));
         return;
     }
 
@@ -47,7 +37,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
         }
     }
 
-    store_mask(tile_index, pixel_index, value);
+    textureStore(mask, pixel_index, tile_index, vec4f(value, 0.0, 0.0, 0.0));
 }
 
 fn is_outside_image(coord: vec2i) -> bool {
