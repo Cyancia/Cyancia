@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use gpui::{App, Global};
+use wesl::include_wesl;
 use wgpu::{
     AddressMode, Device, FilterMode, MipmapFilterMode, Sampler, SamplerDescriptor, ShaderModule,
     ShaderModuleDescriptor, ShaderSource, VertexState,
@@ -110,7 +111,7 @@ impl FullscreenVertex {
     pub fn new(device: &Device) -> Self {
         let fullscreen_vertex = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fullscreen vertex shader"),
-            source: ShaderSource::Wgsl(include_str!("shaders/fullscreen_vertex.wgsl").into()),
+            source: ShaderSource::Wgsl(include_wesl!("fullscreen_vertex").into()),
         });
 
         Self {

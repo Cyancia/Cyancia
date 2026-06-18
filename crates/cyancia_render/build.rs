@@ -1,6 +1,5 @@
 fn main() {
-    println!("cargo:rerun-if-changed=src/shaders/hash.wesl");
-    println!("cargo:rerun-if-changed=src/shaders/math.wesl");
+    println!("cargo:rerun-if-changed=src/shaders");
 
     wesl::PkgBuilder::new("render")
         .scan_root("src/shaders")
@@ -9,4 +8,9 @@ fn main() {
         .unwrap()
         .build_artifact()
         .unwrap();
+
+    wesl::Wesl::new("src/shaders").build_artifact(
+        &"package::fullscreen_vertex".parse().unwrap(),
+        "fullscreen_vertex",
+    )
 }
