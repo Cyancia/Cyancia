@@ -318,6 +318,11 @@ impl SelectionPipeline {
             pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
         }
 
+        let output_buffer_view = output_buffer.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
         let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("selection_composite_bind_group"),
             layout: &self.composite_layout,
@@ -332,9 +337,7 @@ impl SelectionPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(
-                        &output_buffer.create_view(&Default::default()),
-                    ),
+                    resource: BindingResource::TextureView(&output_buffer_view),
                 },
                 BindGroupEntry {
                     binding: 3,
