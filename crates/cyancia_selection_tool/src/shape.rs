@@ -6,6 +6,7 @@ use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2};
 use gpui::{App, Context, MouseDownEvent, MouseUpEvent};
+use tracing::info;
 use wgpu::Texture;
 
 use crate::render::{SelectionOperation, SelectionPipeline};
@@ -108,6 +109,10 @@ impl ToolFunction for RectangularSelectionTool {
                 output_buffer,
             );
             drop(selection_layer);
+            info!(
+                "Selected rectangle {} to {}",
+                selection_pixels.min, selection_pixels.max
+            );
 
             cx.push_undo_command_to_current(cmd).log_err();
         }

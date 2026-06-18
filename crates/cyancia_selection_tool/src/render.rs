@@ -190,6 +190,7 @@ impl SelectionPipeline {
         }
     }
 
+    #[tracing::instrument(name = "draw_selection_mesh",skip_all)]
     pub fn draw(
         &mut self,
         device: &Device,
