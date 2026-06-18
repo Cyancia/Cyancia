@@ -183,7 +183,7 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
             label,
             data: Vec::new(),
             buffer: None,
-            usage,
+            usage: usage | BufferUsages::COPY_DST,
             last_written: None,
             _marker: PhantomData,
         }
