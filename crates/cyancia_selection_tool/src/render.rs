@@ -200,7 +200,11 @@ impl SelectionPipeline {
         indices: &[u32],
         op: SelectionOperation,
         target_selection: LayerBindingData,
-    ) -> (Texture, Vec<IVec2>) {
+    ) -> Option<(Texture, Vec<IVec2>)> {
+        if indices.is_empty() || vertices.is_empty() || tile_aabb.is_empty() {
+            return None;
+        }
+
         let composite_params_buffer = {
             let mut b = DynamicBuffer::new(Some("selection_params_buffer"), BufferUsages::UNIFORM);
             b.push(&SelectionParams {
@@ -362,6 +366,6 @@ impl SelectionPipeline {
         queue.submit([ec.finish()]);
         unsafe { device.stop_graphics_debugger_capture() };
 
-        (output_buffer, output_tiles)
+        Some((output_buffer, output_tiles))
     }
 }

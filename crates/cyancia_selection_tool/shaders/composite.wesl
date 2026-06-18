@@ -34,7 +34,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     let global_coord = output_tile_info[tile_index].origin + vec2i(local_coord);
 
     let lhs = get_input_selection(global_coord);
-    var rhs = textureLoad(output, local_coord, tile_index).r;
+    let rhs = textureLoad(output, local_coord, tile_index).r;
 
     var result = 0.0;
     switch params.operation_ty {

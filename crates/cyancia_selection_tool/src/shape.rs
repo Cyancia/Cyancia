@@ -81,7 +81,7 @@ impl ToolFunction for RectangularSelectionTool {
             .unwrap_or_else(|| tiles.empty_layer_binding(selection_layer_format));
 
         let mut pipeline = SelectionPipeline::new(&render_context.device, selection_layer_format);
-        let (output_buffer, output_tiles) = pipeline.draw(
+        let result = pipeline.draw(
             &render_context.device,
             &render_context.queue,
             affected_tiles,
@@ -96,18 +96,20 @@ impl ToolFunction for RectangularSelectionTool {
             selection_layer_binding,
         );
 
-        let cmd = TileReplaceCommand::new(
-            "Rectangular Selection".into(),
-            canvas_id,
-            &render_context.device,
-            &render_context.queue,
-            selection_layer_id,
-            &selection_layer,
-            output_tiles,
-            output_buffer,
-        );
-        drop(selection_layer);
+        if let Some((output_buffer, output_tiles)) = result {
+            let cmd = TileReplaceCommand::new(
+                "Rectangular Selection".into(),
+                canvas_id,
+                &render_context.device,
+                &render_context.queue,
+                selection_layer_id,
+                &selection_layer,
+                output_tiles,
+                output_buffer,
+            );
+            drop(selection_layer);
 
-        cx.push_undo_command_to_current(cmd).log_err();
+            cx.push_undo_command_to_current(cmd).log_err();
+        }
     }
 }

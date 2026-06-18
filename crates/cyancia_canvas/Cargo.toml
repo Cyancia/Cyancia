@@ -30,6 +30,7 @@ parking_lot.workspace = true
 parse-display.workspace = true
 serde.workspace = true
 uuid.workspace = true
+wesl.workspace = true
 wgpu.workspace = true
 
 [build-dependencies]

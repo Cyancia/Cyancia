@@ -3,6 +3,7 @@ use std::sync::Arc;
 use bevy_math::{IRect, Rect};
 use cyancia_image::{
     composite::{ImageCompositor, LayerPreviewOverriders},
+    texel::{TexelFormat, TexelType},
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_render::render_context::RenderContext;
@@ -51,7 +52,15 @@ impl CanvasWidget {
         let canvas_entity = cx.canvas(&canvas_id)?.upgrade()?;
         let canvas = canvas_entity.read(cx);
         let render_context = cx.global::<RenderContext>();
-        let renderer = CanvasRenderer::new(&render_context.device, canvas.image.texel_type());
+        let renderer = CanvasRenderer::new(
+            &render_context.device,
+            canvas.image.texel_type(),
+            // TODO probably fetch from selection layer directly?
+            TexelType {
+                format: TexelFormat::Alpha,
+                depth: canvas.image.texel_type().depth,
+            },
+        );
         let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {
             min: IVec2::ZERO,
             max: canvas.image.size().as_ivec2(),
@@ -139,6 +148,7 @@ impl CanvasWidget {
             canvas.image.size(),
             tiles,
             canvas.image.root_id(),
+            canvas.image.selection_layer(),
         );
         let (submission_index, rx) = self
             .renderer

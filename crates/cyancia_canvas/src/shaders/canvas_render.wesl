@@ -6,6 +6,7 @@ struct Canvas {
     size: vec2u,
     tile_count: vec2u,
     tile_size: u32,
+    time: f32,
 }
 
 // TODO: This is weird. This is a bindless array, and theoretically it won't have a fixed size.
@@ -15,6 +16,8 @@ struct Canvas {
 @group(0) @binding(2) var<uniform> canvas: Canvas;
 // This is actually a bgra texture. Swap channels before writing to it.
 @group(0) @binding(3) var output: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var selection: texture_storage_2d_array<r8unorm, read>;
+@group(0) @binding(5) var<storage> selection_tile_info: array<TileInfo>;
 
 const BACKGROUND_COLOR: vec4f = vec4f(0.5, 0.5, 0.5, 1.0);
 
@@ -39,7 +42,45 @@ fn convert_pixel_to_tile_index(pixel: vec2i) -> vec3u {
             return vec3u(vec2u(pixel - info.origin), i);
         }
     }
-    return vec3u(0xffffffffu, 0, 0);
+    return vec3u(0, 0, 0xffffffffu);
+}
+
+fn sample_selection_binary(pixel: vec2i) -> bool {
+    for (var i = 0u; i < arrayLength(&selection_tile_info); i += 1u) {
+        let tile = selection_tile_info[i];
+        if all(pixel >= tile.origin) && all(pixel < tile.origin + i32(TILE_SIZE)) {
+            let local = pixel - tile.origin;
+            let value = textureLoad(selection, local, i).r;
+            return value != 0.0;
+        }
+    }
+
+    return false;
+}
+
+fn is_at_selection_edge(center_ws: vec2i) -> bool {
+    let center_ps = (canvas.inverse_transform * vec3f(vec2f(center_ws), 1.0)).xy;
+    let center = sample_selection_binary(vec2i(center_ps));
+    if !center {
+        return false;
+    }
+
+    const OFFSETS: array<vec2i, 4> = array<vec2i, 4>(vec2i(1, 0), vec2i(0, 1), vec2i(-1, 0), vec2i(0, -1));
+    for (var i = 0u; i < 4u; i += 1u) {
+        let neighbour_ws = center_ws + OFFSETS[i];
+        let neighbor_ps = (canvas.inverse_transform * vec3f(vec2f(neighbour_ws), 1.0)).xy;
+
+        if sample_selection_binary(vec2i(neighbor_ps)) != center {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn marching_ants(pixel: vec2f) -> vec4f {
+    let w = (pixel.x + pixel.y) / 4.0 + canvas.time * 2.0;
+    let v = select(0.0, 1.0, u32(w) % 2u != 0u);
+    return vec4f(v, v, v, 1.0);
 }
 
 fn write_pixel(pixel_pos: vec2u, color: vec4f) {
@@ -50,19 +91,22 @@ fn write_pixel(pixel_pos: vec2u, color: vec4f) {
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) index: vec3u) {
     let pixel_pos = index.xy;
-    let canvas_pos = canvas.inverse_transform * vec3f(vec2f(pixel_pos), 1.0);
-    if any(canvas_pos < vec3f(0.0)) || any(canvas_pos.xy >= vec2f(canvas.size)) {
-        write_pixel(pixel_pos, BACKGROUND_COLOR);
+    let canvas_pos = (canvas.inverse_transform * vec3f(vec2f(pixel_pos), 1.0)).xy;
+
+    if is_at_selection_edge(vec2i(pixel_pos)) {
+        write_pixel(pixel_pos, marching_ants(vec2f(pixel_pos)));
         return;
     }
 
-    let tile_index = convert_pixel_to_tile_index(vec2i(canvas_pos.xy));
+    var color = BACKGROUND_COLOR;
 
-    var color = vec4f(0.0);
-    if tile_index.z != 0xffffffffu {
-        color = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles, tile_index.xy, tile_index.z));
+    if all(canvas_pos >= vec2f(0.0)) && all(canvas_pos < vec2f(canvas.size)) {
+        let tile_index = convert_pixel_to_tile_index(vec2i(canvas_pos));
+        let img = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles, tile_index.xy, tile_index.z));
+        let transparent_checkerboard = checkerboard_pattern(vec2u(canvas_pos));
+        let tile_checkerboard = tile_checkerboard_pattern(vec2u(canvas_pos));
+        color = mix(transparent_checkerboard, img, img.a) * tile_checkerboard;
     }
 
-    color = mix(checkerboard_pattern(vec2u(canvas_pos.xy)), color, color.a) * tile_checkerboard_pattern(vec2u(canvas_pos.xy));
     write_pixel(pixel_pos, color);
 }
