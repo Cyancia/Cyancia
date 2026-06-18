@@ -57,13 +57,15 @@ fn common_update(
     else {
         return;
     };
+    let end_pos = end_pos.as_ivec2() + 1;
 
     let cur_end_pos = if mouse.modifiers.shift {
         // Square
-        let length = (end_pos.as_ivec2() - state.start_ps).min_element();
-        state.start_ps + IVec2::splat(length)
+        let length = (end_pos - state.start_ps).abs().min_element();
+        let dir = (end_pos - state.start_ps).signum();
+        state.start_ps + dir * length
     } else {
-        end_pos.as_ivec2()
+        end_pos
     };
     state.cur_end_ps = cur_end_pos + 1;
 }
