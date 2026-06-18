@@ -79,6 +79,11 @@
       "shortcut": "shift-m",
       "action_name": "SwitchToEllipticalSelectionToolAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "shift-l",
+      "action_name": "SwitchToPolygonSelectionToolAction",
+      "context": "main_view"
     }
   ]
 }

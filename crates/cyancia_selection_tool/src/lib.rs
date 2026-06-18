@@ -4,7 +4,7 @@ use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use gpui::{App, Context};
 
 use crate::{
-    freehand::FreehandSelectionTool,
+    freehand::{FreehandSelectionTool, PolygonSelectionTool},
     render::SelectionPipeline,
     shape::{EllipticalSelectionTool, RectangularSelectionTool},
 };
@@ -17,4 +17,5 @@ pub fn init(cx: &mut App) {
     cx.add_tool_function::<RectangularSelectionTool>();
     cx.add_tool_function::<EllipticalSelectionTool>();
     cx.add_tool_function::<FreehandSelectionTool>();
+    cx.add_tool_function::<PolygonSelectionTool>();
 }

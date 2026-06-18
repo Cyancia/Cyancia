@@ -126,3 +126,127 @@ impl ToolFunction for FreehandSelectionTool {
         );
     }
 }
+
+const POLYGON_CLOSE_DISTANCE: f32 = 10.0;
+
+#[derive(Default)]
+pub struct PolygonSelectionTool {
+    state: Option<FreehandSelectionState>,
+    preview_pipeline: Option<SelectionPreviewPipeline>,
+}
+
+impl ToolFunction for PolygonSelectionTool {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self::default()
+    }
+
+    fn id() -> ToolId {
+        ToolId::new("polygon_selection_tool")
+    }
+
+    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+
+        let Some(point_ps) = canvas
+            .transform
+            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
+        else {
+            return;
+        };
+
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        if let Some(last) = state.points_ps.last_mut() {
+            *last = point_ps;
+        }
+    }
+
+    fn hover(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
+        self.update(mouse, cx);
+    }
+
+    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+
+        let point_ss = Vec2::new(mouse.position.x.into(), mouse.position.y.into());
+        let Some(point_ps) = canvas.transform.window_to_pixel(point_ss) else {
+            return;
+        };
+        let point_ws = point_ss - canvas.transform.widget_bounds.min;
+
+        let Some(state) = self.state.as_mut() else {
+            self.state = Some(FreehandSelectionState {
+                aabb: Rect {
+                    min: point_ps,
+                    max: point_ps,
+                },
+                points_ps: vec![point_ps, point_ps],
+            });
+            return;
+        };
+
+        if state.points_ps.len() >= 3 {
+            let first_ws = canvas
+                .transform
+                .pixel_to_widget
+                .transform_point2(state.points_ps[0]);
+
+            if first_ws.distance_squared(point_ws) < POLYGON_CLOSE_DISTANCE * POLYGON_CLOSE_DISTANCE
+            {
+                let cmd = generate_cmd(
+                    "Polygon Selection".into(),
+                    &state.points_ps,
+                    &indices_from_looped_vertices(state.points_ps.len() as u32),
+                    state.aabb.as_irect(),
+                    cx,
+                    mouse.modifiers,
+                );
+
+                if let Some(cmd) = cmd {
+                    cx.push_undo_command_to_current(cmd).log_err();
+                    info!(
+                        "Polygon select {} points aabb {:?}",
+                        state.points_ps.len(),
+                        state.aabb
+                    );
+                }
+
+                self.state = None;
+
+                return;
+            }
+        }
+
+        state.points_ps.push(point_ps);
+        state.aabb = state.aabb.union_point(point_ps);
+    }
+
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+        let Some(state) = &self.state else {
+            return;
+        };
+
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+
+        let render_context = cx.global::<RenderContext>();
+        let preview_pipeline = self.preview_pipeline.get_or_insert_with(|| {
+            SelectionPreviewPipeline::new(&render_context.device, canvas_surface.texture().format())
+        });
+
+        preview_pipeline.draw(
+            &render_context.device,
+            &render_context.queue,
+            &state.points_ps,
+            canvas_surface,
+            &canvas.transform,
+        );
+    }
+}

@@ -8,7 +8,8 @@ use crate::{
     canvas_control::{
         SwitchToBrushToolAction, SwitchToBucketToolAction, SwitchToEllipticalSelectionToolAction,
         SwitchToFreehandSelectionToolAction, SwitchToPanToolAction,
-        SwitchToRectangularSelectionToolAction, SwitchToRotateToolAction, SwitchToZoomToolAction,
+        SwitchToPolygonSelectionToolAction, SwitchToRectangularSelectionToolAction,
+        SwitchToRotateToolAction, SwitchToZoomToolAction,
     },
     file::OpenFileAction,
     layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
@@ -52,6 +53,7 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<SwitchToRectangularSelectionToolAction>();
     cx.add_action_function::<SwitchToEllipticalSelectionToolAction>();
     cx.add_action_function::<SwitchToFreehandSelectionToolAction>();
+    cx.add_action_function::<SwitchToPolygonSelectionToolAction>();
     cx.add_action_function::<OpenFileAction>();
     cx.add_action_function::<CreateNewLayerAction>();
     cx.add_action_function::<MoveLayerUpAction>();
