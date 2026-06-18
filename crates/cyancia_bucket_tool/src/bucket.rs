@@ -822,7 +822,7 @@ impl Bucket {
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
         dst_layer: &LayerBindingData,
-    ) -> Option<(Texture, Vec<IVec2>)> {
+    ) -> Option<(Texture, Vec<IVec2>, Buffer)> {
         unsafe { device.start_graphics_debugger_capture() };
 
         let BucketResultInternal {
@@ -900,7 +900,7 @@ impl Bucket {
 
         info!("Filled {} tiles: {:?}", output_tiles.len(), output_tiles);
 
-        Some((output_texture, output_tiles))
+        Some((output_texture, output_tiles, output_tile_info_buffer))
     }
 
     #[tracing::instrument(name = "bucket_dispatch_mask", skip_all)]
@@ -911,10 +911,11 @@ impl Bucket {
         bucket_params: &BucketParams,
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
-    ) -> Option<(Texture, Vec<IVec2>)> {
+    ) -> Option<(Texture, Vec<IVec2>, Buffer)> {
         let BucketResultInternal {
             output_tiles,
             output_texture,
+            output_tile_info_buffer,
             ..
         } = self.dispatch_mask_internal(
             device,
@@ -926,7 +927,7 @@ impl Bucket {
             TexelType::A8.wgpu_format(),
         )?;
 
-        Some((output_texture, output_tiles))
+        Some((output_texture, output_tiles, output_tile_info_buffer))
     }
 
     fn dispatch_mask_internal(

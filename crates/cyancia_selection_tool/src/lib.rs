@@ -5,6 +5,7 @@ use gpui::{App, Context};
 
 use crate::{
     freehand::{FreehandSelectionTool, PolygonSelectionTool},
+    magic_wand::MagicWandSelectionTool,
     render::SelectionPipeline,
     shape::{EllipticalSelectionTool, RectangularSelectionTool},
 };
@@ -19,4 +20,5 @@ pub fn init(cx: &mut App) {
     cx.add_tool_function::<EllipticalSelectionTool>();
     cx.add_tool_function::<FreehandSelectionTool>();
     cx.add_tool_function::<PolygonSelectionTool>();
+    cx.add_tool_function::<MagicWandSelectionTool>();
 }

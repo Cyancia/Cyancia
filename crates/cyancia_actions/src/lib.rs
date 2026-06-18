@@ -7,9 +7,9 @@ use crate::{
     brush::OpenBrushEditorAction,
     canvas_control::{
         SwitchToBrushToolAction, SwitchToBucketToolAction, SwitchToEllipticalSelectionToolAction,
-        SwitchToFreehandSelectionToolAction, SwitchToPanToolAction,
-        SwitchToPolygonSelectionToolAction, SwitchToRectangularSelectionToolAction,
-        SwitchToRotateToolAction, SwitchToZoomToolAction,
+        SwitchToFreehandSelectionToolAction, SwitchToMagicWandSelectionToolAction,
+        SwitchToPanToolAction, SwitchToPolygonSelectionToolAction,
+        SwitchToRectangularSelectionToolAction, SwitchToRotateToolAction, SwitchToZoomToolAction,
     },
     file::OpenFileAction,
     layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
@@ -56,6 +56,7 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<SwitchToEllipticalSelectionToolAction>();
     cx.add_action_function::<SwitchToFreehandSelectionToolAction>();
     cx.add_action_function::<SwitchToPolygonSelectionToolAction>();
+    cx.add_action_function::<SwitchToMagicWandSelectionToolAction>();
     cx.add_action_function::<DeleteSelectionAction>();
     cx.add_action_function::<OpenFileAction>();
     cx.add_action_function::<CreateNewLayerAction>();

@@ -89,6 +89,11 @@
       "shortcut": "ctrl-d",
       "action_name": "DeleteSelectionAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "w",
+      "action_name": "SwitchToMagicWandSelectionToolAction",
+      "context": "main_view"
     }
   ]
 }

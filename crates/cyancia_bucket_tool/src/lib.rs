@@ -25,12 +25,12 @@ pub fn init(cx: &mut App) {
 }
 
 pub struct BucketTool {
-    threshold: f32,
-    alpha_threshold: f32,
-    grow: i32,
-    close_gap: u32,
-    cached_feather: u32,
-    aa_approach: BucketAntialiasApproach,
+    pub threshold: f32,
+    pub alpha_threshold: f32,
+    pub grow: i32,
+    pub close_gap: u32,
+    pub cached_feather: u32,
+    pub aa_approach: BucketAntialiasApproach,
 }
 
 impl Default for BucketTool {
@@ -118,7 +118,7 @@ impl ToolFunction for BucketTool {
             &output_layer,
         );
 
-        if let Some((new_tiles, new_tile_indices)) = result {
+        if let Some((new_tiles, new_tile_indices, _)) = result {
             let output_layer = tiles.get_layer(output_layer_id).unwrap();
             let cmd = TileReplaceCommand::new(
                 "Bucket Fill".into(),

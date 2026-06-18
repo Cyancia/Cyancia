@@ -472,7 +472,7 @@ impl SelectionPipeline {
         Some((output_buffer, output_tiles, output_tile_info_buffer))
     }
 
-    fn composite(
+    pub fn composite(
         &self,
         device: &Device,
         queue: &Queue,
