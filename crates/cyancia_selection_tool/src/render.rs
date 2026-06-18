@@ -6,7 +6,8 @@ use cyancia_image::{
 use cyancia_render::buffer::{BufferVec, DynamicBuffer};
 use encase::ShaderType;
 use glam::{IVec2, Mat2, Mat3, Vec2, Vec3};
-use gpui::Global;
+use gpui::{Global, Modifiers};
+use indexmap::IndexSet;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -24,11 +25,62 @@ use wgpu::{
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
 pub enum SelectionOperation {
-    And,
-    Or,
-    Xor,
-    Diff,
+    Replace,
+    Intersect,
+    Union,
+    Subtract,
+    SymmetricDifference,
 }
+
+impl SelectionOperation {
+    pub fn from_modifiers(modifiers: Modifiers) -> Self {
+        if modifiers == MODIFIERS_INTERSECT {
+            return Self::Intersect;
+        }
+        if modifiers == MODIFIERS_UNION {
+            return Self::Union;
+        }
+        if modifiers == MODIFIERS_SUBTRACT {
+            return Self::Subtract;
+        }
+        if modifiers == MODIFIERS_SYMMETRIC_DIFFERENCE {
+            return Self::SymmetricDifference;
+        }
+        Self::Replace
+    }
+}
+
+pub const MODIFIERS_INTERSECT: Modifiers = Modifiers {
+    control: false,
+    alt: true,
+    shift: true,
+    platform: false,
+    function: false,
+};
+
+pub const MODIFIERS_UNION: Modifiers = Modifiers {
+    control: false,
+    alt: false,
+    shift: true,
+    platform: false,
+    function: false,
+};
+
+pub const MODIFIERS_SUBTRACT: Modifiers = Modifiers {
+    control: false,
+    alt: true,
+    shift: false,
+    platform: false,
+    function: false,
+};
+
+pub const MODIFIERS_SYMMETRIC_DIFFERENCE: Modifiers = Modifiers {
+    control: true,
+    alt: true,
+    shift: false,
+    platform: false,
+    function: false,
+};
 
 #[derive(ShaderType, Debug, Clone, Copy)]
 struct SelectionParams {
@@ -190,7 +242,7 @@ impl SelectionPipeline {
         }
     }
 
-    #[tracing::instrument(name = "draw_selection_mesh",skip_all)]
+    #[tracing::instrument(name = "draw_selection_mesh", skip_all)]
     pub fn draw(
         &mut self,
         device: &Device,
@@ -201,6 +253,7 @@ impl SelectionPipeline {
         indices: &[u32],
         op: SelectionOperation,
         target_selection: LayerBindingData,
+        target_selection_tile_indices: IndexSet<IVec2>,
     ) -> Option<(Texture, Vec<IVec2>)> {
         if indices.is_empty() || vertices.is_empty() || tile_aabb.is_empty() {
             return None;
@@ -229,41 +282,51 @@ impl SelectionPipeline {
             usage: BufferUsages::INDEX,
         });
 
-        let mut output_tile_info_buffer = BufferVec::new(
-            Some("selection_output_tile_info_buffer".to_string()),
-            BufferUsages::STORAGE,
-        );
+        let n_render_tiles = (tile_aabb.max - tile_aabb.min).element_product() as usize;
 
-        let n_tiles = (tile_aabb.max - tile_aabb.min).element_product() as usize;
-        let mut cur_tile_index_buffer =
+        let mut cur_rendering_indices = Vec::with_capacity(n_render_tiles);
+        let mut cur_rendering_index_buffer =
             DynamicBuffer::new(Some("cur_tile_index_buffer"), BufferUsages::UNIFORM);
-        let mut cur_tile_index_buffer_offsets = Vec::with_capacity(n_tiles);
-        let mut output_tiles = Vec::with_capacity(n_tiles);
+        let mut cur_rendering_index_offsets = Vec::with_capacity(n_render_tiles);
+
+        let mut output_tiles = target_selection_tile_indices;
 
         for x in tile_aabb.min.x..tile_aabb.max.x {
             for y in tile_aabb.min.y..tile_aabb.max.y {
                 let index = IVec2 { x, y };
 
-                let offset = cur_tile_index_buffer.push(&index);
-                cur_tile_index_buffer_offsets.push(offset);
-                output_tile_info_buffer.push(&GpuTileInfo {
-                    index,
-                    origin: index * GpuTileStorageInner::TILE_SIZE as i32,
-                });
-                output_tiles.push(index);
+                cur_rendering_indices.push(index);
+                let offset = cur_rendering_index_buffer.push(&index);
+                cur_rendering_index_offsets.push(offset);
+                output_tiles.insert(index);
             }
         }
 
-        cur_tile_index_buffer.write_buffer(device, queue);
-        output_tile_info_buffer.write_buffer(device, queue);
-        let output_tile_info_buffer = output_tile_info_buffer.into_inner_buffer().unwrap();
+        let output_tile_info_buffer = {
+            let mut b = BufferVec::new(
+                Some("selection_output_tile_info_buffer".to_string()),
+                BufferUsages::STORAGE,
+            );
+            for tile in &output_tiles {
+                b.push(&GpuTileInfo {
+                    index: *tile,
+                    origin: *tile * GpuTileStorageInner::TILE_SIZE as i32,
+                });
+            }
+            b.write_buffer(device, queue);
+            b.into_inner_buffer().unwrap()
+        };
+
+        cur_rendering_index_buffer.write_buffer(device, queue);
+
+        let n_output_tiles = output_tiles.len() as u32;
 
         let output_buffer = device.create_texture(&TextureDescriptor {
             label: Some("selection_output_buffer"),
             size: Extent3d {
                 width: GpuTileStorageInner::TILE_SIZE,
                 height: GpuTileStorageInner::TILE_SIZE,
-                depth_or_array_layers: n_tiles as u32,
+                depth_or_array_layers: n_output_tiles,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -280,20 +343,26 @@ impl SelectionPipeline {
             layout: &self.render_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
-                resource: cur_tile_index_buffer.binding().unwrap(),
+                resource: cur_rendering_index_buffer.binding().unwrap(),
             }],
         });
 
         let mut ec = device.create_command_encoder(&Default::default());
 
-        for i in 0..n_tiles {
+        for (tile_index, index_buffer_offset) in cur_rendering_indices
+            .into_iter()
+            .zip(cur_rendering_index_offsets)
+        {
             let target_view = output_buffer.create_view(&TextureViewDescriptor {
-                base_array_layer: i as u32,
+                base_array_layer: output_tiles.get_index_of(&tile_index).unwrap() as u32,
                 array_layer_count: Some(1),
                 ..Default::default()
             });
             let mut pass = ec.begin_render_pass(&RenderPassDescriptor {
-                label: Some(&format!("selection_render_pass_{}", i)),
+                label: Some(&format!(
+                    "selection_render_pass_x{}_y{}",
+                    tile_index.x, tile_index.y
+                )),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &target_view,
                     depth_slice: None,
@@ -309,11 +378,7 @@ impl SelectionPipeline {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.render_pipeline);
-            pass.set_bind_group(
-                0,
-                &render_bind_group,
-                &[cur_tile_index_buffer_offsets[i] as u32],
-            );
+            pass.set_bind_group(0, &render_bind_group, &[index_buffer_offset as u32]);
             pass.set_vertex_buffer(0, vertices_buffer.slice(..));
             pass.set_index_buffer(indices_buffer.slice(..), IndexFormat::Uint32);
             pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
@@ -362,7 +427,7 @@ impl SelectionPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                n_tiles as u32,
+                n_output_tiles,
             );
         }
 
@@ -370,6 +435,6 @@ impl SelectionPipeline {
         queue.submit([ec.finish()]);
         unsafe { device.stop_graphics_debugger_capture() };
 
-        Some((output_buffer, output_tiles))
+        Some((output_buffer, output_tiles.into_iter().collect()))
     }
 }

@@ -16,6 +16,7 @@ cyancia_utils.workspace = true
 encase.workspace = true
 glam.workspace = true
 gpui.workspace = true
+indexmap.workspace = true
 tracing.workspace = true
 wesl.workspace = true
 wgpu.workspace = true

@@ -74,8 +74,7 @@ impl ToolFunction for RectangularSelectionTool {
         };
         let affected_tiles = GpuTileStorageInner::pixel_rect_to_tile(selection_pixels);
 
-        let mut selection_layer = tiles.get_layer_mut(selection_layer_id).unwrap();
-        selection_layer.clear();
+        let selection_layer = tiles.get_layer(selection_layer_id).unwrap();
         let selection_layer_format = selection_layer.layer_info().texel_type;
         let selection_layer_binding = selection_layer
             .binding_data()
@@ -93,8 +92,9 @@ impl ToolFunction for RectangularSelectionTool {
                 Vec2::new(selection_pixels.min.x as f32, selection_pixels.max.y as f32),
             ],
             &[2, 1, 0, 3, 2, 0],
-            SelectionOperation::Or,
+            SelectionOperation::from_modifiers(mouse.modifiers),
             selection_layer_binding,
+            selection_layer.iter_tiles().map(|(i, _, _)| i).collect(),
         );
 
         if let Some((output_buffer, output_tiles)) = result {

@@ -7,10 +7,11 @@ import image::image_tiling::{TileInfo, TILE_SIZE};
 @group(0) @binding(4) var<uniform> params: SelectionParams;
 
 struct SelectionParams {
-    // 0 - AND
-    // 1 - OR
-    // 2 - XOR
-    // 3 - DIFF
+    // 0 - Replace
+    // 1 - Intersect
+    // 2 - Union
+    // 3 - Subtract
+    // 4 - Symmetric Difference
     operation_ty: u32,
 }
 
@@ -39,19 +40,23 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     var result = 0.0;
     switch params.operation_ty {
         case 0u: {
-            result = min(lhs, rhs);
+            result = rhs;
             break;
         }
         case 1u: {
-            result = max(lhs, rhs);
+            result = min(lhs, rhs);
             break;
         }
         case 2u: {
-            result = abs(lhs - rhs);
+            result = max(lhs, rhs);
             break;
         }
         case 3u: {
             result = max(0.0, lhs - rhs);
+            break;
+        }
+        case 4u: {
+            result = abs(lhs - rhs);
             break;
         }
         default: {
