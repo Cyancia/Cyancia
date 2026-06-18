@@ -1,0 +1,14 @@
+[package]
+name = "cyancia_selection_tool"
+version = "0.1.0"
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cyancia_tools.workspace = true
+cyancia_image.workspace = true
+gpui.workspace = true
+
+[lints]
+workspace = true

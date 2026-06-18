@@ -9,6 +9,7 @@ members = [
     "crates/cyancia_image",
     "crates/cyancia_math",
     "crates/cyancia_render",
+    "crates/cyancia_selection_tool",
     "crates/cyancia_shader_graph",
     "crates/cyancia_shader_graph_derive",
     "crates/cyancia_theme",
@@ -40,6 +41,7 @@ cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
 cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
 cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
 cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
+cyancia_selection_tool = { version = "0.1.0", path = "crates/cyancia_selection_tool" }
 cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
 cyancia_shader_graph_derive = { version = "0.1.0", path = "crates/cyancia_shader_graph_derive" }
 cyancia_theme = { version = "0.1.0", path = "crates/cyancia_theme" }

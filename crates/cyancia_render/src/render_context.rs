@@ -31,7 +31,8 @@ impl RenderContext {
             log::info!("Adapter features: {:#?}", adapter.features());
             let (device, queue) = adapter
                 .request_device(&wgpu::DeviceDescriptor {
-                    required_features: Features::CLEAR_TEXTURE,
+                    required_features: Features::CLEAR_TEXTURE
+                        | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                     required_limits: adapter.limits(),
                     ..Default::default()
                 })

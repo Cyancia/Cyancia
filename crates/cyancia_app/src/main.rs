@@ -49,6 +49,7 @@ fn main() {
             cyancia_view::init(cx);
             cyancia_undo::init(cx);
             cyancia_bucket_tool::init(cx);
+            cyancia_selection_tool::init(cx);
 
             {
                 cx.add_asset_bundle(Arc::new(AssetDirectory::new("assets/builtin_assets")));

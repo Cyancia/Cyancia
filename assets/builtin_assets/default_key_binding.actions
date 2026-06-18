@@ -64,6 +64,11 @@
       "shortcut": "ctrl-shift-z",
       "action_name": "RedoAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "m",
+      "action_name": "SwitchToRectangularSelectionToolAction",
+      "context": "main_view"
     }
   ]
 }

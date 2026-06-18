@@ -1,15 +1,12 @@
 use imagers::DynamicImage;
 use wgpu::{TextureFormat, TextureSampleType};
 
-// TODO: Add rgba16 and rgba32, gray8, gray16, gray32 in the future. Notice that, current render architecture assumes that
-//       all texture buffers are rgba8 to make things simpler. Textures imported externally, such as brush textures, will
-//       be converted into rgba8. See GpuTileStorage.
-//       So this is a rgba8 program so far. ( . ‸ .)
-
+pub const A8_FORMAT: TextureFormat = TextureFormat::R8Unorm;
 pub const RGBA8_FORMAT: TextureFormat = TextureFormat::R32Uint;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TexelFormat {
+    Alpha,
     Rgba,
 }
 
@@ -30,23 +27,31 @@ impl TexelType {
         depth: TexelDepth::Bit8,
     };
 
-    pub const ALL_POSSIBLE_FORMATS: [Self; 1] = [Self::RGBA8];
+    pub const A8: Self = Self {
+        format: TexelFormat::Alpha,
+        depth: TexelDepth::Bit8,
+    };
+
+    pub const ALL_POSSIBLE_FORMATS: [Self; 2] = [Self::RGBA8, Self::A8];
 
     pub fn wgpu_format(&self) -> TextureFormat {
         match (self.format, self.depth) {
             (TexelFormat::Rgba, TexelDepth::Bit8) => RGBA8_FORMAT,
+            (TexelFormat::Alpha, TexelDepth::Bit8) => A8_FORMAT,
         }
     }
 
     pub fn shader_def(&self) -> &'static str {
         match (self.format, self.depth) {
             (TexelFormat::Rgba, TexelDepth::Bit8) => "RGBA8",
+            (TexelFormat::Alpha, TexelDepth::Bit8) => "A8",
         }
     }
 
     pub fn sample_type(&self) -> TextureSampleType {
         match (self.format, self.depth) {
             (TexelFormat::Rgba, TexelDepth::Bit8) => TextureSampleType::Uint,
+            (TexelFormat::Alpha, TexelDepth::Bit8) => TextureSampleType::Float { filterable: true },
         }
     }
 
@@ -55,6 +60,10 @@ impl TexelType {
             (TexelFormat::Rgba, TexelDepth::Bit8) => {
                 let rgba8 = img.to_rgba8();
                 rgba8.into_raw()
+            }
+            (TexelFormat::Alpha, TexelDepth::Bit8) => {
+                let alpha8 = img.to_luma8();
+                alpha8.into_raw()
             }
         }
     }

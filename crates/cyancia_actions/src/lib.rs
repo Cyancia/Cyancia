@@ -7,7 +7,7 @@ use crate::{
     brush::OpenBrushEditorAction,
     canvas_control::{
         SwitchToBrushToolAction, SwitchToBucketToolAction, SwitchToPanToolAction,
-        SwitchToRotateToolAction, SwitchToZoomToolAction,
+        SwitchToRectangularSelectionToolAction, SwitchToRotateToolAction, SwitchToZoomToolAction,
     },
     file::OpenFileAction,
     layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
@@ -48,6 +48,7 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<SwitchToZoomToolAction>();
     cx.add_action_function::<SwitchToBrushToolAction>();
     cx.add_action_function::<SwitchToBucketToolAction>();
+    cx.add_action_function::<SwitchToRectangularSelectionToolAction>();
     cx.add_action_function::<OpenFileAction>();
     cx.add_action_function::<CreateNewLayerAction>();
     cx.add_action_function::<MoveLayerUpAction>();
