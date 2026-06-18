@@ -8,7 +8,8 @@ fn vertex(@location(0) position_ps: vec2f) -> @builtin(position) vec4f {
 
     let local_coord = position_ps - vec2f(tile_min);
     let t = local_coord / vec2f(f32(TILE_SIZE));
-    return vec4f(t * 2.0 - 1.0, 0.0, 1.0);
+    let ndc = t * 2.0 - 1.0;
+    return vec4f(vec2f(ndc.x, -ndc.y), 0.0, 1.0);
 }
 
 @fragment
