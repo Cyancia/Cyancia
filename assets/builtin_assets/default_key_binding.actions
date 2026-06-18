@@ -69,6 +69,11 @@
       "shortcut": "m",
       "action_name": "SwitchToRectangularSelectionToolAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "l",
+      "action_name": "SwitchToFreehandSelectionToolAction",
+      "context": "main_view"
     }
   ]
 }

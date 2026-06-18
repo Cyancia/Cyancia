@@ -1,15 +1,20 @@
-use std::{sync::OnceLock, time::Instant};
+use std::{borrow::Cow, sync::OnceLock, time::Instant};
 
 use bevy_math::IRect;
-use cyancia_canvas::control::CanvasTransform;
+use cyancia_canvas::{CanvasAppExt, command::TileReplaceCommand, control::CanvasTransform};
 use cyancia_image::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{
+        DynamicLayerStorage, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, LayerBindingData,
+    },
 };
-use cyancia_render::buffer::{BufferVec, DynamicBuffer};
+use cyancia_render::{
+    buffer::{BufferVec, DynamicBuffer},
+    render_context::RenderContext,
+};
 use encase::ShaderType;
 use glam::{IVec2, Mat2, Mat3, Vec2, Vec3};
-use gpui::{Global, Modifiers};
+use gpui::{App, Global, Modifiers};
 use indexmap::IndexSet;
 use wesl::include_wesl;
 use wgpu::{
@@ -25,6 +30,53 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     wgt::{TextureDescriptor, TextureViewDescriptor},
 };
+
+pub fn generate_cmd(
+    label: Cow<'static, str>,
+    vertices: &[Vec2],
+    indices: &[u32],
+    aabb_ps: IRect,
+    cx: &mut App,
+    modifiers: Modifiers,
+) -> Option<TileReplaceCommand> {
+    let canvas = cx.read_current_canvas()?;
+    let canvas_id = canvas.id();
+
+    let tiles = cx.global::<GpuTileStorage>();
+    let render_context = cx.global::<RenderContext>();
+    let selection_layer_id = canvas.image.selection_layer();
+
+    let affected_tiles = GpuTileStorageInner::pixel_rect_to_tile(aabb_ps);
+
+    let selection_layer = tiles.get_layer(selection_layer_id).unwrap();
+    let selection_layer_format = selection_layer.layer_info().texel_type;
+    let selection_layer_binding = selection_layer
+        .binding_data()
+        .unwrap_or_else(|| tiles.empty_layer_binding(selection_layer_format));
+
+    let mut pipeline = SelectionPipeline::new(&render_context.device, selection_layer_format);
+    let (output_buffer, output_tiles) = pipeline.draw(
+        &render_context.device,
+        &render_context.queue,
+        affected_tiles,
+        vertices,
+        indices,
+        SelectionOperation::from_modifiers(modifiers),
+        selection_layer_binding,
+        selection_layer.iter_tiles().map(|(i, _, _)| i).collect(),
+    )?;
+
+    Some(TileReplaceCommand::new(
+        label,
+        canvas_id,
+        &render_context.device,
+        &render_context.queue,
+        selection_layer_id,
+        &selection_layer,
+        output_tiles,
+        output_buffer,
+    ))
+}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
@@ -527,6 +579,10 @@ impl SelectionPreviewPipeline {
         canvas_surface: &TextureView,
         canvas_transform: &CanvasTransform,
     ) {
+        if line_vertices_ps.len() < 2 {
+            return;
+        }
+
         let mut vertices = Vec::with_capacity(line_vertices_ps.len() * 6);
         for w in line_vertices_ps.windows(2) {
             push_quad(&mut vertices, w[0], w[1], 1.0);

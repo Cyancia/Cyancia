@@ -6,8 +6,9 @@ use gpui::{Action, App, DummyKeyboardMapper, Global, KeyBinding, KeyBindingConte
 use crate::{
     brush::OpenBrushEditorAction,
     canvas_control::{
-        SwitchToBrushToolAction, SwitchToBucketToolAction, SwitchToPanToolAction,
-        SwitchToRectangularSelectionToolAction, SwitchToRotateToolAction, SwitchToZoomToolAction,
+        SwitchToBrushToolAction, SwitchToBucketToolAction, SwitchToFreehandSelectionToolAction,
+        SwitchToPanToolAction, SwitchToRectangularSelectionToolAction, SwitchToRotateToolAction,
+        SwitchToZoomToolAction,
     },
     file::OpenFileAction,
     layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
@@ -49,6 +50,7 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<SwitchToBrushToolAction>();
     cx.add_action_function::<SwitchToBucketToolAction>();
     cx.add_action_function::<SwitchToRectangularSelectionToolAction>();
+    cx.add_action_function::<SwitchToFreehandSelectionToolAction>();
     cx.add_action_function::<OpenFileAction>();
     cx.add_action_function::<CreateNewLayerAction>();
     cx.add_action_function::<MoveLayerUpAction>();

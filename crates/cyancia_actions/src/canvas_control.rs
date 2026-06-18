@@ -26,6 +26,7 @@ canvas_tool_action!(SwitchToBrushToolAction, "brush_tool");
 canvas_tool_action!(SwitchToBucketToolAction, "bucket_tool");
 
 canvas_tool_action!(SwitchToRectangularSelectionToolAction, "rectangular_selection_tool");
+canvas_tool_action!(SwitchToFreehandSelectionToolAction, "freehand_selection_tool");
 
 fn trigger_tool_switch(tool_id: ToolId, cx: &mut App) {
     let Some(canvas) = cx.read_current_canvas() else {

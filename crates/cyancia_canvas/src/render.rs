@@ -156,6 +156,7 @@ impl CanvasRenderer {
         self.render_pipeline.draw(&mut ec);
         queue.submit([ec.finish()]);
 
+        // TODO Dirty workaround. Remove this once gpui supports wgpu backend on all platforms.
         post_draw(&self.buffer.as_ref().unwrap().0);
 
         let (texture, buffer) = self.buffer.as_ref().expect("buffer not initialized");
