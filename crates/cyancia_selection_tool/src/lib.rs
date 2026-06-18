@@ -4,7 +4,9 @@ use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use gpui::{App, Context};
 
 use crate::{
-    freehand::FreehandSelectionTool, render::SelectionPipeline, shape::RectangularSelectionTool,
+    freehand::FreehandSelectionTool,
+    render::SelectionPipeline,
+    shape::{EllipticalSelectionTool, RectangularSelectionTool},
 };
 
 pub mod freehand;
@@ -13,5 +15,6 @@ pub mod shape;
 
 pub fn init(cx: &mut App) {
     cx.add_tool_function::<RectangularSelectionTool>();
+    cx.add_tool_function::<EllipticalSelectionTool>();
     cx.add_tool_function::<FreehandSelectionTool>();
 }

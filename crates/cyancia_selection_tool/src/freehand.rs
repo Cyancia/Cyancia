@@ -11,21 +11,12 @@ use wgpu::TextureView;
 
 use crate::render::{
     SelectionOperation, SelectionPipeline, SelectionPreviewPipeline, generate_cmd,
+    indices_from_looped_vertices,
 };
 
 struct FreehandSelectionState {
     aabb: Rect,
     points_ps: Vec<Vec2>,
-}
-
-fn indices_from_looped_vertices(vertices: u32) -> Vec<u32> {
-    let mut indices = Vec::with_capacity(vertices as usize - 2);
-    for i in 1..vertices {
-        indices.push(0);
-        indices.push(i - 1);
-        indices.push(i);
-    }
-    indices
 }
 
 #[derive(Default)]

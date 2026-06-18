@@ -669,3 +669,13 @@ fn push_quad(vertices: &mut Vec<Vec2>, last_point: Vec2, this_point: Vec2, width
     vertices.push(end_right);
     vertices.push(start_left);
 }
+
+pub(crate) fn indices_from_looped_vertices(vertices: u32) -> Vec<u32> {
+    let mut indices = Vec::with_capacity(vertices as usize - 2);
+    for i in 1..vertices {
+        indices.push(0);
+        indices.push(i - 1);
+        indices.push(i);
+    }
+    indices
+}

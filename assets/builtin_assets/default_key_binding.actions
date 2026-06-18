@@ -74,6 +74,11 @@
       "shortcut": "l",
       "action_name": "SwitchToFreehandSelectionToolAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "shift-m",
+      "action_name": "SwitchToEllipticalSelectionToolAction",
+      "context": "main_view"
     }
   ]
 }
