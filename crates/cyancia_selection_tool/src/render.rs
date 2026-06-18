@@ -478,9 +478,9 @@ impl SelectionPipeline {
         queue: &Queue,
         ec: &mut CommandEncoder,
         op: SelectionOperation,
-        output_buffer: &Texture,
-        output_tiles: &IndexSet<IVec2>,
-        output_tile_info_buffer: &Buffer,
+        inout_texture: &Texture,
+        inout_tiles: &IndexSet<IVec2>,
+        inout_tile_info_buffer: &Buffer,
         target_selection: &LayerBindingData,
     ) {
         let composite_params_buffer = {
@@ -492,7 +492,7 @@ impl SelectionPipeline {
             b
         };
 
-        let output_buffer_view = output_buffer.create_view(&TextureViewDescriptor {
+        let output_buffer_view = inout_texture.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2Array),
             ..Default::default()
         });
@@ -515,7 +515,7 @@ impl SelectionPipeline {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: output_tile_info_buffer.as_entire_binding(),
+                    resource: inout_tile_info_buffer.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 4,
@@ -535,7 +535,7 @@ impl SelectionPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                output_tiles.len() as u32,
+                inout_tiles.len() as u32,
             );
         }
     }

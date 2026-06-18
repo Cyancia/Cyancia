@@ -127,7 +127,7 @@ impl ToolFunction for BucketTool {
                 &render_context.queue,
                 output_layer_id,
                 &output_layer,
-                new_tile_indices,
+                new_tile_indices.into_iter().collect(),
                 new_tiles,
             );
             drop(output_layer);

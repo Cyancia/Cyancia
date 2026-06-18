@@ -15,10 +15,10 @@ use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, Texture, TextureDimension, TextureFormat, TextureUsages, TextureView,
-    TextureViewDimension,
+    StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect, TextureDimension,
+    TextureFormat, TextureUsages, TextureView, TextureViewDimension,
     wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
 
@@ -124,10 +124,6 @@ struct BucketResultInternal {
     mask_texture_view: TextureView,
     mask_tile_indices: IndexSet<IVec2>,
     mask_tile_info_buffer: Buffer,
-    output_tiles: Vec<IVec2>,
-    output_texture: Texture,
-    output_texture_view: TextureView,
-    output_tile_info_buffer: Buffer,
 }
 
 pub struct Bucket {
@@ -830,7 +826,7 @@ impl Bucket {
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
         dst_layer: &LayerBindingData,
-    ) -> Option<(Texture, Vec<IVec2>, Buffer)> {
+    ) -> Option<(Texture, IndexSet<IVec2>, Buffer)> {
         unsafe { device.start_graphics_debugger_capture() };
 
         let BucketResultInternal {
@@ -838,10 +834,6 @@ impl Bucket {
             mask_texture_view,
             mask_tile_indices,
             mask_tile_info_buffer,
-            output_tiles,
-            output_texture,
-            output_texture_view,
-            output_tile_info_buffer,
             ..
         } = self.dispatch_mask_internal(
             device,
@@ -849,8 +841,53 @@ impl Bucket {
             bucket_params,
             ref_layer,
             ref_layer_tile_info,
-            dst_layer.texture.texture().format(),
         )?;
+
+        let output_tiles = self.get_unempty_tiles(
+            device,
+            queue,
+            &mask_texture_view,
+            &mask_tile_info_buffer,
+            &mask_tile_indices,
+        );
+        if output_tiles.is_empty() {
+            return None;
+        }
+
+        let output_texture = device.create_texture(&TextureDescriptor {
+            label: Some("bucket_output_texture"),
+            size: Extent3d {
+                width: GpuTileStorageInner::TILE_SIZE,
+                height: GpuTileStorageInner::TILE_SIZE,
+                depth_or_array_layers: output_tiles.len() as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: dst_layer.texture.texture().format(),
+            usage: TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let output_texture_view = output_texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let output_tile_info_buffer = {
+            let mut b = BufferVec::new(
+                Some("bucket_output_tile_info_buffer".to_string()),
+                BufferUsages::STORAGE,
+            );
+            for i in output_tiles.iter().copied() {
+                b.push(&GpuTileInfo {
+                    index: i,
+                    origin: i * GpuTileStorageInner::TILE_SIZE as i32,
+                });
+            }
+            b.write_buffer(device, queue);
+            b.into_inner_buffer().unwrap()
+        };
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -920,11 +957,12 @@ impl Bucket {
         bucket_params: &BucketParams,
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
-    ) -> Option<(Texture, Vec<IVec2>, Buffer)> {
+    ) -> Option<(Texture, IndexSet<IVec2>)> {
         let BucketResultInternal {
-            output_tiles,
-            output_texture,
-            output_tile_info_buffer,
+            mask_texture,
+            mask_texture_view,
+            mask_tile_indices,
+            mask_tile_info_buffer,
             ..
         } = self.dispatch_mask_internal(
             device,
@@ -932,11 +970,65 @@ impl Bucket {
             bucket_params,
             ref_layer,
             ref_layer_tile_info,
-            // TODO This will change if target layer is not 8bit
-            TexelType::A8.wgpu_format(),
         )?;
 
-        Some((output_texture, output_tiles, output_tile_info_buffer))
+        let output_tiles = self.get_unempty_tiles(
+            device,
+            queue,
+            &mask_texture_view,
+            &mask_tile_info_buffer,
+            &mask_tile_indices,
+        );
+        if output_tiles.is_empty() {
+            return None;
+        }
+
+        let output_texture = device.create_texture(&TextureDescriptor {
+            label: None,
+            size: Extent3d {
+                width: GpuTileStorageInner::TILE_SIZE,
+                height: GpuTileStorageInner::TILE_SIZE,
+                depth_or_array_layers: output_tiles.len() as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: self.mask_format,
+            usage: TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC
+                | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let mut ec = device.create_command_encoder(&Default::default());
+        for (dst_layer, tile) in output_tiles.iter().enumerate() {
+            let src_layer = mask_tile_indices.get_index_of(tile).unwrap();
+            ec.copy_texture_to_texture(
+                TexelCopyTextureInfo {
+                    texture: &mask_texture,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: src_layer as u32,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfo {
+                    texture: &output_texture,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: dst_layer as u32,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                GpuTileStorageInner::TILE_COPY_SIZE,
+            );
+        }
+        queue.submit([ec.finish()]);
+
+        Some((output_texture, output_tiles))
     }
 
     fn dispatch_mask_internal(
@@ -946,7 +1038,6 @@ impl Bucket {
         bucket_params: &BucketParams,
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
-        output_format: TextureFormat,
     ) -> Option<BucketResultInternal> {
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
 
@@ -1448,7 +1539,7 @@ impl Bucket {
                     sample_count: 1,
                     dimension: TextureDimension::D2,
                     format: self.mask_format,
-                    usage: TextureUsages::STORAGE_BINDING,
+                    usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_SRC,
                     view_formats: &[self.mask_format],
                 });
                 let smoothed_mask_texture_view =
@@ -1623,62 +1714,12 @@ impl Bucket {
             }
         };
 
-        let output_tiles = self.get_unempty_tiles(
-            device,
-            queue,
-            &mask_texture_view,
-            &mask_tile_info_buffer,
-            &mask_tile_indices,
-        );
-        if output_tiles.is_empty() {
-            return None;
-        }
-
-        let output_texture = device.create_texture(&TextureDescriptor {
-            label: Some("bucket_output_texture"),
-            size: Extent3d {
-                width: GpuTileStorageInner::TILE_SIZE,
-                height: GpuTileStorageInner::TILE_SIZE,
-                depth_or_array_layers: output_tiles.len() as u32,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: output_format,
-            usage: TextureUsages::COPY_DST
-                | TextureUsages::COPY_SRC
-                | TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
-        });
-        let output_texture_view = output_texture.create_view(&TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::D2Array),
-            ..Default::default()
-        });
-        let output_tile_info_buffer = {
-            let mut b = BufferVec::new(
-                Some("bucket_output_tile_info_buffer".to_string()),
-                BufferUsages::STORAGE,
-            );
-            for i in output_tiles.iter().copied() {
-                b.push(&GpuTileInfo {
-                    index: i,
-                    origin: i * GpuTileStorageInner::TILE_SIZE as i32,
-                });
-            }
-            b.write_buffer(device, queue);
-            b.into_inner_buffer().unwrap()
-        };
-
         Some(BucketResultInternal {
             bucket_params_buffer,
             mask_texture,
             mask_texture_view,
             mask_tile_indices,
             mask_tile_info_buffer,
-            output_tiles,
-            output_texture,
-            output_texture_view,
-            output_tile_info_buffer,
         })
     }
 
@@ -1750,7 +1791,7 @@ impl Bucket {
         mask_texture_view: &TextureView,
         mask_tile_info_buffer: &Buffer,
         mask_tile_indices: &IndexSet<IVec2>,
-    ) -> Vec<IVec2> {
+    ) -> IndexSet<IVec2> {
         let mut ec = device.create_command_encoder(&Default::default());
 
         let is_not_empty_buffer = device.create_buffer(&BufferDescriptor {
@@ -1806,7 +1847,7 @@ impl Bucket {
             .iter()
             .zip(is_not_empty)
             .filter_map(|(i, is_not_empty)| if is_not_empty == 1 { Some(*i) } else { None })
-            .collect::<Vec<_>>()
+            .collect()
     }
 }
 
