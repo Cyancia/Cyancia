@@ -566,3 +566,20 @@ impl LayerStackNode {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct SpecialLayers {
+    selection_layer: LayerId,
+}
+
+impl SpecialLayers {
+    pub fn new() -> Self {
+        Self {
+            selection_layer: LayerId::new(Uuid::new_v4()),
+        }
+    }
+
+    pub fn selection_layer(&self) -> LayerId {
+        self.selection_layer
+    }
+}

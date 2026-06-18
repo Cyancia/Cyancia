@@ -10,7 +10,7 @@ extern crate image as imagers;
 use crate::{
     blend_modes::BlendMode,
     composite::LayerPreviewOverriders,
-    layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, LayerStackNode},
+    layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, LayerStackNode, SpecialLayers},
     texel::TexelType,
     tile::GpuTileStorage,
 };
@@ -34,6 +34,7 @@ pub struct CImage {
     texel_type: TexelType,
     layers: LayerStack,
     name_generator: LayerNameGenerator,
+    special_layers: SpecialLayers,
 }
 
 impl CImage {
@@ -52,6 +53,7 @@ impl CImage {
             texel_type: TexelType::RGBA8,
             layers,
             name_generator: LayerNameGenerator::default(),
+            special_layers: SpecialLayers::new(),
         }
     }
 
@@ -70,6 +72,7 @@ impl CImage {
             texel_type: TexelType::RGBA8,
             layers,
             name_generator: Default::default(),
+            special_layers: SpecialLayers::new(),
         }
     }
 
@@ -144,5 +147,9 @@ impl CImage {
         self.layers
             .get_layer_mut(self.active_layer)
             .expect("Active layer should always exist")
+    }
+
+    pub fn selection_layer(&self) -> LayerId {
+        self.special_layers.selection_layer()
     }
 }

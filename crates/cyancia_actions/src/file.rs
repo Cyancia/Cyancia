@@ -61,6 +61,13 @@ impl ActionFunction for OpenFileAction {
                         },
                     );
                 }
+                tiles.declare_layer(
+                    canvas.image.selection_layer(),
+                    GpuLayerInfo {
+                        // TODO This should change when image depth is not 8 bit
+                        texel_type: TexelType::A8,
+                    },
+                );
             });
 
             cx.update_global::<CanvasManager, _>(|canvas_manager, cx| {
