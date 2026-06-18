@@ -18,3 +18,4 @@ gpui.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 uuid.workspace = true
+wgpu.workspace = true

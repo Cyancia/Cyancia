@@ -1883,9 +1883,18 @@ dependencies = [
 name = "cyancia_selection_tool"
 version = "0.1.0"
 dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "cyancia_canvas",
  "cyancia_image",
+ "cyancia_render",
  "cyancia_tools",
+ "cyancia_utils",
+ "encase",
+ "glam",
  "gpui",
+ "wesl",
+ "wgpu 29.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1952,6 +1961,7 @@ dependencies = [
  "log",
  "parking_lot",
  "uuid",
+ "wgpu 29.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

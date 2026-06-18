@@ -44,6 +44,7 @@ impl CanvasTransform {
         self
     }
 
+    // TODO Make these methods always return an vec2
     pub fn window_to_widget(&self, point: Vec2) -> Option<Vec2> {
         if self.widget_bounds.contains(point) {
             Some(point - self.widget_bounds.min)

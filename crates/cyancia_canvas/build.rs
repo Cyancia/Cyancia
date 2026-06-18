@@ -11,4 +11,8 @@ fn main() {
         &"package::canvas_present".parse().unwrap(),
         "canvas_present",
     );
+    shaders.build_artifact(
+        &"package::marching_ants".parse().unwrap(),
+        "marching_ants",
+    );
 }

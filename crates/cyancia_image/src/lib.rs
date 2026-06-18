@@ -30,6 +30,7 @@ pub fn init(cx: &mut App) {
 #[derive(Debug)]
 pub struct CImage {
     size: UVec2,
+    // TODO This should be in canvas, not image
     pub active_layer: LayerId,
     texel_type: TexelType,
     layers: LayerStack,

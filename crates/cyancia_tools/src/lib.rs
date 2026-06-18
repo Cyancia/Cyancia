@@ -6,6 +6,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Window, div,
 };
 use uuid::Uuid;
+use wgpu::Texture;
 
 pub fn init(cx: &mut App) {
     cx.set_global(ToolFunctionRegistry::default());
@@ -39,15 +40,16 @@ wrapper! {
 pub trait ToolFunction: Send + Sync + 'static + Sized {
     fn new(cx: &mut Context<Self>) -> Self;
     fn id() -> ToolId;
-    fn activate(&mut self, _: &mut Context<Self>) {}
-    fn hover(&mut self, _: &MouseMoveEvent, _: &mut Context<Self>) {}
-    fn begin(&mut self, _: &MouseDownEvent, _: &mut Context<Self>) {}
-    fn update(&mut self, _: &MouseMoveEvent, _: &mut Context<Self>) {}
-    fn end(&mut self, _: &MouseUpEvent, _: &mut Context<Self>) {}
-    fn deactivate(&mut self, _: &mut Context<Self>) {}
-    fn tool_option_widget(&mut self, _: &mut Window, _: &mut Context<Self>) -> AnyElement {
+    fn activate(&mut self, _cx: &mut Context<Self>) {}
+    fn hover(&mut self, _mouse: &MouseMoveEvent, _cx: &mut Context<Self>) {}
+    fn begin(&mut self, _mouse: &MouseDownEvent, _cx: &mut Context<Self>) {}
+    fn update(&mut self, _mouse: &MouseMoveEvent, _cx: &mut Context<Self>) {}
+    fn end(&mut self, _mouse: &MouseUpEvent, _cx: &mut Context<Self>) {}
+    fn deactivate(&mut self, _cx: &mut Context<Self>) {}
+    fn tool_option_widget(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> AnyElement {
         div().into_any_element()
     }
+    fn paint_decoration(&mut self, canvas_surface: &Texture, _cx: &mut App) {}
 }
 
 pub struct ToolFunctionEntity<T: ToolFunction> {
