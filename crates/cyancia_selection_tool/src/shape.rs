@@ -65,7 +65,14 @@ impl ToolFunction for RectangularSelectionTool {
             return;
         };
 
-        state.cur_end_ps = end_pos.as_ivec2() + 1;
+        let cur_end_pos = if mouse.modifiers.shift {
+            // Square
+            let length = (end_pos.as_ivec2() - state.start_ps).min_element();
+            state.start_ps + IVec2::splat(length)
+        } else {
+            end_pos.as_ivec2()
+        };
+        state.cur_end_ps = cur_end_pos + 1;
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
@@ -73,14 +80,6 @@ impl ToolFunction for RectangularSelectionTool {
             return;
         };
         let canvas_id = canvas.id();
-
-        let Some(end_pos) = canvas
-            .transform
-            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
-        else {
-            return;
-        };
-        let end_pos = end_pos.as_ivec2() + 1;
 
         let Some(state) = self.state.take() else {
             return;
@@ -91,8 +90,8 @@ impl ToolFunction for RectangularSelectionTool {
         let selection_layer_id = canvas.image.selection_layer();
 
         let selection_pixels = IRect {
-            min: state.start_ps.min(end_pos),
-            max: state.start_ps.max(end_pos),
+            min: state.start_ps.min(state.cur_end_ps),
+            max: state.start_ps.max(state.cur_end_ps),
         };
         let affected_tiles = GpuTileStorageInner::pixel_rect_to_tile(selection_pixels);
 
