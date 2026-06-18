@@ -69,8 +69,8 @@ impl ToolFunction for RectangularSelectionTool {
         let selection_layer_id = canvas.image.selection_layer();
 
         let selection_pixels = IRect {
-            min: state.start_ps,
-            max: end_pos,
+            min: state.start_ps.min(end_pos),
+            max: state.start_ps.max(end_pos),
         };
         let affected_tiles = GpuTileStorageInner::pixel_rect_to_tile(selection_pixels);
 
