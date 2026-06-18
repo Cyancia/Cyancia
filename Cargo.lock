@@ -1646,6 +1646,7 @@ dependencies = [
  "cyancia_bucket_tool",
  "cyancia_canvas",
  "cyancia_image",
+ "cyancia_render",
  "cyancia_tools",
  "cyancia_undo",
  "cyancia_utils",

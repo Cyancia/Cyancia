@@ -14,6 +14,7 @@ cyancia_assets.workspace = true
 cyancia_bucket_tool.workspace = true
 cyancia_canvas.workspace = true
 cyancia_image.workspace = true
+cyancia_render.workspace = true
 cyancia_tools.workspace = true
 cyancia_undo.workspace = true
 cyancia_utils.workspace = true

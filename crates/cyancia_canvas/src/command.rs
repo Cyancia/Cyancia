@@ -104,6 +104,51 @@ impl TileReplaceCommand {
             new_tiles: Some((new_tiles, new_tile_indices)),
         }
     }
+
+    pub fn new_clear(
+        reason: Cow<'static, str>,
+        canvas: CanvasId,
+        device: &Device,
+        queue: &Queue,
+        layer_id: LayerId,
+        layer_storage: &DynamicLayerStorage,
+    ) -> Self {
+        let old_tiles = layer_storage.texture().and_then(|layer_texture| {
+            let old_texture = device.create_texture(&TextureDescriptor {
+                label: Some("old_texture"),
+                size: layer_texture.texture().size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: layer_texture.texture().format(),
+                usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+
+            let mut ec = device.create_command_encoder(&Default::default());
+
+            ec.copy_texture_to_texture(
+                layer_texture.texture().as_image_copy(),
+                old_texture.as_image_copy(),
+                old_texture.size(),
+            );
+
+            queue.submit([ec.finish()]);
+
+            Some((
+                old_texture,
+                layer_storage.iter_tiles().map(|(i, _, _)| i).collect(),
+            ))
+        });
+
+        Self {
+            reason,
+            canvas,
+            layer: layer_id,
+            old_tiles,
+            new_tiles: None,
+        }
+    }
 }
 
 fn apply_tile_replace(

@@ -84,6 +84,11 @@
       "shortcut": "shift-l",
       "action_name": "SwitchToPolygonSelectionToolAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-d",
+      "action_name": "DeleteSelectionAction",
+      "context": "main_view"
     }
   ]
 }
