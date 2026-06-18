@@ -5,4 +5,5 @@ fn main() {
     compiler.add_package(&cyancia_image::image::PACKAGE);
     compiler.build_artifact(&"package::render".parse().unwrap(), "render");
     compiler.build_artifact(&"package::composite".parse().unwrap(), "composite");
+    compiler.build_artifact(&"package::preview".parse().unwrap(), "preview");
 }

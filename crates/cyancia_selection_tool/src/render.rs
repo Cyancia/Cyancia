@@ -1,4 +1,7 @@
+use std::{sync::OnceLock, time::Instant};
+
 use bevy_math::IRect;
+use cyancia_canvas::control::CanvasTransform;
 use cyancia_image::{
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
@@ -16,8 +19,9 @@ use wgpu::{
     ComputePipelineDescriptor, Device, Extent3d, FragmentState, IndexFormat, LoadOp, Operations,
     PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor,
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, StoreOp, Texture, TextureDimension, TextureUsages, TextureViewDimension,
-    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    StorageTextureAccess, StoreOp, Texture, TextureDimension, TextureFormat, TextureUsages,
+    TextureView, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat,
+    VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::{TextureDescriptor, TextureViewDescriptor},
 };
@@ -129,7 +133,7 @@ impl SelectionPipeline {
                 entry_point: "vertex".into(),
                 compilation_options: Default::default(),
                 buffers: &[VertexBufferLayout {
-                    array_stride: IVec2::min_size().into(),
+                    array_stride: 8,
                     step_mode: VertexStepMode::Vertex,
                     attributes: &[
                         // Position in pixel space
@@ -431,10 +435,181 @@ impl SelectionPipeline {
             );
         }
 
-        unsafe { device.start_graphics_debugger_capture() };
         queue.submit([ec.finish()]);
-        unsafe { device.stop_graphics_debugger_capture() };
 
         Some((output_buffer, output_tiles.into_iter().collect()))
     }
+}
+
+#[derive(ShaderType, Debug, Clone, Copy)]
+pub struct CanvasUniform {
+    pub pixel_to_widget: Mat3,
+    pub widget_min: Vec2,
+    pub screen_size: Vec2,
+    pub time: f32,
+}
+
+pub struct SelectionPreviewPipeline {
+    layout: BindGroupLayout,
+    pipeline: RenderPipeline,
+}
+
+impl SelectionPreviewPipeline {
+    pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("selection_preview_layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(CanvasUniform::min_size()),
+                },
+                count: None,
+            }],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("selection_preview_pipeline_layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("selection_preview_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("preview").into()),
+        });
+
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("selection_preview_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vertex"),
+                compilation_options: Default::default(),
+                buffers: &[VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                }],
+            },
+
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fragment"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: surface_format,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            primitive: Default::default(),
+            depth_stencil: Default::default(),
+            multisample: Default::default(),
+            multiview_mask: Default::default(),
+            cache: Default::default(),
+        });
+
+        Self { layout, pipeline }
+    }
+
+    pub fn draw(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        line_vertices_ps: &[Vec2],
+        canvas_surface: &TextureView,
+        canvas_transform: &CanvasTransform,
+    ) {
+        let mut vertices = Vec::with_capacity(line_vertices_ps.len() * 6);
+        for w in line_vertices_ps.windows(2) {
+            push_quad(&mut vertices, w[0], w[1], 1.0);
+        }
+
+        let vertices_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("selection_preview_vertices"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: BufferUsages::VERTEX,
+        });
+
+        let screen_size = canvas_surface.texture().size();
+
+        static FIRST_DRAW: OnceLock<Instant> = OnceLock::new();
+        let canvas_params_buffer = {
+            let mut b = DynamicBuffer::new(Some("canvas_params_buffer"), BufferUsages::UNIFORM);
+            b.push(&CanvasUniform {
+                pixel_to_widget: canvas_transform.pixel_to_widget,
+                widget_min: canvas_transform.widget_bounds.min,
+                screen_size: Vec2::new(screen_size.width as f32, screen_size.height as f32),
+                time: FIRST_DRAW
+                    .get_or_init(|| Instant::now())
+                    .elapsed()
+                    .as_secs_f32(),
+            });
+            b.write_buffer(device, queue);
+            b.into_inner_buffer().unwrap()
+        };
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("canvas_params_bind_group"),
+            layout: &self.layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: canvas_params_buffer.as_entire_binding(),
+            }],
+        });
+
+        let mut ec = device.create_command_encoder(&Default::default());
+
+        {
+            let mut pass = ec.begin_render_pass(&RenderPassDescriptor {
+                label: Some("selection_preview_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: canvas_surface,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_vertex_buffer(0, vertices_buffer.slice(..));
+            pass.draw(0..vertices.len() as u32, 0..1);
+        }
+
+        queue.submit([ec.finish()]);
+    }
+}
+
+fn push_quad(vertices: &mut Vec<Vec2>, last_point: Vec2, this_point: Vec2, width: f32) {
+    let delta = this_point - last_point;
+    let perp = delta.perp().normalize();
+    let half_width = width / 2.0;
+
+    let start_left = last_point - perp * half_width;
+    let start_right = last_point + perp * half_width;
+    let end_left = this_point - perp * half_width;
+    let end_right = this_point + perp * half_width;
+
+    vertices.push(start_left);
+    vertices.push(end_right);
+    vertices.push(end_left);
+
+    vertices.push(start_right);
+    vertices.push(end_right);
+    vertices.push(start_left);
 }

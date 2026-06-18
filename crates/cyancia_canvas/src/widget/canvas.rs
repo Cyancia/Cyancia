@@ -150,11 +150,19 @@ impl CanvasWidget {
             canvas.image.root_id(),
             canvas.image.selection_layer(),
         );
-        let (submission_index, rx) = self
-            .renderer
-            .draw(&render_context.device, &render_context.queue);
 
         let device = render_context.device.clone();
+        let queue = render_context.queue.clone();
+        let tool_proxy_id = canvas.tool_proxy_id();
+
+        let (submission_index, rx) = cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            self.renderer.draw(&device, &queue, |canvas_surface| {
+                tool_proxies
+                    .get_mut(&tool_proxy_id)
+                    .canvas_overlay(canvas_surface, cx);
+            })
+        });
+
         let render_task = cx.background_spawn(async move {
             device
                 .poll(PollType::Wait {

@@ -6,7 +6,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Window, div,
 };
 use uuid::Uuid;
-use wgpu::Texture;
+use wgpu::{Texture, TextureView};
 
 pub fn init(cx: &mut App) {
     cx.set_global(ToolFunctionRegistry::default());
@@ -49,7 +49,9 @@ pub trait ToolFunction: Send + Sync + 'static + Sized {
     fn tool_option_widget(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> AnyElement {
         div().into_any_element()
     }
-    fn paint_decoration(&mut self, canvas_surface: &Texture, _cx: &mut App) {}
+    // TODO This should return gpui element and take canvas bounds + window + cx as parameter only,
+    //      once gpui supports wgpu backend and allow custom shaders.
+    fn canvas_overlay(&mut self, _canvas_surface: &TextureView, _cx: &mut App) {}
 }
 
 pub struct ToolFunctionEntity<T: ToolFunction> {
@@ -65,6 +67,7 @@ pub trait ErasedToolFunction {
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App);
     fn deactivate(&mut self, cx: &mut App);
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> AnyElement;
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App);
 }
 
 impl<T: ToolFunction> ErasedToolFunction for ToolFunctionEntity<T> {
@@ -100,6 +103,11 @@ impl<T: ToolFunction> ErasedToolFunction for ToolFunctionEntity<T> {
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> AnyElement {
         self.entity
             .update(cx, |entity, cx| entity.tool_option_widget(window, cx))
+    }
+
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+        self.entity
+            .update(cx, |entity, cx| entity.canvas_overlay(canvas_surface, cx));
     }
 }
 
@@ -196,6 +204,12 @@ impl ToolProxy {
     pub fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
         let state = self.state.as_mut()?;
         Some(state.current_function.tool_option_widget(window, cx))
+    }
+
+    pub fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+        if let Some(state) = self.state.as_mut() {
+            state.current_function.canvas_overlay(canvas_surface, cx);
+        }
     }
 }
 

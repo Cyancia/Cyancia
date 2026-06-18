@@ -147,17 +147,23 @@ impl CanvasRenderer {
         &self,
         device: &Device,
         queue: &Queue,
+        post_draw: impl FnOnce(&TextureView),
     ) -> (
         SubmissionIndex,
         futures::channel::oneshot::Receiver<Arc<RenderImage>>,
     ) {
         let mut ec = device.create_command_encoder(&Default::default());
         self.render_pipeline.draw(&mut ec);
+        queue.submit([ec.finish()]);
+
+        post_draw(&self.buffer.as_ref().unwrap().0);
 
         let (texture, buffer) = self.buffer.as_ref().expect("buffer not initialized");
         let buffer = buffer.clone();
         let texture_size = texture.texture().size();
         let texel_size = texture.texture().format().block_copy_size(None).unwrap();
+
+        let mut ec = device.create_command_encoder(&Default::default());
 
         ec.copy_texture_to_buffer(
             texture.texture().as_image_copy(),
