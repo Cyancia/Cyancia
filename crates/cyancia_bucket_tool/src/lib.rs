@@ -25,6 +25,7 @@ pub fn init(cx: &mut App) {
 }
 
 // TODO Blending mode and contiguous
+//      Hold shift to disable contiguous
 pub struct BucketTool {
     pub threshold: f32,
     pub alpha_threshold: f32,
