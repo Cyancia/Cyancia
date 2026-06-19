@@ -340,9 +340,7 @@ impl SelectionPipeline {
             op,
             &selection,
             &target_selection,
-        );
-
-        Some(selection)
+        )
     }
 
     /// Render the selection mesh with only affected tiles.
@@ -516,9 +514,7 @@ impl SelectionPipeline {
             op,
             &output_tiles,
             target_selection_binding,
-        );
-
-        Some(output_tiles)
+        )
     }
 
     /// Blend the selection from inout texture with target selection, then write it back to inout_texture.

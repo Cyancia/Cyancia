@@ -65,6 +65,7 @@ impl TileReplaceCommand {
 
             let mut ec = device.create_command_encoder(&Default::default());
 
+            ec.push_debug_group("copy_old_tiles");
             for (dst_layer, index) in old_tile_indices.iter().enumerate() {
                 let src_layer = layer_storage.get_tile_layer(*index).unwrap();
                 ec.copy_texture_to_texture(
@@ -91,6 +92,7 @@ impl TileReplaceCommand {
                     GpuTileStorageInner::TILE_COPY_SIZE,
                 );
             }
+            ec.pop_debug_group();
 
             queue.submit([ec.finish()]);
 
@@ -128,11 +130,13 @@ impl TileReplaceCommand {
 
             let mut ec = device.create_command_encoder(&Default::default());
 
+            ec.push_debug_group("copy_old_tiles");
             ec.copy_texture_to_texture(
                 layer_texture.texture().as_image_copy(),
                 old_texture.as_image_copy(),
                 old_texture.size(),
             );
+            ec.pop_debug_group();
 
             queue.submit([ec.finish()]);
 
@@ -181,6 +185,7 @@ fn apply_tile_replace(
 
         let layer_texture = layer.texture().unwrap().texture();
 
+        ec.push_debug_group("replace_old_with_new");
         for (src_layer, tile_index) in tile_indices.iter().enumerate() {
             let dst_layer = layer.get_tile_layer(*tile_index).unwrap();
             ec.copy_texture_to_texture(
@@ -210,8 +215,10 @@ fn apply_tile_replace(
             dirty_min = dirty_min.min(*tile_index);
             dirty_max = dirty_max.max(*tile_index);
         }
+        ec.pop_debug_group();
     }
 
+    ec.push_debug_group("clear_old_without_new");
     for tile_index in clear_tile_indices {
         let Some(dst_layer) = layer.get_tile_layer(tile_index) else {
             continue;
@@ -231,6 +238,7 @@ fn apply_tile_replace(
         dirty_min = dirty_min.min(tile_index);
         dirty_max = dirty_max.max(tile_index);
     }
+    ec.pop_debug_group();
 
     queue.submit([ec.finish()]);
 
