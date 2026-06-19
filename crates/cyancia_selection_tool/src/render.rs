@@ -5,7 +5,8 @@ use cyancia_canvas::{CanvasAppExt, command::TileReplaceCommand, control::CanvasT
 use cyancia_image::{
     texel::TexelType,
     tile::{
-        DynamicLayerStorage, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, LayerBindingData,
+        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
+        LayerBindingData,
     },
 };
 use cyancia_render::{
@@ -55,7 +56,7 @@ pub fn generate_cmd(
         .unwrap_or_else(|| tiles.empty_layer_binding(selection_layer_format));
 
     let mut pipeline = SelectionPipeline::new(&render_context.device, selection_layer_format);
-    let (output_buffer, output_tiles) = pipeline.draw(
+    let selection = pipeline.draw(
         &render_context.device,
         &render_context.queue,
         affected_tiles,
@@ -73,8 +74,8 @@ pub fn generate_cmd(
         &render_context.queue,
         selection_layer_id,
         &selection_layer,
-        output_tiles,
-        output_buffer,
+        selection.iter_tiles().map(|(i, _, _)| i).collect(),
+        selection.texture().unwrap().texture().clone(),
     ))
 }
 
@@ -148,6 +149,7 @@ pub struct SelectionPipeline {
     render_pipeline: RenderPipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
+    layer_format: TexelType,
 }
 
 impl SelectionPipeline {
@@ -295,6 +297,7 @@ impl SelectionPipeline {
             render_pipeline,
             composite_layout,
             composite_pipeline,
+            layer_format,
         }
     }
 
@@ -310,36 +313,34 @@ impl SelectionPipeline {
         op: SelectionOperation,
         target_selection: LayerBindingData,
         target_selection_tile_indices: IndexSet<IVec2>,
-    ) -> Option<(Texture, Vec<IVec2>)> {
+    ) -> Option<DynamicLayerStorage> {
         let mut ec = device.create_command_encoder(&Default::default());
 
-        let (output_buffer, output_tiles, output_tile_info_buffer) = self.render(
+        let selection = self.render_with_target_selection_reserved(
             device,
             queue,
             &mut ec,
             tile_aabb,
             vertices,
             indices,
-            &target_selection,
             target_selection_tile_indices,
         )?;
-        self.composite(
+        self.composite_with_target_selection_reserved(
             device,
             queue,
             &mut ec,
             op,
-            &output_buffer,
-            &output_tiles,
-            &output_tile_info_buffer,
+            &selection,
             &target_selection,
         );
 
         queue.submit([ec.finish()]);
 
-        Some((output_buffer, output_tiles.into_iter().collect()))
+        Some(selection)
     }
 
-    pub fn render(
+    /// Render the selection mesh with only affected tiles.
+    pub fn render_tight(
         &mut self,
         device: &Device,
         queue: &Queue,
@@ -348,9 +349,52 @@ impl SelectionPipeline {
         vertices: &[Vec2],
         // Must be in counter-clockwise order
         indices: &[u32],
-        target_selection: &LayerBindingData,
-        target_selection_tile_indices: IndexSet<IVec2>,
-    ) -> Option<(Texture, IndexSet<IVec2>, Buffer)> {
+    ) -> Option<DynamicLayerStorage> {
+        self.render_internal(
+            device,
+            queue,
+            ec,
+            tile_aabb,
+            vertices,
+            indices,
+            IndexSet::new(),
+        )
+    }
+
+    /// Render the selection mesh with affected tiles and reserve tiles that exist in target selection.
+    pub fn render_with_target_selection_reserved(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        ec: &mut CommandEncoder,
+        tile_aabb: IRect,
+        vertices: &[Vec2],
+        // Must be in counter-clockwise order
+        indices: &[u32],
+        reserved_output_tiles: IndexSet<IVec2>,
+    ) -> Option<DynamicLayerStorage> {
+        self.render_internal(
+            device,
+            queue,
+            ec,
+            tile_aabb,
+            vertices,
+            indices,
+            reserved_output_tiles,
+        )
+    }
+
+    fn render_internal(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        ec: &mut CommandEncoder,
+        tile_aabb: IRect,
+        vertices: &[Vec2],
+        // Must be in counter-clockwise order
+        indices: &[u32],
+        reserved_output_tiles: IndexSet<IVec2>,
+    ) -> Option<DynamicLayerStorage> {
         if indices.is_empty() || vertices.is_empty() || tile_aabb.is_empty() {
             return None;
         }
@@ -376,7 +420,7 @@ impl SelectionPipeline {
             DynamicBuffer::new(Some("cur_tile_index_buffer"), BufferUsages::UNIFORM);
         let mut cur_rendering_index_offsets = Vec::with_capacity(n_render_tiles);
 
-        let mut output_tiles = target_selection_tile_indices;
+        let mut output_tiles = reserved_output_tiles;
 
         for x in tile_aabb.min.x..tile_aabb.max.x {
             for y in tile_aabb.min.y..tile_aabb.max.y {
@@ -389,41 +433,19 @@ impl SelectionPipeline {
             }
         }
 
-        let output_tile_info_buffer = {
-            let mut b = BufferVec::new(
-                Some("selection_output_tile_info_buffer".to_string()),
-                BufferUsages::STORAGE,
-            );
-            for tile in &output_tiles {
-                b.push(&GpuTileInfo {
-                    index: *tile,
-                    origin: *tile * GpuTileStorageInner::TILE_SIZE as i32,
-                });
-            }
-            b.write_buffer(device, queue);
-            b.into_inner_buffer().unwrap()
-        };
-
         cur_rendering_index_buffer.write_buffer(device, queue);
 
-        let n_output_tiles = output_tiles.len() as u32;
-
-        let output_buffer = device.create_texture(&TextureDescriptor {
-            label: Some("selection_output_buffer"),
-            size: Extent3d {
-                width: GpuTileStorageInner::TILE_SIZE,
-                height: GpuTileStorageInner::TILE_SIZE,
-                depth_or_array_layers: n_output_tiles,
+        let mut selection = DynamicLayerStorage::new(
+            device.clone().into(),
+            queue.clone().into(),
+            GpuLayerInfo {
+                texel_type: self.layer_format,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: target_selection.texture.texture().format(),
-            usage: TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::STORAGE_BINDING
-                | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
+        );
+
+        for tile in &output_tiles {
+            selection.get_tile_or_allocate(*tile);
+        }
 
         let render_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("selection_render_bind_group"),
@@ -438,11 +460,8 @@ impl SelectionPipeline {
             .into_iter()
             .zip(cur_rendering_index_offsets)
         {
-            let target_view = output_buffer.create_view(&TextureViewDescriptor {
-                base_array_layer: output_tiles.get_index_of(&tile_index).unwrap() as u32,
-                array_layer_count: Some(1),
-                ..Default::default()
-            });
+            let target_view = selection.get_tile(tile_index).unwrap();
+
             let mut pass = ec.begin_render_pass(&RenderPassDescriptor {
                 label: Some(&format!(
                     "selection_render_pass_x{}_y{}",
@@ -469,18 +488,46 @@ impl SelectionPipeline {
             pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
         }
 
-        Some((output_buffer, output_tiles, output_tile_info_buffer))
+        Some(selection)
     }
 
-    pub fn composite(
+    pub fn composite_tight(
         &self,
         device: &Device,
         queue: &Queue,
         ec: &mut CommandEncoder,
         op: SelectionOperation,
-        inout_texture: &Texture,
-        inout_tiles: &IndexSet<IVec2>,
-        inout_tile_info_buffer: &Buffer,
+        input_selection: &DynamicLayerStorage,
+        target_selection: &DynamicLayerStorage,
+        target_selection_binding: &LayerBindingData,
+    ) -> Option<DynamicLayerStorage> {
+        let mut output_tiles = input_selection.deep_clone();
+        for (tile, _, _) in target_selection.iter_tiles() {
+            output_tiles.get_tile_or_allocate(tile);
+        }
+
+        self.composite_with_target_selection_reserved(
+            device,
+            queue,
+            ec,
+            op,
+            &output_tiles,
+            target_selection_binding,
+        );
+
+        Some(output_tiles)
+    }
+
+    /// Blend the selection from inout texture with target selection, then write it back to inout_texture.
+    /// The inout texture must ensure it contains the area of target selection. Otherwise the result will
+    /// be incomplete.
+    pub fn composite_with_target_selection_reserved(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        ec: &mut CommandEncoder,
+        op: SelectionOperation,
+        inout_selection: &DynamicLayerStorage,
         target_selection: &LayerBindingData,
     ) {
         let composite_params_buffer = {
@@ -491,11 +538,6 @@ impl SelectionPipeline {
             b.write_buffer(device, queue);
             b
         };
-
-        let output_buffer_view = inout_texture.create_view(&TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::D2Array),
-            ..Default::default()
-        });
 
         let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("selection_composite_bind_group"),
@@ -511,11 +553,14 @@ impl SelectionPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&output_buffer_view),
+                    resource: BindingResource::TextureView(&inout_selection.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: inout_tile_info_buffer.as_entire_binding(),
+                    resource: inout_selection
+                        .tile_info_buffer()
+                        .unwrap()
+                        .as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 4,
@@ -535,7 +580,7 @@ impl SelectionPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                inout_tiles.len() as u32,
+                inout_selection.len() as u32,
             );
         }
     }

@@ -7,7 +7,7 @@ use encase::ShaderType;
 use glam::{IVec2, UVec2};
 use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, TextureAspect,
     TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,
@@ -323,6 +323,7 @@ impl GpuTileStorageInner {
     }
 }
 
+// TODO Remove device and queue fields, add texture label
 pub struct DynamicLayerStorage {
     device: Arc<Device>,
     queue: Arc<Queue>,
@@ -336,6 +337,7 @@ impl DynamicLayerStorage {
     pub const GROWTH_RATE: f32 = 1.5;
     pub const TILE_SIZE: u32 = GpuTileStorageInner::TILE_SIZE;
 
+    // TODO allow customize usage and label
     pub fn new(device: Arc<Device>, queue: Arc<Queue>, info: GpuLayerInfo) -> Self {
         Self {
             device,
@@ -393,6 +395,8 @@ impl DynamicLayerStorage {
         }
     }
 
+    // TODO Add another api allocate_tiles(tiles: impl IntoIterator<Item = IVec2>)
+
     pub fn get_tile_or_allocate(&mut self, coord: IVec2) -> Arc<TextureView> {
         if let Some(tile) = self.tiles.get(&coord) {
             return tile.clone();
@@ -431,7 +435,8 @@ impl DynamicLayerStorage {
                 usage: TextureUsages::TEXTURE_BINDING
                     | TextureUsages::COPY_SRC
                     | TextureUsages::COPY_DST
-                    | TextureUsages::STORAGE_BINDING,
+                    | TextureUsages::STORAGE_BINDING
+                    | TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             });
 
@@ -506,7 +511,8 @@ impl DynamicLayerStorage {
             usage: TextureUsages::TEXTURE_BINDING
                 | TextureUsages::COPY_SRC
                 | TextureUsages::COPY_DST
-                | TextureUsages::STORAGE_BINDING,
+                | TextureUsages::STORAGE_BINDING
+                | TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
 
@@ -551,6 +557,10 @@ impl DynamicLayerStorage {
         };
     }
 
+    pub fn iter_tile_indices(&self) -> impl Iterator<Item = IVec2> {
+        self.tiles.keys().copied()
+    }
+
     pub fn iter_tiles(&self) -> impl Iterator<Item = (IVec2, u32, &Arc<TextureView>)> {
         self.tiles.iter().map(|(coord, texture)| {
             (
@@ -569,7 +579,7 @@ impl DynamicLayerStorage {
         self.tiles.is_empty()
     }
 
-    pub fn deep_clone(&self) -> Self {
+    pub fn create_allocated_empty_sibling(&self) -> Self {
         if self.tiles.is_empty() {
             return Self::new(self.device.clone(), self.queue.clone(), self.layer_info);
         }
@@ -589,21 +599,10 @@ impl DynamicLayerStorage {
             usage: TextureUsages::TEXTURE_BINDING
                 | TextureUsages::COPY_SRC
                 | TextureUsages::COPY_DST
-                | TextureUsages::STORAGE_BINDING,
+                | TextureUsages::STORAGE_BINDING
+                | TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-
-        let mut ce = self.device.create_command_encoder(&Default::default());
-        ce.copy_texture_to_texture(
-            texture.as_image_copy(),
-            new_texture.as_image_copy(),
-            Extent3d {
-                width: Self::TILE_SIZE,
-                height: Self::TILE_SIZE,
-                depth_or_array_layers: texture.depth_or_array_layers(),
-            },
-        );
-        self.queue.submit([ce.finish()]);
 
         let new_texture_view = Arc::new(new_texture.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2Array),
@@ -639,5 +638,21 @@ impl DynamicLayerStorage {
             tile_info_buffer: new_tile_info_buffer,
             layer_info: self.layer_info,
         }
+    }
+
+    pub fn deep_clone(&self) -> Self {
+        let sibling = self.create_allocated_empty_sibling();
+
+        if !sibling.is_empty() {
+            let mut ce = self.device.create_command_encoder(&Default::default());
+            ce.copy_texture_to_texture(
+                self.texture.as_ref().unwrap().texture().as_image_copy(),
+                sibling.texture.as_ref().unwrap().texture().as_image_copy(),
+                sibling.texture.as_ref().unwrap().texture().size(),
+            );
+            self.queue.submit([ce.finish()]);
+        }
+
+        sibling
     }
 }

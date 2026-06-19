@@ -1,6 +1,6 @@
 use cyancia_image::{
     texel::{TexelFormat, TexelType},
-    tile::{GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},
@@ -120,10 +120,7 @@ pub struct JumpParams {
 
 struct BucketResultInternal {
     bucket_params_buffer: DynamicBuffer<BucketParamsInner>,
-    mask_texture: Texture,
-    mask_texture_view: TextureView,
-    mask_tile_indices: IndexSet<IVec2>,
-    mask_tile_info_buffer: Buffer,
+    mask: DynamicLayerStorage,
 }
 
 pub struct Bucket {
@@ -150,7 +147,8 @@ pub struct Bucket {
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
 
-    mask_format: TextureFormat,
+    output_layer_format: TexelType,
+    mask_format: TexelType,
 }
 
 impl std::fmt::Debug for Bucket {
@@ -164,8 +162,9 @@ impl Bucket {
         let mask_format = TexelType {
             format: TexelFormat::Alpha,
             depth: ref_texel_type.depth,
-        }
-        .wgpu_format();
+        };
+
+        let mask_texture_format = mask_format.wgpu_format();
 
         let seed_mode_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("seed_mode_layout"),
@@ -259,7 +258,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: mask_format,
+                        format: mask_texture_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -314,7 +313,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
-                        format: mask_format,
+                        format: mask_texture_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -378,7 +377,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
-                        format: mask_format,
+                        format: mask_texture_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -476,7 +475,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
-                        format: mask_format,
+                        format: mask_texture_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -486,7 +485,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: mask_format,
+                        format: mask_texture_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -527,7 +526,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadOnly,
-                        format: mask_format,
+                        format: mask_texture_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -537,7 +536,7 @@ impl Bucket {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: mask_format,
+                        format: mask_texture_format,
                         view_dimension: TextureViewDimension::D2Array,
                     },
                     count: None,
@@ -813,11 +812,14 @@ impl Bucket {
             feather_resolve_pipeline,
             composite_layout,
             composite_pipeline,
+            output_layer_format: output_texel_type,
             mask_format,
         }
     }
 
-    #[tracing::instrument(name = "bucket_dispatch_composite", skip_all)]
+    /// Generate a mask with parameters then blend it with the dst_layer, outputting the result
+    /// with no empty tiles.
+    #[tracing::instrument(skip_all)]
     pub fn dispatch_composite(
         &self,
         device: &Device,
@@ -826,15 +828,12 @@ impl Bucket {
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
         dst_layer: &LayerBindingData,
-    ) -> Option<(Texture, IndexSet<IVec2>, Buffer)> {
+    ) -> Option<DynamicLayerStorage> {
         unsafe { device.start_graphics_debugger_capture() };
 
         let BucketResultInternal {
             bucket_params_buffer,
-            mask_texture_view,
-            mask_tile_indices,
-            mask_tile_info_buffer,
-            ..
+            mask,
         } = self.dispatch_mask_internal(
             device,
             queue,
@@ -843,51 +842,24 @@ impl Bucket {
             ref_layer_tile_info,
         )?;
 
-        let output_tiles = self.get_unempty_tiles(
-            device,
-            queue,
-            &mask_texture_view,
-            &mask_tile_info_buffer,
-            &mask_tile_indices,
-        );
-        if output_tiles.is_empty() {
+        unsafe { device.stop_graphics_debugger_capture() };
+
+        let output_tile_indices = self.get_unempty_tiles(device, queue, &mask);
+        if output_tile_indices.is_empty() {
             return None;
         }
 
-        let output_texture = device.create_texture(&TextureDescriptor {
-            label: Some("bucket_output_texture"),
-            size: Extent3d {
-                width: GpuTileStorageInner::TILE_SIZE,
-                height: GpuTileStorageInner::TILE_SIZE,
-                depth_or_array_layers: output_tiles.len() as u32,
+        let mut output_tiles = DynamicLayerStorage::new(
+            device.clone().into(),
+            queue.clone().into(),
+            GpuLayerInfo {
+                texel_type: self.output_layer_format,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: dst_layer.texture.texture().format(),
-            usage: TextureUsages::COPY_DST
-                | TextureUsages::COPY_SRC
-                | TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
-        });
-        let output_texture_view = output_texture.create_view(&TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::D2Array),
-            ..Default::default()
-        });
-        let output_tile_info_buffer = {
-            let mut b = BufferVec::new(
-                Some("bucket_output_tile_info_buffer".to_string()),
-                BufferUsages::STORAGE,
-            );
-            for i in output_tiles.iter().copied() {
-                b.push(&GpuTileInfo {
-                    index: i,
-                    origin: i * GpuTileStorageInner::TILE_SIZE as i32,
-                });
-            }
-            b.write_buffer(device, queue);
-            b.into_inner_buffer().unwrap()
-        };
+        );
+
+        for tile in output_tile_indices {
+            output_tiles.get_tile_or_allocate(tile);
+        }
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -901,19 +873,19 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask_texture_view),
+                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: mask_tile_info_buffer.as_entire_binding(),
+                    resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: BindingResource::TextureView(&output_texture_view),
+                    resource: BindingResource::TextureView(&output_tiles.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: output_tile_info_buffer.as_entire_binding(),
+                    resource: output_tiles.tile_info_buffer().unwrap().as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 5,
@@ -936,20 +908,26 @@ impl Bucket {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                mask_tile_indices.len() as u32,
+                mask.len() as u32,
             );
         }
 
         queue.submit([ec.finish()]);
 
-        unsafe { device.stop_graphics_debugger_capture() };
+        info!(
+            "Filled {} tiles: {:?}",
+            output_tiles.len(),
+            output_tiles
+                .iter_tiles()
+                .map(|(i, _, _)| i)
+                .collect::<Vec<_>>()
+        );
 
-        info!("Filled {} tiles: {:?}", output_tiles.len(), output_tiles);
-
-        Some((output_texture, output_tiles, output_tile_info_buffer))
+        Some(output_tiles)
     }
 
-    #[tracing::instrument(name = "bucket_dispatch_mask", skip_all)]
+    /// Generate a mask texture with parameters and shrink the mask to no empty tiles.
+    #[tracing::instrument(skip_all)]
     pub fn dispatch_mask(
         &self,
         device: &Device,
@@ -957,14 +935,8 @@ impl Bucket {
         bucket_params: &BucketParams,
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
-    ) -> Option<(Texture, IndexSet<IVec2>)> {
-        let BucketResultInternal {
-            mask_texture,
-            mask_texture_view,
-            mask_tile_indices,
-            mask_tile_info_buffer,
-            ..
-        } = self.dispatch_mask_internal(
+    ) -> Option<DynamicLayerStorage> {
+        let BucketResultInternal { mask, .. } = self.dispatch_mask_internal(
             device,
             queue,
             bucket_params,
@@ -972,39 +944,29 @@ impl Bucket {
             ref_layer_tile_info,
         )?;
 
-        let output_tiles = self.get_unempty_tiles(
-            device,
-            queue,
-            &mask_texture_view,
-            &mask_tile_info_buffer,
-            &mask_tile_indices,
-        );
+        let output_tiles = self.get_unempty_tiles(device, queue, &mask);
         if output_tiles.is_empty() {
             return None;
         }
 
-        let output_texture = device.create_texture(&TextureDescriptor {
-            label: None,
-            size: Extent3d {
-                width: GpuTileStorageInner::TILE_SIZE,
-                height: GpuTileStorageInner::TILE_SIZE,
-                depth_or_array_layers: output_tiles.len() as u32,
+        let mut output_texture = DynamicLayerStorage::new(
+            device.clone().into(),
+            queue.clone().into(),
+            GpuLayerInfo {
+                texel_type: self.mask_format,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: self.mask_format,
-            usage: TextureUsages::COPY_DST
-                | TextureUsages::COPY_SRC
-                | TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
-        });
+        );
+
+        for tile in output_tiles {
+            output_texture.get_tile_or_allocate(tile);
+        }
+
         let mut ec = device.create_command_encoder(&Default::default());
-        for (dst_layer, tile) in output_tiles.iter().enumerate() {
-            let src_layer = mask_tile_indices.get_index_of(tile).unwrap();
+        for (dst_layer, tile) in output_texture.iter_tile_indices().enumerate() {
+            let src_layer = mask.get_tile_layer(tile).unwrap();
             ec.copy_texture_to_texture(
                 TexelCopyTextureInfo {
-                    texture: &mask_texture,
+                    texture: mask.texture().unwrap().texture(),
                     mip_level: 0,
                     origin: Origin3d {
                         x: 0,
@@ -1014,7 +976,7 @@ impl Bucket {
                     aspect: TextureAspect::All,
                 },
                 TexelCopyTextureInfo {
-                    texture: &output_texture,
+                    texture: output_texture.texture().unwrap().texture(),
                     mip_level: 0,
                     origin: Origin3d {
                         x: 0,
@@ -1028,9 +990,11 @@ impl Bucket {
         }
         queue.submit([ec.finish()]);
 
-        Some((output_texture, output_tiles))
+        Some(output_texture)
     }
 
+    /// Generate a mask with parameters. Result can contain empty tiles.
+    #[tracing::instrument(skip_all)]
     fn dispatch_mask_internal(
         &self,
         device: &Device,
@@ -1070,60 +1034,37 @@ impl Bucket {
         bucket_params_buffer.push(&inner_params);
         bucket_params_buffer.write_buffer(device, queue);
 
-        let (mut mask_tile_indices, mut mask_tile_info_buffer) = if seed_transparent_mode {
+        let mask_tile_indices = if seed_transparent_mode {
             let image_tile_count = GpuTileStorageInner::calc_tile_count(inner_params.image_size);
             let mut mask_tile_indices =
                 IndexSet::with_capacity(image_tile_count.element_product() as usize);
-            let mut tile_info_buffer = BufferVec::new(
-                Some("transparent_mask_tile_info_buffer".to_string()),
-                BufferUsages::STORAGE,
-            );
 
             for y in 0..image_tile_count.y {
                 for x in 0..image_tile_count.x {
                     let index = IVec2::new(x as i32, y as i32);
                     mask_tile_indices.insert(index);
-                    tile_info_buffer.push(&GpuTileInfo {
-                        index,
-                        origin: index * GpuTileStorageInner::TILE_SIZE as i32,
-                    });
                 }
             }
 
-            tile_info_buffer.write_buffer(device, queue);
-            (
-                mask_tile_indices,
-                tile_info_buffer.into_inner_buffer().unwrap(),
-            )
+            mask_tile_indices
         } else {
-            (
-                ref_layer_tile_info.clone(),
-                ref_layer.tile_info_buffer.clone(),
-            )
+            ref_layer_tile_info.clone()
         };
 
         if mask_tile_indices.is_empty() {
             return None;
         }
 
-        let mut mask_texture = device.create_texture(&TextureDescriptor {
-            label: Some("mask_texture"),
-            size: Extent3d {
-                width: GpuTileStorageInner::TILE_SIZE,
-                height: GpuTileStorageInner::TILE_SIZE,
-                depth_or_array_layers: mask_tile_indices.len() as u32,
+        let mut mask = DynamicLayerStorage::new(
+            device.clone().into(),
+            queue.clone().into(),
+            GpuLayerInfo {
+                texel_type: self.mask_format,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: self.mask_format,
-            usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let mut mask_texture_view = mask_texture.create_view(&TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::D2Array),
-            ..Default::default()
-        });
+        );
+        for tile in mask_tile_indices {
+            mask.get_tile_or_allocate(tile);
+        }
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -1141,7 +1082,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&mask_texture_view),
+                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -1149,7 +1090,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: mask_tile_info_buffer.as_entire_binding(),
+                    resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                 },
             ],
         });
@@ -1162,77 +1103,24 @@ impl Bucket {
 
             pass.set_pipeline(&self.thresholding_pipeline);
             pass.set_bind_group(0, &thresholding_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
         }
 
         queue.submit([ec.finish()]);
 
-        let existing_mask_tiles = self.get_unempty_tiles(
-            device,
-            queue,
-            &mask_texture_view,
-            &mask_tile_info_buffer,
-            &mask_tile_indices,
-        );
+        let existing_mask_tiles = self.get_unempty_tiles(device, queue, &mask);
         for index in existing_mask_tiles {
+            mask.get_tile_or_allocate(index);
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     if dx == 0 && dy == 0 {
                         continue;
                     }
 
-                    mask_tile_indices.insert(index + IVec2::new(dx, dy));
+                    mask.get_tile_or_allocate(index + IVec2::new(dx, dy));
                 }
             }
         }
-
-        mask_tile_info_buffer = {
-            let mut b = BufferVec::new(
-                Some("mask_tile_info_buffer".to_string()),
-                BufferUsages::STORAGE,
-            );
-            for index in mask_tile_indices.iter().copied() {
-                b.push(&GpuTileInfo {
-                    index,
-                    origin: GpuTileStorageInner::TILE_SIZE as i32 * index,
-                });
-            }
-            b.write_buffer(device, queue);
-            b.into_inner_buffer().unwrap()
-        };
-
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        (mask_texture, mask_texture_view) = {
-            let t = device.create_texture(&TextureDescriptor {
-                label: Some("mask_texture"),
-                size: Extent3d {
-                    width: GpuTileStorageInner::TILE_SIZE,
-                    height: GpuTileStorageInner::TILE_SIZE,
-                    depth_or_array_layers: mask_tile_indices.len() as u32,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format: self.mask_format,
-                usage: TextureUsages::STORAGE_BINDING
-                    | TextureUsages::COPY_DST
-                    | TextureUsages::COPY_SRC,
-                view_formats: &[],
-            });
-            let v = t.create_view(&TextureViewDescriptor {
-                dimension: Some(TextureViewDimension::D2Array),
-                ..Default::default()
-            });
-            ec.copy_texture_to_texture(
-                mask_texture.as_image_copy(),
-                t.as_image_copy(),
-                mask_texture.size(),
-            );
-            (t, v)
-        };
-
-        queue.submit([ec.finish()]);
 
         let seed_texture_a_view = {
             let t = device.create_texture(&TextureDescriptor {
@@ -1240,7 +1128,7 @@ impl Bucket {
                 size: Extent3d {
                     width: GpuTileStorageInner::TILE_SIZE,
                     height: GpuTileStorageInner::TILE_SIZE,
-                    depth_or_array_layers: mask_tile_indices.len() as u32,
+                    depth_or_array_layers: mask.len() as u32,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
@@ -1260,7 +1148,7 @@ impl Bucket {
                 size: Extent3d {
                     width: GpuTileStorageInner::TILE_SIZE,
                     height: GpuTileStorageInner::TILE_SIZE,
-                    depth_or_array_layers: mask_tile_indices.len() as u32,
+                    depth_or_array_layers: mask.len() as u32,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
@@ -1288,11 +1176,11 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask_texture_view),
+                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 4,
-                    resource: mask_tile_info_buffer.as_entire_binding(),
+                    resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 5,
@@ -1351,7 +1239,7 @@ impl Bucket {
                 });
                 pass.set_pipeline(&self.close_gap_and_feather_seed_pipeline);
                 pass.set_bind_group(0, &bind_groups[1], &[jump_params_offsets[0]]);
-                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
             }
 
             {
@@ -1362,11 +1250,7 @@ impl Bucket {
                 pass.set_pipeline(&self.close_gap_and_feather_jump_pipeline);
                 for i in 0..jump_iterations {
                     pass.set_bind_group(0, &bind_groups[i % 2], &[jump_params_offsets[i]]);
-                    pass.dispatch_workgroups(
-                        dispatch_xy,
-                        dispatch_xy,
-                        mask_tile_indices.len() as u32,
-                    );
+                    pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
                 }
             }
 
@@ -1381,15 +1265,14 @@ impl Bucket {
                     &bind_groups[jump_iterations % 2],
                     &[jump_params_offsets[jump_iterations - 1]],
                 );
-                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
             }
 
             queue.submit([ec.finish()]);
         }
 
-        let total_pixels = mask_tile_indices.len() as u32
-            * GpuTileStorageInner::TILE_SIZE
-            * GpuTileStorageInner::TILE_SIZE;
+        let total_pixels =
+            mask.len() as u32 * GpuTileStorageInner::TILE_SIZE * GpuTileStorageInner::TILE_SIZE;
 
         let labels_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("labels_buffer"),
@@ -1408,7 +1291,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask_texture_view),
+                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -1416,7 +1299,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: mask_tile_info_buffer.as_entire_binding(),
+                    resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                 },
             ],
         });
@@ -1432,7 +1315,7 @@ impl Bucket {
             pass.push_debug_group("ccl_init_pass");
             pass.set_pipeline(&self.ccl_init_pipeline);
             pass.set_bind_group(0, &ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
             pass.pop_debug_group();
 
             pass.push_debug_group("ccl_merge_pass");
@@ -1441,40 +1324,27 @@ impl Bucket {
             let max_distance = (total_pixels as f32).sqrt().ceil() as u32;
             let ccl_iterations = (max_distance as f32).log2().ceil() as u32 + 1;
             for _ in 0..ccl_iterations {
-                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
             }
             pass.pop_debug_group();
 
             pass.push_debug_group("ccl_compress_pass");
             pass.set_pipeline(&self.ccl_compress_pipeline);
             pass.set_bind_group(0, &ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
             pass.pop_debug_group();
 
             pass.push_debug_group("ccl_extract_pass");
             pass.set_pipeline(&self.ccl_extract_pipeline);
             pass.set_bind_group(0, &ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
             pass.pop_debug_group();
         }
 
         queue.submit([ec.finish()]);
 
         if inner_params.grow > 0 {
-            let grown_mask_texture = device.create_texture(&TextureDescriptor {
-                label: Some("grown_mask_texture"),
-                size: mask_texture.size(),
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format: self.mask_format,
-                usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_SRC,
-                view_formats: &[],
-            });
-            let grown_mask_texture_view = grown_mask_texture.create_view(&TextureViewDescriptor {
-                dimension: Some(TextureViewDimension::D2Array),
-                ..Default::default()
-            });
+            let grown_mask = mask.create_allocated_empty_sibling();
 
             let grow_bind_group = device.create_bind_group(&BindGroupDescriptor {
                 label: Some("grow_bind_group"),
@@ -1486,15 +1356,15 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::TextureView(&mask_texture_view),
+                        resource: BindingResource::TextureView(&mask.texture().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 2,
-                        resource: BindingResource::TextureView(&grown_mask_texture_view),
+                        resource: BindingResource::TextureView(&grown_mask.texture().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 3,
-                        resource: mask_tile_info_buffer.as_entire_binding(),
+                        resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                     },
                 ],
             });
@@ -1508,13 +1378,12 @@ impl Bucket {
                 });
                 pass.set_pipeline(&self.grow_pipeline);
                 pass.set_bind_group(0, &grow_bind_group, &[]);
-                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask_tile_indices.len() as u32);
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
             }
 
             queue.submit([ec.finish()]);
 
-            mask_texture = grown_mask_texture;
-            mask_texture_view = grown_mask_texture_view;
+            mask = grown_mask;
         }
 
         match bucket_params.aa_approach {
@@ -1532,21 +1401,7 @@ impl Bucket {
                 });
                 fxaa_params_buffer.write_buffer(device, queue);
 
-                let smoothed_mask_texture = device.create_texture(&TextureDescriptor {
-                    label: Some("smoothed_mask_texture"),
-                    size: mask_texture.size(),
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: self.mask_format,
-                    usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_SRC,
-                    view_formats: &[self.mask_format],
-                });
-                let smoothed_mask_texture_view =
-                    smoothed_mask_texture.create_view(&TextureViewDescriptor {
-                        dimension: Some(TextureViewDimension::D2Array),
-                        ..Default::default()
-                    });
+                let smoothed_mask = mask.create_allocated_empty_sibling();
 
                 let fxaa_bind_group = device.create_bind_group(&BindGroupDescriptor {
                     label: Some("fxaa_bind_group"),
@@ -1554,15 +1409,17 @@ impl Bucket {
                     entries: &[
                         BindGroupEntry {
                             binding: 0,
-                            resource: BindingResource::TextureView(&mask_texture_view),
+                            resource: BindingResource::TextureView(&mask.texture().unwrap()),
                         },
                         BindGroupEntry {
                             binding: 1,
-                            resource: BindingResource::TextureView(&smoothed_mask_texture_view),
+                            resource: BindingResource::TextureView(
+                                &smoothed_mask.texture().unwrap(),
+                            ),
                         },
                         BindGroupEntry {
                             binding: 2,
-                            resource: mask_tile_info_buffer.as_entire_binding(),
+                            resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                         },
                         BindGroupEntry {
                             binding: 3,
@@ -1579,16 +1436,11 @@ impl Bucket {
                     });
                     pass.set_pipeline(&self.fxaa_pipeline);
                     pass.set_bind_group(0, &fxaa_bind_group, &[]);
-                    pass.dispatch_workgroups(
-                        dispatch_xy,
-                        dispatch_xy,
-                        mask_tile_indices.len() as u32,
-                    );
+                    pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
                 }
                 queue.submit([ec.finish()]);
 
-                mask_texture = smoothed_mask_texture;
-                mask_texture_view = smoothed_mask_texture_view;
+                mask = smoothed_mask;
             }
             BucketAntialiasApproach::Feather(radius) => 'a: {
                 if radius == 0 {
@@ -1607,11 +1459,11 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::TextureView(&mask_texture_view),
+                        resource: BindingResource::TextureView(&mask.texture().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 4,
-                        resource: mask_tile_info_buffer.as_entire_binding(),
+                        resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 5,
@@ -1670,11 +1522,7 @@ impl Bucket {
                     });
                     pass.set_pipeline(&self.close_gap_and_feather_seed_pipeline);
                     pass.set_bind_group(0, &bind_groups[1], &[jump_params_offsets[0]]);
-                    pass.dispatch_workgroups(
-                        dispatch_xy,
-                        dispatch_xy,
-                        mask_tile_indices.len() as u32,
-                    );
+                    pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
                 }
 
                 {
@@ -1685,11 +1533,7 @@ impl Bucket {
                     pass.set_pipeline(&self.close_gap_and_feather_jump_pipeline);
                     for i in 0..jump_iterations {
                         pass.set_bind_group(0, &bind_groups[i % 2], &[jump_params_offsets[i]]);
-                        pass.dispatch_workgroups(
-                            dispatch_xy,
-                            dispatch_xy,
-                            mask_tile_indices.len() as u32,
-                        );
+                        pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
                     }
                 }
 
@@ -1704,22 +1548,16 @@ impl Bucket {
                         &bind_groups[jump_iterations % 2],
                         &[jump_params_offsets[jump_iterations - 1]],
                     );
-                    pass.dispatch_workgroups(
-                        dispatch_xy,
-                        dispatch_xy,
-                        mask_tile_indices.len() as u32,
-                    );
+                    pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
                 }
                 queue.submit([ec.finish()]);
             }
         };
 
+        dbg!();
         Some(BucketResultInternal {
             bucket_params_buffer,
-            mask_texture,
-            mask_texture_view,
-            mask_tile_indices,
-            mask_tile_info_buffer,
+            mask,
         })
     }
 
@@ -1788,15 +1626,13 @@ impl Bucket {
         &self,
         device: &Device,
         queue: &Queue,
-        mask_texture_view: &TextureView,
-        mask_tile_info_buffer: &Buffer,
-        mask_tile_indices: &IndexSet<IVec2>,
+        mask: &DynamicLayerStorage,
     ) -> IndexSet<IVec2> {
         let mut ec = device.create_command_encoder(&Default::default());
 
         let is_not_empty_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("is_not_empty_buffer"),
-            size: mask_tile_indices.len() as u64 * 4,
+            size: mask.len() as u64 * 4,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
@@ -1807,11 +1643,11 @@ impl Bucket {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&mask_texture_view),
+                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: mask_tile_info_buffer.as_entire_binding(),
+                    resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -1830,7 +1666,7 @@ impl Bucket {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                mask_tile_indices.len() as u32,
+                mask.len() as u32,
             );
         }
 
@@ -1843,16 +1679,11 @@ impl Bucket {
         device.poll_indefinitely_for(si).unwrap();
 
         let is_not_empty = is_not_empty_readback_async.block_on().unwrap();
-        mask_tile_indices
-            .iter()
+        mask.iter_tiles()
             .zip(is_not_empty)
-            .filter_map(|(i, is_not_empty)| if is_not_empty == 1 { Some(*i) } else { None })
+            .filter_map(|((i, _, _), is_not_empty)| if is_not_empty == 1 { Some(i) } else { None })
             .collect()
     }
-}
-
-fn mask_buffer_size(tile_count: u32) -> u64 {
-    (GpuTileStorageInner::TILE_SIZE * GpuTileStorageInner::TILE_SIZE * tile_count / 4 * 8) as u64
 }
 
 fn create_jfa_params(

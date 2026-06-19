@@ -118,7 +118,7 @@ impl ToolFunction for BucketTool {
             &output_layer,
         );
 
-        if let Some((new_tiles, new_tile_indices, _)) = result {
+        if let Some(new_tiles) = result {
             let output_layer = tiles.get_layer(output_layer_id).unwrap();
             let cmd = TileReplaceCommand::new(
                 "Bucket Fill".into(),
@@ -127,8 +127,8 @@ impl ToolFunction for BucketTool {
                 &render_context.queue,
                 output_layer_id,
                 &output_layer,
-                new_tile_indices.into_iter().collect(),
-                new_tiles,
+                new_tiles.iter_tiles().map(|(i, _, _)| i).collect(),
+                new_tiles.texture().unwrap().texture().clone(),
             );
             drop(output_layer);
             cx.push_undo_command_to_current(cmd).log_err();
