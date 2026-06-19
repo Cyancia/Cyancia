@@ -160,8 +160,7 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
     if tile_index.z == 0xFFFFFFFFu {
         return;
     }
-    let selection = load_selection_mask_value(pixel_pos);
-    let packed = package::image::texture_unpack::pack_rgba8_texel(vec4f(color.rgb, color.a * selection));
+    let packed = package::image::texture_unpack::pack_rgba8_texel(color);
     textureStore(stroke_buffer_dst, vec2i(tile_index.xy), tile_index.z, packed);
 }
 

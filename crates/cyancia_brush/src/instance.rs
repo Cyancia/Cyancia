@@ -33,7 +33,7 @@ use crate::{
         DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
         LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
         OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
-        StrokeBoundsNode, TimesNode,
+        SelectionMaskNode, StrokeBoundsNode, TimesNode,
     },
 };
 
@@ -506,6 +506,7 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     nodes.register::<EllipticalMaskNode>();
     nodes.register::<BlendWithInputNode>();
     nodes.register::<BlendWithLayerNode>();
+    nodes.register::<SelectionMaskNode>();
 
     nodes.into()
 }
@@ -527,6 +528,7 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphPostproce
     nodes.register::<EllipticalMaskNode>();
     nodes.register::<BlendWithInputNode>();
     nodes.register::<BlendWithLayerNode>();
+    nodes.register::<SelectionMaskNode>();
 
     nodes.into()
 }

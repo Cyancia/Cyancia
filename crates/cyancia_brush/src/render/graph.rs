@@ -1413,3 +1413,46 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputRequiredSpacingNo
         Ok(())
     }
 }
+
+#[derive(Default, Clone)]
+pub struct SelectionMaskNode;
+
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for SelectionMaskNode {
+    fn name(&self) -> &'static str {
+        "Selection Mask"
+    }
+
+    fn header_color(&self, cx: &App) -> Rgba {
+        random_oklch!(SelectionMaskNode, cx)
+    }
+
+    fn create_inputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![GraphDefaultInputSlot::new::<Vec2FType>(
+            "Position".into(),
+            Vec2::ZERO,
+        )]
+    }
+
+    fn create_outputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<F32Type>("Value".to_string())]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let input = ctx.get_input(0)?;
+        let output = ctx.get_output(0)?;
+        Ok(format!(
+            "let {} = load_selection_mask_value(vec2i({}));\n",
+            output, input
+        ))
+    }
+}
