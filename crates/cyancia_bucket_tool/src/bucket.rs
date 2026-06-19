@@ -714,6 +714,36 @@ impl Bucket {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(u32::min_size()),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
+                        format: mask_texture_format,
+                        view_dimension: TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(GpuTileInfo::min_size()),
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -775,6 +805,7 @@ impl Bucket {
         ref_layer: &LayerBindingData,
         ref_layer_tile_info: IndexSet<IVec2>,
         dst_layer: &LayerBindingData,
+        selection: &LayerBindingData,
     ) -> Option<DynamicLayerStorage> {
         unsafe { device.start_graphics_debugger_capture() };
 
@@ -807,6 +838,10 @@ impl Bucket {
         for tile in output_tile_indices {
             output_tiles.get_tile_or_allocate(tile);
         }
+
+        let has_selection_buffer = self
+            .scan_pixels_pipeline
+            .scan_to_binary_buffer(device, queue, selection);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -841,6 +876,18 @@ impl Bucket {
                 BindGroupEntry {
                     binding: 6,
                     resource: dst_layer.tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: has_selection_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(&selection.texture),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: selection.tile_info_buffer.as_entire_binding(),
                 },
             ],
         });

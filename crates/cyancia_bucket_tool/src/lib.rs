@@ -86,6 +86,9 @@ impl ToolFunction for BucketTool {
         let output_layer_info = tiles.get_layer_info(output_layer_id).unwrap();
         let output_layer = tiles.get_layer_binding_or_empty(output_layer_id).unwrap();
 
+        let selection_layer = canvas.image.selection_layer();
+        let selection_layer = tiles.get_layer_binding_or_empty(selection_layer).unwrap();
+
         let image_size = canvas.image.size();
         let params = BucketParams {
             seed: position_ps.as_uvec2(),
@@ -116,6 +119,7 @@ impl ToolFunction for BucketTool {
             &ref_layer,
             ref_layer_info.into_iter().collect(),
             &output_layer,
+            &selection_layer,
         );
 
         if let Some(new_tiles) = result {

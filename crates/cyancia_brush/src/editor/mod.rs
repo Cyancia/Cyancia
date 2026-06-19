@@ -95,6 +95,8 @@ struct DeleteExternalVariable {
     id: ExternalVariableId,
 }
 
+// FIXME: Connection won't disconnect if I drag at a connected input slot.
+// FIXME: Modifying preset won't take effect immediately.
 pub struct BrushEditor {
     texture_storage: Arc<GraphTextureStorage>,
     main_function_storage: Arc<GraphFunctionStorage<BrushGraphData>>,
