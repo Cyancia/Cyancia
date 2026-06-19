@@ -58,6 +58,9 @@ pub fn generate_cmd(
         .unwrap_or_else(|| tiles.empty_layer_binding(selection_layer_format));
 
     let mut pipeline = SelectionPipeline::new(&render_context.device, selection_layer_format);
+    unsafe {
+        render_context.device.start_graphics_debugger_capture();
+    };
     let selection = pipeline.draw(
         &render_context.device,
         &render_context.queue,
@@ -68,6 +71,9 @@ pub fn generate_cmd(
         selection_layer_binding,
         selection_layer.iter_tiles().map(|(i, _, _)| i).collect(),
     )?;
+    unsafe {
+        render_context.device.stop_graphics_debugger_capture();
+    };
 
     Some(TileReplaceCommand::new(
         label,
@@ -307,7 +313,7 @@ impl SelectionPipeline {
         }
     }
 
-    #[tracing::instrument(name = "draw_selection_mesh", skip_all)]
+    #[tracing::instrument(skip_all)]
     pub fn draw(
         &mut self,
         device: &Device,
@@ -320,12 +326,9 @@ impl SelectionPipeline {
         target_selection: LayerBindingData,
         target_selection_tile_indices: IndexSet<IVec2>,
     ) -> Option<DynamicLayerStorage> {
-        let mut ec = device.create_command_encoder(&Default::default());
-
         let selection = self.render_with_target_selection_reserved_output(
             device,
             queue,
-            &mut ec,
             tile_aabb,
             vertices,
             indices,
@@ -334,45 +337,34 @@ impl SelectionPipeline {
         self.composite_with_target_selection_reserved_input(
             device,
             queue,
-            &mut ec,
             op,
             &selection,
             &target_selection,
         );
 
-        queue.submit([ec.finish()]);
-
         Some(selection)
     }
 
     /// Render the selection mesh with only affected tiles.
+    #[tracing::instrument(skip_all)]
     pub fn render_with_tight_output(
         &mut self,
         device: &Device,
         queue: &Queue,
-        ec: &mut CommandEncoder,
         tile_aabb: IRect,
         vertices: &[Vec2],
         // Must be in counter-clockwise order
         indices: &[u32],
     ) -> Option<DynamicLayerStorage> {
-        self.render_internal(
-            device,
-            queue,
-            ec,
-            tile_aabb,
-            vertices,
-            indices,
-            IndexSet::new(),
-        )
+        self.render_internal(device, queue, tile_aabb, vertices, indices, IndexSet::new())
     }
 
     /// Render the selection mesh with affected tiles and reserve tiles that exist in target selection.
+    #[tracing::instrument(skip_all)]
     pub fn render_with_target_selection_reserved_output(
         &mut self,
         device: &Device,
         queue: &Queue,
-        ec: &mut CommandEncoder,
         tile_aabb: IRect,
         vertices: &[Vec2],
         // Must be in counter-clockwise order
@@ -382,7 +374,6 @@ impl SelectionPipeline {
         self.render_internal(
             device,
             queue,
-            ec,
             tile_aabb,
             vertices,
             indices,
@@ -394,7 +385,6 @@ impl SelectionPipeline {
         &mut self,
         device: &Device,
         queue: &Queue,
-        ec: &mut CommandEncoder,
         tile_aabb: IRect,
         vertices: &[Vec2],
         // Must be in counter-clockwise order
@@ -462,6 +452,8 @@ impl SelectionPipeline {
             }],
         });
 
+        let mut ec = device.create_command_encoder(&Default::default());
+
         for (tile_index, index_buffer_offset) in cur_rendering_indices
             .into_iter()
             .zip(cur_rendering_index_offsets)
@@ -494,6 +486,8 @@ impl SelectionPipeline {
             pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
         }
 
+        queue.submit([ec.finish()]);
+
         Some(selection)
     }
 
@@ -501,11 +495,11 @@ impl SelectionPipeline {
     /// to cover the target selection.
     ///
     /// The returned mask has no empty tiles.
+    #[tracing::instrument(skip_all)]
     pub fn composite_with_tight_input(
         &self,
         device: &Device,
         queue: &Queue,
-        ec: &mut CommandEncoder,
         op: SelectionOperation,
         input_selection: &DynamicLayerStorage,
         target_selection: &DynamicLayerStorage,
@@ -519,7 +513,6 @@ impl SelectionPipeline {
         self.composite_with_target_selection_reserved_input(
             device,
             queue,
-            ec,
             op,
             &output_tiles,
             target_selection_binding,
@@ -533,11 +526,11 @@ impl SelectionPipeline {
     /// be incomplete.
     ///
     /// The returned mask has no empty tiles.
+    #[tracing::instrument(skip_all)]
     pub fn composite_with_target_selection_reserved_input(
         &self,
         device: &Device,
         queue: &Queue,
-        ec: &mut CommandEncoder,
         op: SelectionOperation,
         input_selection: &DynamicLayerStorage,
         target_selection: &LayerBindingData,
@@ -583,6 +576,8 @@ impl SelectionPipeline {
             ],
         });
 
+        let mut ec = device.create_command_encoder(&Default::default());
+
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("selection_composite_pass"),
@@ -597,6 +592,8 @@ impl SelectionPipeline {
                 result_selection.len() as u32,
             );
         }
+
+        queue.submit([ec.finish()]);
 
         let output_tiles = self
             .scan_pixels_pipeline

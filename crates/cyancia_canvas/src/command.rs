@@ -162,6 +162,9 @@ fn apply_tile_replace(
     let render_context = cx.global::<RenderContext>();
     let device = render_context.device.clone();
     let queue = render_context.queue.clone();
+    unsafe {
+        device.start_graphics_debugger_capture();
+    };
 
     let mut dirty_min = IVec2::MAX;
     let mut dirty_max = IVec2::MIN;
@@ -232,6 +235,9 @@ fn apply_tile_replace(
     queue.submit([ec.finish()]);
 
     drop(layer);
+    unsafe {
+        device.stop_graphics_debugger_capture();
+    };
 
     cx.update_canvas(&canvas, |_, cx| {
         cx.emit(CanvasUpdated {

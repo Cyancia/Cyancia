@@ -123,19 +123,14 @@ impl ToolFunction for MagicWandSelectionTool {
 
         let selection_pipeline =
             SelectionPipeline::new(&render_context.device, selection_layer_info.texel_type);
-        let mut ec = render_context
-            .device
-            .create_command_encoder(&Default::default());
         let selection = selection_pipeline.composite_with_tight_input(
             &render_context.device,
             &render_context.queue,
-            &mut ec,
             SelectionOperation::from_modifiers(mouse.modifiers),
             &mask,
             &selection_layer,
             &selection_layer_binding,
         );
-        render_context.queue.submit([ec.finish()]);
 
         let cmd = if let Some(selection) = selection {
             TileReplaceCommand::new(

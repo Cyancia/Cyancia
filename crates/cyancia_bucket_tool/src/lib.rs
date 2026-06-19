@@ -24,6 +24,7 @@ pub fn init(cx: &mut App) {
     cx.add_tool_function::<BucketTool>();
 }
 
+// TODO Blending mode and contiguous
 pub struct BucketTool {
     pub threshold: f32,
     pub alpha_threshold: f32,
