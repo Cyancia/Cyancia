@@ -57,7 +57,7 @@ fn common_update(
     else {
         return;
     };
-    let end_pos = end_pos.as_ivec2() + 1;
+    let end_pos = end_pos.as_ivec2();
 
     let cur_end_pos = if mouse.modifiers.shift {
         // Square
