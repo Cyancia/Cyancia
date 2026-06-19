@@ -16,8 +16,12 @@ use cyancia_render::{
 };
 use encase::ShaderType;
 use glam::{IVec2, Mat2, Mat3, Vec2, Vec3};
-use gpui::{App, Global, Modifiers};
+use gpui::{App, FillOptions, FillRule, Global, Modifiers};
 use indexmap::IndexSet;
+use lyon::{
+    path::Path,
+    tessellation::{BuffersBuilder, FillTessellator, FillVertex, VertexBuffers},
+};
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -757,12 +761,32 @@ impl SelectionPreviewPipeline {
     }
 }
 
-pub(crate) fn looped_indices_from_vertices(vertices: u32) -> Vec<u32> {
-    let mut indices = Vec::with_capacity(vertices as usize - 2);
-    for i in 1..vertices {
-        indices.push(0);
-        indices.push(i - 1);
-        indices.push(i);
+pub(crate) fn indices_from_vertices(
+    vertices: &[Vec2],
+    fill_rule: FillRule,
+) -> VertexBuffers<Vec2, u32> {
+    let mut builder = Path::builder();
+    builder.begin(lyon::geom::point(vertices[0].x, vertices[0].y));
+    for v in &vertices[1..] {
+        builder.line_to(lyon::geom::point(v.x, v.y));
     }
-    indices
+    builder.end(true);
+    let path = builder.build();
+
+    let mut geometry = VertexBuffers::new();
+    let mut tessellator = FillTessellator::new();
+
+    let options = FillOptions::default().with_fill_rule(fill_rule);
+
+    tessellator
+        .tessellate_path(
+            &path,
+            &options,
+            &mut BuffersBuilder::new(&mut geometry, |v: FillVertex| {
+                Vec2::new(v.position().x, v.position().y)
+            }),
+        )
+        .unwrap();
+
+    geometry
 }

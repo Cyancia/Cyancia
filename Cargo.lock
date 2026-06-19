@@ -1898,6 +1898,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "indexmap",
+ "lyon",
  "tracing",
  "wesl",
  "wgpu 29.0.3 (registry+https://github.com/rust-lang/crates.io-index)",

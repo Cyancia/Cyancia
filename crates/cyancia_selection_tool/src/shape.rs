@@ -7,13 +7,12 @@ use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2};
-use gpui::{App, Context, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
+use gpui::{App, Context, FillRule, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
 use tracing::info;
 use wgpu::{Texture, TextureView};
 
 use crate::render::{
-    SelectionOperation, SelectionPipeline, SelectionPreviewPipeline, generate_cmd,
-    looped_indices_from_vertices,
+    SelectionOperation, SelectionPreviewPipeline, generate_cmd, indices_from_vertices,
 };
 
 fn common_begin(
@@ -222,10 +221,12 @@ impl ToolFunction for EllipticalSelectionTool {
         let selection_pixelsf = selection_pixels.as_rect();
         let vertices = generate_ellipse(selection_pixelsf.center(), selection_pixelsf.size() * 0.5);
 
+        let geometry = indices_from_vertices(&vertices, FillRule::EvenOdd);
+
         let cmd = generate_cmd(
             "Elliptical Selection".into(),
-            &vertices,
-            &looped_indices_from_vertices(vertices.len() as u32),
+            &geometry.vertices,
+            &geometry.indices,
             selection_pixels,
             state.op,
             cx,

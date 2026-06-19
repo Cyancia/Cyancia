@@ -19,6 +19,7 @@ glam.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 indexmap.workspace = true
+lyon.workspace = true
 tracing.workspace = true
 wesl.workspace = true
 wgpu.workspace = true

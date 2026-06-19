@@ -5,13 +5,12 @@ use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2};
-use gpui::{App, Context, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
+use gpui::{App, Context, FillRule, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
 use tracing::info;
 use wgpu::TextureView;
 
 use crate::render::{
-    SelectionOperation, SelectionPipeline, SelectionPreviewPipeline, generate_cmd,
-    looped_indices_from_vertices,
+    SelectionOperation, SelectionPreviewPipeline, generate_cmd, indices_from_vertices,
 };
 
 struct FreehandSelectionState {
@@ -86,10 +85,11 @@ impl ToolFunction for FreehandSelectionTool {
             return;
         }
 
+        let geometry = indices_from_vertices(&state.points_ps, FillRule::EvenOdd);
         let cmd = generate_cmd(
             "Freehand Selection".into(),
-            &state.points_ps,
-            &looped_indices_from_vertices(state.points_ps.len() as u32),
+            &geometry.vertices,
+            &geometry.indices,
             state.aabb.as_irect(),
             state.op,
             cx,
@@ -179,10 +179,11 @@ impl ToolFunction for PolygonSelectionTool {
 
             if first_ws.distance_squared(point_ws) < POLYGON_CLOSE_DISTANCE * POLYGON_CLOSE_DISTANCE
             {
+                let geometry = indices_from_vertices(&state.points_ps, FillRule::EvenOdd);
                 let cmd = generate_cmd(
                     "Polygon Selection".into(),
-                    &state.points_ps,
-                    &looped_indices_from_vertices(state.points_ps.len() as u32),
+                    &geometry.vertices,
+                    &geometry.indices,
                     state.aabb.as_irect(),
                     state.op,
                     cx,
