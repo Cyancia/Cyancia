@@ -39,8 +39,8 @@ pub fn generate_cmd(
     vertices: &[Vec2],
     indices: &[u32],
     aabb_ps: IRect,
+    op: SelectionOperation,
     cx: &mut App,
-    modifiers: Modifiers,
 ) -> Option<TileReplaceCommand> {
     let canvas = cx.read_current_canvas()?;
     let canvas_id = canvas.id();
@@ -67,7 +67,7 @@ pub fn generate_cmd(
         affected_tiles,
         vertices,
         indices,
-        SelectionOperation::from_modifiers(modifiers),
+        op,
         selection_layer_binding,
         selection_layer.iter_tiles().map(|(i, _, _)| i).collect(),
     )?;

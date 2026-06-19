@@ -17,6 +17,7 @@ use crate::render::{
 struct FreehandSelectionState {
     aabb: Rect,
     points_ps: Vec<Vec2>,
+    op: SelectionOperation,
 }
 
 #[derive(Default)]
@@ -52,6 +53,7 @@ impl ToolFunction for FreehandSelectionTool {
                 max: point_ps,
             },
             points_ps: vec![point_ps],
+            op: SelectionOperation::from_modifiers(mouse.modifiers),
         });
     }
 
@@ -89,8 +91,8 @@ impl ToolFunction for FreehandSelectionTool {
             &state.points_ps,
             &indices_from_looped_vertices(state.points_ps.len() as u32),
             state.aabb.as_irect(),
+            state.op,
             cx,
-            mouse.modifiers,
         );
 
         if let Some(cmd) = cmd {
@@ -187,6 +189,7 @@ impl ToolFunction for PolygonSelectionTool {
                     max: point_ps,
                 },
                 points_ps: vec![point_ps, point_ps],
+                op: SelectionOperation::from_modifiers(mouse.modifiers),
             });
             return;
         };
@@ -204,8 +207,8 @@ impl ToolFunction for PolygonSelectionTool {
                     &state.points_ps,
                     &indices_from_looped_vertices(state.points_ps.len() as u32),
                     state.aabb.as_irect(),
+                    state.op,
                     cx,
-                    mouse.modifiers,
                 );
 
                 if let Some(cmd) = cmd {

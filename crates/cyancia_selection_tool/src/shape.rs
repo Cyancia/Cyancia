@@ -35,6 +35,7 @@ fn common_begin(
     *state = Some(ShapeSelectionState {
         start_ps: start_pos.as_ivec2(),
         cur_end_ps: start_pos.as_ivec2(),
+        op: SelectionOperation::from_modifiers(mouse.modifiers),
     });
 }
 
@@ -72,6 +73,7 @@ fn common_update(
 struct ShapeSelectionState {
     start_ps: IVec2,
     cur_end_ps: IVec2,
+    op: SelectionOperation,
 }
 
 #[derive(Default)]
@@ -117,8 +119,8 @@ impl ToolFunction for RectangularSelectionTool {
             ],
             &[2, 1, 0, 3, 2, 0],
             selection_pixels,
+            state.op,
             cx,
-            mouse.modifiers,
         );
 
         if let Some(cmd) = cmd {
@@ -225,8 +227,8 @@ impl ToolFunction for EllipticalSelectionTool {
             &vertices,
             &indices_from_looped_vertices(vertices.len() as u32),
             selection_pixels,
+            state.op,
             cx,
-            mouse.modifiers,
         );
 
         if let Some(cmd) = cmd {
