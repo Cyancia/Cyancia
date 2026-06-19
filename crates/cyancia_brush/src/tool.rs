@@ -27,10 +27,16 @@ use crate::{
 
 const TIMESTAMP_MOD: i64 = 1_000_000;
 
+struct BrushToolState {
+    canvas_entity: WeakEntity<CCanvas>,
+    target_layer: LayerId,
+    selection_layer: LayerId,
+    stroke_begin: DateTime<Utc>,
+}
+
 #[derive(Default)]
 pub struct BrushTool {
-    target_layer: Option<(WeakEntity<CCanvas>, LayerId)>,
-    stroke_begin: Option<DateTime<Utc>>,
+    state: Option<BrushToolState>,
 }
 
 impl ToolFunction for BrushTool {
@@ -57,14 +63,19 @@ impl ToolFunction for BrushTool {
             return;
         };
         let active_layer = canvas.image.active_layer;
+        let selection_layer = canvas.image.selection_layer();
         if !canvas.image.active_layer_data().can_contain_pixels() {
             log::warn!("Unable to paint to the active layer which cannot contain pixels.");
             return;
         }
 
         let now = Utc::now();
-        self.stroke_begin = Some(now);
-        self.target_layer = Some((canvas_entity, active_layer));
+        self.state = Some(BrushToolState {
+            canvas_entity,
+            target_layer: active_layer,
+            selection_layer: selection_layer,
+            stroke_begin: now,
+        });
 
         let params = RawPenInput {
             position,
@@ -83,12 +94,18 @@ impl ToolFunction for BrushTool {
             let Some(brush) = brush.as_mut() else {
                 return;
             };
-            brush.begin_stroke(params, active_layer, cx);
+            brush.begin_stroke(params, active_layer, selection_layer, cx);
         });
     }
 
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
-        let Some((canvas_entity, active_layer)) = &self.target_layer else {
+        let Some(BrushToolState {
+            canvas_entity,
+            target_layer,
+            selection_layer,
+            stroke_begin,
+        }) = &self.state
+        else {
             return;
         };
 
@@ -101,11 +118,6 @@ impl ToolFunction for BrushTool {
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
         else {
-            return;
-        };
-
-        let Some(stroke_begin) = self.stroke_begin else {
-            log::error!("Stroke update called without a stroke begin time.");
             return;
         };
 
@@ -131,7 +143,7 @@ impl ToolFunction for BrushTool {
             let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(dirty_pixels);
             let overriders = cx.global_mut::<LayerPreviewOverriders>();
             overriders.insert_overrider(
-                *active_layer,
+                *target_layer,
                 PixelPreviewOverrider {
                     texture: preview.texture().unwrap().as_ref().clone(),
                     tile_info_buffer: preview.tile_info_buffer().unwrap().clone(),
@@ -145,7 +157,13 @@ impl ToolFunction for BrushTool {
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
-        let Some((canvas_entity, active_layer_id)) = self.target_layer.take() else {
+        let Some(BrushToolState {
+            canvas_entity,
+            target_layer,
+            selection_layer,
+            stroke_begin,
+        }) = self.state.take()
+        else {
             return;
         };
 
@@ -159,11 +177,6 @@ impl ToolFunction for BrushTool {
             .transform
             .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
         else {
-            return;
-        };
-
-        let Some(stroke_begin) = self.stroke_begin.take() else {
-            log::error!("Stroke end called without a stroke begin time.");
             return;
         };
 
@@ -181,25 +194,25 @@ impl ToolFunction for BrushTool {
         });
 
         let overriders = cx.global_mut::<LayerPreviewOverriders>();
-        overriders.remove_overrider(&active_layer_id);
+        overriders.remove_overrider(&target_layer);
 
         if let Some((new_tiles, new_tile_indices)) = result {
             let render_context = cx.global::<RenderContext>();
-            let active_layer = cx
+            let target_layer_storage = cx
                 .global::<GpuTileStorage>()
-                .get_layer(active_layer_id)
+                .get_layer(target_layer)
                 .unwrap();
             let cmd = TileReplaceCommand::new(
                 "Brush Stroke".into(),
                 canvas_id,
                 &render_context.device,
                 &render_context.queue,
-                active_layer_id,
-                &active_layer,
+                target_layer,
+                &target_layer_storage,
                 new_tile_indices,
                 new_tiles,
             );
-            drop(active_layer);
+            drop(target_layer_storage);
             cx.push_undo_command_to_current(cmd).log_err();
         }
     }

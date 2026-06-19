@@ -35,6 +35,7 @@ impl TileReplaceCommand {
         queue: &Queue,
         layer_id: LayerId,
         layer_storage: &DynamicLayerStorage,
+        // TODO accept Option
         new_tile_indices: Vec<IVec2>,
         new_tiles: Texture,
     ) -> Self {

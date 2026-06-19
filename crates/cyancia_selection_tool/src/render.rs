@@ -3,6 +3,7 @@ use std::{borrow::Cow, sync::OnceLock, time::Instant};
 use bevy_math::IRect;
 use cyancia_canvas::{CanvasAppExt, command::TileReplaceCommand, control::CanvasTransform};
 use cyancia_image::{
+    scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
     tile::{
         DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
@@ -23,11 +24,12 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
     BufferDescriptor, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoder,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
-    FragmentState, IndexFormat, LoadOp, Operations, PipelineLayoutDescriptor, Queue,
+    FragmentState, IndexFormat, LoadOp, Operations, Origin3d, PipelineLayoutDescriptor, Queue,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, StoreOp, Texture,
-    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDimension,
-    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, StoreOp,
+    TexelCopyTextureInfo, Texture, TextureAspect, TextureDimension, TextureFormat, TextureUsages,
+    TextureView, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat,
+    VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
     wgt::{TextureDescriptor, TextureViewDescriptor},
 };
@@ -149,6 +151,7 @@ pub struct SelectionPipeline {
     render_pipeline: RenderPipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
+    scan_pixels_pipeline: ScanPixelsPipeline,
     layer_format: TexelType,
 }
 
@@ -292,11 +295,14 @@ impl SelectionPipeline {
             cache: None,
         });
 
+        let scan_pixels_pipeline = ScanPixelsPipeline::new(device, layer_format);
+
         Self {
             render_layout,
             render_pipeline,
             composite_layout,
             composite_pipeline,
+            scan_pixels_pipeline,
             layer_format,
         }
     }
@@ -316,7 +322,7 @@ impl SelectionPipeline {
     ) -> Option<DynamicLayerStorage> {
         let mut ec = device.create_command_encoder(&Default::default());
 
-        let selection = self.render_with_target_selection_reserved(
+        let selection = self.render_with_target_selection_reserved_output(
             device,
             queue,
             &mut ec,
@@ -325,7 +331,7 @@ impl SelectionPipeline {
             indices,
             target_selection_tile_indices,
         )?;
-        self.composite_with_target_selection_reserved(
+        self.composite_with_target_selection_reserved_input(
             device,
             queue,
             &mut ec,
@@ -340,7 +346,7 @@ impl SelectionPipeline {
     }
 
     /// Render the selection mesh with only affected tiles.
-    pub fn render_tight(
+    pub fn render_with_tight_output(
         &mut self,
         device: &Device,
         queue: &Queue,
@@ -362,7 +368,7 @@ impl SelectionPipeline {
     }
 
     /// Render the selection mesh with affected tiles and reserve tiles that exist in target selection.
-    pub fn render_with_target_selection_reserved(
+    pub fn render_with_target_selection_reserved_output(
         &mut self,
         device: &Device,
         queue: &Queue,
@@ -491,7 +497,11 @@ impl SelectionPipeline {
         Some(selection)
     }
 
-    pub fn composite_tight(
+    /// Composite the input selection with the target selection. The input selection is allowed to unable
+    /// to cover the target selection.
+    ///
+    /// The returned mask has no empty tiles.
+    pub fn composite_with_tight_input(
         &self,
         device: &Device,
         queue: &Queue,
@@ -506,7 +516,7 @@ impl SelectionPipeline {
             output_tiles.get_tile_or_allocate(tile);
         }
 
-        self.composite_with_target_selection_reserved(
+        self.composite_with_target_selection_reserved_input(
             device,
             queue,
             ec,
@@ -521,15 +531,19 @@ impl SelectionPipeline {
     /// Blend the selection from inout texture with target selection, then write it back to inout_texture.
     /// The inout texture must ensure it contains the area of target selection. Otherwise the result will
     /// be incomplete.
-    pub fn composite_with_target_selection_reserved(
+    ///
+    /// The returned mask has no empty tiles.
+    pub fn composite_with_target_selection_reserved_input(
         &self,
         device: &Device,
         queue: &Queue,
         ec: &mut CommandEncoder,
         op: SelectionOperation,
-        inout_selection: &DynamicLayerStorage,
+        input_selection: &DynamicLayerStorage,
         target_selection: &LayerBindingData,
-    ) {
+    ) -> Option<DynamicLayerStorage> {
+        let result_selection = input_selection.deep_clone();
+
         let composite_params_buffer = {
             let mut b = DynamicBuffer::new(Some("selection_params_buffer"), BufferUsages::UNIFORM);
             b.push(&SelectionParams {
@@ -553,11 +567,11 @@ impl SelectionPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&inout_selection.texture().unwrap()),
+                    resource: BindingResource::TextureView(&result_selection.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: inout_selection
+                    resource: result_selection
                         .tile_info_buffer()
                         .unwrap()
                         .as_entire_binding(),
@@ -580,9 +594,61 @@ impl SelectionPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                inout_selection.len() as u32,
+                result_selection.len() as u32,
             );
         }
+
+        let output_tiles = self
+            .scan_pixels_pipeline
+            .scan(device, queue, &result_selection);
+        if output_tiles.is_empty() {
+            return None;
+        }
+        if output_tiles.len() == result_selection.len() {
+            return Some(result_selection);
+        }
+
+        let mut output_selection = DynamicLayerStorage::new(
+            device.clone().into(),
+            queue.clone().into(),
+            GpuLayerInfo {
+                texel_type: self.layer_format,
+            },
+        );
+        for tile in output_tiles {
+            output_selection.get_tile_or_allocate(tile);
+        }
+
+        let mut ec = device.create_command_encoder(&Default::default());
+        for (dst_layer, tile) in output_selection.iter_tile_indices().enumerate() {
+            let src_layer = result_selection.get_tile_layer(tile).unwrap();
+            ec.copy_texture_to_texture(
+                TexelCopyTextureInfo {
+                    texture: result_selection.texture().unwrap().texture(),
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: src_layer,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfo {
+                    texture: output_selection.texture().unwrap().texture(),
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: dst_layer as u32,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                GpuTileStorageInner::TILE_COPY_SIZE,
+            );
+        }
+        queue.submit([ec.finish()]);
+
+        Some(output_selection)
     }
 }
 

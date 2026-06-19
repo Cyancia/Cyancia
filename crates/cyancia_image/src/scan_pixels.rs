@@ -8,25 +8,26 @@ use indexmap::IndexSet;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferDescriptor,
-    BufferUsages, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TextureViewDimension,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+    BufferDescriptor, BufferUsages, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StorageTextureAccess, TextureViewDimension,
 };
 
 use crate::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner},
+    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 
 pub struct ScanPixelsPipeline {
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
+    scan_to_binary_buffer_pipeline: ComputePipeline,
 }
 
 impl ScanPixelsPipeline {
     pub fn new(device: &Device, layer_format: TexelType) -> Self {
-        let scan_pixels_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("scan_pixels_layout"),
             entries: &[
                 BindGroupLayoutEntry {
@@ -64,14 +65,14 @@ impl ScanPixelsPipeline {
         let scan_pixels_pipeline_layout =
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("scan_pixels_pipeline_layout"),
-                bind_group_layouts: &[Some(&scan_pixels_layout)],
+                bind_group_layouts: &[Some(&layout)],
                 ..Default::default()
             });
         let scan_pixels_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("scan_pixels_shader"),
             source: ShaderSource::Wgsl(include_wesl!("scan_pixels").into()),
         });
-        let scan_pixels_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some("scan_pixels_pipeline"),
             layout: Some(&scan_pixels_pipeline_layout),
             module: &scan_pixels_shader,
@@ -80,9 +81,20 @@ impl ScanPixelsPipeline {
             cache: None,
         });
 
+        let scan_to_binary_buffer_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("scan_to_binary_buffer_pipeline"),
+                layout: Some(&scan_pixels_pipeline_layout),
+                module: &scan_pixels_shader,
+                entry_point: Some("scan_to_binary_buffer"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
         Self {
-            layout: scan_pixels_layout,
-            pipeline: scan_pixels_pipeline,
+            layout,
+            pipeline,
+            scan_to_binary_buffer_pipeline,
         }
     }
 
@@ -148,5 +160,58 @@ impl ScanPixelsPipeline {
             .zip(is_not_empty)
             .filter_map(|((i, _, _), is_not_empty)| if is_not_empty == 1 { Some(i) } else { None })
             .collect()
+    }
+
+    pub fn scan_to_binary_buffer(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        target_layer: &LayerBindingData,
+    ) -> Buffer {
+        let mut ec = device.create_command_encoder(&Default::default());
+
+        let is_not_empty_binary_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("is_not_empty_binary_buffer"),
+            size: 4,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let scan_pixels_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("scan_pixels_bind_group"),
+            layout: &self.layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&target_layer.texture),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: target_layer.tile_info_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: is_not_empty_binary_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        {
+            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("scan_pixels_pass"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.scan_to_binary_buffer_pipeline);
+            pass.set_bind_group(0, &scan_pixels_bind_group, &[]);
+            pass.dispatch_workgroups(
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                target_layer.texture.texture().depth_or_array_layers(),
+            );
+        }
+
+        queue.submit([ec.finish()]);
+
+        is_not_empty_binary_buffer
     }
 }

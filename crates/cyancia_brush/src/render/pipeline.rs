@@ -29,6 +29,7 @@ impl BrushMainPipeline {
             &resources.external_var_layouts,
             false,
             resources.target_layer_format.wgpu_format(),
+            resources.selection_layer_format.wgpu_format(),
         );
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -65,6 +66,9 @@ impl BrushMainPipeline {
         pass: &mut ComputePass,
         target_layer_texture: &TextureView,
         target_layer_tile_info: &Buffer,
+        has_selection: &Buffer,
+        selection_layer_texture: &TextureView,
+        selection_layer_tile_info: &Buffer,
         samples: &DynamicBuffer<ComputedPenInput>,
         samples_offsets: &[u32],
         dab_infos: &DynamicBuffer<DabInfo>,
@@ -77,6 +81,9 @@ impl BrushMainPipeline {
             resources,
             target_layer_texture,
             target_layer_tile_info,
+            has_selection,
+            selection_layer_texture,
+            selection_layer_tile_info,
             intermediate_buffers,
             Some(samples),
             None,
@@ -93,6 +100,9 @@ impl BrushMainPipeline {
             resources,
             target_layer_texture,
             target_layer_tile_info,
+            has_selection,
+            selection_layer_texture,
+            selection_layer_tile_info,
             intermediate_buffers,
             Some(samples),
             None,
@@ -156,6 +166,7 @@ impl BrushPostProcessPipeline {
             &resources.external_var_layouts,
             true,
             resources.target_layer_format.wgpu_format(),
+            resources.selection_layer_format.wgpu_format(),
         );
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -193,6 +204,9 @@ impl BrushPostProcessPipeline {
         stroke_pp_data: &DynamicBuffer<StrokePostprocessData>,
         target_layer_texture: &TextureView,
         target_layer_tile_info: &Buffer,
+        has_selection: &Buffer,
+        selection_layer_texture: &TextureView,
+        selection_layer_tile_info: &Buffer,
         dab_infos: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
         intermediate_buffers: &[DynamicLayerStorage; 2],
@@ -202,6 +216,9 @@ impl BrushPostProcessPipeline {
             resources,
             target_layer_texture,
             target_layer_tile_info,
+            has_selection,
+            selection_layer_texture,
+            selection_layer_tile_info,
             intermediate_buffers,
             None,
             Some(stroke_pp_data),
@@ -233,6 +250,7 @@ fn bind_group_layout_entries(
     external_var: &[BindGroupLayoutEntry],
     is_postprocess: bool,
     target_layer_format: TextureFormat,
+    selection_layer_format: TextureFormat,
 ) -> Vec<BindGroupLayoutEntry> {
     let mut entries = vec![
         BindGroupLayoutEntry {
@@ -329,6 +347,36 @@ fn bind_group_layout_entries(
             },
             count: None,
         },
+        BindGroupLayoutEntry {
+            binding: 9,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::StorageTexture {
+                access: StorageTextureAccess::ReadOnly,
+                format: selection_layer_format,
+                view_dimension: TextureViewDimension::D2Array,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 10,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: Some(GpuTileInfo::min_size()),
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 11,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: Some(u32::min_size()),
+            },
+            count: None,
+        },
     ];
     entries.extend(external_var);
 
@@ -339,6 +387,9 @@ fn bind_group_entries<'a>(
     resources: &'a StrokeResources,
     target_layer_texture: &'a TextureView,
     target_layer_tile_info: &'a Buffer,
+    has_selection: &'a Buffer,
+    selection_layer_texture: &'a TextureView,
+    selection_layer_tile_info: &'a Buffer,
     intermediate_buffers: &'a [DynamicLayerStorage],
     samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
     stroke_pp_data: Option<&'a DynamicBuffer<StrokePostprocessData>>,
@@ -372,6 +423,18 @@ fn bind_group_entries<'a>(
         BindGroupEntry {
             binding: 8,
             resource: dab_infos.binding().unwrap(),
+        },
+        BindGroupEntry {
+            binding: 9,
+            resource: BindingResource::TextureView(selection_layer_texture),
+        },
+        BindGroupEntry {
+            binding: 10,
+            resource: selection_layer_tile_info.as_entire_binding(),
+        },
+        BindGroupEntry {
+            binding: 11,
+            resource: has_selection.as_entire_binding(),
         },
     ];
     entries.extend(resources.external_var_bindings());

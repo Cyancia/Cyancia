@@ -2,8 +2,9 @@ use bevy_math::{IRect, Rect};
 use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
 use cyancia_image::{
     layer::LayerId,
+    scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner},
+    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::{
     buffer::DynamicBuffer,
@@ -35,10 +36,13 @@ pub mod pipeline;
 
 const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct BrushStrokeSessionInfo {
+    pub target_layer_id: LayerId,
+    pub selection_layer_id: LayerId,
     pub brush_runtime_revision: u64,
     pub target_layer_format: TexelType,
+    pub selection_layer_format: TexelType,
 }
 
 pub struct BrushPresetOperator {
@@ -83,13 +87,23 @@ impl BrushPresetOperator {
         &mut self.instance
     }
 
-    pub fn begin_stroke(&mut self, input: RawPenInput, target_layer: LayerId, cx: &mut App) {
+    pub fn begin_stroke(
+        &mut self,
+        input: RawPenInput,
+        target_layer: LayerId,
+        selection_layer: LayerId,
+        cx: &mut App,
+    ) {
         let tiles = cx.global::<GpuTileStorage>();
 
         let target_layer_info = tiles.get_layer_info(target_layer).unwrap();
+        let selection_layer_info = tiles.get_layer_info(selection_layer).unwrap();
         let session = BrushStrokeSessionInfo {
+            target_layer_id: target_layer,
+            selection_layer_id: selection_layer,
             brush_runtime_revision: self.instance.runtime_revision(),
             target_layer_format: target_layer_info.texel_type,
+            selection_layer_format: selection_layer_info.texel_type,
         };
         match self.last_session.as_mut() {
             Some(last_session) => {
@@ -99,6 +113,9 @@ impl BrushPresetOperator {
                 }
 
                 if last_session.target_layer_format != session.target_layer_format {
+                    self.renderer = None;
+                }
+                if last_session.selection_layer_format != session.selection_layer_format {
                     self.renderer = None;
                 }
 
@@ -128,8 +145,8 @@ impl BrushPresetOperator {
                 &self.device,
                 &self.queue,
                 compiled_brush,
-                target_layer,
-                target_layer_info.texel_type,
+                session.target_layer_format,
+                session.selection_layer_format,
                 cx.assets(),
             );
             log::info!("Brush preset renderer creation: {:?}", now.elapsed());
@@ -152,13 +169,22 @@ impl BrushPresetOperator {
         self.accumulated_pixel_bounds = IRect::EMPTY;
         self.input_processor.reset();
 
+        let tiles = cx.global::<GpuTileStorage>();
+        let target_layer = tiles
+            .get_layer_binding_or_empty(session.target_layer_id)
+            .unwrap();
+        let selection_layer = tiles
+            .get_layer_binding_or_empty(session.selection_layer_id)
+            .unwrap();
+
         renderer.update(
             &self.device,
             &self.queue,
             self.input_processor
                 .push(input, self.instance.required_spacing_graph().read(cx), cx),
             self.instance.main_graph().read(cx),
-            cx.global::<GpuTileStorage>(),
+            &target_layer,
+            &selection_layer,
             intermediate_buffers,
             &mut self.round,
             &mut self.accumulated_pixel_bounds,
@@ -175,13 +201,26 @@ impl BrushPresetOperator {
             return;
         };
 
+        let Some(session) = &self.last_session else {
+            return;
+        };
+
+        let tiles = cx.global::<GpuTileStorage>();
+        let target_layer = tiles
+            .get_layer_binding_or_empty(session.target_layer_id)
+            .unwrap();
+        let selection_layer = tiles
+            .get_layer_binding_or_empty(session.selection_layer_id)
+            .unwrap();
+
         renderer.update(
             &self.device,
             &self.queue,
             self.input_processor
                 .push(input, self.instance.required_spacing_graph().read(cx), cx),
             self.instance.main_graph().read(cx),
-            cx.global::<GpuTileStorage>(),
+            &target_layer,
+            &selection_layer,
             intermediate_buffers,
             &mut self.round,
             &mut self.accumulated_pixel_bounds,
@@ -189,6 +228,7 @@ impl BrushPresetOperator {
         );
     }
 
+    // TODO Return dynamic layer storage?
     pub fn end_stroke(
         &mut self,
         final_input: RawPenInput,
@@ -196,6 +236,18 @@ impl BrushPresetOperator {
     ) -> Option<(Texture, Vec<IVec2>)> {
         let renderer = self.renderer.as_mut()?;
         let intermediate_buffers = self.intermediate_buffers.as_mut()?;
+
+        let Some(session) = &self.last_session else {
+            return None;
+        };
+
+        let tiles = cx.global::<GpuTileStorage>();
+        let target_layer = tiles
+            .get_layer_binding_or_empty(session.target_layer_id)
+            .unwrap();
+        let selection_layer = tiles
+            .get_layer_binding_or_empty(session.selection_layer_id)
+            .unwrap();
 
         renderer.update(
             &self.device,
@@ -206,7 +258,8 @@ impl BrushPresetOperator {
                 cx,
             ),
             self.instance.main_graph().read(cx),
-            cx.global::<GpuTileStorage>(),
+            &target_layer,
+            &selection_layer,
             intermediate_buffers,
             &mut self.round,
             &mut self.accumulated_pixel_bounds,
@@ -220,7 +273,8 @@ impl BrushPresetOperator {
                 .stroke_postprocess_graphs()
                 .iter()
                 .map(|g| g.read(cx)),
-            cx.global::<GpuTileStorage>(),
+            &target_layer,
+            &selection_layer,
             final_input.time,
             intermediate_buffers,
             &mut self.round,
@@ -245,6 +299,15 @@ impl BrushPresetOperator {
             [another_buffer, result_buffer]
         };
 
+        let session = self.last_session.as_ref()?;
+        let tiles = cx.global::<GpuTileStorage>();
+        let target_layer = tiles
+            .get_layer_binding_or_empty(session.target_layer_id)
+            .unwrap();
+        let selection_layer = tiles
+            .get_layer_binding_or_empty(session.selection_layer_id)
+            .unwrap();
+
         renderer.postprocess_stroke(
             &self.device,
             &self.queue,
@@ -252,8 +315,8 @@ impl BrushPresetOperator {
                 .stroke_postprocess_graphs()
                 .iter()
                 .map(|g| g.read(cx)),
-            cx.global::<GpuTileStorage>(),
-            // TODO
+            &target_layer,
+            &selection_layer,
             Time {
                 now: 0.0,
                 stroke_begin: 0.0,
@@ -282,6 +345,7 @@ pub struct BrushPresetRenderer {
     stroke_pp_data: DynamicBuffer<StrokePostprocessData>,
     dab_info_buffer: DynamicBuffer<DabInfo>,
     dab_info_offsets: Vec<u32>,
+    scan_pixels: ScanPixelsPipeline,
 }
 
 impl BrushPresetRenderer {
@@ -289,16 +353,16 @@ impl BrushPresetRenderer {
         device: &Device,
         queue: &Queue,
         brush: &CompiledBrushPreset,
-        target_layer_id: LayerId,
         target_layer_format: TexelType,
+        selection_layer_format: TexelType,
         assets: &AssetRegistry,
     ) -> Self {
         let resources = StrokeResources::new(
             device,
             queue,
             brush,
-            target_layer_id,
             target_layer_format,
+            selection_layer_format,
             assets,
         );
 
@@ -322,6 +386,7 @@ impl BrushPresetRenderer {
             ),
             dab_info_buffer: DynamicBuffer::new("dab info buffer".into(), BufferUsages::STORAGE),
             dab_info_offsets: Vec::new(),
+            scan_pixels: ScanPixelsPipeline::new(device, selection_layer_format),
         }
     }
 
@@ -332,7 +397,8 @@ impl BrushPresetRenderer {
         queue: &Queue,
         pen_input: Vec<ComputedPenInput>,
         main_graph: &Graph<BrushGraphData>,
-        tiles: &GpuTileStorage,
+        target_layer: &LayerBindingData,
+        selection_layer: &LayerBindingData,
         intermediate_buffers: &mut [DynamicLayerStorage; 2],
         round: &mut u32,
         accumulated_pixel_bounds: &mut IRect,
@@ -373,9 +439,10 @@ impl BrushPresetRenderer {
 
         self.samples_buffer.write_buffer(device, queue);
         self.dab_info_buffer.write_buffer(device, queue);
-        let target_layer = tiles
-            .get_layer_binding_or_empty(self.resources.target_layer_id)
-            .unwrap();
+
+        let has_selection = self
+            .scan_pixels
+            .scan_to_binary_buffer(device, queue, selection_layer);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -390,6 +457,9 @@ impl BrushPresetRenderer {
                 &mut pass,
                 target_layer.texture.as_ref(),
                 &target_layer.tile_info_buffer,
+                &has_selection,
+                &selection_layer.texture,
+                &selection_layer.tile_info_buffer,
                 &self.samples_buffer,
                 &self.samples_offsets,
                 &self.dab_info_buffer,
@@ -409,7 +479,8 @@ impl BrushPresetRenderer {
         device: &Device,
         queue: &Queue,
         graphs: impl Iterator<Item = &'a Graph<BrushGraphPostprocessData>>,
-        tiles: &GpuTileStorage,
+        target_layer: &LayerBindingData,
+        selection_layer: &LayerBindingData,
         time: Time,
         intermediate_buffers: &mut [DynamicLayerStorage; 2],
         round: &mut u32,
@@ -420,9 +491,9 @@ impl BrushPresetRenderer {
             return;
         }
 
-        let target_layer = tiles
-            .get_layer_binding_or_empty(self.resources.target_layer_id)
-            .unwrap();
+        let has_selection = self
+            .scan_pixels
+            .scan_to_binary_buffer(device, queue, selection_layer);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -471,6 +542,9 @@ impl BrushPresetRenderer {
                     &self.stroke_pp_data,
                     target_layer.texture.as_ref(),
                     &target_layer.tile_info_buffer,
+                    &has_selection,
+                    &selection_layer.texture,
+                    &selection_layer.tile_info_buffer,
                     &self.dab_info_buffer,
                     &self.resources,
                     intermediate_buffers,
@@ -524,13 +598,14 @@ pub struct DabInfo {
     pub bound_max: IVec2,
 }
 
+// TODO This should be renamed to RendererResources
 pub struct StrokeResources {
     pub external_var_layouts: Vec<BindGroupLayoutEntry>,
     pub external_var_buffers: Vec<Buffer>,
     pub referenced_textures: TextureAtlas,
 
-    pub target_layer_id: LayerId,
     pub target_layer_format: TexelType,
+    pub selection_layer_format: TexelType,
 }
 
 impl StrokeResources {
@@ -538,8 +613,8 @@ impl StrokeResources {
         device: &Device,
         queue: &Queue,
         brush: &CompiledBrushPreset,
-        target_layer_id: LayerId,
         target_layer_format: TexelType,
+        selection_layer_format: TexelType,
         assets: &AssetRegistry,
     ) -> Self {
         let mut external_var_layouts = Vec::new();
@@ -617,8 +692,8 @@ impl StrokeResources {
             external_var_buffers,
             referenced_textures,
 
-            target_layer_id,
             target_layer_format,
+            selection_layer_format,
         }
     }
 

@@ -126,7 +126,7 @@ impl ToolFunction for MagicWandSelectionTool {
         let mut ec = render_context
             .device
             .create_command_encoder(&Default::default());
-        let Some(selection) = selection_pipeline.composite_tight(
+        let selection = selection_pipeline.composite_with_tight_input(
             &render_context.device,
             &render_context.queue,
             &mut ec,
@@ -134,21 +134,30 @@ impl ToolFunction for MagicWandSelectionTool {
             &mask,
             &selection_layer,
             &selection_layer_binding,
-        ) else {
-            return;
-        };
+        );
         render_context.queue.submit([ec.finish()]);
 
-        let cmd = TileReplaceCommand::new(
-            "Magic Wand".into(),
-            canvas_id,
-            &render_context.device,
-            &render_context.queue,
-            selection_layer_id,
-            &selection_layer,
-            selection.iter_tiles().map(|(i, _, _)| i).collect(),
-            selection.texture().unwrap().texture().clone(),
-        );
+        let cmd = if let Some(selection) = selection {
+            TileReplaceCommand::new(
+                "Magic Wand".into(),
+                canvas_id,
+                &render_context.device,
+                &render_context.queue,
+                selection_layer_id,
+                &selection_layer,
+                selection.iter_tiles().map(|(i, _, _)| i).collect(),
+                selection.texture().unwrap().texture().clone(),
+            )
+        } else {
+            TileReplaceCommand::new_clear(
+                "Magic Wand".into(),
+                canvas_id,
+                &render_context.device,
+                &render_context.queue,
+                selection_layer_id,
+                &selection_layer,
+            )
+        };
         drop(selection_layer);
         cx.push_undo_command_to_current(cmd).log_err();
     }

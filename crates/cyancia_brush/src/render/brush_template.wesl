@@ -11,6 +11,9 @@ import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSa
 @group(0) @binding(6) var stroke_buffer_src: texture_storage_2d_array<r32uint, read>;
 @group(0) @binding(7) var stroke_buffer_dst: texture_storage_2d_array<r32uint, write>;
 @group(0) @binding(8) var<storage, read_write> dab_info: DabInfo;
+@group(0) @binding(9) var selection: texture_storage_2d_array<r8unorm, read>;
+@group(0) @binding(10) var<storage> selection_tile_info: array<TileInfo>;
+@group(0) @binding(11) var<storage> has_selection: u32;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
@@ -135,12 +138,30 @@ fn filter_within_bounds(pixel: vec2i, color: vec4f, bounds: Rect) -> vec4f {
     return color;
 }
 
+fn load_selection_mask_value(pixel_pos: vec2i) -> f32 {
+    if has_selection == 0u {
+        return 1.0;
+    }
+
+    for (var i = 0u; i < arrayLength(&selection_tile_info); i += 1u) {
+        let tile = selection_tile_info[i];
+        if any(pixel_pos < tile.origin) || any(pixel_pos >= tile.origin + i32(TILE_SIZE)) {
+            continue;
+        }
+
+        return textureLoad(selection, pixel_pos - tile.origin, i).r;
+    }
+
+    return 0.0;
+}
+
 fn set_output_color(pixel_pos: vec2i, color: vec4f) {
     let tile_index = convert_pixel_to_buffer_tile(pixel_pos);
     if tile_index.z == 0xFFFFFFFFu {
         return;
     }
-    let packed = package::image::texture_unpack::pack_rgba8_texel(color);
+    let selection = load_selection_mask_value(pixel_pos);
+    let packed = package::image::texture_unpack::pack_rgba8_texel(vec4f(color.rgb, color.a * selection));
     textureStore(stroke_buffer_dst, vec2i(tile_index.xy), tile_index.z, packed);
 }
 
