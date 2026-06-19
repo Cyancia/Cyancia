@@ -531,7 +531,7 @@ impl SelectionPipeline {
         input_selection: &DynamicLayerStorage,
         target_selection: &LayerBindingData,
     ) -> Option<DynamicLayerStorage> {
-        let result_selection = input_selection.deep_clone();
+        let output_selection = input_selection.deep_clone();
 
         let composite_params_buffer = {
             let mut b = DynamicBuffer::new(Some("selection_params_buffer"), BufferUsages::UNIFORM);
@@ -556,11 +556,11 @@ impl SelectionPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&result_selection.texture().unwrap()),
+                    resource: BindingResource::TextureView(&output_selection.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: result_selection
+                    resource: output_selection
                         .tile_info_buffer()
                         .unwrap()
                         .as_entire_binding(),
@@ -585,60 +585,10 @@ impl SelectionPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
                 GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                result_selection.len() as u32,
+                output_selection.len() as u32,
             );
         }
 
-        queue.submit([ec.finish()]);
-
-        let output_tiles = self
-            .scan_pixels_pipeline
-            .scan(device, queue, &result_selection);
-        if output_tiles.is_empty() {
-            return None;
-        }
-        if output_tiles.len() == result_selection.len() {
-            return Some(result_selection);
-        }
-
-        let mut output_selection = DynamicLayerStorage::new(
-            device.clone().into(),
-            queue.clone().into(),
-            GpuLayerInfo {
-                texel_type: self.layer_format,
-            },
-        );
-        for tile in output_tiles {
-            output_selection.get_tile_or_allocate(tile);
-        }
-
-        let mut ec = device.create_command_encoder(&Default::default());
-        for (dst_layer, tile) in output_selection.iter_tile_indices().enumerate() {
-            let src_layer = result_selection.get_tile_layer(tile).unwrap();
-            ec.copy_texture_to_texture(
-                TexelCopyTextureInfo {
-                    texture: result_selection.texture().unwrap().texture(),
-                    mip_level: 0,
-                    origin: Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: src_layer,
-                    },
-                    aspect: TextureAspect::All,
-                },
-                TexelCopyTextureInfo {
-                    texture: output_selection.texture().unwrap().texture(),
-                    mip_level: 0,
-                    origin: Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: dst_layer as u32,
-                    },
-                    aspect: TextureAspect::All,
-                },
-                GpuTileStorageInner::TILE_COPY_SIZE,
-            );
-        }
         queue.submit([ec.finish()]);
 
         Some(output_selection)
