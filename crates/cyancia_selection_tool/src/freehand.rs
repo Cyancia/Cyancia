@@ -11,7 +11,7 @@ use wgpu::TextureView;
 
 use crate::render::{
     SelectionOperation, SelectionPipeline, SelectionPreviewPipeline, generate_cmd,
-    indices_from_looped_vertices,
+    looped_indices_from_vertices,
 };
 
 struct FreehandSelectionState {
@@ -89,7 +89,7 @@ impl ToolFunction for FreehandSelectionTool {
         let cmd = generate_cmd(
             "Freehand Selection".into(),
             &state.points_ps,
-            &indices_from_looped_vertices(state.points_ps.len() as u32),
+            &looped_indices_from_vertices(state.points_ps.len() as u32),
             state.aabb.as_irect(),
             state.op,
             cx,
@@ -182,7 +182,7 @@ impl ToolFunction for PolygonSelectionTool {
                 let cmd = generate_cmd(
                     "Polygon Selection".into(),
                     &state.points_ps,
-                    &indices_from_looped_vertices(state.points_ps.len() as u32),
+                    &looped_indices_from_vertices(state.points_ps.len() as u32),
                     state.aabb.as_irect(),
                     state.op,
                     cx,

@@ -757,7 +757,7 @@ impl SelectionPreviewPipeline {
     }
 }
 
-pub(crate) fn indices_from_looped_vertices(vertices: u32) -> Vec<u32> {
+pub(crate) fn looped_indices_from_vertices(vertices: u32) -> Vec<u32> {
     let mut indices = Vec::with_capacity(vertices as usize - 2);
     for i in 1..vertices {
         indices.push(0);

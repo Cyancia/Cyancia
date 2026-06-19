@@ -13,7 +13,7 @@ use wgpu::{Texture, TextureView};
 
 use crate::render::{
     SelectionOperation, SelectionPipeline, SelectionPreviewPipeline, generate_cmd,
-    indices_from_looped_vertices,
+    looped_indices_from_vertices,
 };
 
 fn common_begin(
@@ -225,7 +225,7 @@ impl ToolFunction for EllipticalSelectionTool {
         let cmd = generate_cmd(
             "Elliptical Selection".into(),
             &vertices,
-            &indices_from_looped_vertices(vertices.len() as u32),
+            &looped_indices_from_vertices(vertices.len() as u32),
             selection_pixels,
             state.op,
             cx,
