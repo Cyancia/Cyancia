@@ -7,7 +7,7 @@ use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2};
-use gpui::{App, Context, MouseDownEvent, MouseMoveEvent, MouseUpEvent};
+use gpui::{App, Context, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
 use tracing::info;
 use wgpu::{Texture, TextureView};
 
@@ -132,7 +132,7 @@ impl ToolFunction for RectangularSelectionTool {
         }
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };
@@ -240,7 +240,7 @@ impl ToolFunction for EllipticalSelectionTool {
         }
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };

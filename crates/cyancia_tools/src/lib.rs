@@ -51,7 +51,13 @@ pub trait ToolFunction: Send + Sync + 'static + Sized {
     }
     // TODO This should return gpui element and take canvas bounds + window + cx as parameter only,
     //      once gpui supports wgpu backend and allow custom shaders.
-    fn canvas_overlay(&mut self, _canvas_surface: &TextureView, _cx: &mut App) {}
+    fn canvas_overlay(
+        &mut self,
+        _canvas_surface: &TextureView,
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+    }
 }
 
 pub struct ToolFunctionEntity<T: ToolFunction> {
@@ -67,7 +73,7 @@ pub trait ErasedToolFunction {
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut App);
     fn deactivate(&mut self, cx: &mut App);
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> AnyElement;
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App);
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App);
 }
 
 impl<T: ToolFunction> ErasedToolFunction for ToolFunctionEntity<T> {
@@ -105,9 +111,10 @@ impl<T: ToolFunction> ErasedToolFunction for ToolFunctionEntity<T> {
             .update(cx, |entity, cx| entity.tool_option_widget(window, cx))
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
-        self.entity
-            .update(cx, |entity, cx| entity.canvas_overlay(canvas_surface, cx));
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
+        self.entity.update(cx, |entity, cx| {
+            entity.canvas_overlay(canvas_surface, window, cx)
+        });
     }
 }
 
@@ -206,9 +213,16 @@ impl ToolProxy {
         Some(state.current_function.tool_option_widget(window, cx))
     }
 
-    pub fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+    pub fn canvas_overlay(
+        &mut self,
+        canvas_surface: &TextureView,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         if let Some(state) = self.state.as_mut() {
-            state.current_function.canvas_overlay(canvas_surface, cx);
+            state
+                .current_function
+                .canvas_overlay(canvas_surface, window, cx);
         }
     }
 }

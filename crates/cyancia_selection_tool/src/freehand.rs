@@ -5,7 +5,7 @@ use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2};
-use gpui::{App, Context, MouseDownEvent, MouseMoveEvent, MouseUpEvent};
+use gpui::{App, Context, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
 use tracing::info;
 use wgpu::TextureView;
 
@@ -105,7 +105,7 @@ impl ToolFunction for FreehandSelectionTool {
         }
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };
@@ -146,29 +146,14 @@ impl ToolFunction for PolygonSelectionTool {
         ToolId::new("polygon_selection_tool")
     }
 
-    fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
-        let Some(canvas) = cx.read_current_canvas() else {
-            return;
-        };
-
-        let Some(point_ps) = canvas
-            .transform
-            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
-        else {
-            return;
-        };
-
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
-
-        if let Some(last) = state.points_ps.last_mut() {
-            *last = point_ps;
+    fn begin(&mut self, mouse: &MouseDownEvent, _cx: &mut Context<Self>) {
+        if self.state.is_none() {
+            self.state = Some(FreehandSelectionState {
+                aabb: Rect::EMPTY,
+                points_ps: Vec::new(),
+                op: SelectionOperation::from_modifiers(mouse.modifiers),
+            });
         }
-    }
-
-    fn hover(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
-        self.update(mouse, cx);
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
@@ -183,14 +168,6 @@ impl ToolFunction for PolygonSelectionTool {
         let point_ws = point_ss - canvas.transform.widget_bounds.min;
 
         let Some(state) = self.state.as_mut() else {
-            self.state = Some(FreehandSelectionState {
-                aabb: Rect {
-                    min: point_ps,
-                    max: point_ps,
-                },
-                points_ps: vec![point_ps, point_ps],
-                op: SelectionOperation::from_modifiers(mouse.modifiers),
-            });
             return;
         };
 
@@ -230,7 +207,7 @@ impl ToolFunction for PolygonSelectionTool {
         state.aabb = state.aabb.union_point(point_ps);
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };
@@ -239,15 +216,27 @@ impl ToolFunction for PolygonSelectionTool {
             return;
         };
 
+        let mouse = window.mouse_position();
+        let point_ss = Vec2::new(mouse.x.into(), mouse.y.into());
+        let Some(point_ps) = canvas.transform.window_to_pixel(point_ss) else {
+            return;
+        };
+
         let render_context = cx.global::<RenderContext>();
         let preview_pipeline = self.preview_pipeline.get_or_insert_with(|| {
             SelectionPreviewPipeline::new(&render_context.device, canvas_surface.texture().format())
         });
+        let line_vertices_ps = state
+            .points_ps
+            .iter()
+            .copied()
+            .chain([point_ps])
+            .collect::<Vec<_>>();
 
         preview_pipeline.draw(
             &render_context.device,
             &render_context.queue,
-            &state.points_ps,
+            &line_vertices_ps,
             canvas_surface,
             &canvas.transform,
         );
