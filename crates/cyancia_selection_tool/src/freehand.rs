@@ -13,6 +13,7 @@ use gpui_component::{
     Selectable, Sizable,
     button::{Button, ButtonGroup},
     form::{field, v_form},
+    h_flex, v_flex,
 };
 use tracing::info;
 use wgpu::TextureView;
@@ -124,32 +125,32 @@ impl ToolFunction for FreehandSelectionTool {
     }
 
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        v_form()
-            .size_full()
+        v_flex()
             .p_2()
-            .small()
-            .text_sm()
+            .size_full()
             .child(
-                field().label("Fill Rule").child(
-                    ButtonGroup::new("fill-rule-group")
-                        .child(
-                            Button::new("even-odd")
-                                .label("Even Odd")
-                                .small()
-                                .selected(self.fill_rule == FillRule::EvenOdd)
-                                .on_click(cx.listener(|tool, _, _, _| {
-                                    tool.fill_rule = FillRule::EvenOdd;
-                                })),
-                        )
-                        .child(
-                            Button::new("non-zero")
-                                .label("Non Zero")
-                                .small()
-                                .selected(self.fill_rule == FillRule::NonZero)
-                                .on_click(cx.listener(|tool, _, _, _| {
-                                    tool.fill_rule = FillRule::NonZero;
-                                })),
-                        ),
+                v_form().size_full().small().text_sm().child(
+                    field().label("Fill Rule").child(
+                        ButtonGroup::new("fill-rule-group")
+                            .child(
+                                Button::new("even-odd")
+                                    .label("Even Odd")
+                                    .small()
+                                    .selected(self.fill_rule == FillRule::EvenOdd)
+                                    .on_click(cx.listener(|tool, _, _, _| {
+                                        tool.fill_rule = FillRule::EvenOdd;
+                                    })),
+                            )
+                            .child(
+                                Button::new("non-zero")
+                                    .label("Non Zero")
+                                    .small()
+                                    .selected(self.fill_rule == FillRule::NonZero)
+                                    .on_click(cx.listener(|tool, _, _, _| {
+                                        tool.fill_rule = FillRule::NonZero;
+                                    })),
+                            ),
+                    ),
                 ),
             )
             .into_any_element()
@@ -269,32 +270,32 @@ impl ToolFunction for PolygonSelectionTool {
     }
 
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        v_form()
-            .size_full()
+        v_flex()
             .p_2()
-            .small()
-            .text_sm()
+            .size_full()
             .child(
-                field().label("Fill Rule").child(
-                    ButtonGroup::new("fill-rule-group")
-                        .child(
-                            Button::new("even-odd")
-                                .label("Even Odd")
-                                .small()
-                                .selected(self.fill_rule == FillRule::EvenOdd)
-                                .on_click(cx.listener(|tool, _, _, _| {
-                                    tool.fill_rule = FillRule::EvenOdd;
-                                })),
-                        )
-                        .child(
-                            Button::new("non-zero")
-                                .label("Non Zero")
-                                .small()
-                                .selected(self.fill_rule == FillRule::NonZero)
-                                .on_click(cx.listener(|tool, _, _, _| {
-                                    tool.fill_rule = FillRule::NonZero;
-                                })),
-                        ),
+                v_form().size_full().small().text_sm().child(
+                    field().label("Fill Rule").child(
+                        ButtonGroup::new("fill-rule-group")
+                            .child(
+                                Button::new("even-odd")
+                                    .label("Even Odd")
+                                    .small()
+                                    .selected(self.fill_rule == FillRule::EvenOdd)
+                                    .on_click(cx.listener(|tool, _, _, _| {
+                                        tool.fill_rule = FillRule::EvenOdd;
+                                    })),
+                            )
+                            .child(
+                                Button::new("non-zero")
+                                    .label("Non Zero")
+                                    .small()
+                                    .selected(self.fill_rule == FillRule::NonZero)
+                                    .on_click(cx.listener(|tool, _, _, _| {
+                                        tool.fill_rule = FillRule::NonZero;
+                                    })),
+                            ),
+                    ),
                 ),
             )
             .into_any_element()
