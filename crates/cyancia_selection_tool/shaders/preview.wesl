@@ -6,11 +6,35 @@ struct Canvas {
 }
 
 @group(0) @binding(0) var<uniform> canvas: Canvas;
+@group(0) @binding(1) var<storage> line_vertices_ps: array<vec2f>;
 
+// 0,3---5
+// |\   |
+// | \  |
+// |  \ |
+// |   \|
+// 2----1,4
+const PERP_OFFSETS: array<f32, 6> = array<f32, 6>(-1.0, 1.0, -1.0, -1.0, 1.0, 1.0);
 @vertex
-fn vertex(@location(0) position_ps: vec2f) -> @builtin(position) vec4f {
+fn vertex(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
+    let seg_index = vertex_index / 6u;
+    let seg_start = line_vertices_ps[seg_index];
+    let seg_end = line_vertices_ps[seg_index + 1];
+    let seg_dir = normalize(seg_end - seg_start);
+    let seg_dir_perp_half = vec2f(-seg_dir.y, seg_dir.x) * 0.5;
+    let mesh = array<vec2f, 6>(
+        seg_start,
+        seg_end,
+        seg_end,
+        seg_start,
+        seg_end,
+        seg_start
+    );
+
+    let seg_vertex_index = vertex_index % 6u;
+    let position_ps = mesh[seg_vertex_index];
     let position_ws = canvas.pixel_to_widget * vec3f(position_ps, 1.0);
-    let position_ss = position_ws.xy;
+    let position_ss = position_ws.xy + PERP_OFFSETS[seg_vertex_index] * seg_dir_perp_half;
     let normalized = position_ss / canvas.screen_size;
     let ndc = normalized * 2.0 - 1.0;
     return vec4f(vec2f(ndc.x, -ndc.y), 0.0, 1.0);
