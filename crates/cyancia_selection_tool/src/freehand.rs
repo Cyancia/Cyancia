@@ -5,7 +5,15 @@ use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2};
-use gpui::{App, Context, FillRule, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
+use gpui::{
+    AnyElement, App, Context, FillRule, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Styled, Window,
+};
+use gpui_component::{
+    Selectable, Sizable,
+    button::{Button, ButtonGroup},
+    form::{field, v_form},
+};
 use tracing::info;
 use wgpu::TextureView;
 
@@ -19,10 +27,20 @@ struct FreehandSelectionState {
     op: SelectionOperation,
 }
 
-#[derive(Default)]
 pub struct FreehandSelectionTool {
+    fill_rule: FillRule,
     state: Option<FreehandSelectionState>,
     preview_pipeline: Option<SelectionPreviewPipeline>,
+}
+
+impl Default for FreehandSelectionTool {
+    fn default() -> Self {
+        Self {
+            fill_rule: FillRule::EvenOdd,
+            state: Default::default(),
+            preview_pipeline: Default::default(),
+        }
+    }
 }
 
 impl ToolFunction for FreehandSelectionTool {
@@ -85,7 +103,7 @@ impl ToolFunction for FreehandSelectionTool {
             return;
         }
 
-        let geometry = indices_from_vertices(&state.points_ps, FillRule::EvenOdd);
+        let geometry = indices_from_vertices(&state.points_ps, self.fill_rule);
         let cmd = generate_cmd(
             "Freehand Selection".into(),
             &geometry.vertices,
@@ -103,6 +121,38 @@ impl ToolFunction for FreehandSelectionTool {
                 state.aabb
             );
         }
+    }
+
+    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        v_form()
+            .size_full()
+            .p_2()
+            .small()
+            .text_sm()
+            .child(
+                field().label("Fill Rule").child(
+                    ButtonGroup::new("fill-rule-group")
+                        .child(
+                            Button::new("even-odd")
+                                .label("Even Odd")
+                                .small()
+                                .selected(self.fill_rule == FillRule::EvenOdd)
+                                .on_click(cx.listener(|tool, _, _, _| {
+                                    tool.fill_rule = FillRule::EvenOdd;
+                                })),
+                        )
+                        .child(
+                            Button::new("non-zero")
+                                .label("Non Zero")
+                                .small()
+                                .selected(self.fill_rule == FillRule::NonZero)
+                                .on_click(cx.listener(|tool, _, _, _| {
+                                    tool.fill_rule = FillRule::NonZero;
+                                })),
+                        ),
+                ),
+            )
+            .into_any_element()
     }
 
     fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
@@ -131,10 +181,20 @@ impl ToolFunction for FreehandSelectionTool {
 
 const POLYGON_CLOSE_DISTANCE: f32 = 10.0;
 
-#[derive(Default)]
 pub struct PolygonSelectionTool {
+    fill_rule: FillRule,
     state: Option<FreehandSelectionState>,
     preview_pipeline: Option<SelectionPreviewPipeline>,
+}
+
+impl Default for PolygonSelectionTool {
+    fn default() -> Self {
+        Self {
+            fill_rule: FillRule::EvenOdd,
+            state: Default::default(),
+            preview_pipeline: Default::default(),
+        }
+    }
 }
 
 impl ToolFunction for PolygonSelectionTool {
@@ -179,7 +239,7 @@ impl ToolFunction for PolygonSelectionTool {
 
             if first_ws.distance_squared(point_ws) < POLYGON_CLOSE_DISTANCE * POLYGON_CLOSE_DISTANCE
             {
-                let geometry = indices_from_vertices(&state.points_ps, FillRule::EvenOdd);
+                let geometry = indices_from_vertices(&state.points_ps, self.fill_rule);
                 let cmd = generate_cmd(
                     "Polygon Selection".into(),
                     &geometry.vertices,
@@ -206,6 +266,38 @@ impl ToolFunction for PolygonSelectionTool {
 
         state.points_ps.push(point_ps);
         state.aabb = state.aabb.union_point(point_ps);
+    }
+
+    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        v_form()
+            .size_full()
+            .p_2()
+            .small()
+            .text_sm()
+            .child(
+                field().label("Fill Rule").child(
+                    ButtonGroup::new("fill-rule-group")
+                        .child(
+                            Button::new("even-odd")
+                                .label("Even Odd")
+                                .small()
+                                .selected(self.fill_rule == FillRule::EvenOdd)
+                                .on_click(cx.listener(|tool, _, _, _| {
+                                    tool.fill_rule = FillRule::EvenOdd;
+                                })),
+                        )
+                        .child(
+                            Button::new("non-zero")
+                                .label("Non Zero")
+                                .small()
+                                .selected(self.fill_rule == FillRule::NonZero)
+                                .on_click(cx.listener(|tool, _, _, _| {
+                                    tool.fill_rule = FillRule::NonZero;
+                                })),
+                        ),
+                ),
+            )
+            .into_any_element()
     }
 
     fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
