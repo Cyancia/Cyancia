@@ -20,5 +20,4 @@ fn main() {
         &"package::close_gap_and_feather.wesl".parse().unwrap(),
         "close_gap_and_feather",
     );
-    compiler.build_artifact(&"package::scan_pixels.wesl".parse().unwrap(), "scan_pixels");
 }

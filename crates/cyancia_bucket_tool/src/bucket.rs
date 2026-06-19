@@ -1,4 +1,5 @@
 use cyancia_image::{
+    scan_pixels::ScanPixelsPipeline,
     texel::{TexelFormat, TexelType},
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
@@ -128,8 +129,6 @@ pub struct Bucket {
     seed_mode_pipeline: ComputePipeline,
     thresholding_layout: BindGroupLayout,
     thresholding_pipeline: ComputePipeline,
-    scan_pixels_layout: BindGroupLayout,
-    scan_pixels_pipeline: ComputePipeline,
     close_gap_resolve_pipeline: ComputePipeline,
     ccl_layout: BindGroupLayout,
     ccl_init_pipeline: ComputePipeline,
@@ -146,6 +145,7 @@ pub struct Bucket {
     feather_resolve_pipeline: ComputePipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
+    scan_pixels_pipeline: ScanPixelsPipeline,
 
     output_layer_format: TexelType,
     mask_format: TexelType,
@@ -300,60 +300,6 @@ impl Bucket {
             label: Some("thresholding_pipeline"),
             layout: Some(&thresholding_pipeline_layout),
             module: &thresholding_shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
-
-        let scan_pixels_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("scan_pixels_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: mask_texture_format,
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let scan_pixels_pipeline_layout =
-            device.create_pipeline_layout(&PipelineLayoutDescriptor {
-                label: Some("scan_pixels_pipeline_layout"),
-                bind_group_layouts: &[Some(&scan_pixels_layout)],
-                ..Default::default()
-            });
-        let scan_pixels_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("scan_pixels_shader"),
-            source: ShaderSource::Wgsl(include_wesl!("scan_pixels").into()),
-        });
-        let scan_pixels_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("scan_pixels_pipeline"),
-            layout: Some(&scan_pixels_pipeline_layout),
-            module: &scan_pixels_shader,
             entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
@@ -789,13 +735,13 @@ impl Bucket {
             cache: None,
         });
 
+        let scan_pixels_pipeline = ScanPixelsPipeline::new(device, mask_format);
+
         Self {
             seed_mode_layout,
             seed_mode_pipeline,
             thresholding_layout,
             thresholding_pipeline,
-            scan_pixels_layout,
-            scan_pixels_pipeline,
             close_gap_resolve_pipeline,
             ccl_layout,
             ccl_init_pipeline,
@@ -812,6 +758,7 @@ impl Bucket {
             feather_resolve_pipeline,
             composite_layout,
             composite_pipeline,
+            scan_pixels_pipeline,
             output_layer_format: output_texel_type,
             mask_format,
         }
@@ -844,7 +791,7 @@ impl Bucket {
 
         unsafe { device.stop_graphics_debugger_capture() };
 
-        let output_tile_indices = self.get_unempty_tiles(device, queue, &mask);
+        let output_tile_indices = self.scan_pixels_pipeline.scan(device, queue, &mask);
         if output_tile_indices.is_empty() {
             return None;
         }
@@ -944,7 +891,7 @@ impl Bucket {
             ref_layer_tile_info,
         )?;
 
-        let output_tiles = self.get_unempty_tiles(device, queue, &mask);
+        let output_tiles = self.scan_pixels_pipeline.scan(device, queue, &mask);
         if output_tiles.is_empty() {
             return None;
         }
@@ -1108,7 +1055,7 @@ impl Bucket {
 
         queue.submit([ec.finish()]);
 
-        let existing_mask_tiles = self.get_unempty_tiles(device, queue, &mask);
+        let existing_mask_tiles = self.scan_pixels_pipeline.scan(device, queue, &mask);
         for index in existing_mask_tiles {
             mask.get_tile_or_allocate(index);
             for dx in -1..=1 {
@@ -1620,69 +1567,6 @@ impl Bucket {
         let seed_mode = seed_mode_readback.block_on().unwrap();
 
         seed_mode == 1
-    }
-
-    fn get_unempty_tiles(
-        &self,
-        device: &Device,
-        queue: &Queue,
-        mask: &DynamicLayerStorage,
-    ) -> IndexSet<IVec2> {
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        let is_not_empty_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("is_not_empty_buffer"),
-            size: mask.len() as u64 * 4,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let scan_pixels_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("scan_pixels_bind_group"),
-            layout: &self.scan_pixels_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: mask.tile_info_buffer().unwrap().as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: is_not_empty_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("scan_pixels_pass"),
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.scan_pixels_pipeline);
-            pass.set_bind_group(0, &scan_pixels_bind_group, &[]);
-            pass.dispatch_workgroups(
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                mask.len() as u32,
-            );
-        }
-
-        let is_not_empty_readback =
-            create_readback_buffer_and_schedule_copy(device, &mut ec, &is_not_empty_buffer);
-        let is_not_empty_readback_async =
-            readback_buffer_on_submit_async::<Vec<u32>, _>(&mut ec, &is_not_empty_readback, ..);
-
-        let si = queue.submit([ec.finish()]);
-        device.poll_indefinitely_for(si).unwrap();
-
-        let is_not_empty = is_not_empty_readback_async.block_on().unwrap();
-        mask.iter_tiles()
-            .zip(is_not_empty)
-            .filter_map(|((i, _, _), is_not_empty)| if is_not_empty == 1 { Some(i) } else { None })
-            .collect()
     }
 }
 

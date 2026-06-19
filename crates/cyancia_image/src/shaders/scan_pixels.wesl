@@ -1,4 +1,4 @@
-import image::image_tiling::{TileInfo, TILE_SIZE};
+import package::image_tiling::{TileInfo, TILE_SIZE};
 
 @group(0) @binding(0) var mask: texture_storage_2d_array<r8unorm, read>;
 @group(0) @binding(1) var<storage> mask_tile_info: array<TileInfo>;
