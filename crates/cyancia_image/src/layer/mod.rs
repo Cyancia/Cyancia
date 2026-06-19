@@ -573,6 +573,10 @@ pub struct SpecialLayers {
 }
 
 impl SpecialLayers {
+    #[allow(
+        clippy::new_without_default,
+        reason = "Default doesn't has the semantic of creating a new set of special layers."
+    )]
     pub fn new() -> Self {
         Self {
             selection_layer: LayerId::new(Uuid::new_v4()),

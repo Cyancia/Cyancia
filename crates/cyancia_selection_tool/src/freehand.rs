@@ -1,10 +1,9 @@
 use bevy_math::Rect;
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
-use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner};
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
-use glam::{IVec2, Vec2};
+use glam::Vec2;
 use gpui::{
     AnyElement, App, Context, FillRule, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Styled, Window,
@@ -13,7 +12,7 @@ use gpui_component::{
     Selectable, Sizable,
     button::{Button, ButtonGroup},
     form::{field, v_form},
-    h_flex, v_flex,
+    v_flex,
 };
 use tracing::info;
 use wgpu::TextureView;
@@ -45,7 +44,7 @@ impl Default for FreehandSelectionTool {
 }
 
 impl ToolFunction for FreehandSelectionTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_cx: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -95,7 +94,7 @@ impl ToolFunction for FreehandSelectionTool {
         state.aabb = state.aabb.union_point(point_ps);
     }
 
-    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
+    fn end(&mut self, _mouse: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(state) = self.state.take() else {
             return;
         };
@@ -124,7 +123,7 @@ impl ToolFunction for FreehandSelectionTool {
         }
     }
 
-    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn tool_option_widget(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .p_2()
             .size_full()
@@ -156,7 +155,7 @@ impl ToolFunction for FreehandSelectionTool {
             .into_any_element()
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _window: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };
@@ -199,7 +198,7 @@ impl Default for PolygonSelectionTool {
 }
 
 impl ToolFunction for PolygonSelectionTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_cx: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -269,7 +268,7 @@ impl ToolFunction for PolygonSelectionTool {
         state.aabb = state.aabb.union_point(point_ps);
     }
 
-    fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn tool_option_widget(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .p_2()
             .size_full()

@@ -3,20 +3,16 @@ use std::{borrow::Cow, sync::OnceLock, time::Instant};
 use bevy_math::IRect;
 use cyancia_canvas::{CanvasAppExt, command::TileReplaceCommand, control::CanvasTransform};
 use cyancia_image::{
-    scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
     tile::{
         DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
         LayerBindingData,
     },
 };
-use cyancia_render::{
-    buffer::{BufferVec, DynamicBuffer},
-    render_context::RenderContext,
-};
+use cyancia_render::{buffer::DynamicBuffer, render_context::RenderContext};
 use encase::ShaderType;
-use glam::{IVec2, Mat2, Mat3, Vec2, Vec3};
-use gpui::{App, FillOptions, FillRule, Global, Modifiers};
+use glam::{IVec2, Mat3, Vec2};
+use gpui::{App, FillOptions, FillRule, Modifiers};
 use indexmap::IndexSet;
 use lyon::{
     path::Path,
@@ -25,17 +21,14 @@ use lyon::{
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
-    BufferDescriptor, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoder,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
-    FragmentState, IndexFormat, LoadOp, Operations, Origin3d, PipelineLayoutDescriptor, Queue,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, StoreOp,
-    TexelCopyTextureInfo, Texture, TextureAspect, TextureDimension, TextureFormat, TextureUsages,
-    TextureView, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat,
-    VertexState, VertexStepMode,
+    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
+    ColorTargetState, ColorWrites, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, FragmentState, IndexFormat, LoadOp, Operations,
+    PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor,
+    RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, StoreOp, TextureFormat, TextureView, TextureViewDimension,
+    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
-    wgt::{TextureDescriptor, TextureViewDescriptor},
 };
 
 pub fn generate_cmd(
@@ -161,7 +154,6 @@ pub struct SelectionPipeline {
     render_pipeline: RenderPipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
-    scan_pixels_pipeline: ScanPixelsPipeline,
     layer_format: TexelType,
 }
 
@@ -305,14 +297,11 @@ impl SelectionPipeline {
             cache: None,
         });
 
-        let scan_pixels_pipeline = ScanPixelsPipeline::new(device, layer_format);
-
         Self {
             render_layout,
             render_pipeline,
             composite_layout,
             composite_pipeline,
-            scan_pixels_pipeline,
             layer_format,
         }
     }
@@ -560,7 +549,7 @@ impl SelectionPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&output_selection.texture().unwrap()),
+                    resource: BindingResource::TextureView(output_selection.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -695,7 +684,7 @@ impl SelectionPreviewPipeline {
 
         let vertices_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("selection_preview_vertices"),
-            contents: bytemuck::cast_slice(&line_vertices_ps),
+            contents: bytemuck::cast_slice(line_vertices_ps),
             usage: BufferUsages::STORAGE,
         });
 
@@ -708,10 +697,7 @@ impl SelectionPreviewPipeline {
                 pixel_to_widget: canvas_transform.pixel_to_widget,
                 widget_min: canvas_transform.widget_bounds.min,
                 screen_size: Vec2::new(screen_size.width as f32, screen_size.height as f32),
-                time: FIRST_DRAW
-                    .get_or_init(|| Instant::now())
-                    .elapsed()
-                    .as_secs_f32(),
+                time: FIRST_DRAW.get_or_init(Instant::now).elapsed().as_secs_f32(),
             });
             b.write_buffer(device, queue);
             b.into_inner_buffer().unwrap()

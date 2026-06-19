@@ -4,7 +4,7 @@ use cyancia_image::{
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
 };
 use cyancia_render::{
-    buffer::{BufferVec, DynamicBuffer},
+    buffer::DynamicBuffer,
     readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
     util::DevicePollExt,
 };
@@ -15,11 +15,11 @@ use tracing::info;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
+    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, Origin3d,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, TexelCopyTextureInfo, Texture, TextureAspect, TextureDimension,
-    TextureFormat, TextureUsages, TextureView, TextureViewDimension,
+    StorageTextureAccess, TexelCopyTextureInfo, TextureAspect, TextureDimension, TextureFormat,
+    TextureUsages, TextureViewDimension,
     wgt::{BufferDescriptor, TextureDescriptor, TextureViewDescriptor},
 };
 
@@ -855,7 +855,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -863,7 +863,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: BindingResource::TextureView(&output_tiles.texture().unwrap()),
+                    resource: BindingResource::TextureView(output_tiles.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 4,
@@ -965,7 +965,7 @@ impl Bucket {
                     origin: Origin3d {
                         x: 0,
                         y: 0,
-                        z: src_layer as u32,
+                        z: src_layer,
                     },
                     aspect: TextureAspect::All,
                 },
@@ -1076,7 +1076,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -1170,7 +1170,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 4,
@@ -1285,7 +1285,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -1350,11 +1350,11 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::TextureView(&mask.texture().unwrap()),
+                        resource: BindingResource::TextureView(mask.texture().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 2,
-                        resource: BindingResource::TextureView(&grown_mask.texture().unwrap()),
+                        resource: BindingResource::TextureView(grown_mask.texture().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 3,
@@ -1403,12 +1403,12 @@ impl Bucket {
                     entries: &[
                         BindGroupEntry {
                             binding: 0,
-                            resource: BindingResource::TextureView(&mask.texture().unwrap()),
+                            resource: BindingResource::TextureView(mask.texture().unwrap()),
                         },
                         BindGroupEntry {
                             binding: 1,
                             resource: BindingResource::TextureView(
-                                &smoothed_mask.texture().unwrap(),
+                                smoothed_mask.texture().unwrap(),
                             ),
                         },
                         BindGroupEntry {
@@ -1453,7 +1453,7 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::TextureView(&mask.texture().unwrap()),
+                        resource: BindingResource::TextureView(mask.texture().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 4,

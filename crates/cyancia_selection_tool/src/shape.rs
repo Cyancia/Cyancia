@@ -1,15 +1,14 @@
 use std::f32::consts::{PI, TAU};
 
 use bevy_math::IRect;
-use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
-use cyancia_image::tile::{GpuTileStorage, GpuTileStorageInner};
+use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
 use cyancia_render::render_context::RenderContext;
-use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
+use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, Vec2};
 use gpui::{App, Context, FillRule, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Window};
 use tracing::info;
-use wgpu::{Texture, TextureView};
+use wgpu::TextureView;
 
 use crate::render::{
     SelectionOperation, SelectionPreviewPipeline, generate_cmd, indices_from_vertices,
@@ -98,7 +97,7 @@ impl ToolFunction for RectangularSelectionTool {
         common_update(&mut self.state, mouse, cx);
     }
 
-    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
+    fn end(&mut self, _mouse: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(state) = self.state.take() else {
             return;
         };
@@ -131,7 +130,7 @@ impl ToolFunction for RectangularSelectionTool {
         }
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _window: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };
@@ -193,7 +192,7 @@ pub struct EllipticalSelectionTool {
 }
 
 impl ToolFunction for EllipticalSelectionTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_cx: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -209,7 +208,7 @@ impl ToolFunction for EllipticalSelectionTool {
         common_update(&mut self.state, mouse, cx);
     }
 
-    fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
+    fn end(&mut self, _mouse: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(state) = self.state.take() else {
             return;
         };
@@ -241,7 +240,7 @@ impl ToolFunction for EllipticalSelectionTool {
         }
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, window: &mut Window, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _window: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };

@@ -1429,7 +1429,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SelectionMaskNode {
 
     fn create_inputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(
             "Position".into(),
@@ -1439,7 +1439,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SelectionMaskNode {
 
     fn create_outputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Value".to_string())]
     }

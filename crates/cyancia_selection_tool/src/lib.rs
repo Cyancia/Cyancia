@@ -1,12 +1,9 @@
-use cyancia_image::texel::TexelType;
-use cyancia_render::render_context::RenderContext;
-use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
-use gpui::{App, Context};
+use cyancia_tools::ToolsAppExt;
+use gpui::App;
 
 use crate::{
     freehand::{FreehandSelectionTool, PolygonSelectionTool},
     magic_wand::MagicWandSelectionTool,
-    render::SelectionPipeline,
     shape::{EllipticalSelectionTool, RectangularSelectionTool},
 };
 

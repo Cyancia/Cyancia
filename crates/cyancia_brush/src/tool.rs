@@ -30,7 +30,6 @@ const TIMESTAMP_MOD: i64 = 1_000_000;
 struct BrushToolState {
     canvas_entity: WeakEntity<CCanvas>,
     target_layer: LayerId,
-    selection_layer: LayerId,
     stroke_begin: DateTime<Utc>,
 }
 
@@ -73,7 +72,6 @@ impl ToolFunction for BrushTool {
         self.state = Some(BrushToolState {
             canvas_entity,
             target_layer: active_layer,
-            selection_layer: selection_layer,
             stroke_begin: now,
         });
 
@@ -102,7 +100,6 @@ impl ToolFunction for BrushTool {
         let Some(BrushToolState {
             canvas_entity,
             target_layer,
-            selection_layer,
             stroke_begin,
         }) = &self.state
         else {
@@ -160,7 +157,6 @@ impl ToolFunction for BrushTool {
         let Some(BrushToolState {
             canvas_entity,
             target_layer,
-            selection_layer,
             stroke_begin,
         }) = self.state.take()
         else {

@@ -6,7 +6,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Window, div,
 };
 use uuid::Uuid;
-use wgpu::{Texture, TextureView};
+use wgpu::TextureView;
 
 pub fn init(cx: &mut App) {
     cx.set_global(ToolFunctionRegistry::default());
@@ -54,7 +54,7 @@ pub trait ToolFunction: Send + Sync + 'static + Sized {
     fn canvas_overlay(
         &mut self,
         _canvas_surface: &TextureView,
-        window: &mut Window,
+        _window: &mut Window,
         _cx: &mut App,
     ) {
     }

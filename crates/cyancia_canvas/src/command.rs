@@ -116,7 +116,7 @@ impl TileReplaceCommand {
         layer_id: LayerId,
         layer_storage: &DynamicLayerStorage,
     ) -> Self {
-        let old_tiles = layer_storage.texture().and_then(|layer_texture| {
+        let old_tiles = layer_storage.texture().map(|layer_texture| {
             let old_texture = device.create_texture(&TextureDescriptor {
                 label: Some("old_texture"),
                 size: layer_texture.texture().size(),
@@ -140,10 +140,10 @@ impl TileReplaceCommand {
 
             queue.submit([ec.finish()]);
 
-            Some((
+            (
                 old_texture,
                 layer_storage.iter_tiles().map(|(i, _, _)| i).collect(),
-            ))
+            )
         });
 
         Self {

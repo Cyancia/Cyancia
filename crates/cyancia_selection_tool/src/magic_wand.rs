@@ -3,8 +3,8 @@ use cyancia_bucket_tool::{
     bucket::{Bucket, BucketAntialiasApproach, BucketParams},
 };
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
-use cyancia_image::tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner};
-use cyancia_render::{buffer::BufferVec, render_context::RenderContext};
+use cyancia_image::tile::GpuTileStorage;
+use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
 use glam::{Vec2, Vec4};
@@ -19,7 +19,6 @@ use gpui_component::{
     input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
     v_flex,
 };
-use wgpu::{BufferUsages, Extent3d, TextureDimension, TextureUsages, wgt::TextureDescriptor};
 
 use crate::render::{SelectionOperation, SelectionPipeline};
 
@@ -47,7 +46,7 @@ impl Default for MagicWandSelectionTool {
 }
 
 impl ToolFunction for MagicWandSelectionTool {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_cx: &mut Context<Self>) -> Self {
         Self::default()
     }
 

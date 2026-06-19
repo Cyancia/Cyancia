@@ -7,7 +7,7 @@ use encase::ShaderType;
 use glam::{IVec2, UVec2};
 use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, TextureAspect,
     TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,

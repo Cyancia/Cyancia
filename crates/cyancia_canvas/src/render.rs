@@ -6,8 +6,8 @@ use std::{
 use bevy_math::IRect;
 use cyancia_image::{
     layer::LayerId,
-    texel::{TexelFormat, TexelType},
-    tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner, LayerBindingData},
+    texel::TexelType,
+    tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
 };
 use cyancia_render::buffer::DynamicBuffer;
 use cyancia_utils::include_shader;
@@ -15,7 +15,6 @@ use encase::ShaderType;
 use glam::{IVec2, Mat3, UVec2, UVec3};
 use gpui::{Global, RenderImage};
 use image::{Frame, RgbaImage};
-use wesl::include_wesl;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
@@ -130,10 +129,7 @@ impl CanvasRenderer {
                 size: image_size,
                 total_tile_count: tile_rect.size().as_uvec2(),
                 tile_size: GpuTileStorageInner::TILE_SIZE,
-                time: FIRST_DRAW
-                    .get_or_init(|| Instant::now())
-                    .elapsed()
-                    .as_secs_f32(),
+                time: FIRST_DRAW.get_or_init(Instant::now).elapsed().as_secs_f32(),
             },
             buffer,
             tile_storage,
