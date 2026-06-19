@@ -247,6 +247,7 @@ impl UndoCommand for TileReplaceCommand {
         self.reason.clone()
     }
 
+    #[tracing::instrument(skip_all)]
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         let to_clear = self
             .old_tiles
@@ -265,6 +266,7 @@ impl UndoCommand for TileReplaceCommand {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         let to_clear = self
             .new_tiles

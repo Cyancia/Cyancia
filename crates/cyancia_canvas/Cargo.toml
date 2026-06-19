@@ -29,6 +29,7 @@ log.workspace = true
 parking_lot.workspace = true
 parse-display.workspace = true
 serde.workspace = true
+tracing.workspace = true
 uuid.workspace = true
 wesl.workspace = true
 wgpu.workspace = true

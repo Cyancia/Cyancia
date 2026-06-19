@@ -1813,6 +1813,7 @@ dependencies = [
  "parking_lot",
  "parse-display",
  "serde",
+ "tracing",
  "uuid",
  "wesl",
  "wgpu 29.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
