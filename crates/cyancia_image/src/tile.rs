@@ -481,7 +481,7 @@ impl DynamicLayerStorage {
                 None => 1,
             };
             let new_texture = self.device.create_texture(&TextureDescriptor {
-                label: Some("tile texture"),
+                label: Some(&self.texture_label),
                 size: Extent3d {
                     width: Self::TILE_SIZE,
                     height: Self::TILE_SIZE,
@@ -491,11 +491,7 @@ impl DynamicLayerStorage {
                 sample_count: 1,
                 dimension: TextureDimension::D2,
                 format: self.layer_info.texel_type.wgpu_format(),
-                usage: TextureUsages::TEXTURE_BINDING
-                    | TextureUsages::COPY_SRC
-                    | TextureUsages::COPY_DST
-                    | TextureUsages::STORAGE_BINDING
-                    | TextureUsages::RENDER_ATTACHMENT,
+                usage: self.texture_usages,
                 view_formats: &[],
             });
 
@@ -557,7 +553,7 @@ impl DynamicLayerStorage {
             .unwrap_or_default()
             + additional;
         let new_texture = self.device.create_texture(&TextureDescriptor {
-            label: Some("tile texture"),
+            label: Some(&self.texture_label),
             size: Extent3d {
                 width: Self::TILE_SIZE,
                 height: Self::TILE_SIZE,
@@ -567,11 +563,7 @@ impl DynamicLayerStorage {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: self.layer_info.texel_type.wgpu_format(),
-            usage: TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC
-                | TextureUsages::COPY_DST
-                | TextureUsages::STORAGE_BINDING
-                | TextureUsages::RENDER_ATTACHMENT,
+            usage: self.texture_usages,
             view_formats: &[],
         });
 
@@ -651,7 +643,7 @@ impl DynamicLayerStorage {
 
         let texture = self.texture.as_ref().unwrap().texture();
         let new_texture = self.device.create_texture(&TextureDescriptor {
-            label: Some("tile texture clone"),
+            label: Some(&self.texture_label),
             size: Extent3d {
                 width: Self::TILE_SIZE,
                 height: Self::TILE_SIZE,
@@ -661,11 +653,7 @@ impl DynamicLayerStorage {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: self.layer_info.texel_type.wgpu_format(),
-            usage: TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC
-                | TextureUsages::COPY_DST
-                | TextureUsages::STORAGE_BINDING
-                | TextureUsages::RENDER_ATTACHMENT,
+            usage: self.texture_usages,
             view_formats: &[],
         });
 
