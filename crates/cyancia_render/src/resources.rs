@@ -11,10 +11,10 @@ use crate::render_context::RenderContext;
 
 #[derive(Debug)]
 pub struct GlobalSamplers {
-    nearest_clamp: Arc<Sampler>,
-    linear_clamp: Arc<Sampler>,
-    nearest_wrap: Arc<Sampler>,
-    linear_wrap: Arc<Sampler>,
+    nearest_clamp: Sampler,
+    linear_clamp: Sampler,
+    nearest_wrap: Sampler,
+    linear_wrap: Sampler,
 }
 
 impl Global for GlobalSamplers {}
@@ -71,10 +71,10 @@ impl GlobalSamplers {
         });
 
         Self {
-            nearest_clamp: Arc::new(nearest_clamp),
-            linear_clamp: Arc::new(linear_clamp),
-            nearest_wrap: Arc::new(nearest_wrap),
-            linear_wrap: Arc::new(linear_wrap),
+            nearest_clamp,
+            linear_clamp,
+            nearest_wrap,
+            linear_wrap,
         }
     }
 

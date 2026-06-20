@@ -455,7 +455,7 @@ impl BrushPresetRenderer {
             self.main.dispatch(
                 device,
                 &mut pass,
-                target_layer.texture.as_ref(),
+                &target_layer.texture,
                 &target_layer.tile_info_buffer,
                 &has_selection,
                 &selection_layer.texture,
@@ -540,7 +540,7 @@ impl BrushPresetRenderer {
                     device,
                     &mut pass,
                     &self.stroke_pp_data,
-                    target_layer.texture.as_ref(),
+                    &target_layer.texture,
                     &target_layer.tile_info_buffer,
                     &has_selection,
                     &selection_layer.texture,

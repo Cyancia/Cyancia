@@ -95,13 +95,13 @@ pub struct GpuLayerInfo {
 }
 
 pub struct LayerBindingData {
-    pub texture: Arc<TextureView>,
+    pub texture: TextureView,
     pub tile_info_buffer: Buffer,
 }
 
 pub struct GpuTileStorageInner {
-    device: Arc<Device>,
-    queue: Arc<Queue>,
+    device: Device,
+    queue: Queue,
 
     dummy_layers: HashMap<TexelType, DynamicLayerStorage>,
     layers: DashMap<LayerId, DynamicLayerStorage>,
@@ -119,7 +119,7 @@ impl GpuTileStorageInner {
         depth_or_array_layers: 1,
     };
 
-    pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
+    pub fn new(device: Device, queue: Queue) -> Self {
         let mut dummy_layers = HashMap::new();
         for texel_type in TexelType::ALL_POSSIBLE_FORMATS {
             let mut st = DynamicLayerStorage::new(
@@ -323,12 +323,11 @@ impl GpuTileStorageInner {
     }
 }
 
-// TODO Remove device and queue fields, add texture label
 pub struct DynamicLayerStorage {
-    device: Arc<Device>,
-    queue: Arc<Queue>,
-    texture: Option<Arc<TextureView>>,
-    tiles: IndexMap<IVec2, Arc<TextureView>>,
+    device: Device,
+    queue: Queue,
+    texture: Option<TextureView>,
+    tiles: IndexMap<IVec2, TextureView>,
     tile_info_buffer: BufferVec<GpuTileInfo>,
     layer_info: GpuLayerInfo,
 }
@@ -338,7 +337,7 @@ impl DynamicLayerStorage {
     pub const TILE_SIZE: u32 = GpuTileStorageInner::TILE_SIZE;
 
     // TODO allow customize usage and label
-    pub fn new(device: Arc<Device>, queue: Arc<Queue>, info: GpuLayerInfo) -> Self {
+    pub fn new(device: Device, queue: Queue, info: GpuLayerInfo) -> Self {
         Self {
             device,
             queue,
@@ -365,7 +364,7 @@ impl DynamicLayerStorage {
         })
     }
 
-    pub fn get_tile(&self, coord: IVec2) -> Option<Arc<TextureView>> {
+    pub fn get_tile(&self, coord: IVec2) -> Option<TextureView> {
         self.tiles.get(&coord).cloned()
     }
 
@@ -377,7 +376,7 @@ impl DynamicLayerStorage {
         self.tile_info_buffer.inner_buffer()
     }
 
-    pub fn texture(&self) -> Option<&Arc<TextureView>> {
+    pub fn texture(&self) -> Option<&TextureView> {
         self.texture.as_ref()
     }
 
@@ -397,25 +396,25 @@ impl DynamicLayerStorage {
 
     // TODO Add another api allocate_tiles(tiles: impl IntoIterator<Item = IVec2>)
 
-    pub fn get_tile_or_allocate(&mut self, coord: IVec2) -> Arc<TextureView> {
+    pub fn get_tile_or_allocate(&mut self, coord: IVec2) -> TextureView {
         if let Some(tile) = self.tiles.get(&coord) {
             return tile.clone();
         }
 
-        let tile = if let Some(texture) = self.texture.as_deref()
+        let tile = if let Some(texture) = &self.texture
             && self.tiles.len() < texture.texture().depth_or_array_layers() as usize
         {
-            let tile = Arc::new(texture.texture().create_view(&TextureViewDescriptor {
+            let tile = texture.texture().create_view(&TextureViewDescriptor {
                 base_array_layer: self.tiles.len() as u32,
                 array_layer_count: Some(1),
                 ..Default::default()
-            }));
+            });
 
             self.tiles.insert(coord, tile.clone());
 
             tile
         } else {
-            let next_size = match self.texture.as_deref() {
+            let next_size = match &self.texture {
                 Some(t) => {
                     (t.texture().depth_or_array_layers() as f32 * Self::GROWTH_RATE).ceil() as u32
                 }
@@ -440,7 +439,7 @@ impl DynamicLayerStorage {
                 view_formats: &[],
             });
 
-            if let Some(old_texture) = self.texture.as_deref() {
+            if let Some(old_texture) = &self.texture {
                 let mut ce = self.device.create_command_encoder(&Default::default());
                 ce.copy_texture_to_texture(
                     old_texture.texture().as_image_copy(),
@@ -454,23 +453,23 @@ impl DynamicLayerStorage {
                 self.queue.submit([ce.finish()]);
             }
 
-            self.texture = Some(Arc::new(new_texture.create_view(&TextureViewDescriptor {
+            self.texture = Some(new_texture.create_view(&TextureViewDescriptor {
                 dimension: Some(TextureViewDimension::D2Array),
                 ..Default::default()
-            })));
+            }));
             for (i, tile) in self.tiles.values_mut().enumerate() {
-                *tile = Arc::new(new_texture.create_view(&TextureViewDescriptor {
+                *tile = new_texture.create_view(&TextureViewDescriptor {
                     base_array_layer: i as u32,
                     array_layer_count: Some(1),
                     ..Default::default()
-                }));
+                });
             }
 
-            let tile = Arc::new(new_texture.create_view(&TextureViewDescriptor {
+            let tile = new_texture.create_view(&TextureViewDescriptor {
                 base_array_layer: self.tiles.len() as u32,
                 array_layer_count: Some(1),
                 ..Default::default()
-            }));
+            });
             self.tiles.insert(coord, tile.clone());
 
             tile
@@ -516,7 +515,7 @@ impl DynamicLayerStorage {
             view_formats: &[],
         });
 
-        if let Some(old_texture) = self.texture.as_deref() {
+        if let Some(old_texture) = &self.texture {
             let mut ce = self.device.create_command_encoder(&Default::default());
             ce.copy_texture_to_texture(
                 old_texture.texture().as_image_copy(),
@@ -530,17 +529,17 @@ impl DynamicLayerStorage {
             self.queue.submit([ce.finish()]);
         }
 
-        self.texture = Some(Arc::new(new_texture.create_view(&TextureViewDescriptor {
+        self.texture = Some(new_texture.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2Array),
             ..Default::default()
-        })));
+        }));
 
         for (i, tile) in self.tiles.values_mut().enumerate() {
-            *tile = Arc::new(new_texture.create_view(&TextureViewDescriptor {
+            *tile = new_texture.create_view(&TextureViewDescriptor {
                 base_array_layer: i as u32,
                 array_layer_count: Some(1),
                 ..Default::default()
-            }));
+            });
         }
     }
 
@@ -561,7 +560,7 @@ impl DynamicLayerStorage {
         self.tiles.keys().copied()
     }
 
-    pub fn iter_tiles(&self) -> impl Iterator<Item = (IVec2, u32, &Arc<TextureView>)> {
+    pub fn iter_tiles(&self) -> impl Iterator<Item = (IVec2, u32, &TextureView)> {
         self.tiles.iter().map(|(coord, texture)| {
             (
                 *coord,
@@ -604,10 +603,10 @@ impl DynamicLayerStorage {
             view_formats: &[],
         });
 
-        let new_texture_view = Arc::new(new_texture.create_view(&TextureViewDescriptor {
+        let new_texture_view = new_texture.create_view(&TextureViewDescriptor {
             dimension: Some(TextureViewDimension::D2Array),
             ..Default::default()
-        }));
+        });
 
         let mut new_tiles = IndexMap::new();
         let mut new_tile_info_buffer =
@@ -616,11 +615,11 @@ impl DynamicLayerStorage {
         for (i, (coord, _)) in self.tiles.iter().enumerate() {
             new_tiles.insert(
                 *coord,
-                Arc::new(new_texture.create_view(&TextureViewDescriptor {
+                new_texture.create_view(&TextureViewDescriptor {
                     base_array_layer: i as u32,
                     array_layer_count: Some(1),
                     ..Default::default()
-                })),
+                }),
             );
             new_tile_info_buffer.push(&GpuTileInfo {
                 index: *coord,
