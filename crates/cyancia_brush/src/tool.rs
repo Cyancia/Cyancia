@@ -142,7 +142,7 @@ impl ToolFunction for BrushTool {
             overriders.insert_overrider(
                 *target_layer,
                 PixelPreviewOverrider {
-                    texture: preview.texture().unwrap().clone(),
+                    texture: preview.texture_view().unwrap().clone(),
                     tile_info_buffer: preview.tile_info_buffer().unwrap().clone(),
                 },
             );

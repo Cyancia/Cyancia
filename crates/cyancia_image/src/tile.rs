@@ -14,9 +14,9 @@ use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView};
 use indexmap::IndexMap;
 use wgpu::{
-    Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, TextureAspect,
-    TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,
-    TextureViewDimension, util::DeviceExt,
+    Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, Texture,
+    TextureAspect, TextureDescriptor, TextureDimension, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension, util::DeviceExt,
 };
 
 use crate::{
@@ -400,7 +400,7 @@ impl DynamicLayerStorage {
     }
 
     pub fn binding_data(&self) -> Option<LayerBindingData> {
-        let texture = self.texture()?.clone();
+        let texture = self.texture_view()?.clone();
         let tile_info_buffer = self.tile_info_buffer()?.clone();
         Some(LayerBindingData {
             texture,
@@ -420,8 +420,12 @@ impl DynamicLayerStorage {
         self.tile_info_buffer.inner_buffer()
     }
 
-    pub fn texture(&self) -> Option<&TextureView> {
+    pub fn texture_view(&self) -> Option<&TextureView> {
         self.texture.as_ref()
+    }
+
+    pub fn texture(&self) -> Option<&Texture> {
+        Some(self.texture_view()?.texture())
     }
 
     pub fn allocate_pixels(&mut self, pixel_rect: IRect) {
@@ -644,7 +648,7 @@ impl DynamicLayerStorage {
 
     pub fn capacity(&self) -> usize {
         self.texture()
-            .map(|t| t.texture().depth_or_array_layers() as usize)
+            .map(|t| t.depth_or_array_layers() as usize)
             .unwrap_or_default()
     }
 

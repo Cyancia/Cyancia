@@ -80,7 +80,7 @@ pub fn generate_cmd(
         selection_layer_id,
         &selection_layer,
         selection.iter_tiles().map(|(i, _, _)| i).collect(),
-        selection.texture().unwrap().texture().clone(),
+        selection.texture().unwrap().clone(),
     ))
 }
 
@@ -547,7 +547,9 @@ impl SelectionPipeline {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(output_selection.texture().unwrap()),
+                    resource: BindingResource::TextureView(
+                        output_selection.texture_view().unwrap(),
+                    ),
                 },
                 BindGroupEntry {
                     binding: 3,

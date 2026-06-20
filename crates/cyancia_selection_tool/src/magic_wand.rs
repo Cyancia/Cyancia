@@ -140,7 +140,7 @@ impl ToolFunction for MagicWandSelectionTool {
                 selection_layer_id,
                 &selection_layer,
                 selection.iter_tiles().map(|(i, _, _)| i).collect(),
-                selection.texture().unwrap().texture().clone(),
+                selection.texture_view().unwrap().texture().clone(),
             )
         } else {
             TileReplaceCommand::new_clear(

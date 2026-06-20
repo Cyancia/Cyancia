@@ -454,22 +454,30 @@ fn bind_group_entries<'a>(
         entries.extend([
             BindGroupEntry {
                 binding: 6,
-                resource: BindingResource::TextureView(intermediate_buffers[0].texture().unwrap()),
+                resource: BindingResource::TextureView(
+                    intermediate_buffers[0].texture_view().unwrap(),
+                ),
             },
             BindGroupEntry {
                 binding: 7,
-                resource: BindingResource::TextureView(intermediate_buffers[1].texture().unwrap()),
+                resource: BindingResource::TextureView(
+                    intermediate_buffers[1].texture_view().unwrap(),
+                ),
             },
         ]);
     } else {
         entries.extend([
             BindGroupEntry {
                 binding: 6,
-                resource: BindingResource::TextureView(intermediate_buffers[1].texture().unwrap()),
+                resource: BindingResource::TextureView(
+                    intermediate_buffers[1].texture_view().unwrap(),
+                ),
             },
             BindGroupEntry {
                 binding: 7,
-                resource: BindingResource::TextureView(intermediate_buffers[0].texture().unwrap()),
+                resource: BindingResource::TextureView(
+                    intermediate_buffers[0].texture_view().unwrap(),
+                ),
             },
         ]);
     }

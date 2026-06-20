@@ -852,7 +852,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture_view().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -860,7 +860,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 3,
-                    resource: BindingResource::TextureView(output_tiles.texture().unwrap()),
+                    resource: BindingResource::TextureView(output_tiles.texture_view().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 4,
@@ -954,7 +954,7 @@ impl Bucket {
             let src_layer = mask.get_tile_layer(tile).unwrap();
             ec.copy_texture_to_texture(
                 TexelCopyTextureInfo {
-                    texture: mask.texture().unwrap().texture(),
+                    texture: mask.texture_view().unwrap().texture(),
                     mip_level: 0,
                     origin: Origin3d {
                         x: 0,
@@ -964,7 +964,7 @@ impl Bucket {
                     aspect: TextureAspect::All,
                 },
                 TexelCopyTextureInfo {
-                    texture: output_texture.texture().unwrap().texture(),
+                    texture: output_texture.texture_view().unwrap().texture(),
                     mip_level: 0,
                     origin: Origin3d {
                         x: 0,
@@ -1070,7 +1070,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture_view().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 3,
@@ -1156,7 +1156,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture_view().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 4,
@@ -1271,7 +1271,7 @@ impl Bucket {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(mask.texture().unwrap()),
+                    resource: BindingResource::TextureView(mask.texture_view().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -1336,11 +1336,11 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::TextureView(mask.texture().unwrap()),
+                        resource: BindingResource::TextureView(mask.texture_view().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 2,
-                        resource: BindingResource::TextureView(grown_mask.texture().unwrap()),
+                        resource: BindingResource::TextureView(grown_mask.texture_view().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 3,
@@ -1389,12 +1389,12 @@ impl Bucket {
                     entries: &[
                         BindGroupEntry {
                             binding: 0,
-                            resource: BindingResource::TextureView(mask.texture().unwrap()),
+                            resource: BindingResource::TextureView(mask.texture_view().unwrap()),
                         },
                         BindGroupEntry {
                             binding: 1,
                             resource: BindingResource::TextureView(
-                                smoothed_mask.texture().unwrap(),
+                                smoothed_mask.texture_view().unwrap(),
                             ),
                         },
                         BindGroupEntry {
@@ -1439,7 +1439,7 @@ impl Bucket {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::TextureView(mask.texture().unwrap()),
+                        resource: BindingResource::TextureView(mask.texture_view().unwrap()),
                     },
                     BindGroupEntry {
                         binding: 4,

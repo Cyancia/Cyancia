@@ -569,7 +569,7 @@ impl BrushPresetRenderer {
         round: u32,
     ) -> Option<(Texture, Vec<IVec2>)> {
         let result_buffer = &intermediate_buffers[round as usize % 2];
-        let result_texture = result_buffer.texture()?;
+        let result_texture = result_buffer.texture_view()?;
 
         Some((
             result_texture.texture().clone(),

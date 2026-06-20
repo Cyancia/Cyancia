@@ -70,7 +70,7 @@ impl TileReplaceCommand {
                 let src_layer = layer_storage.get_tile_layer(*index).unwrap();
                 ec.copy_texture_to_texture(
                     TexelCopyTextureInfo {
-                        texture: layer_texture.texture(),
+                        texture: layer_texture,
                         mip_level: 0,
                         origin: Origin3d {
                             x: 0,
@@ -119,11 +119,11 @@ impl TileReplaceCommand {
         let old_tiles = layer_storage.texture().map(|layer_texture| {
             let old_texture = device.create_texture(&TextureDescriptor {
                 label: Some("old_texture"),
-                size: layer_texture.texture().size(),
+                size: layer_texture.size(),
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
-                format: layer_texture.texture().format(),
+                format: layer_texture.format(),
                 usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
@@ -132,7 +132,7 @@ impl TileReplaceCommand {
 
             ec.push_debug_group("copy_old_tiles");
             ec.copy_texture_to_texture(
-                layer_texture.texture().as_image_copy(),
+                layer_texture.as_image_copy(),
                 old_texture.as_image_copy(),
                 old_texture.size(),
             );
@@ -181,7 +181,7 @@ fn apply_tile_replace(
     if let Some((tiles, tile_indices)) = replace_tile {
         layer.allocate_tiles_batch(tile_indices);
 
-        let layer_texture = layer.texture().unwrap().texture();
+        let layer_texture = layer.texture().unwrap();
 
         ec.push_debug_group("replace_old_with_new");
         for (src_layer, tile_index) in tile_indices.iter().enumerate() {
@@ -223,7 +223,7 @@ fn apply_tile_replace(
         };
 
         ec.clear_texture(
-            layer.texture().unwrap().texture(),
+            layer.texture_view().unwrap().texture(),
             &ImageSubresourceRange {
                 aspect: TextureAspect::All,
                 base_mip_level: 0,

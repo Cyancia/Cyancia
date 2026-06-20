@@ -119,7 +119,7 @@ impl ScanPixelsPipeline {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(target_layer.texture().unwrap()),
+                    resource: BindingResource::TextureView(target_layer.texture_view().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 1,

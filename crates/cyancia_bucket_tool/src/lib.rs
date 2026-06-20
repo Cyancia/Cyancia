@@ -134,7 +134,7 @@ impl ToolFunction for BucketTool {
                 output_layer_id,
                 &output_layer,
                 new_tiles.iter_tiles().map(|(i, _, _)| i).collect(),
-                new_tiles.texture().unwrap().texture().clone(),
+                new_tiles.texture().unwrap().clone(),
             );
             drop(output_layer);
             cx.push_undo_command_to_current(cmd).log_err();
