@@ -451,9 +451,7 @@ impl DynamicLayerStorage {
             return;
         }
 
-        if self.capacity() < self.len() + tile_to_allocate.len() {
-            self.reserve(((self.len() + tile_to_allocate.len()) - self.capacity()) as u32);
-        }
+        self.reserve(tile_to_allocate.len());
 
         let start_index = self.tiles.len() as u32;
         let texture = self.texture.as_ref().unwrap().texture();
@@ -560,23 +558,18 @@ impl DynamicLayerStorage {
         tile
     }
 
-    pub fn reserve(&mut self, additional: u32) {
-        if additional == 0 {
+    pub fn reserve(&mut self, additional: usize) {
+        if self.len() + additional <= self.capacity() {
             return;
         }
 
-        let new_capacity = self
-            .texture
-            .as_ref()
-            .map(|t| t.texture().depth_or_array_layers())
-            .unwrap_or_default()
-            + additional;
+        let new_capacity = self.len() + additional;
         let new_texture = self.device.create_texture(&TextureDescriptor {
             label: Some(&self.texture_label),
             size: Extent3d {
                 width: Self::TILE_SIZE,
                 height: Self::TILE_SIZE,
-                depth_or_array_layers: new_capacity,
+                depth_or_array_layers: new_capacity as u32,
             },
             mip_level_count: 1,
             sample_count: 1,
