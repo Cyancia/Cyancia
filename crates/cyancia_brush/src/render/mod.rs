@@ -437,8 +437,8 @@ impl BrushPresetRenderer {
 
             let _ = bounds.size().as_uvec2();
 
-            intermediate_buffers[0].ensure_pixel_area(bounds);
-            intermediate_buffers[1].ensure_pixel_area(bounds);
+            intermediate_buffers[0].allocate_pixels(bounds);
+            intermediate_buffers[1].allocate_pixels(bounds);
 
             *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
         }

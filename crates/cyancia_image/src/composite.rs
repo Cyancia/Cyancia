@@ -65,7 +65,7 @@ impl ImageCompositor {
         });
 
         let mut root_layer_tiles = tiles.get_layer_mut(image.root_id()).unwrap();
-        root_layer_tiles.ensure_pixel_area(IRect {
+        root_layer_tiles.allocate_pixels(IRect {
             min: IVec2::ZERO,
             max: image.size.as_ivec2(),
         });

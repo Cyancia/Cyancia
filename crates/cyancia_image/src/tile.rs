@@ -416,21 +416,45 @@ impl DynamicLayerStorage {
         self.texture.as_ref()
     }
 
-    pub fn ensure_pixel_area(&mut self, pixel_rect: IRect) {
+    pub fn allocate_pixels(&mut self, pixel_rect: IRect) {
         let tile_area = GpuTileStorageInner::pixel_rect_to_tile(pixel_rect);
-        self.ensure_tile_area(tile_area);
+        self.allocate_tiles(tile_area);
     }
 
-    pub fn ensure_tile_area(&mut self, tile_rect: IRect) {
-        for y in tile_rect.min.y..tile_rect.max.y {
-            for x in tile_rect.min.x..tile_rect.max.x {
-                // TODO: This may cause multiple reallocations of the main texture. Avoid this.
-                self.get_tile_or_allocate(IVec2::new(x, y));
-            }
+    pub fn allocate_tiles(&mut self, tile_rect: IRect) {
+        self.allocate_tiles_batch(
+            (tile_rect.min.y..tile_rect.max.y)
+                .flat_map(|y| (tile_rect.min.x..tile_rect.max.x).map(move |x| IVec2::new(x, y))),
+        );
+    }
+
+    pub fn allocate_tiles_batch(&mut self, tiles: impl IntoIterator<Item = IVec2>) {
+        let tile_to_allocate = tiles
+            .into_iter()
+            .filter(|t| !self.tiles.contains_key(t))
+            .collect::<Vec<_>>();
+        if tile_to_allocate.is_empty() {
+            return;
         }
-    }
 
-    // TODO Add another api allocate_tiles(tiles: impl IntoIterator<Item = IVec2>)
+        if self.capacity() < self.len() + tile_to_allocate.len() {
+            self.reserve(((self.len() + tile_to_allocate.len()) - self.capacity()) as u32);
+        }
+
+        let start_index = self.tiles.len() as u32;
+        let texture = self.texture.as_ref().unwrap().texture();
+        self.tiles
+            .extend(tile_to_allocate.into_iter().enumerate().map(|(i, t)| {
+                (
+                    t,
+                    texture.create_view(&TextureViewDescriptor {
+                        base_array_layer: start_index + i as u32,
+                        array_layer_count: Some(1),
+                        ..Default::default()
+                    }),
+                )
+            }));
+    }
 
     pub fn get_tile_or_allocate(&mut self, coord: IVec2) -> TextureView {
         if let Some(tile) = self.tiles.get(&coord) {
@@ -612,6 +636,12 @@ impl DynamicLayerStorage {
 
     pub fn is_empty(&self) -> bool {
         self.tiles.is_empty()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.texture()
+            .map(|t| t.texture().depth_or_array_layers() as usize)
+            .unwrap_or_default()
     }
 
     pub fn create_allocated_empty_sibling(&self) -> Self {
