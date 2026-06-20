@@ -404,7 +404,7 @@ impl SelectionPipeline {
 
         let mut cur_rendering_indices = Vec::with_capacity(n_render_tiles);
         let mut cur_rendering_index_buffer =
-            DynamicBuffer::new(Some("cur_tile_index_buffer"), BufferUsages::UNIFORM);
+            DynamicBuffer::new(Some("cur_tile_index_buffer".into()), BufferUsages::UNIFORM);
         let mut cur_rendering_index_offsets = Vec::with_capacity(n_render_tiles);
 
         let mut output_tiles = reserved_output_tiles;
@@ -527,7 +527,10 @@ impl SelectionPipeline {
         let output_selection = input_selection.deep_clone();
 
         let composite_params_buffer = {
-            let mut b = DynamicBuffer::new(Some("selection_params_buffer"), BufferUsages::UNIFORM);
+            let mut b = DynamicBuffer::new(
+                Some("selection_params_buffer".into()),
+                BufferUsages::UNIFORM,
+            );
             b.push(&SelectionParams {
                 operation_ty: op as u32,
             });
@@ -692,7 +695,8 @@ impl SelectionPreviewPipeline {
 
         static FIRST_DRAW: OnceLock<Instant> = OnceLock::new();
         let canvas_params_buffer = {
-            let mut b = DynamicBuffer::new(Some("canvas_params_buffer"), BufferUsages::UNIFORM);
+            let mut b =
+                DynamicBuffer::new(Some("canvas_params_buffer".into()), BufferUsages::UNIFORM);
             b.push(&CanvasUniform {
                 pixel_to_widget: canvas_transform.pixel_to_widget,
                 widget_min: canvas_transform.widget_bounds.min,

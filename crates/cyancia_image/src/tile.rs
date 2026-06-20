@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, ops::Deref, sync::Arc};
 
 use bevy_math::IRect;
 use cyancia_render::{buffer::BufferVec, render_context::RenderContext};
@@ -323,31 +323,67 @@ impl GpuTileStorageInner {
     }
 }
 
+pub const DEFAULT_LAYER_TEXTURE_USAGES: TextureUsages = TextureUsages::from_bits_truncate(
+    TextureUsages::TEXTURE_BINDING.bits()
+        | TextureUsages::COPY_DST.bits()
+        | TextureUsages::COPY_SRC.bits()
+        | TextureUsages::STORAGE_BINDING.bits(),
+);
+
+pub const DEFAULT_LAYER_TEXTURE_LABEL: Cow<'static, str> = Cow::Borrowed("tile_texture");
+
+pub const DEFAULT_LAYER_TILE_INFO_BUFFER_USAGES: BufferUsages = BufferUsages::from_bits_truncate(
+    BufferUsages::COPY_DST.bits() | BufferUsages::COPY_SRC.bits() | BufferUsages::STORAGE.bits(),
+);
+
+pub const DEFAULT_LAYER_TILE_INFO_BUFFER_LABEL: Cow<'static, str> =
+    Cow::Borrowed("tile_info_buffer");
+
 pub struct DynamicLayerStorage {
     device: Device,
     queue: Queue,
+
+    texture_usages: TextureUsages,
+    texture_label: Cow<'static, str>,
+    layer_info: GpuLayerInfo,
+
     texture: Option<TextureView>,
     tiles: IndexMap<IVec2, TextureView>,
     tile_info_buffer: BufferVec<GpuTileInfo>,
-    layer_info: GpuLayerInfo,
 }
 
 impl DynamicLayerStorage {
     pub const GROWTH_RATE: f32 = 1.5;
     pub const TILE_SIZE: u32 = GpuTileStorageInner::TILE_SIZE;
 
-    // TODO allow customize usage and label
     pub fn new(device: Device, queue: Queue, info: GpuLayerInfo) -> Self {
+        Self::new_full(device, queue, None, None, None, None, info)
+    }
+
+    pub fn new_full(
+        device: Device,
+        queue: Queue,
+        texture_label: Option<Cow<'static, str>>,
+        tile_info_buffer_label: Option<Cow<'static, str>>,
+        texture_usage: Option<TextureUsages>,
+        tile_info_buffer_usage: Option<BufferUsages>,
+        info: GpuLayerInfo,
+    ) -> Self {
         Self {
             device,
             queue,
+            texture_label: texture_label.unwrap_or(DEFAULT_LAYER_TEXTURE_LABEL.clone()),
+            texture_usages: texture_usage.unwrap_or(DEFAULT_LAYER_TEXTURE_USAGES),
+            layer_info: info,
+
             texture: None,
             tiles: IndexMap::new(),
             tile_info_buffer: BufferVec::new(
-                Some("tile info buffer".into()),
-                BufferUsages::STORAGE,
+                Some(
+                    tile_info_buffer_label.unwrap_or(DEFAULT_LAYER_TILE_INFO_BUFFER_LABEL.clone()),
+                ),
+                tile_info_buffer_usage.unwrap_or(DEFAULT_LAYER_TILE_INFO_BUFFER_USAGES),
             ),
-            layer_info: info,
         }
     }
 
@@ -632,10 +668,12 @@ impl DynamicLayerStorage {
         Self {
             device: self.device.clone(),
             queue: self.queue.clone(),
+            texture_label: self.texture_label.clone(),
+            texture_usages: self.texture_usages,
+            layer_info: self.layer_info,
             texture: Some(new_texture_view),
             tiles: new_tiles,
             tile_info_buffer: new_tile_info_buffer,
-            layer_info: self.layer_info,
         }
     }
 

@@ -121,10 +121,7 @@ impl TextureAtlasBuilder {
             .collect::<Vec<_>>();
 
         let mut atlas_bounds_buffer = BufferVec::new(
-            Some(format!(
-                "{} atlas bounds buffer",
-                atlas_name.unwrap_or_default()
-            )),
+            Some(format!("{}_atlas_bounds_buffer", atlas_name.unwrap_or_default()).into()),
             BufferUsages::STORAGE,
         );
         for bounds in &atlas_bounds {

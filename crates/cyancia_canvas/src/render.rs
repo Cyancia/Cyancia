@@ -315,7 +315,7 @@ impl CanvasRenderPipeline {
             main_layout,
             pipeline,
             uniform_buffer: DynamicBuffer::new(
-                Some("canvas uniform buffer"),
+                Some("canvas uniform buffer".into()),
                 BufferUsages::UNIFORM,
             ),
             uniform: None,

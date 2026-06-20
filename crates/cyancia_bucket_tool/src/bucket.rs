@@ -1014,8 +1014,10 @@ impl Bucket {
             transparent_mode: 0,
         };
 
-        let mut seed_params_buffer =
-            DynamicBuffer::new(Some("bucket_seed_params_buffer"), BufferUsages::UNIFORM);
+        let mut seed_params_buffer = DynamicBuffer::new(
+            Some("bucket_seed_params_buffer".into()),
+            BufferUsages::UNIFORM,
+        );
         seed_params_buffer.push(&inner_params);
         seed_params_buffer.write_buffer(device, queue);
 
@@ -1024,7 +1026,7 @@ impl Bucket {
         inner_params.transparent_mode = u32::from(seed_transparent_mode);
 
         let mut bucket_params_buffer =
-            DynamicBuffer::new(Some("bucket_params_buffer"), BufferUsages::UNIFORM);
+            DynamicBuffer::new(Some("bucket_params_buffer".into()), BufferUsages::UNIFORM);
         bucket_params_buffer.push(&inner_params);
         bucket_params_buffer.write_buffer(device, queue);
 
@@ -1385,7 +1387,7 @@ impl Bucket {
             BucketAntialiasApproach::Fxaa => {
                 let fxaa_params = FxaaParams::default();
                 let mut fxaa_params_buffer =
-                    DynamicBuffer::new(Some("fxaa_params_buffer"), BufferUsages::UNIFORM);
+                    DynamicBuffer::new(Some("fxaa_params_buffer".into()), BufferUsages::UNIFORM);
                 fxaa_params_buffer.push(&FxaaParamsInner {
                     edge_threshold_min: fxaa_params.edge_threshold_min,
                     edge_threshold_max: fxaa_params.edge_threshold_max,
@@ -1623,7 +1625,7 @@ fn create_jfa_params(
     max_jump: u32,
     label: &'static str,
 ) -> (DynamicBuffer<JumpParams>, Vec<u32>) {
-    let mut jump_params_buffer = DynamicBuffer::new(Some(label), BufferUsages::UNIFORM);
+    let mut jump_params_buffer = DynamicBuffer::new(Some(label.into()), BufferUsages::UNIFORM);
     let mut jump_params_offsets = Vec::new();
     let mut jump = max_jump.max(1);
     while jump > 0 {

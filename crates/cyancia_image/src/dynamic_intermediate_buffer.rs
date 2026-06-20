@@ -60,7 +60,7 @@ impl DynamicIntermediateBuffer {
             });
 
         let mut info = DynamicBuffer::new(
-            Some("dynamic intermediate buffer"),
+            Some("dynamic intermediate buffer".into()),
             BufferUsages::STORAGE | BufferUsages::COPY_SRC,
         );
         info.push(&DynamicGpuTileInfoBuffer {

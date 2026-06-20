@@ -53,6 +53,9 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     ) -> Vec<GraphDefaultOutputSlot>;
     fn update_signature(&self, _: &Self::State, _: GraphNodeUpdateSignatureContext<'_, Data>) {}
     fn render(&self, state: &Self::State, ctx: GraphNodeRenderContext<'_, '_, Data>) -> AnyElement;
+    // TODO Restrict the generate_code to return a function name.
+    //      In the future, every node has a corresponding function at shader side that executes the
+    //      logic the node defines. Arbitrary code is avoided to make maintenance easier.
     fn generate_code(
         &self,
         state: &Self::State,

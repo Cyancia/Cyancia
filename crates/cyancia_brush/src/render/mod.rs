@@ -378,13 +378,19 @@ impl BrushPresetRenderer {
             main,
             stroke_pp,
             resources,
-            samples_buffer: DynamicBuffer::new("samples buffer".into(), BufferUsages::STORAGE),
-            samples_offsets: Vec::new(),
-            stroke_pp_data: DynamicBuffer::new(
-                "stroke postprocess data buffer".into(),
+            samples_buffer: DynamicBuffer::new(
+                Some("samples_buffer".into()),
                 BufferUsages::STORAGE,
             ),
-            dab_info_buffer: DynamicBuffer::new("dab info buffer".into(), BufferUsages::STORAGE),
+            samples_offsets: Vec::new(),
+            stroke_pp_data: DynamicBuffer::new(
+                Some("stroke_postprocess_data_buffer".into()),
+                BufferUsages::STORAGE,
+            ),
+            dab_info_buffer: DynamicBuffer::new(
+                Some("dab_info_buffer".into()),
+                BufferUsages::STORAGE,
+            ),
             dab_info_offsets: Vec::new(),
             scan_pixels: ScanPixelsPipeline::new(device, selection_layer_format),
         }
