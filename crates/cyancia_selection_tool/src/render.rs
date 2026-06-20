@@ -429,10 +429,7 @@ impl SelectionPipeline {
                 texel_type: self.layer_format,
             },
         );
-
-        for tile in &output_tiles {
-            selection.get_tile_or_allocate(*tile);
-        }
+        selection.allocate_tiles_batch(output_tiles);
 
         let render_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("selection_render_bind_group"),
@@ -497,9 +494,7 @@ impl SelectionPipeline {
         target_selection_binding: &LayerBindingData,
     ) -> Option<DynamicLayerStorage> {
         let mut output_tiles = input_selection.deep_clone();
-        for (tile, _, _) in target_selection.iter_tiles() {
-            output_tiles.get_tile_or_allocate(tile);
-        }
+        output_tiles.allocate_tiles_batch(target_selection.iter_tile_indices());
 
         self.composite_with_target_selection_reserved_input(
             device,

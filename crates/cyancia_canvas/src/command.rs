@@ -179,9 +179,7 @@ fn apply_tile_replace(
     let mut ec = device.create_command_encoder(&Default::default());
 
     if let Some((tiles, tile_indices)) = replace_tile {
-        for index in tile_indices {
-            layer.get_tile_or_allocate(*index);
-        }
+        layer.allocate_tiles_batch(tile_indices);
 
         let layer_texture = layer.texture().unwrap().texture();
 

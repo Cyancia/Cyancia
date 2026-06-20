@@ -834,10 +834,7 @@ impl Bucket {
                 texel_type: self.output_layer_format,
             },
         );
-
-        for tile in output_tile_indices {
-            output_tiles.get_tile_or_allocate(tile);
-        }
+        output_tiles.allocate_tiles_batch(output_tile_indices);
 
         let has_selection_buffer = self
             .scan_pixels_pipeline
@@ -950,10 +947,7 @@ impl Bucket {
                 texel_type: self.mask_format,
             },
         );
-
-        for tile in output_tiles {
-            output_texture.get_tile_or_allocate(tile);
-        }
+        output_texture.allocate_tiles_batch(output_tiles);
 
         let mut ec = device.create_command_encoder(&Default::default());
         for (dst_layer, tile) in output_texture.iter_tile_indices().enumerate() {
@@ -1058,9 +1052,7 @@ impl Bucket {
                 texel_type: self.mask_format,
             },
         );
-        for tile in mask_tile_indices {
-            mask.get_tile_or_allocate(tile);
-        }
+        mask.allocate_tiles_batch(mask_tile_indices);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -1105,18 +1097,10 @@ impl Bucket {
         queue.submit([ec.finish()]);
 
         let existing_mask_tiles = self.scan_pixels_pipeline.scan(device, queue, &mask);
-        for index in existing_mask_tiles {
-            mask.get_tile_or_allocate(index);
-            for dx in -1..=1 {
-                for dy in -1..=1 {
-                    if dx == 0 && dy == 0 {
-                        continue;
-                    }
-
-                    mask.get_tile_or_allocate(index + IVec2::new(dx, dy));
-                }
-            }
-        }
+        let grown_mask_tiles = existing_mask_tiles.into_iter().flat_map(|t| {
+            (-1..=1).flat_map(move |dx| (-1..=1).map(move |dy| t + IVec2::new(dx, dy)))
+        });
+        mask.allocate_tiles_batch(grown_mask_tiles);
 
         let seed_texture_a_view = {
             let t = device.create_texture(&TextureDescriptor {

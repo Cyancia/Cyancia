@@ -1,4 +1,9 @@
-use std::{borrow::Cow, collections::HashMap, ops::Deref, sync::Arc};
+use std::{
+    borrow::{Borrow, Cow},
+    collections::{HashMap, HashSet},
+    ops::Deref,
+    sync::Arc,
+};
 
 use bevy_math::IRect;
 use cyancia_render::{buffer::BufferVec, render_context::RenderContext};
@@ -219,68 +224,64 @@ impl GpuTileStorageInner {
 
         let mut ec = self.device.create_command_encoder(&Default::default());
         let n_tiles = Self::calc_tile_count(UVec2::new(width, height));
-        layer.reserve(n_tiles.element_product());
+        let tiles = (0..n_tiles.y)
+            .flat_map(|y| (0..n_tiles.x).map(move |x| IVec2::new(x as i32, y as i32)));
+        layer.allocate_tiles_batch(tiles.clone());
 
-        for y in 0..n_tiles.y {
-            for x in 0..n_tiles.x {
-                let tile_index = TileIndex {
-                    layer: layer_id,
-                    coord: IVec2::new(x as i32, y as i32),
-                };
-                let tile = layer.get_tile_or_allocate(tile_index.coord);
-                let tile_layer = layer.get_tile_layer(tile_index.coord).unwrap();
-                log::debug!("Uploading tile: {:?}", tile_index);
-                let origin = UVec2::new(x, y) * Self::TILE_SIZE;
+        for tile_index in tiles {
+            let tile = layer.get_tile(tile_index).unwrap();
+            let tile_layer = layer.get_tile_layer(tile_index).unwrap();
+            log::debug!("Uploading tile: {:?}", tile_index);
+            let origin = tile_index.as_uvec2() * Self::TILE_SIZE;
 
-                let sub_img = img.view(
-                    origin.x,
-                    origin.y,
-                    Self::TILE_SIZE.min(width - origin.x),
-                    Self::TILE_SIZE.min(height - origin.y),
-                );
-                let data = layer_info
-                    .texel_type
-                    .convert_image_to_wgpu(DynamicImage::from(sub_img.to_image()));
+            let sub_img = img.view(
+                origin.x,
+                origin.y,
+                Self::TILE_SIZE.min(width - origin.x),
+                Self::TILE_SIZE.min(height - origin.y),
+            );
+            let data = layer_info
+                .texel_type
+                .convert_image_to_wgpu(DynamicImage::from(sub_img.to_image()));
 
-                let texture = self.device.create_texture_with_data(
-                    &self.queue,
-                    &TextureDescriptor {
-                        label: Some("temp tile texture"),
-                        size: Extent3d {
-                            width: sub_img.width(),
-                            height: sub_img.height(),
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: TextureDimension::D2,
-                        format: layer_info.texel_type.wgpu_format(),
-                        usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
-                        view_formats: &[],
-                    },
-                    Default::default(),
-                    bytemuck::cast_slice(&data),
-                );
-
-                ec.copy_texture_to_texture(
-                    texture.as_image_copy(),
-                    TexelCopyTextureInfo {
-                        texture: tile.texture(),
-                        mip_level: 0,
-                        origin: Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: tile_layer,
-                        },
-                        aspect: TextureAspect::All,
-                    },
-                    Extent3d {
+            let texture = self.device.create_texture_with_data(
+                &self.queue,
+                &TextureDescriptor {
+                    label: Some("temp tile texture"),
+                    size: Extent3d {
                         width: sub_img.width(),
                         height: sub_img.height(),
                         depth_or_array_layers: 1,
                     },
-                );
-            }
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: layer_info.texel_type.wgpu_format(),
+                    usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+                    view_formats: &[],
+                },
+                Default::default(),
+                bytemuck::cast_slice(&data),
+            );
+
+            ec.copy_texture_to_texture(
+                texture.as_image_copy(),
+                TexelCopyTextureInfo {
+                    texture: tile.texture(),
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: tile_layer,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: sub_img.width(),
+                    height: sub_img.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
         }
 
         self.queue.submit([ec.finish()]);
@@ -428,11 +429,17 @@ impl DynamicLayerStorage {
         );
     }
 
-    pub fn allocate_tiles_batch(&mut self, tiles: impl IntoIterator<Item = IVec2>) {
+    pub fn allocate_tiles_batch(&mut self, tiles: impl IntoIterator<Item = impl Borrow<IVec2>>) {
         let tile_to_allocate = tiles
             .into_iter()
-            .filter(|t| !self.tiles.contains_key(t))
-            .collect::<Vec<_>>();
+            .filter_map(|t| {
+                if self.tiles.contains_key(t.borrow()) {
+                    None
+                } else {
+                    Some(*t.borrow())
+                }
+            })
+            .collect::<HashSet<_>>();
         if tile_to_allocate.is_empty() {
             return;
         }
