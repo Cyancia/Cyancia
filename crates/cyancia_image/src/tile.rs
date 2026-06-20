@@ -92,6 +92,13 @@ impl GpuTileInfo {
         index: IVec2::splat(i32::MIN),
         origin: IVec2::splat(i32::MIN),
     };
+
+    pub fn new(index: IVec2) -> Self {
+        Self {
+            index,
+            origin: index * GpuTileStorageInner::TILE_SIZE as i32,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -450,17 +457,22 @@ impl DynamicLayerStorage {
 
         let start_index = self.tiles.len() as u32;
         let texture = self.texture.as_ref().unwrap().texture();
-        self.tiles
-            .extend(tile_to_allocate.into_iter().enumerate().map(|(i, t)| {
-                (
-                    t,
-                    texture.create_view(&TextureViewDescriptor {
-                        base_array_layer: start_index + i as u32,
-                        array_layer_count: Some(1),
-                        ..Default::default()
-                    }),
-                )
-            }));
+
+        self.tiles.reserve(tile_to_allocate.len());
+
+        for (i, t) in tile_to_allocate.into_iter().enumerate() {
+            self.tiles.insert(
+                t,
+                texture.create_view(&TextureViewDescriptor {
+                    base_array_layer: start_index + i as u32,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                }),
+            );
+            self.tile_info_buffer.push(&GpuTileInfo::new(t));
+        }
+        self.tile_info_buffer
+            .write_buffer(&self.device, &self.queue);
     }
 
     pub fn get_tile_or_allocate(&mut self, coord: IVec2) -> TextureView {
