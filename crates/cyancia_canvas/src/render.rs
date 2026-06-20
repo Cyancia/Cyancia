@@ -9,21 +9,24 @@ use cyancia_image::{
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_render::buffer::DynamicBuffer;
+use cyancia_render::{
+    bind_group_entries::BindGroupEntries,
+    bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
+    buffer::DynamicBuffer,
+};
 use cyancia_utils::include_shader;
 use encase::ShaderType;
 use glam::{IVec2, Mat3, UVec2, UVec3};
 use gpui::{Global, RenderImage};
 use image::{Frame, RgbaImage};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
-    BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoder,
+    BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindingResource,
+    Buffer, BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoder,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, SubmissionIndex, TexelCopyBufferInfo, TexelCopyBufferLayout,
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
-    TextureViewDescriptor, TextureViewDimension,
+    TextureViewDescriptor,
 };
 
 use crate::control::CanvasTransform;
@@ -223,72 +226,30 @@ impl CanvasRenderPipeline {
     fn new(device: &Device, root_texel_type: TexelType, selection_texel_type: TexelType) -> Self {
         let main_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("canvas main layout"),
-            entries: &[
-                // tiles
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: root_texel_type.wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                // tile info
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-                // canvas uniform
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(<CanvasUniform as ShaderType>::min_size()),
-                    },
-                    count: None,
-                },
-                // output
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::WriteOnly,
-                        format: INTERMEDIATE_BUFFER_FORMAT,
-                        view_dimension: TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: selection_texel_type.wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-            ],
+            entries: BindGroupLayoutEntries::sequential(
+                ShaderStages::COMPUTE,
+                (
+                    // tiles
+                    binding_types::texture_storage_2d_array(
+                        root_texel_type.wgpu_format(),
+                        StorageTextureAccess::ReadOnly,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    binding_types::uniform_buffer::<CanvasUniform>(false),
+                    // output
+                    binding_types::texture_storage_2d(
+                        INTERMEDIATE_BUFFER_FORMAT,
+                        StorageTextureAccess::WriteOnly,
+                    ),
+                    // selection
+                    binding_types::texture_storage_2d_array(
+                        selection_texel_type.wgpu_format(),
+                        StorageTextureAccess::ReadOnly,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                ),
+            )
+            .as_ref(),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -352,32 +313,15 @@ impl CanvasRenderPipeline {
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("canvas render bind group"),
             layout: &self.main_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&root_layer.texture),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: root_layer.tile_info_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: uniform_buffer,
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: BindingResource::TextureView(target),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: BindingResource::TextureView(&selection_layer.texture),
-                },
-                BindGroupEntry {
-                    binding: 5,
-                    resource: selection_layer.tile_info_buffer.as_entire_binding(),
-                },
-            ],
+            entries: BindGroupEntries::sequential((
+                BindingResource::TextureView(&root_layer.texture),
+                root_layer.tile_info_buffer.as_entire_binding(),
+                uniform_buffer,
+                BindingResource::TextureView(target),
+                BindingResource::TextureView(&selection_layer.texture),
+                selection_layer.tile_info_buffer.as_entire_binding(),
+            ))
+            .as_ref(),
         });
 
         let target_size = target.texture().size();

@@ -335,7 +335,8 @@ pub const DEFAULT_LAYER_TEXTURE_USAGES: TextureUsages = TextureUsages::from_bits
     TextureUsages::TEXTURE_BINDING.bits()
         | TextureUsages::COPY_DST.bits()
         | TextureUsages::COPY_SRC.bits()
-        | TextureUsages::STORAGE_BINDING.bits(),
+        | TextureUsages::STORAGE_BINDING.bits()
+        | TextureUsages::RENDER_ATTACHMENT.bits(),
 );
 
 pub const DEFAULT_LAYER_TEXTURE_LABEL: Cow<'static, str> = Cow::Borrowed("tile_texture");

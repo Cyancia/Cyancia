@@ -9,7 +9,12 @@ use cyancia_image::{
         LayerBindingData,
     },
 };
-use cyancia_render::{buffer::DynamicBuffer, render_context::RenderContext};
+use cyancia_render::{
+    bind_group_entries::BindGroupEntries,
+    bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
+    buffer::DynamicBuffer,
+    render_context::RenderContext,
+};
 use encase::ShaderType;
 use glam::{IVec2, Mat3, Vec2};
 use gpui::{App, FillOptions, FillRule, Modifiers};
@@ -20,14 +25,13 @@ use lyon::{
 };
 use wesl::include_wesl;
 use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
+    BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindingResource, BufferUsages,
     ColorTargetState, ColorWrites, ComputePassDescriptor, ComputePipeline,
     ComputePipelineDescriptor, Device, FragmentState, IndexFormat, LoadOp, Operations,
     PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor,
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, StoreOp, TextureFormat, TextureView, TextureViewDimension,
-    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    StorageTextureAccess, StoreOp, TextureFormat, TextureView, VertexAttribute, VertexBufferLayout,
+    VertexFormat, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -161,16 +165,10 @@ impl SelectionPipeline {
     pub fn new(device: &Device, layer_format: TexelType) -> Self {
         let render_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("selection_render_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
-                    min_binding_size: Some(IVec2::min_size()),
-                },
-                count: None,
-            }],
+            entries: &BindGroupLayoutEntries::sequential(
+                ShaderStages::VERTEX,
+                (binding_types::uniform_buffer::<IVec2>(true),),
+            ),
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -223,58 +221,22 @@ impl SelectionPipeline {
 
         let composite_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("selection_composite_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: layer_format.wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: layer_format.wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(SelectionParams::min_size()),
-                    },
-                    count: None,
-                },
-            ],
+            entries: &BindGroupLayoutEntries::sequential(
+                ShaderStages::COMPUTE,
+                (
+                    binding_types::texture_storage_2d_array(
+                        layer_format.wgpu_format(),
+                        StorageTextureAccess::ReadOnly,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    binding_types::texture_storage_2d_array(
+                        layer_format.wgpu_format(),
+                        StorageTextureAccess::ReadWrite,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    binding_types::uniform_buffer::<SelectionParams>(false),
+                ),
+            ),
         });
 
         let composite_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -434,10 +396,7 @@ impl SelectionPipeline {
         let render_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("selection_render_bind_group"),
             layout: &self.render_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: cur_rendering_index_buffer.binding().unwrap(),
-            }],
+            entries: &BindGroupEntries::single(cur_rendering_index_buffer.binding().unwrap()),
         });
 
         let mut ec = device.create_command_encoder(&Default::default());
@@ -536,33 +495,16 @@ impl SelectionPipeline {
         let composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("selection_composite_bind_group"),
             layout: &self.composite_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&target_selection.texture),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: target_selection.tile_info_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(
-                        output_selection.texture_view().unwrap(),
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: output_selection
-                        .tile_info_buffer()
-                        .unwrap()
-                        .as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: composite_params_buffer.binding().unwrap(),
-                },
-            ],
+            entries: &BindGroupEntries::sequential((
+                BindingResource::TextureView(&target_selection.texture),
+                target_selection.tile_info_buffer.as_entire_binding(),
+                BindingResource::TextureView(output_selection.texture_view().unwrap()),
+                output_selection
+                    .tile_info_buffer()
+                    .unwrap()
+                    .as_entire_binding(),
+                composite_params_buffer.binding().unwrap(),
+            )),
         });
 
         let mut ec = device.create_command_encoder(&Default::default());
@@ -605,28 +547,15 @@ impl SelectionPreviewPipeline {
     pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("selection_preview_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(CanvasUniform::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(Vec2::min_size()),
-                    },
-                    count: None,
-                },
-            ],
+            entries: &BindGroupLayoutEntries::sequential(
+                ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                (
+                    binding_types::uniform_buffer::<CanvasUniform>(false)
+                        .visibility(ShaderStages::VERTEX | ShaderStages::FRAGMENT),
+                    binding_types::storage_buffer_read_only::<Vec2>(false)
+                        .visibility(ShaderStages::VERTEX),
+                ),
+            ),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -707,16 +636,10 @@ impl SelectionPreviewPipeline {
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("canvas_params_bind_group"),
             layout: &self.layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: canvas_params_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: vertices_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &BindGroupEntries::sequential((
+                canvas_params_buffer.as_entire_binding(),
+                vertices_buffer.as_entire_binding(),
+            )),
         });
 
         let mut ec = device.create_command_encoder(&Default::default());

@@ -29,6 +29,7 @@ This project is accepting LLM assisted contributions. BUT will absolutely reject
 
 ## Special Thanks
 
+- [Bevy](https://bevy.org/)
 - [Blender](https://www.blender.org/)
 - [Krita](https://krita.org/)
 - [LINUX DO](https://linux.do/)

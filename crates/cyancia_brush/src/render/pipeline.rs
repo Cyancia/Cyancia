@@ -2,14 +2,17 @@ use std::borrow::Cow;
 
 use bevy_math::URect;
 use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner};
-use cyancia_render::buffer::DynamicBuffer;
-use encase::ShaderType;
+use cyancia_render::{
+    bind_group_entries::DynamicBindGroupEntries,
+    bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
+    buffer::DynamicBuffer,
+};
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
-    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureFormat,
-    TextureSampleType, TextureView, TextureViewDimension,
+    BindGroupLayoutEntry, BindingResource, Buffer, ComputePass, ComputePipeline,
+    ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, StorageTextureAccess, TextureFormat, TextureSampleType,
+    TextureView,
 };
 
 use crate::render::{ComputedPenInput, DabInfo, StrokePostprocessData, StrokeResources};
@@ -252,134 +255,45 @@ fn bind_group_layout_entries(
     target_layer_format: TextureFormat,
     selection_layer_format: TextureFormat,
 ) -> Vec<BindGroupLayoutEntry> {
-    let mut entries = vec![
-        BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: !is_postprocess,
-                min_binding_size: Some(if is_postprocess {
-                    StrokePostprocessData::min_size()
-                } else {
-                    ComputedPenInput::min_size()
-                }),
+    let mut entries = DynamicBindGroupLayoutEntries::sequential(
+        ShaderStages::COMPUTE,
+        (
+            if is_postprocess {
+                binding_types::storage_buffer_read_only::<StrokePostprocessData>(false)
+            } else {
+                binding_types::storage_buffer_read_only::<ComputedPenInput>(true)
             },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 1,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Texture {
-                sample_type: TextureSampleType::Float { filterable: false },
-                view_dimension: TextureViewDimension::D2,
-                multisampled: false,
+            binding_types::texture_2d(TextureSampleType::Float { filterable: false }),
+            binding_types::storage_buffer_read_only::<URect>(false),
+            binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            binding_types::texture_storage_2d_array(
+                target_layer_format,
+                StorageTextureAccess::ReadOnly,
+            ),
+            binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            binding_types::texture_storage_2d_array(
+                target_layer_format,
+                StorageTextureAccess::ReadOnly,
+            ),
+            binding_types::texture_storage_2d_array(
+                target_layer_format,
+                StorageTextureAccess::WriteOnly,
+            ),
+            if is_postprocess {
+                binding_types::storage_buffer::<DabInfo>(false)
+            } else {
+                binding_types::storage_buffer::<DabInfo>(true)
             },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 2,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: Some(URect::min_size()),
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 3,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: Some(GpuTileInfo::min_size()),
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 4,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::StorageTexture {
-                access: StorageTextureAccess::ReadOnly,
-                format: target_layer_format,
-                view_dimension: TextureViewDimension::D2Array,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 5,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: Some(GpuTileInfo::min_size()),
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 6,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::StorageTexture {
-                access: StorageTextureAccess::ReadOnly,
-                format: target_layer_format,
-                view_dimension: TextureViewDimension::D2Array,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 7,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::StorageTexture {
-                access: StorageTextureAccess::WriteOnly,
-                format: target_layer_format,
-                view_dimension: TextureViewDimension::D2Array,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 8,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: !is_postprocess,
-                min_binding_size: Some(DabInfo::min_size()),
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 9,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::StorageTexture {
-                access: StorageTextureAccess::ReadOnly,
-                format: selection_layer_format,
-                view_dimension: TextureViewDimension::D2Array,
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 10,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: Some(GpuTileInfo::min_size()),
-            },
-            count: None,
-        },
-        BindGroupLayoutEntry {
-            binding: 11,
-            visibility: ShaderStages::COMPUTE,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: Some(u32::min_size()),
-            },
-            count: None,
-        },
-    ];
-    entries.extend(external_var);
-
+            binding_types::texture_storage_2d_array(
+                selection_layer_format,
+                StorageTextureAccess::ReadOnly,
+            ),
+            binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            binding_types::storage_buffer_read_only::<u32>(false),
+        ),
+    )
+    .to_vec();
+    entries.extend_from_slice(external_var);
     entries
 }
 
@@ -396,91 +310,56 @@ fn bind_group_entries<'a>(
     dab_infos: &'a DynamicBuffer<DabInfo>,
     is_even: bool,
 ) -> Vec<BindGroupEntry<'a>> {
-    let mut entries = vec![
-        BindGroupEntry {
-            binding: 1,
-            resource: BindingResource::TextureView(resources.referenced_textures.texture_view()),
-        },
-        BindGroupEntry {
-            binding: 2,
-            resource: resources.referenced_textures.atlas_bounds_buffer_binding(),
-        },
-        BindGroupEntry {
-            binding: 3,
-            resource: target_layer_tile_info.as_entire_binding(),
-        },
-        BindGroupEntry {
-            binding: 4,
-            resource: BindingResource::TextureView(target_layer_texture),
-        },
-        BindGroupEntry {
-            binding: 5,
-            resource: intermediate_buffers[0]
+    let mut entries = DynamicBindGroupEntries::new_with_indices((
+        (
+            1,
+            BindingResource::TextureView(resources.referenced_textures.texture_view()),
+        ),
+        (
+            2,
+            resources.referenced_textures.atlas_bounds_buffer_binding(),
+        ),
+        (3, target_layer_tile_info.as_entire_binding()),
+        (4, BindingResource::TextureView(target_layer_texture)),
+        (
+            5,
+            intermediate_buffers[0]
                 .tile_info_buffer()
                 .unwrap()
                 .as_entire_binding(),
-        },
-        BindGroupEntry {
-            binding: 8,
-            resource: dab_infos.binding().unwrap(),
-        },
-        BindGroupEntry {
-            binding: 9,
-            resource: BindingResource::TextureView(selection_layer_texture),
-        },
-        BindGroupEntry {
-            binding: 10,
-            resource: selection_layer_tile_info.as_entire_binding(),
-        },
-        BindGroupEntry {
-            binding: 11,
-            resource: has_selection.as_entire_binding(),
-        },
-    ];
-    entries.extend(resources.external_var_bindings());
+        ),
+        (8, dab_infos.binding().unwrap()),
+        (9, BindingResource::TextureView(selection_layer_texture)),
+        (10, selection_layer_tile_info.as_entire_binding()),
+        (11, has_selection.as_entire_binding()),
+    ));
+    entries.entries.extend(resources.external_var_bindings());
+
     if let Some(samples) = samples {
-        entries.push(BindGroupEntry {
+        entries.entries.push(BindGroupEntry {
             binding: 0,
             resource: samples.binding().unwrap(),
         });
     } else if let Some(stroke_pp_data) = stroke_pp_data {
-        entries.push(BindGroupEntry {
+        entries.entries.push(BindGroupEntry {
             binding: 0,
             resource: stroke_pp_data.binding().unwrap(),
         });
     }
 
-    if is_even {
-        entries.extend([
-            BindGroupEntry {
-                binding: 6,
-                resource: BindingResource::TextureView(
-                    intermediate_buffers[0].texture_view().unwrap(),
-                ),
-            },
-            BindGroupEntry {
-                binding: 7,
-                resource: BindingResource::TextureView(
-                    intermediate_buffers[1].texture_view().unwrap(),
-                ),
-            },
-        ]);
-    } else {
-        entries.extend([
-            BindGroupEntry {
-                binding: 6,
-                resource: BindingResource::TextureView(
-                    intermediate_buffers[1].texture_view().unwrap(),
-                ),
-            },
-            BindGroupEntry {
-                binding: 7,
-                resource: BindingResource::TextureView(
-                    intermediate_buffers[0].texture_view().unwrap(),
-                ),
-            },
-        ]);
-    }
+    let (read_idx, write_idx) = if is_even { (0, 1) } else { (1, 0) };
+    entries.entries.push(BindGroupEntry {
+        binding: 6,
+        resource: BindingResource::TextureView(
+            intermediate_buffers[read_idx].texture_view().unwrap(),
+        ),
+    });
+    entries.entries.push(BindGroupEntry {
+        binding: 7,
+        resource: BindingResource::TextureView(
+            intermediate_buffers[write_idx].texture_view().unwrap(),
+        ),
+    });
 
-    entries
+    entries.entries
 }

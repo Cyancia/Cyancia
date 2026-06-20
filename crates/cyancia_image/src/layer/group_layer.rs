@@ -1,15 +1,14 @@
 use std::any::TypeId;
 
 use bevy_math::IRect;
-use encase::ShaderType;
+use cyancia_render::bind_group_layout_entries::{BindGroupLayoutEntries, binding_types};
 use glam::{IVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
-    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
-    TextureViewDimension,
+    BindingResource, Buffer, ComputePass, ComputePipeline, ComputePipelineDescriptor, Device,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TextureView,
 };
 
 use crate::{
@@ -101,68 +100,26 @@ impl Layer for GroupLayer {
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: "layer blend bind group layout".into(),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: image.texel_type().wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: image.texel_type().wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::WriteOnly,
-                        format: image.texel_type().wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-            ],
+            entries: &BindGroupLayoutEntries::sequential(
+                ShaderStages::COMPUTE,
+                (
+                    binding_types::texture_storage_2d_array(
+                        image.texel_type().wgpu_format(),
+                        StorageTextureAccess::ReadOnly,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    binding_types::texture_storage_2d_array(
+                        image.texel_type().wgpu_format(),
+                        StorageTextureAccess::ReadOnly,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    binding_types::texture_storage_2d_array(
+                        image.texel_type().wgpu_format(),
+                        StorageTextureAccess::WriteOnly,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                ),
+            ),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {

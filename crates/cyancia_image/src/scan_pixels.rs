@@ -1,17 +1,17 @@
 use cyancia_render::{
+    bind_group_entries::BindGroupEntries,
+    bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
     util::DevicePollExt,
 };
-use encase::ShaderType;
 use glam::IVec2;
 use indexmap::IndexSet;
 use wesl::include_wesl;
 use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
-    BufferDescriptor, BufferUsages, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StorageTextureAccess, TextureViewDimension,
+    BindGroupDescriptor, BindGroupLayoutDescriptor, BindingResource, Buffer, BufferDescriptor,
+    BufferUsages, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess,
 };
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub struct ScanPixelsPipeline {
-    layout: BindGroupLayout,
+    layout: wgpu::BindGroupLayout,
     pipeline: ComputePipeline,
     scan_to_binary_buffer_pipeline: ComputePipeline,
 }
@@ -29,38 +29,17 @@ impl ScanPixelsPipeline {
     pub fn new(device: &Device, layer_format: TexelType) -> Self {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("scan_pixels_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadOnly,
-                        format: layer_format.wgpu_format(),
-                        view_dimension: TextureViewDimension::D2Array,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(GpuTileInfo::min_size()),
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(u32::min_size()),
-                    },
-                    count: None,
-                },
-            ],
+            entries: &BindGroupLayoutEntries::sequential(
+                ShaderStages::COMPUTE,
+                (
+                    binding_types::texture_storage_2d_array(
+                        layer_format.wgpu_format(),
+                        StorageTextureAccess::ReadOnly,
+                    ),
+                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    binding_types::storage_buffer::<u32>(false),
+                ),
+            ),
         });
         let scan_pixels_pipeline_layout =
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -116,20 +95,11 @@ impl ScanPixelsPipeline {
         let scan_pixels_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("scan_pixels_bind_group"),
             layout: &self.layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(target_layer.texture_view().unwrap()),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: target_layer.tile_info_buffer().unwrap().as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: is_not_empty_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &BindGroupEntries::sequential((
+                BindingResource::TextureView(target_layer.texture_view().unwrap()),
+                target_layer.tile_info_buffer().unwrap().as_entire_binding(),
+                is_not_empty_buffer.as_entire_binding(),
+            )),
         });
 
         {
@@ -180,20 +150,11 @@ impl ScanPixelsPipeline {
         let scan_pixels_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("scan_pixels_bind_group"),
             layout: &self.layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&target_layer.texture),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: target_layer.tile_info_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: is_not_empty_binary_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &BindGroupEntries::sequential((
+                BindingResource::TextureView(&target_layer.texture),
+                target_layer.tile_info_buffer.as_entire_binding(),
+                is_not_empty_binary_buffer.as_entire_binding(),
+            )),
         });
 
         {
