@@ -3,7 +3,7 @@ use cyancia_bucket_tool::{
     bucket::{Bucket, BucketAntialiasApproach, BucketParams},
 };
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
-use cyancia_image::tile::GpuTileStorage;
+use cyancia_image::tile::{GpuTileStorage, TileStorageAppExt};
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
@@ -72,7 +72,7 @@ impl ToolFunction for MagicWandSelectionTool {
             return;
         }
 
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
         let render_context = cx.global::<RenderContext>();
         // TODO Reference other layers
         let ref_layer_id = canvas.image.active_layer;

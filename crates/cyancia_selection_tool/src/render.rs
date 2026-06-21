@@ -6,7 +6,7 @@ use cyancia_image::{
     texel::TexelType,
     tile::{
         DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
-        LayerBinding,
+        LayerBinding, TileStorageAppExt,
     },
 };
 use cyancia_render::{
@@ -46,7 +46,7 @@ pub fn generate_cmd(
     let canvas = cx.read_current_canvas()?;
     let canvas_id = canvas.id();
 
-    let tiles = cx.global::<GpuTileStorage>();
+    let tiles = cx.tile_storage();
     let render_context = cx.global::<RenderContext>();
     let selection_layer_id = canvas.image.selection_layer();
 

@@ -25,6 +25,16 @@ use crate::{
     texel::{TexelDepth, TexelFormat, TexelType},
 };
 
+pub trait TileStorageAppExt {
+    fn tile_storage(&self) -> &GpuTileStorage;
+}
+
+impl TileStorageAppExt for App {
+    fn tile_storage(&self) -> &GpuTileStorage {
+        self.global::<GpuTileStorage>()
+    }
+}
+
 static EMPTY_LAYER_BINDINGS: OnceLock<HashMap<TexelType, LayerBinding>> = OnceLock::new();
 
 pub fn init(cx: &mut App) {

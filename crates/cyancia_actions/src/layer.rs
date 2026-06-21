@@ -5,7 +5,7 @@ use cyancia_canvas::{
 use cyancia_image::{
     layer::LayerData,
     texel::TexelType,
-    tile::{GpuLayerInfo, GpuTileStorage},
+    tile::{GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_utils::log_err::LogErr;
 use gpui::{App, actions};
@@ -49,7 +49,7 @@ impl ActionFunction for CreateNewLayerAction {
             return;
         }
 
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
         tiles.declare_layer(
             new_layer_id,
             GpuLayerInfo {

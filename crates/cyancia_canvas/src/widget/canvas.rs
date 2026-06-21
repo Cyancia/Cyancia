@@ -4,7 +4,7 @@ use bevy_math::{IRect, Rect};
 use cyancia_image::{
     composite::{ImageCompositor, LayerPreviewOverriders},
     texel::{TexelFormat, TexelType},
-    tile::{GpuTileStorage, GpuTileStorageInner},
+    tile::{GpuTileStorage, GpuTileStorageInner, TileStorageAppExt},
 };
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
@@ -98,7 +98,7 @@ impl CanvasWidget {
         cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
             self.canvas
                 .update(cx, |canvas, cx| {
-                    let tiles = cx.global::<GpuTileStorage>();
+                    let tiles = cx.tile_storage();
                     let render_context = cx.global::<RenderContext>();
                     self.compositor.create_cache(
                         overriders,
@@ -137,7 +137,7 @@ impl CanvasWidget {
 
         let canvas = canvas_entity.read(cx);
         let render_context = cx.global::<RenderContext>();
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
 
         self.renderer
             .resize_output_buffer(&render_context.device, self.output_size);

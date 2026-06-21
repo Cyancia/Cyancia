@@ -1,5 +1,5 @@
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
-use cyancia_image::tile::GpuTileStorage;
+use cyancia_image::tile::{GpuTileStorage, TileStorageAppExt};
 use cyancia_render::render_context::RenderContext;
 use cyancia_utils::log_err::LogErr;
 use gpui::{App, actions};
@@ -14,7 +14,7 @@ impl ActionFunction for DeleteSelectionAction {
             return;
         };
 
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
         let render_context = cx.global::<RenderContext>();
         let selection_layer_id = canvas.image.selection_layer();
         let selection_layer = tiles.get_layer(selection_layer_id).unwrap();

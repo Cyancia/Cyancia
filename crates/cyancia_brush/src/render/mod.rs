@@ -4,7 +4,9 @@ use cyancia_image::{
     layer::LayerId,
     scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner, LayerBinding},
+    tile::{
+        DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner, LayerBinding, TileStorageAppExt,
+    },
 };
 use cyancia_render::{
     buffer::DynamicBuffer,
@@ -94,7 +96,7 @@ impl BrushPresetOperator {
         selection_layer: LayerId,
         cx: &mut App,
     ) {
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
 
         let target_layer_info = tiles.get_layer_info(target_layer).unwrap();
         let selection_layer_info = tiles.get_layer_info(selection_layer).unwrap();
@@ -169,7 +171,7 @@ impl BrushPresetOperator {
         self.accumulated_pixel_bounds = IRect::EMPTY;
         self.input_processor.reset();
 
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
         let target_layer = tiles
             .get_layer_binding_or_empty(session.target_layer_id)
             .unwrap();
@@ -205,7 +207,7 @@ impl BrushPresetOperator {
             return;
         };
 
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
         let target_layer = tiles
             .get_layer_binding_or_empty(session.target_layer_id)
             .unwrap();
@@ -241,7 +243,7 @@ impl BrushPresetOperator {
             return None;
         };
 
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
         let target_layer = tiles
             .get_layer_binding_or_empty(session.target_layer_id)
             .unwrap();
@@ -300,7 +302,7 @@ impl BrushPresetOperator {
         };
 
         let session = self.last_session.as_ref()?;
-        let tiles = cx.global::<GpuTileStorage>();
+        let tiles = cx.tile_storage();
         let target_layer = tiles
             .get_layer_binding_or_empty(session.target_layer_id)
             .unwrap();
