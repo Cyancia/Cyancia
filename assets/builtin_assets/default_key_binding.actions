@@ -17,6 +17,24 @@
       "context": "main_view"
     },
     {
+      "shortcut": "space",
+      "action_name": "SwitchToPanToolAction",
+      "revert_within": "Always",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-space",
+      "action_name": "SwitchToRotateToolAction",
+      "revert_within": "Always",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "shift-space",
+      "action_name": "SwitchToZoomToolAction",
+      "revert_within": "Always",
+      "context": "main_view"
+    },
+    {
       "shortcut": "b",
       "action_name": "SwitchToBrushToolAction",
       "context": "main_view"
