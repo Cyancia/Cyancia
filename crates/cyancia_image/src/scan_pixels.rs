@@ -16,7 +16,7 @@ use wgpu::{
 
 use crate::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBinding},
 };
 
 pub struct ScanPixelsPipeline {
@@ -136,7 +136,7 @@ impl ScanPixelsPipeline {
         &self,
         device: &Device,
         queue: &Queue,
-        target_layer: &LayerBindingData,
+        target_layer: &LayerBinding,
     ) -> Buffer {
         let mut ec = device.create_command_encoder(&Default::default());
 

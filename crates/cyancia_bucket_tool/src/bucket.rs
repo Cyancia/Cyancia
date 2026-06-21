@@ -1,7 +1,7 @@
 use cyancia_image::{
     scan_pixels::ScanPixelsPipeline,
     texel::{TexelFormat, TexelType},
-    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBindingData},
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBinding},
 };
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
@@ -536,10 +536,10 @@ impl Bucket {
         device: &Device,
         queue: &Queue,
         bucket_params: &BucketParams,
-        ref_layer: &LayerBindingData,
+        ref_layer: &LayerBinding,
         ref_layer_tile_info: IndexSet<IVec2>,
-        dst_layer: &LayerBindingData,
-        selection: &LayerBindingData,
+        dst_layer: &LayerBinding,
+        selection: &LayerBinding,
     ) -> Option<DynamicLayerStorage> {
         unsafe { device.start_graphics_debugger_capture() };
 
@@ -628,7 +628,7 @@ impl Bucket {
         device: &Device,
         queue: &Queue,
         bucket_params: &BucketParams,
-        ref_layer: &LayerBindingData,
+        ref_layer: &LayerBinding,
         ref_layer_tile_info: IndexSet<IVec2>,
     ) -> Option<DynamicLayerStorage> {
         let BucketResultInternal { mask, .. } = self.dispatch_mask_internal(
@@ -692,7 +692,7 @@ impl Bucket {
         device: &Device,
         queue: &Queue,
         bucket_params: &BucketParams,
-        ref_layer: &LayerBindingData,
+        ref_layer: &LayerBinding,
         ref_layer_tile_info: IndexSet<IVec2>,
     ) -> Option<BucketResultInternal> {
         let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
@@ -1197,7 +1197,7 @@ impl Bucket {
         device: &Device,
         queue: &Queue,
         params_buffer: &DynamicBuffer<BucketParamsInner>,
-        ref_layer: &LayerBindingData,
+        ref_layer: &LayerBinding,
     ) -> bool {
         let seed_mode_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("seed_mode_buffer"),

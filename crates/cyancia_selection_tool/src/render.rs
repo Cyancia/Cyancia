@@ -6,7 +6,7 @@ use cyancia_image::{
     texel::TexelType,
     tile::{
         DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
-        LayerBindingData,
+        LayerBinding,
     },
 };
 use cyancia_render::{
@@ -276,7 +276,7 @@ impl SelectionPipeline {
         // Must be in counter-clockwise order
         indices: &[u32],
         op: SelectionOperation,
-        target_selection: LayerBindingData,
+        target_selection: LayerBinding,
         target_selection_tile_indices: IndexSet<IVec2>,
     ) -> Option<DynamicLayerStorage> {
         let selection = self.render_with_target_selection_reserved_output(
@@ -448,7 +448,7 @@ impl SelectionPipeline {
         op: SelectionOperation,
         input_selection: &DynamicLayerStorage,
         target_selection: &DynamicLayerStorage,
-        target_selection_binding: &LayerBindingData,
+        target_selection_binding: &LayerBinding,
     ) -> Option<DynamicLayerStorage> {
         let mut output_tiles = input_selection.deep_clone();
         output_tiles.allocate_tiles_batch(target_selection.iter_tile_indices());
@@ -474,7 +474,7 @@ impl SelectionPipeline {
         queue: &Queue,
         op: SelectionOperation,
         input_selection: &DynamicLayerStorage,
-        target_selection: &LayerBindingData,
+        target_selection: &LayerBinding,
     ) -> Option<DynamicLayerStorage> {
         let output_selection = input_selection.deep_clone();
 

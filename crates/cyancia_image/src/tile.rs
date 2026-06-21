@@ -25,7 +25,7 @@ use crate::{
     texel::{TexelDepth, TexelFormat, TexelType},
 };
 
-static EMPTY_LAYER_BINDINGS: OnceLock<HashMap<TexelType, LayerBindingData>> = OnceLock::new();
+static EMPTY_LAYER_BINDINGS: OnceLock<HashMap<TexelType, LayerBinding>> = OnceLock::new();
 
 pub fn init(cx: &mut App) {
     let render_context = cx.global::<RenderContext>();
@@ -38,7 +38,7 @@ pub fn init(cx: &mut App) {
             GpuLayerInfo { texel_type },
         );
         st.get_tile_or_allocate(GpuTileStorageInner::EMPTY_TILE_COORD);
-        dummy_layers.insert(texel_type, st.binding_data().unwrap());
+        dummy_layers.insert(texel_type, st.binding().unwrap());
     }
     EMPTY_LAYER_BINDINGS.set(dummy_layers).unwrap();
 }
@@ -101,7 +101,7 @@ pub struct GpuLayerInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct LayerBindingData {
+pub struct LayerBinding {
     pub texture: TextureView,
     pub tile_info_buffer: Buffer,
 }
@@ -178,7 +178,7 @@ impl GpuTileStorageInner {
         self.layers.get_mut(&layer_id)
     }
 
-    pub fn get_layer_binding_or_empty(&self, layer_id: LayerId) -> Option<LayerBindingData> {
+    pub fn get_layer_binding_or_empty(&self, layer_id: LayerId) -> Option<LayerBinding> {
         Some(self.layers.get(&layer_id)?.binding_or_empty())
     }
 
@@ -296,7 +296,7 @@ impl GpuTileStorageInner {
         )
     }
 
-    pub fn get_empty_layer_binding(texel_type: TexelType) -> LayerBindingData {
+    pub fn get_empty_layer_binding(texel_type: TexelType) -> LayerBinding {
         EMPTY_LAYER_BINDINGS
             .get()
             .unwrap()
@@ -375,8 +375,8 @@ impl DynamicLayerStorage {
         &self.layer_info
     }
 
-    pub fn binding_or_empty(&self) -> LayerBindingData {
-        self.binding_data().unwrap_or_else(|| {
+    pub fn binding_or_empty(&self) -> LayerBinding {
+        self.binding().unwrap_or_else(|| {
             EMPTY_LAYER_BINDINGS
                 .get()
                 .unwrap()
@@ -386,10 +386,10 @@ impl DynamicLayerStorage {
         })
     }
 
-    pub fn binding_data(&self) -> Option<LayerBindingData> {
+    pub fn binding(&self) -> Option<LayerBinding> {
         let texture = self.texture_view()?.clone();
         let tile_info_buffer = self.tile_info_buffer()?.clone();
-        Some(LayerBindingData {
+        Some(LayerBinding {
             texture,
             tile_info_buffer,
         })
