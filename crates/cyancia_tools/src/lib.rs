@@ -46,6 +46,8 @@ pub trait ToolFunction: Send + Sync + 'static + Sized {
     fn update(&mut self, _mouse: &MouseMoveEvent, _cx: &mut Context<Self>) {}
     fn end(&mut self, _mouse: &MouseUpEvent, _cx: &mut Context<Self>) {}
     fn deactivate(&mut self, _cx: &mut Context<Self>) {}
+    // TODO Add on_keyboard that received keyboard events if the key strokes is not matching any
+    //      actions.
     fn tool_option_widget(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> AnyElement {
         div().into_any_element()
     }

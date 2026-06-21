@@ -7,6 +7,7 @@ use std::{
 
 use bevy_math::IRect;
 use cyancia_render::{buffer::BufferVec, render_context::RenderContext};
+use cyancia_utils::Deref;
 use dashmap::{DashMap, Entry};
 use encase::ShaderType;
 use glam::{IVec2, UVec2};
@@ -24,9 +25,7 @@ use crate::{
     texel::{TexelDepth, TexelFormat, TexelType},
 };
 
-// TODO: We are having this wrapper because rendering iced primitives doesn't allow bring external context
-//       with lifetime.
-#[derive(Clone)]
+#[derive(Clone, Deref)]
 pub struct GpuTileStorage {
     inner: Arc<GpuTileStorageInner>,
 }
@@ -42,37 +41,14 @@ impl Global for GpuTileStorage {}
 impl GpuTileStorage {
     pub fn from_app(cx: &App) -> Self {
         let render_context = cx.global::<RenderContext>();
-        Self::new(&render_context.device, &render_context.queue)
+        Self::new(render_context.device.clone(), render_context.queue.clone())
     }
 
-    pub fn new(device: &Device, queue: &Queue) -> Self {
+    pub fn new(device: Device, queue: Queue) -> Self {
         Self {
-            inner: Arc::new(GpuTileStorageInner::new(
-                device.clone().into(),
-                queue.clone().into(),
-            )),
+            inner: Arc::new(GpuTileStorageInner::new(device, queue)),
         }
     }
-}
-
-impl Deref for GpuTileStorage {
-    type Target = GpuTileStorageInner;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.as_ref()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TileIndex {
-    pub layer: LayerId,
-    pub coord: IVec2,
-}
-
-#[derive(Clone)]
-pub struct Tile {
-    pub index: TileIndex,
-    pub texture: Arc<TextureView>,
 }
 
 #[derive(ShaderType, Clone, Copy, PartialEq, Eq)]
