@@ -26,6 +26,8 @@ pub mod tile;
 pub fn init(cx: &mut App) {
     cx.set_global(GpuTileStorage::from_app(cx));
     cx.set_global(LayerPreviewOverriders::default());
+
+    tile::init(cx);
 }
 
 #[derive(Debug)]

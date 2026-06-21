@@ -54,9 +54,7 @@ pub fn generate_cmd(
 
     let selection_layer = tiles.get_layer(selection_layer_id).unwrap();
     let selection_layer_format = selection_layer.layer_info().texel_type;
-    let selection_layer_binding = selection_layer
-        .binding_data()
-        .unwrap_or_else(|| tiles.empty_layer_binding(selection_layer_format));
+    let selection_layer_binding = selection_layer.binding_or_empty();
 
     let mut pipeline = SelectionPipeline::new(&render_context.device, selection_layer_format);
     unsafe {

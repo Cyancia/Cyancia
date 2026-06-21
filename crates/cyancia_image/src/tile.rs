@@ -2,7 +2,7 @@ use std::{
     borrow::{Borrow, Cow},
     collections::{HashMap, HashSet},
     ops::Deref,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use bevy_math::IRect;
@@ -24,6 +24,24 @@ use crate::{
     layer::LayerId,
     texel::{TexelDepth, TexelFormat, TexelType},
 };
+
+static EMPTY_LAYER_BINDINGS: OnceLock<HashMap<TexelType, LayerBindingData>> = OnceLock::new();
+
+pub fn init(cx: &mut App) {
+    let render_context = cx.global::<RenderContext>();
+
+    let mut dummy_layers = HashMap::new();
+    for texel_type in TexelType::ALL_POSSIBLE_FORMATS {
+        let mut st = DynamicLayerStorage::new(
+            render_context.device.clone(),
+            render_context.queue.clone(),
+            GpuLayerInfo { texel_type },
+        );
+        st.get_tile_or_allocate(GpuTileStorageInner::EMPTY_TILE_COORD);
+        dummy_layers.insert(texel_type, st.binding_data().unwrap());
+    }
+    EMPTY_LAYER_BINDINGS.set(dummy_layers).unwrap();
+}
 
 #[derive(Clone, Deref)]
 pub struct GpuTileStorage {
@@ -82,6 +100,7 @@ pub struct GpuLayerInfo {
     pub texel_type: TexelType,
 }
 
+#[derive(Debug, Clone)]
 pub struct LayerBindingData {
     pub texture: TextureView,
     pub tile_info_buffer: Buffer,
@@ -91,7 +110,6 @@ pub struct GpuTileStorageInner {
     device: Device,
     queue: Queue,
 
-    dummy_layers: HashMap<TexelType, DynamicLayerStorage>,
     layers: DashMap<LayerId, DynamicLayerStorage>,
 }
 
@@ -108,21 +126,9 @@ impl GpuTileStorageInner {
     };
 
     pub fn new(device: Device, queue: Queue) -> Self {
-        let mut dummy_layers = HashMap::new();
-        for texel_type in TexelType::ALL_POSSIBLE_FORMATS {
-            let mut st = DynamicLayerStorage::new(
-                device.clone(),
-                queue.clone(),
-                GpuLayerInfo { texel_type },
-            );
-            st.get_tile_or_allocate(Self::EMPTY_TILE_COORD);
-            dummy_layers.insert(texel_type, st);
-        }
-
         Self {
             device,
             queue,
-            dummy_layers,
             layers: DashMap::new(),
         }
     }
@@ -173,23 +179,7 @@ impl GpuTileStorageInner {
     }
 
     pub fn get_layer_binding_or_empty(&self, layer_id: LayerId) -> Option<LayerBindingData> {
-        let layer = self.layers.get(&layer_id)?;
-
-        Some(layer.binding_data().unwrap_or_else(|| {
-            self.dummy_layers
-                .get(&layer.layer_info.texel_type)
-                .unwrap()
-                .binding_data()
-                .unwrap()
-        }))
-    }
-
-    pub fn empty_layer_binding(&self, texel_type: TexelType) -> LayerBindingData {
-        self.dummy_layers
-            .get(&texel_type)
-            .unwrap()
-            .binding_data()
-            .unwrap()
+        Some(self.layers.get(&layer_id)?.binding_or_empty())
     }
 
     pub fn upload_image(&self, layer_id: LayerId, img: DynamicImage) {
@@ -305,6 +295,15 @@ impl GpuTileStorageInner {
             image_size.y.div_ceil(Self::TILE_SIZE),
         )
     }
+
+    pub fn get_empty_layer_binding(texel_type: TexelType) -> LayerBindingData {
+        EMPTY_LAYER_BINDINGS
+            .get()
+            .unwrap()
+            .get(&texel_type)
+            .unwrap()
+            .clone()
+    }
 }
 
 pub const DEFAULT_LAYER_TEXTURE_USAGES: TextureUsages = TextureUsages::from_bits_truncate(
@@ -374,6 +373,17 @@ impl DynamicLayerStorage {
 
     pub fn layer_info(&self) -> &GpuLayerInfo {
         &self.layer_info
+    }
+
+    pub fn binding_or_empty(&self) -> LayerBindingData {
+        self.binding_data().unwrap_or_else(|| {
+            EMPTY_LAYER_BINDINGS
+                .get()
+                .unwrap()
+                .get(&self.layer_info.texel_type)
+                .unwrap()
+                .clone()
+        })
     }
 
     pub fn binding_data(&self) -> Option<LayerBindingData> {

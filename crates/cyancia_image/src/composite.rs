@@ -6,7 +6,11 @@ use glam::IVec2;
 use gpui::Global;
 use wgpu::{Buffer, ComputePassDescriptor, Device, Queue, TextureView};
 
-use crate::{CImage, layer::LayerId, tile::GpuTileStorage};
+use crate::{
+    CImage,
+    layer::LayerId,
+    tile::{GpuTileStorage, GpuTileStorageInner},
+};
 
 pub trait BlendFunction: Send + Sync + DynClone + 'static {
     fn name(&self) -> String;
@@ -71,7 +75,7 @@ impl ImageCompositor {
         });
         let root_layer_binding = root_layer_tiles.binding_data().unwrap();
 
-        let empty_layer_binding = tiles.empty_layer_binding(image.texel_type());
+        let empty_layer_binding = GpuTileStorageInner::get_empty_layer_binding(image.texel_type());
         let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
         let now = std::time::Instant::now();
         root_data.prepare_blend_cache(
