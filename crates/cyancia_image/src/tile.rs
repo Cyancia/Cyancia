@@ -551,10 +551,7 @@ impl DynamicLayerStorage {
             tile
         };
 
-        self.tile_info_buffer.push(&GpuTileInfo {
-            index: coord,
-            origin: coord * IVec2::splat(Self::TILE_SIZE as i32),
-        });
+        self.tile_info_buffer.push(&GpuTileInfo::new(coord));
         self.tile_info_buffer
             .write_buffer(&self.device, &self.queue);
 
@@ -690,10 +687,7 @@ impl DynamicLayerStorage {
                     ..Default::default()
                 }),
             );
-            new_tile_info_buffer.push(&GpuTileInfo {
-                index: *coord,
-                origin: *coord * IVec2::splat(Self::TILE_SIZE as i32),
-            });
+            new_tile_info_buffer.push(&GpuTileInfo::new(*coord));
         }
 
         new_tile_info_buffer.write_buffer(&self.device, &self.queue);

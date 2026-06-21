@@ -149,10 +149,7 @@ impl IntermediateBuffer {
         );
         for y in tile_rect.min.y..tile_rect.max.y {
             for x in tile_rect.min.x..tile_rect.max.x {
-                tile_info_buffer.push(&GpuTileInfo {
-                    index: IVec2 { x, y },
-                    origin: IVec2 { x, y } * GpuTileStorage::TILE_SIZE as i32,
-                });
+                tile_info_buffer.push(&GpuTileInfo::new(IVec2::new(x, y)));
             }
         }
         tile_info_buffer.write_buffer(device, queue);
