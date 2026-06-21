@@ -4,9 +4,9 @@ use bevy_math::{IRect, Rect};
 use cyancia_image::{
     composite::{ImageCompositor, LayerPreviewOverriders},
     texel::{TexelFormat, TexelType},
-    tile::{GpuTileStorage, GpuTileStorageInner, TileStorageAppExt},
+    tile::{GpuTileStorage, TileStorageAppExt},
 };
-use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
+use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
 use glam::{IVec2, UVec2, Vec2};
 use gpui::{

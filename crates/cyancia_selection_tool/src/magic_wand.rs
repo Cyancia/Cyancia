@@ -3,7 +3,7 @@ use cyancia_bucket_tool::{
     bucket::{Bucket, BucketAntialiasApproach, BucketParams},
 };
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
-use cyancia_image::tile::{GpuTileStorage, TileStorageAppExt};
+use cyancia_image::tile::TileStorageAppExt;
 use cyancia_render::render_context::RenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;

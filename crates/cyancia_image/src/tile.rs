@@ -1,15 +1,11 @@
 use std::{
     borrow::{Borrow, Cow},
     collections::{HashMap, HashSet},
-    ops::Deref,
     sync::{Arc, OnceLock},
 };
 
 use bevy_math::IRect;
-use cyancia_render::{
-    buffer::BufferVec,
-    render_context::{RenderContext, RenderContextAppExt},
-};
+use cyancia_render::{buffer::BufferVec, render_context::RenderContextAppExt};
 use cyancia_utils::Deref;
 use dashmap::{DashMap, Entry};
 use encase::ShaderType;

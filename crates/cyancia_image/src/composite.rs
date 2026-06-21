@@ -6,11 +6,7 @@ use glam::IVec2;
 use gpui::Global;
 use wgpu::{Buffer, ComputePassDescriptor, Device, Queue, TextureView};
 
-use crate::{
-    CImage,
-    layer::LayerId,
-    tile::{GpuTileStorage, GpuTileStorageInner},
-};
+use crate::{CImage, layer::LayerId, tile::GpuTileStorage};
 
 pub trait BlendFunction: Send + Sync + DynClone + 'static {
     fn name(&self) -> String;

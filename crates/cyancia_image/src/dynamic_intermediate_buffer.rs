@@ -9,7 +9,7 @@ use wgpu::{
 
 use crate::{
     texel::TexelType,
-    tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
+    tile::{GpuTileInfo, GpuTileStorage},
 };
 
 #[derive(ShaderType)]

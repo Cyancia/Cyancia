@@ -16,7 +16,7 @@ use wgpu::{
 
 use crate::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, LayerBinding},
+    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, LayerBinding},
 };
 
 pub struct ScanPixelsPipeline {

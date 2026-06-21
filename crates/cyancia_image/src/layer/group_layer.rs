@@ -16,7 +16,7 @@ use crate::{
     composite::{ImageCompositor, LayerPreviewOverriders},
     dynamic_intermediate_buffer::IntermediateBuffer,
     layer::{Layer, LayerData, LayerStackNode},
-    tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
+    tile::{GpuTileInfo, GpuTileStorage},
 };
 
 #[derive(Debug, Clone)]

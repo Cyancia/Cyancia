@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use bevy_math::URect;
-use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, GpuTileStorageInner};
+use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage};
 use cyancia_render::{
     bind_group_entries::DynamicBindGroupEntries,
     bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},

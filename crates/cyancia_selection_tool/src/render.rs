@@ -5,15 +5,15 @@ use cyancia_canvas::{CanvasAppExt, command::TileReplaceCommand, control::CanvasT
 use cyancia_image::{
     texel::TexelType,
     tile::{
-        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
-        LayerBinding, TileStorageAppExt,
+        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, LayerBinding,
+        TileStorageAppExt,
     },
 };
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
-    render_context::{RenderContext, RenderContextAppExt},
+    render_context::RenderContextAppExt,
 };
 use encase::ShaderType;
 use glam::{IVec2, Mat3, Vec2};
@@ -385,8 +385,8 @@ impl SelectionPipeline {
         cur_rendering_index_buffer.write_buffer(device, queue);
 
         let mut selection = DynamicLayerStorage::new(
-            device.clone().into(),
-            queue.clone().into(),
+            device.clone(),
+            queue.clone(),
             GpuLayerInfo {
                 texel_type: self.layer_format,
             },

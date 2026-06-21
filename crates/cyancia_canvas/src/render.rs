@@ -7,7 +7,7 @@ use bevy_math::IRect;
 use cyancia_image::{
     layer::LayerId,
     texel::TexelType,
-    tile::{GpuTileInfo, GpuTileStorage, GpuTileStorageInner},
+    tile::{GpuTileInfo, GpuTileStorage},
 };
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,

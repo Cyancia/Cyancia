@@ -6,10 +6,7 @@ use std::{
 };
 
 use cyancia_assets::{AssetAppExt, asset::AssetId, bundle::BundleId};
-use cyancia_render::{
-    render_context::{RenderContext, RenderContextAppExt},
-    texture::Image,
-};
+use cyancia_render::{render_context::RenderContextAppExt, texture::Image};
 use cyancia_shader_graph::{
     editor::GraphEditor,
     graph::{

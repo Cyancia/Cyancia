@@ -1,6 +1,6 @@
 use bevy_math::Rect;
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
-use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
+use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
 use glam::Vec2;
@@ -168,12 +168,12 @@ impl ToolFunction for FreehandSelectionTool {
         let queue = cx.render_queue();
 
         let preview_pipeline = self.preview_pipeline.get_or_insert_with(|| {
-            SelectionPreviewPipeline::new(&device, canvas_surface.texture().format())
+            SelectionPreviewPipeline::new(device, canvas_surface.texture().format())
         });
 
         preview_pipeline.draw(
-            &device,
-            &queue,
+            device,
+            queue,
             &state.points_ps,
             canvas_surface,
             &canvas.transform,

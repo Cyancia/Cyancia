@@ -1,6 +1,6 @@
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
-use cyancia_image::tile::{GpuTileStorage, TileStorageAppExt};
-use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
+use cyancia_image::tile::TileStorageAppExt;
+use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use cyancia_utils::log_err::LogErr;
 use glam::{Vec2, Vec4};

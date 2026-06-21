@@ -4,9 +4,7 @@ use cyancia_image::{
     layer::LayerId,
     scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
-    tile::{
-        DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner, LayerBinding, TileStorageAppExt,
-    },
+    tile::{DynamicLayerStorage, GpuTileStorage, LayerBinding, TileStorageAppExt},
 };
 use cyancia_render::{
     buffer::DynamicBuffer,
@@ -156,16 +154,8 @@ impl BrushPresetOperator {
         });
 
         let intermediate_buffers = self.intermediate_buffers.insert([
-            DynamicLayerStorage::new(
-                self.device.clone().into(),
-                self.queue.clone().into(),
-                target_layer_info,
-            ),
-            DynamicLayerStorage::new(
-                self.device.clone().into(),
-                self.queue.clone().into(),
-                target_layer_info,
-            ),
+            DynamicLayerStorage::new(self.device.clone(), self.queue.clone(), target_layer_info),
+            DynamicLayerStorage::new(self.device.clone(), self.queue.clone(), target_layer_info),
         ]);
         self.round = 0;
         self.accumulated_pixel_bounds = IRect::EMPTY;

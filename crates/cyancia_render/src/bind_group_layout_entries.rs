@@ -257,14 +257,7 @@ macro_rules! impl_to_binding_type_slice {
         }
     }
 }
-all_tuples_with_size!(
-    #[doc(fake_variadic)]
-    impl_to_binding_type_slice,
-    1,
-    32,
-    T,
-    s
-);
+all_tuples_with_size!(impl_to_binding_type_slice, 1, 32, T, s);
 
 pub trait IntoIndexedBindGroupLayoutEntryBuilderArray<const N: usize> {
     fn into_array(self) -> [(u32, BindGroupLayoutEntryBuilder); N];

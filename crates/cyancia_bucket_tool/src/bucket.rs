@@ -1,10 +1,7 @@
 use cyancia_image::{
     scan_pixels::ScanPixelsPipeline,
     texel::{TexelFormat, TexelType},
-    tile::{
-        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
-        LayerBinding,
-    },
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, LayerBinding},
 };
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
@@ -565,8 +562,8 @@ impl Bucket {
         }
 
         let mut output_tiles = DynamicLayerStorage::new(
-            device.clone().into(),
-            queue.clone().into(),
+            device.clone(),
+            queue.clone(),
             GpuLayerInfo {
                 texel_type: self.output_layer_format,
             },
@@ -648,8 +645,8 @@ impl Bucket {
         }
 
         let mut output_texture = DynamicLayerStorage::new(
-            device.clone().into(),
-            queue.clone().into(),
+            device.clone(),
+            queue.clone(),
             GpuLayerInfo {
                 texel_type: self.mask_format,
             },
@@ -753,8 +750,8 @@ impl Bucket {
         }
 
         let mut mask = DynamicLayerStorage::new(
-            device.clone().into(),
-            queue.clone().into(),
+            device.clone(),
+            queue.clone(),
             GpuLayerInfo {
                 texel_type: self.mask_format,
             },

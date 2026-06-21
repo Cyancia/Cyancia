@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use gpui::{App, Global};
 use wesl::include_wesl;
 use wgpu::{

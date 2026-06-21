@@ -3,9 +3,9 @@ use std::borrow::Cow;
 use bevy_math::IRect;
 use cyancia_image::{
     layer::{LayerData, LayerId},
-    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner, TileStorageAppExt},
+    tile::{DynamicLayerStorage, GpuTileStorage, TileStorageAppExt},
 };
-use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
+use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_undo::UndoCommand;
 use cyancia_utils::log_err::LogErr;
 use glam::IVec2;
