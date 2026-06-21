@@ -48,7 +48,7 @@ pub fn init(cx: &mut App) {
     for texel_type in TexelType::ALL_POSSIBLE_FORMATS {
         let mut st =
             DynamicLayerStorage::new(device.clone(), queue.clone(), GpuLayerInfo { texel_type });
-        st.get_tile_or_allocate(GpuTileStorage::EMPTY_TILE_COORD);
+        st.get_tile_or_allocate(GpuTileInfo::NULL.index);
         dummy_layers.insert(texel_type, st.binding().unwrap());
     }
     EMPTY_LAYER_BINDINGS.set(dummy_layers).unwrap();
@@ -69,10 +69,6 @@ impl Global for GpuTileStorage {}
 
 impl GpuTileStorage {
     pub const TILE_SIZE: u32 = 256;
-    pub const EMPTY_TILE_COORD: IVec2 = IVec2::new(
-        i32::MAX / Self::TILE_SIZE as i32,
-        i32::MAX / Self::TILE_SIZE as i32,
-    );
     pub const TILE_COPY_SIZE: Extent3d = Extent3d {
         width: Self::TILE_SIZE,
         height: Self::TILE_SIZE,
@@ -151,8 +147,10 @@ impl Default for GpuTileInfo {
 
 impl GpuTileInfo {
     pub const NULL: Self = Self {
-        index: IVec2::splat(i32::MIN),
-        origin: IVec2::splat(i32::MIN),
+        index: IVec2::splat(i32::MIN / GpuTileStorage::TILE_SIZE as i32),
+        origin: IVec2::splat(
+            (i32::MIN / GpuTileStorage::TILE_SIZE as i32) * GpuTileStorage::TILE_SIZE as i32,
+        ),
     };
 
     pub fn new(index: IVec2) -> Self {
