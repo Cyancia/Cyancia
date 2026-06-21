@@ -61,7 +61,7 @@ impl CanvasWidget {
                 depth: canvas.image.texel_type().depth,
             },
         );
-        let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(IRect {
+        let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(IRect {
             min: IVec2::ZERO,
             max: canvas.image.size().as_ivec2(),
         });

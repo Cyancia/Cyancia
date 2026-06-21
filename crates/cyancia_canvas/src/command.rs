@@ -51,8 +51,8 @@ impl TileReplaceCommand {
             let old_texture = device.create_texture(&TextureDescriptor {
                 label: Some("old_texture"),
                 size: Extent3d {
-                    width: GpuTileStorageInner::TILE_SIZE,
-                    height: GpuTileStorageInner::TILE_SIZE,
+                    width: GpuTileStorage::TILE_SIZE,
+                    height: GpuTileStorage::TILE_SIZE,
                     depth_or_array_layers: old_tile_indices.len() as u32,
                 },
                 mip_level_count: 1,
@@ -89,7 +89,7 @@ impl TileReplaceCommand {
                         },
                         aspect: TextureAspect::All,
                     },
-                    GpuTileStorageInner::TILE_COPY_SIZE,
+                    GpuTileStorage::TILE_COPY_SIZE,
                 );
             }
             ec.pop_debug_group();
@@ -207,7 +207,7 @@ fn apply_tile_replace(
                     },
                     aspect: TextureAspect::All,
                 },
-                GpuTileStorageInner::TILE_COPY_SIZE,
+                GpuTileStorage::TILE_COPY_SIZE,
             );
 
             dirty_min = dirty_min.min(*tile_index);

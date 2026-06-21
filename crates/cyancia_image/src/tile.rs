@@ -37,7 +37,7 @@ pub fn init(cx: &mut App) {
             render_context.queue.clone(),
             GpuLayerInfo { texel_type },
         );
-        st.get_tile_or_allocate(GpuTileStorageInner::EMPTY_TILE_COORD);
+        st.get_tile_or_allocate(GpuTileStorage::EMPTY_TILE_COORD);
         dummy_layers.insert(texel_type, st.binding().unwrap());
     }
     EMPTY_LAYER_BINDINGS.set(dummy_layers).unwrap();
@@ -57,6 +57,17 @@ impl std::fmt::Debug for GpuTileStorage {
 impl Global for GpuTileStorage {}
 
 impl GpuTileStorage {
+    pub const TILE_SIZE: u32 = 256;
+    pub const EMPTY_TILE_COORD: IVec2 = IVec2::new(
+        i32::MAX / Self::TILE_SIZE as i32,
+        i32::MAX / Self::TILE_SIZE as i32,
+    );
+    pub const TILE_COPY_SIZE: Extent3d = Extent3d {
+        width: Self::TILE_SIZE,
+        height: Self::TILE_SIZE,
+        depth_or_array_layers: 1,
+    };
+
     pub fn from_app(cx: &App) -> Self {
         let render_context = cx.global::<RenderContext>();
         Self::new(render_context.device.clone(), render_context.queue.clone())
@@ -66,6 +77,51 @@ impl GpuTileStorage {
         Self {
             inner: Arc::new(GpuTileStorageInner::new(device, queue)),
         }
+    }
+
+    pub fn pixel_rect_to_tile(pixel_rect: IRect) -> IRect {
+        IRect {
+            min: pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32),
+            max: (pixel_rect.max - 1) / IVec2::splat(Self::TILE_SIZE as i32) + 1,
+        }
+    }
+
+    pub fn tile_rect_to_pixel(tile_rect: IRect) -> IRect {
+        IRect {
+            min: tile_rect.min * IVec2::splat(Self::TILE_SIZE as i32),
+            max: tile_rect.max * IVec2::splat(Self::TILE_SIZE as i32),
+        }
+    }
+
+    pub fn tile_to_pixel_rect(tile: IVec2) -> IRect {
+        IRect {
+            min: tile * IVec2::splat(Self::TILE_SIZE as i32),
+            max: (tile + IVec2::ONE) * IVec2::splat(Self::TILE_SIZE as i32),
+        }
+    }
+
+    pub fn snap_to_tile_grid(pixel_rect: IRect) -> IRect {
+        let tile_rect = Self::pixel_rect_to_tile(pixel_rect);
+        IRect {
+            min: tile_rect.min * IVec2::splat(Self::TILE_SIZE as i32),
+            max: tile_rect.max * IVec2::splat(Self::TILE_SIZE as i32),
+        }
+    }
+
+    pub fn calc_tile_count(image_size: UVec2) -> UVec2 {
+        UVec2::new(
+            image_size.x.div_ceil(Self::TILE_SIZE),
+            image_size.y.div_ceil(Self::TILE_SIZE),
+        )
+    }
+
+    pub fn get_empty_layer_binding(texel_type: TexelType) -> LayerBinding {
+        EMPTY_LAYER_BINDINGS
+            .get()
+            .unwrap()
+            .get(&texel_type)
+            .unwrap()
+            .clone()
     }
 }
 
@@ -90,7 +146,7 @@ impl GpuTileInfo {
     pub fn new(index: IVec2) -> Self {
         Self {
             index,
-            origin: index * GpuTileStorageInner::TILE_SIZE as i32,
+            origin: index * GpuTileStorage::TILE_SIZE as i32,
         }
     }
 }
@@ -114,17 +170,6 @@ pub struct GpuTileStorageInner {
 }
 
 impl GpuTileStorageInner {
-    pub const TILE_SIZE: u32 = 256;
-    pub const EMPTY_TILE_COORD: IVec2 = IVec2::new(
-        i32::MAX / Self::TILE_SIZE as i32,
-        i32::MAX / Self::TILE_SIZE as i32,
-    );
-    pub const TILE_COPY_SIZE: Extent3d = Extent3d {
-        width: Self::TILE_SIZE,
-        height: Self::TILE_SIZE,
-        depth_or_array_layers: 1,
-    };
-
     pub fn new(device: Device, queue: Queue) -> Self {
         Self {
             device,
@@ -196,7 +241,7 @@ impl GpuTileStorageInner {
         let mut layer = self.layers.get_mut(&layer_id).unwrap();
 
         let mut ec = self.device.create_command_encoder(&Default::default());
-        let n_tiles = Self::calc_tile_count(UVec2::new(width, height));
+        let n_tiles = GpuTileStorage::calc_tile_count(UVec2::new(width, height));
         let tiles = (0..n_tiles.y)
             .flat_map(|y| (0..n_tiles.x).map(move |x| IVec2::new(x as i32, y as i32)));
         layer.allocate_tiles_batch(tiles.clone());
@@ -205,13 +250,13 @@ impl GpuTileStorageInner {
             let tile = layer.get_tile(tile_index).unwrap();
             let tile_layer = layer.get_tile_layer(tile_index).unwrap();
             log::debug!("Uploading tile: {:?}", tile_index);
-            let origin = tile_index.as_uvec2() * Self::TILE_SIZE;
+            let origin = tile_index.as_uvec2() * GpuTileStorage::TILE_SIZE;
 
             let sub_img = img.view(
                 origin.x,
                 origin.y,
-                Self::TILE_SIZE.min(width - origin.x),
-                Self::TILE_SIZE.min(height - origin.y),
+                GpuTileStorage::TILE_SIZE.min(width - origin.x),
+                GpuTileStorage::TILE_SIZE.min(height - origin.y),
             );
             let data = layer_info
                 .texel_type
@@ -259,51 +304,6 @@ impl GpuTileStorageInner {
 
         self.queue.submit([ec.finish()]);
     }
-
-    pub fn pixel_rect_to_tile(pixel_rect: IRect) -> IRect {
-        IRect {
-            min: pixel_rect.min / IVec2::splat(Self::TILE_SIZE as i32),
-            max: (pixel_rect.max - 1) / IVec2::splat(Self::TILE_SIZE as i32) + 1,
-        }
-    }
-
-    pub fn tile_rect_to_pixel(tile_rect: IRect) -> IRect {
-        IRect {
-            min: tile_rect.min * IVec2::splat(Self::TILE_SIZE as i32),
-            max: tile_rect.max * IVec2::splat(Self::TILE_SIZE as i32),
-        }
-    }
-
-    pub fn tile_to_pixel_rect(tile: IVec2) -> IRect {
-        IRect {
-            min: tile * IVec2::splat(Self::TILE_SIZE as i32),
-            max: (tile + IVec2::ONE) * IVec2::splat(Self::TILE_SIZE as i32),
-        }
-    }
-
-    pub fn snap_to_tile_grid(pixel_rect: IRect) -> IRect {
-        let tile_rect = Self::pixel_rect_to_tile(pixel_rect);
-        IRect {
-            min: tile_rect.min * IVec2::splat(Self::TILE_SIZE as i32),
-            max: tile_rect.max * IVec2::splat(Self::TILE_SIZE as i32),
-        }
-    }
-
-    pub fn calc_tile_count(image_size: UVec2) -> UVec2 {
-        UVec2::new(
-            image_size.x.div_ceil(Self::TILE_SIZE),
-            image_size.y.div_ceil(Self::TILE_SIZE),
-        )
-    }
-
-    pub fn get_empty_layer_binding(texel_type: TexelType) -> LayerBinding {
-        EMPTY_LAYER_BINDINGS
-            .get()
-            .unwrap()
-            .get(&texel_type)
-            .unwrap()
-            .clone()
-    }
 }
 
 pub const DEFAULT_LAYER_TEXTURE_USAGES: TextureUsages = TextureUsages::from_bits_truncate(
@@ -338,7 +338,7 @@ pub struct DynamicLayerStorage {
 
 impl DynamicLayerStorage {
     pub const GROWTH_RATE: f32 = 1.5;
-    pub const TILE_SIZE: u32 = GpuTileStorageInner::TILE_SIZE;
+    pub const TILE_SIZE: u32 = GpuTileStorage::TILE_SIZE;
 
     pub fn new(device: Device, queue: Queue, info: GpuLayerInfo) -> Self {
         Self::new_full(device, queue, None, None, None, None, info)
@@ -416,7 +416,7 @@ impl DynamicLayerStorage {
     }
 
     pub fn allocate_pixels(&mut self, pixel_rect: IRect) {
-        let tile_area = GpuTileStorageInner::pixel_rect_to_tile(pixel_rect);
+        let tile_area = GpuTileStorage::pixel_rect_to_tile(pixel_rect);
         self.allocate_tiles(tile_area);
     }
 

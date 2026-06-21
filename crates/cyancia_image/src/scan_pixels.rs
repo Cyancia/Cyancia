@@ -16,7 +16,7 @@ use wgpu::{
 
 use crate::{
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner, LayerBinding},
+    tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, GpuTileStorageInner, LayerBinding},
 };
 
 pub struct ScanPixelsPipeline {
@@ -110,8 +110,8 @@ impl ScanPixelsPipeline {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &scan_pixels_bind_group, &[]);
             pass.dispatch_workgroups(
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
                 target_layer.len() as u32,
             );
         }
@@ -165,8 +165,8 @@ impl ScanPixelsPipeline {
             pass.set_pipeline(&self.scan_to_binary_buffer_pipeline);
             pass.set_bind_group(0, &scan_pixels_bind_group, &[]);
             pass.dispatch_workgroups(
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
                 target_layer.texture.texture().depth_or_array_layers(),
             );
         }

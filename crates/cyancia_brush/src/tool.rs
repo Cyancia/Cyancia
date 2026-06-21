@@ -137,7 +137,7 @@ impl ToolFunction for BrushTool {
         });
 
         if let Some((dirty_pixels, preview)) = maybe_preview {
-            let dirty_tiles = GpuTileStorageInner::pixel_rect_to_tile(dirty_pixels);
+            let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(dirty_pixels);
             let overriders = cx.global_mut::<LayerPreviewOverriders>();
             overriders.insert_overrider(
                 *target_layer,

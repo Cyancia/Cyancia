@@ -1,7 +1,10 @@
 use cyancia_image::{
     scan_pixels::ScanPixelsPipeline,
     texel::{TexelFormat, TexelType},
-    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorageInner, LayerBinding},
+    tile::{
+        DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, GpuTileStorageInner,
+        LayerBinding,
+    },
 };
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
@@ -601,8 +604,8 @@ impl Bucket {
             pass.set_pipeline(&self.composite_pipeline);
             pass.set_bind_group(0, &composite_bind_group, &[]);
             pass.dispatch_workgroups(
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
                 mask.len() as u32,
             );
         }
@@ -677,7 +680,7 @@ impl Bucket {
                     },
                     aspect: TextureAspect::All,
                 },
-                GpuTileStorageInner::TILE_COPY_SIZE,
+                GpuTileStorage::TILE_COPY_SIZE,
             );
         }
         queue.submit([ec.finish()]);
@@ -695,7 +698,7 @@ impl Bucket {
         ref_layer: &LayerBinding,
         ref_layer_tile_info: IndexSet<IVec2>,
     ) -> Option<BucketResultInternal> {
-        let dispatch_xy = GpuTileStorageInner::TILE_SIZE.div_ceil(16);
+        let dispatch_xy = GpuTileStorage::TILE_SIZE.div_ceil(16);
 
         let mut inner_params = BucketParamsInner {
             seed: bucket_params.seed,
@@ -729,7 +732,7 @@ impl Bucket {
         bucket_params_buffer.write_buffer(device, queue);
 
         let mask_tile_indices = if seed_transparent_mode {
-            let image_tile_count = GpuTileStorageInner::calc_tile_count(inner_params.image_size);
+            let image_tile_count = GpuTileStorage::calc_tile_count(inner_params.image_size);
             let mut mask_tile_indices =
                 IndexSet::with_capacity(image_tile_count.element_product() as usize);
 
@@ -795,8 +798,8 @@ impl Bucket {
             let t = device.create_texture(&TextureDescriptor {
                 label: Some("feather_seed_texture_a"),
                 size: Extent3d {
-                    width: GpuTileStorageInner::TILE_SIZE,
-                    height: GpuTileStorageInner::TILE_SIZE,
+                    width: GpuTileStorage::TILE_SIZE,
+                    height: GpuTileStorage::TILE_SIZE,
                     depth_or_array_layers: mask.len() as u32,
                 },
                 mip_level_count: 1,
@@ -815,8 +818,8 @@ impl Bucket {
             let seed_texture_b = device.create_texture(&TextureDescriptor {
                 label: Some("feather_seed_texture_b"),
                 size: Extent3d {
-                    width: GpuTileStorageInner::TILE_SIZE,
-                    height: GpuTileStorageInner::TILE_SIZE,
+                    width: GpuTileStorage::TILE_SIZE,
+                    height: GpuTileStorage::TILE_SIZE,
                     depth_or_array_layers: mask.len() as u32,
                 },
                 mip_level_count: 1,
@@ -941,7 +944,7 @@ impl Bucket {
         }
 
         let total_pixels =
-            mask.len() as u32 * GpuTileStorageInner::TILE_SIZE * GpuTileStorageInner::TILE_SIZE;
+            mask.len() as u32 * GpuTileStorage::TILE_SIZE * GpuTileStorage::TILE_SIZE;
 
         let labels_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("labels_buffer"),

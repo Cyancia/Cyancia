@@ -50,7 +50,7 @@ pub fn generate_cmd(
     let render_context = cx.global::<RenderContext>();
     let selection_layer_id = canvas.image.selection_layer();
 
-    let affected_tiles = GpuTileStorageInner::pixel_rect_to_tile(aabb_ps);
+    let affected_tiles = GpuTileStorage::pixel_rect_to_tile(aabb_ps);
 
     let selection_layer = tiles.get_layer(selection_layer_id).unwrap();
     let selection_layer_format = selection_layer.layer_info().texel_type;
@@ -516,8 +516,8 @@ impl SelectionPipeline {
             pass.set_pipeline(&self.composite_pipeline);
             pass.set_bind_group(0, &composite_bind_group, &[]);
             pass.dispatch_workgroups(
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
                 output_selection.len() as u32,
             );
         }

@@ -117,7 +117,7 @@ impl CanvasRenderer {
             return;
         };
 
-        let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(IRect {
+        let tile_rect = GpuTileStorage::pixel_rect_to_tile(IRect {
             min: IVec2::ZERO,
             max: image_size.as_ivec2(),
         });
@@ -131,7 +131,7 @@ impl CanvasRenderer {
                 inv_transform: canvas_transform.pixel_to_widget.inverse(),
                 size: image_size,
                 total_tile_count: tile_rect.size().as_uvec2(),
-                tile_size: GpuTileStorageInner::TILE_SIZE,
+                tile_size: GpuTileStorage::TILE_SIZE,
                 time: FIRST_DRAW.get_or_init(Instant::now).elapsed().as_secs_f32(),
             },
             buffer,

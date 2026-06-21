@@ -75,7 +75,7 @@ impl ImageCompositor {
         });
         let root_layer_binding = root_layer_tiles.binding().unwrap();
 
-        let empty_layer_binding = GpuTileStorageInner::get_empty_layer_binding(image.texel_type());
+        let empty_layer_binding = GpuTileStorage::get_empty_layer_binding(image.texel_type());
         let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
         let now = std::time::Instant::now();
         root_data.prepare_blend_cache(

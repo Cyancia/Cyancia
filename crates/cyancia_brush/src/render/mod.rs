@@ -425,8 +425,7 @@ impl BrushPresetRenderer {
                 .unwrap();
 
             assert_eq!(output.len(), 1);
-            let bounds =
-                GpuTileStorageInner::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
+            let bounds = GpuTileStorage::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
             self.dab_info_offsets
                 .push(self.dab_info_buffer.push(&DabInfo {
                     bound_min: bounds.min,
@@ -526,7 +525,7 @@ impl BrushPresetRenderer {
                     .unwrap();
                 assert_eq!(output.len(), 1);
                 let bounds =
-                    GpuTileStorageInner::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
+                    GpuTileStorage::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
                 self.dab_info_buffer.clear();
                 self.dab_info_buffer.push(&DabInfo {
                     bound_min: bounds.min,

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use bevy_math::URect;
-use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorageInner};
+use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, GpuTileStorageInner};
 use cyancia_render::{
     bind_group_entries::DynamicBindGroupEntries,
     bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
@@ -136,8 +136,8 @@ impl BrushMainPipeline {
                     &[samples_offsets[i], dab_info_offsets[i]],
                 );
                 pass.dispatch_workgroups(
-                    GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                    GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                    GpuTileStorage::TILE_SIZE.div_ceil(16),
+                    GpuTileStorage::TILE_SIZE.div_ceil(16),
                     n_tiles as u32,
                 );
                 pass.pop_debug_group();
@@ -239,8 +239,8 @@ impl BrushPostProcessPipeline {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
             pass.dispatch_workgroups(
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
-                GpuTileStorageInner::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
+                GpuTileStorage::TILE_SIZE.div_ceil(16),
                 intermediate_buffers[0].len() as u32,
             );
         }

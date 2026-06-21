@@ -49,7 +49,7 @@ impl Layer for GroupLayer {
             );
         }
 
-        let tile_rect = GpuTileStorageInner::pixel_rect_to_tile(IRect {
+        let tile_rect = GpuTileStorage::pixel_rect_to_tile(IRect {
             min: IVec2::ZERO,
             max: image.size().as_ivec2(),
         });
