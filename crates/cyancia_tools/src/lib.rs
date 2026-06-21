@@ -1,4 +1,7 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    rc::Rc,
+};
 
 use cyancia_utils::wrapper;
 use gpui::{
@@ -143,40 +146,55 @@ impl ToolFunctionRegistry {
     }
 }
 
-// impl Service for ToolFunctionRegistry {}
-
 struct State {
-    current_function: Box<dyn ErasedToolFunction>,
+    current_function: ToolId,
     is_updating: bool,
 }
 
 #[derive(Default)]
 pub struct ToolProxy {
     state: Option<State>,
+    tool_functions: HashMap<ToolId, Box<dyn ErasedToolFunction>>,
 }
 
 impl ToolProxy {
-    // TODO: Preserve tool state when switching between tools
     pub fn switch_tool(&mut self, tool: ToolId, cx: &mut App) {
-        if let Some(mut st) = self.state.take() {
-            st.current_function.deactivate(cx);
+        if self
+            .state
+            .as_ref()
+            .is_some_and(|s| s.current_function == tool)
+        {
+            return;
         }
 
-        let registry = ToolFunctionRegistry::global(cx);
-        if let Some(new_tool) = registry.spawners.get(&tool).cloned() {
-            let mut f = new_tool(cx);
-            f.activate(cx);
-
-            self.state = Some(State {
-                current_function: f,
-                is_updating: false,
-            });
-        } else {
-            log::error!(
-                "Unable to switch to tool {:?}: not found in registry.",
-                tool
-            );
+        if let Some(st) = self.state.take() {
+            self.tool_functions
+                .get_mut(&st.current_function)
+                .unwrap()
+                .deactivate(cx);
         }
+
+        let new_tool = match self.tool_functions.entry(tool) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => {
+                let registry = ToolFunctionRegistry::global(cx);
+                if let Some(new_tool) = registry.spawners.get(&tool).cloned() {
+                    e.insert(new_tool(cx))
+                } else {
+                    log::error!(
+                        "Unable to switch to tool {:?}: not found in registry.",
+                        tool
+                    );
+                    return;
+                }
+            }
+        };
+
+        new_tool.activate(cx);
+        self.state = Some(State {
+            current_function: tool,
+            is_updating: false,
+        });
     }
 
     pub fn mouse_pressed(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
@@ -185,16 +203,26 @@ impl ToolProxy {
                 return;
             }
             state.is_updating = true;
-            state.current_function.begin(mouse, cx);
+
+            self.tool_functions
+                .get_mut(&state.current_function)
+                .unwrap()
+                .begin(mouse, cx);
         }
     }
 
     pub fn mouse_moved(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
-        if let Some(state) = self.state.as_mut() {
+        if let Some(state) = self.state.as_ref() {
             if state.is_updating {
-                state.current_function.update(mouse, cx);
+                self.tool_functions
+                    .get_mut(&state.current_function)
+                    .unwrap()
+                    .update(mouse, cx);
             } else {
-                state.current_function.hover(mouse, cx);
+                self.tool_functions
+                    .get_mut(&state.current_function)
+                    .unwrap()
+                    .hover(mouse, cx);
             }
         }
     }
@@ -206,13 +234,21 @@ impl ToolProxy {
             }
 
             state.is_updating = false;
-            state.current_function.end(mouse, cx);
+            self.tool_functions
+                .get_mut(&state.current_function)
+                .unwrap()
+                .end(mouse, cx);
         }
     }
 
     pub fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
         let state = self.state.as_mut()?;
-        Some(state.current_function.tool_option_widget(window, cx))
+        Some(
+            self.tool_functions
+                .get_mut(&state.current_function)
+                .unwrap()
+                .tool_option_widget(window, cx),
+        )
     }
 
     pub fn canvas_overlay(
@@ -222,8 +258,9 @@ impl ToolProxy {
         cx: &mut App,
     ) {
         if let Some(state) = self.state.as_mut() {
-            state
-                .current_function
+            self.tool_functions
+                .get_mut(&state.current_function)
+                .unwrap()
                 .canvas_overlay(canvas_surface, window, cx);
         }
     }
