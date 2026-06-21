@@ -1,7 +1,37 @@
 use std::sync::Arc;
 
-use gpui::{Global, block_on};
+use gpui::{App, Global, block_on};
 use wgpu::{Adapter, Device, Features, Instance, InstanceDescriptor, Queue};
+
+pub trait RenderContextAppExt {
+    fn render_context(&self) -> &RenderContext;
+    fn render_instance(&self) -> &Instance;
+    fn render_adapter(&self) -> &Adapter;
+    fn render_device(&self) -> &Device;
+    fn render_queue(&self) -> &Queue;
+}
+
+impl RenderContextAppExt for App {
+    fn render_context(&self) -> &RenderContext {
+        self.global::<RenderContext>()
+    }
+
+    fn render_instance(&self) -> &Instance {
+        &self.render_context().instance
+    }
+
+    fn render_adapter(&self) -> &Adapter {
+        &self.render_context().adapter
+    }
+
+    fn render_device(&self) -> &Device {
+        &self.render_context().device
+    }
+
+    fn render_queue(&self) -> &Queue {
+        &self.render_context().queue
+    }
+}
 
 pub struct RenderContext {
     pub instance: Instance,

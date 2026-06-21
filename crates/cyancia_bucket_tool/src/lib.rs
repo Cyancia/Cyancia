@@ -1,6 +1,6 @@
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
 use cyancia_image::tile::{GpuTileStorage, TileStorageAppExt};
-use cyancia_render::render_context::RenderContext;
+use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
 use cyancia_tools::{ToolFunction, ToolId, ToolsAppExt};
 use cyancia_utils::log_err::LogErr;
 use glam::{Vec2, Vec4};
@@ -77,7 +77,6 @@ impl ToolFunction for BucketTool {
         }
 
         let tiles = cx.tile_storage();
-        let render_context = cx.global::<RenderContext>();
         // TODO Reference other layers
         let ref_layer_id = canvas.image.active_layer;
         let ref_layer_info = tiles.get_layer_tiles(ref_layer_id).unwrap();
@@ -109,14 +108,17 @@ impl ToolFunction for BucketTool {
             image_size,
         };
 
+        let device = cx.render_device();
+        let queue = cx.render_queue();
+
         let bucket = Bucket::new(
-            &render_context.device,
+            device,
             ref_layer_info_buffer.texel_type,
             output_layer_info.texel_type,
         );
         let result = bucket.dispatch_composite(
-            &render_context.device,
-            &render_context.queue,
+            device,
+            queue,
             &params,
             &ref_layer,
             ref_layer_info.into_iter().collect(),
@@ -129,8 +131,8 @@ impl ToolFunction for BucketTool {
             let cmd = TileReplaceCommand::new(
                 "Bucket Fill".into(),
                 canvas_id,
-                &render_context.device,
-                &render_context.queue,
+                device,
+                queue,
                 output_layer_id,
                 &output_layer,
                 new_tiles.iter_tiles().map(|(i, _, _)| i).collect(),

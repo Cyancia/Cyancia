@@ -3,9 +3,9 @@ use std::borrow::Cow;
 use bevy_math::IRect;
 use cyancia_image::{
     layer::{LayerData, LayerId},
-    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner},
+    tile::{DynamicLayerStorage, GpuTileStorage, GpuTileStorageInner, TileStorageAppExt},
 };
-use cyancia_render::render_context::RenderContext;
+use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
 use cyancia_undo::UndoCommand;
 use cyancia_utils::log_err::LogErr;
 use glam::IVec2;
@@ -163,17 +163,13 @@ fn apply_tile_replace(
     replace_tile: &Option<(Texture, Vec<IVec2>)>,
     clear_tile_indices: Vec<IVec2>,
 ) {
-    let render_context = cx.global::<RenderContext>();
-    let device = render_context.device.clone();
-    let queue = render_context.queue.clone();
-    unsafe {
-        device.start_graphics_debugger_capture();
-    };
-
     let mut dirty_min = IVec2::MAX;
     let mut dirty_max = IVec2::MIN;
 
-    let tile_storage = cx.global_mut::<GpuTileStorage>();
+    let device = cx.render_device();
+    let queue = cx.render_queue();
+
+    let tile_storage = cx.tile_storage();
     let mut layer = tile_storage.get_layer_mut(layer).unwrap();
 
     let mut ec = device.create_command_encoder(&Default::default());
@@ -241,9 +237,6 @@ fn apply_tile_replace(
     queue.submit([ec.finish()]);
 
     drop(layer);
-    unsafe {
-        device.stop_graphics_debugger_capture();
-    };
 
     cx.update_canvas(&canvas, |_, cx| {
         cx.emit(CanvasUpdated {

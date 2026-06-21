@@ -9,7 +9,7 @@ use cyancia_image::{
     layer::LayerId,
     tile::{GpuTileStorage, GpuTileStorageInner},
 };
-use cyancia_render::render_context::RenderContext;
+use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
 use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::{log_err::LogErr, wrapper};
@@ -193,7 +193,6 @@ impl ToolFunction for BrushTool {
         overriders.remove_overrider(&target_layer);
 
         if let Some((new_tiles, new_tile_indices)) = result {
-            let render_context = cx.global::<RenderContext>();
             let target_layer_storage = cx
                 .global::<GpuTileStorage>()
                 .get_layer(target_layer)
@@ -201,8 +200,8 @@ impl ToolFunction for BrushTool {
             let cmd = TileReplaceCommand::new(
                 "Brush Stroke".into(),
                 canvas_id,
-                &render_context.device,
-                &render_context.queue,
+                cx.render_device(),
+                cx.render_queue(),
                 target_layer,
                 &target_layer_storage,
                 new_tile_indices,

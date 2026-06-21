@@ -6,7 +6,10 @@ use std::{
 };
 
 use bevy_math::IRect;
-use cyancia_render::{buffer::BufferVec, render_context::RenderContext};
+use cyancia_render::{
+    buffer::BufferVec,
+    render_context::{RenderContext, RenderContextAppExt},
+};
 use cyancia_utils::Deref;
 use dashmap::{DashMap, Entry};
 use encase::ShaderType;
@@ -38,15 +41,13 @@ impl TileStorageAppExt for App {
 static EMPTY_LAYER_BINDINGS: OnceLock<HashMap<TexelType, LayerBinding>> = OnceLock::new();
 
 pub fn init(cx: &mut App) {
-    let render_context = cx.global::<RenderContext>();
+    let device = cx.render_device();
+    let queue = cx.render_queue();
 
     let mut dummy_layers = HashMap::new();
     for texel_type in TexelType::ALL_POSSIBLE_FORMATS {
-        let mut st = DynamicLayerStorage::new(
-            render_context.device.clone(),
-            render_context.queue.clone(),
-            GpuLayerInfo { texel_type },
-        );
+        let mut st =
+            DynamicLayerStorage::new(device.clone(), queue.clone(), GpuLayerInfo { texel_type });
         st.get_tile_or_allocate(GpuTileStorage::EMPTY_TILE_COORD);
         dummy_layers.insert(texel_type, st.binding().unwrap());
     }
@@ -79,8 +80,9 @@ impl GpuTileStorage {
     };
 
     pub fn from_app(cx: &App) -> Self {
-        let render_context = cx.global::<RenderContext>();
-        Self::new(render_context.device.clone(), render_context.queue.clone())
+        let device = cx.render_device().clone();
+        let queue = cx.render_queue().clone();
+        Self::new(device, queue)
     }
 
     pub fn new(device: Device, queue: Queue) -> Self {

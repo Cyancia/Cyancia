@@ -13,7 +13,7 @@ use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
-    render_context::RenderContext,
+    render_context::{RenderContext, RenderContextAppExt},
 };
 use encase::ShaderType;
 use glam::{IVec2, Mat3, Vec2};
@@ -47,7 +47,9 @@ pub fn generate_cmd(
     let canvas_id = canvas.id();
 
     let tiles = cx.tile_storage();
-    let render_context = cx.global::<RenderContext>();
+    let device = cx.render_device();
+    let queue = cx.render_queue();
+
     let selection_layer_id = canvas.image.selection_layer();
 
     let affected_tiles = GpuTileStorage::pixel_rect_to_tile(aabb_ps);
@@ -56,13 +58,13 @@ pub fn generate_cmd(
     let selection_layer_format = selection_layer.layer_info().texel_type;
     let selection_layer_binding = selection_layer.binding_or_empty();
 
-    let mut pipeline = SelectionPipeline::new(&render_context.device, selection_layer_format);
+    let mut pipeline = SelectionPipeline::new(device, selection_layer_format);
     unsafe {
-        render_context.device.start_graphics_debugger_capture();
+        device.start_graphics_debugger_capture();
     };
     let selection = pipeline.draw(
-        &render_context.device,
-        &render_context.queue,
+        device,
+        queue,
         affected_tiles,
         vertices,
         indices,
@@ -71,14 +73,14 @@ pub fn generate_cmd(
         selection_layer.iter_tiles().map(|(i, _, _)| i).collect(),
     )?;
     unsafe {
-        render_context.device.stop_graphics_debugger_capture();
+        device.stop_graphics_debugger_capture();
     };
 
     Some(TileReplaceCommand::new(
         label,
         canvas_id,
-        &render_context.device,
-        &render_context.queue,
+        device,
+        queue,
         selection_layer_id,
         &selection_layer,
         selection.iter_tiles().map(|(i, _, _)| i).collect(),

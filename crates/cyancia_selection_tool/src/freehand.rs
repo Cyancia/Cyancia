@@ -1,6 +1,6 @@
 use bevy_math::Rect;
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
-use cyancia_render::render_context::RenderContext;
+use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::log_err::LogErr;
 use glam::Vec2;
@@ -164,14 +164,16 @@ impl ToolFunction for FreehandSelectionTool {
             return;
         };
 
-        let render_context = cx.global::<RenderContext>();
+        let device = cx.render_device();
+        let queue = cx.render_queue();
+
         let preview_pipeline = self.preview_pipeline.get_or_insert_with(|| {
-            SelectionPreviewPipeline::new(&render_context.device, canvas_surface.texture().format())
+            SelectionPreviewPipeline::new(&device, canvas_surface.texture().format())
         });
 
         preview_pipeline.draw(
-            &render_context.device,
-            &render_context.queue,
+            &device,
+            &queue,
             &state.points_ps,
             canvas_surface,
             &canvas.transform,
@@ -315,9 +317,11 @@ impl ToolFunction for PolygonSelectionTool {
             return;
         };
 
-        let render_context = cx.global::<RenderContext>();
+        let device = cx.render_device();
+        let queue = cx.render_queue();
+
         let preview_pipeline = self.preview_pipeline.get_or_insert_with(|| {
-            SelectionPreviewPipeline::new(&render_context.device, canvas_surface.texture().format())
+            SelectionPreviewPipeline::new(device, canvas_surface.texture().format())
         });
         let line_vertices_ps = state
             .points_ps
@@ -327,8 +331,8 @@ impl ToolFunction for PolygonSelectionTool {
             .collect::<Vec<_>>();
 
         preview_pipeline.draw(
-            &render_context.device,
-            &render_context.queue,
+            device,
+            queue,
             &line_vertices_ps,
             canvas_surface,
             &canvas.transform,

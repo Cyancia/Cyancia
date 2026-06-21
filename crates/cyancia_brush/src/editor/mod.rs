@@ -6,7 +6,10 @@ use std::{
 };
 
 use cyancia_assets::{AssetAppExt, asset::AssetId, bundle::BundleId};
-use cyancia_render::{render_context::RenderContext, texture::Image};
+use cyancia_render::{
+    render_context::{RenderContext, RenderContextAppExt},
+    texture::Image,
+};
 use cyancia_shader_graph::{
     editor::GraphEditor,
     graph::{
@@ -202,13 +205,11 @@ impl BrushEditor {
                         )
                     })));
 
-                    let device = cx.global::<RenderContext>().device.clone();
-                    let queue = cx.global::<RenderContext>().queue.clone();
                     cx.set_global(CurrentBrushPresetOperator::new(Some(
                         BrushPresetOperator::new(
                             instance,
-                            device,
-                            queue,
+                            cx.render_device().clone(),
+                            cx.render_queue().clone(),
                             InputProcessor::default(),
                         ),
                     )));
@@ -474,11 +475,10 @@ impl BrushEditor {
                     return;
                 };
 
-                let render_context = cx.global::<RenderContext>();
                 let op = BrushPresetOperator::new(
                     instance,
-                    render_context.device.clone(),
-                    render_context.queue.clone(),
+                    cx.render_device().clone(),
+                    cx.render_queue().clone(),
                     Default::default(),
                 );
                 cx.set_global(CurrentBrushPresetOperator::new(Some(op)));

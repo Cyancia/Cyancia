@@ -7,7 +7,7 @@ use wgpu::{
     ShaderModuleDescriptor, ShaderSource, VertexState,
 };
 
-use crate::render_context::RenderContext;
+use crate::render_context::{RenderContext, RenderContextAppExt};
 
 #[derive(Debug)]
 pub struct GlobalSamplers {
@@ -104,8 +104,8 @@ impl Global for FullscreenVertex {}
 
 impl FullscreenVertex {
     pub fn from_app(cx: &App) -> Self {
-        let render_context = cx.global::<RenderContext>();
-        Self::new(&render_context.device)
+        let device = cx.render_device();
+        Self::new(device)
     }
 
     pub fn new(device: &Device) -> Self {
