@@ -204,8 +204,9 @@ impl CanvasWidget {
 }
 
 impl Render for CanvasWidget {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tool_proxy_id = self.tool_proxy_id;
+        self.request_rerender(window, cx);
 
         div()
             .w_full()
@@ -299,19 +300,13 @@ impl Render for CanvasWidget {
                                                     original_transform.translated(delta);
                                             })
                                             .ok();
-                                        cx.notify(widget.entity_id());
                                     }
 
                                     if event.pressed_button.is_none_or(|b| b == MouseButton::Left) {
-                                        update_tool_proxy(
-                                            cx,
-                                            window,
-                                            &widget,
-                                            tool_proxy_id,
-                                            |tool_proxy, cx| {
-                                                tool_proxy.mouse_moved(event, cx);
-                                            },
-                                        );
+                                        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+                                            let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
+                                            tool_proxy.mouse_moved(event, cx);
+                                        });
                                     }
                                 }
                             });
@@ -322,15 +317,10 @@ impl Render for CanvasWidget {
                                         return;
                                     }
 
-                                    update_tool_proxy(
-                                        cx,
-                                        window,
-                                        &widget,
-                                        tool_proxy_id,
-                                        |tool_proxy, cx| {
-                                            tool_proxy.mouse_released(event, cx);
-                                        },
-                                    );
+                                    cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+                                        let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
+                                        tool_proxy.mouse_released(event, cx);
+                                    });
                                 },
                             );
                         }
@@ -343,7 +333,8 @@ impl Render for CanvasWidget {
                 let widget = cx.entity().downgrade();
                 move |event, window, cx| match event.button {
                     MouseButton::Left => {
-                        update_tool_proxy(cx, window, &widget, tool_proxy_id, |tool_proxy, cx| {
+                        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+                            let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
                             tool_proxy.mouse_pressed(event, cx);
                         });
                         cx.stop_propagation();
@@ -406,23 +397,4 @@ impl Render for CanvasWidget {
                 }
             })
     }
-}
-
-fn update_tool_proxy(
-    cx: &mut App,
-    window: &mut Window,
-    widget: &WeakEntity<CanvasWidget>,
-    tool_proxy_id: ToolProxyId,
-    f: impl FnOnce(&mut ToolProxy, &mut App),
-) {
-    cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
-        let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
-        f(tool_proxy, cx);
-    });
-
-    widget
-        .update(cx, |widget, cx| {
-            widget.request_rerender(window, cx);
-        })
-        .ok();
 }
