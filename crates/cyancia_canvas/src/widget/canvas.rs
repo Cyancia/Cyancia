@@ -16,7 +16,10 @@ use gpui::{
 };
 use wgpu::PollType;
 
-use crate::{CCanvas, CanvasAppExt, CanvasId, event::CanvasUpdated, render::CanvasRenderer};
+use crate::{
+    CCanvas, CanvasAppExt, CanvasId, control::CanvasTransform, event::CanvasUpdated,
+    render::CanvasRenderer,
+};
 
 // TODO: So, this is weird.
 //       For the brush tool, when a stroke is in progress, it's preview should be generated and
@@ -40,6 +43,8 @@ pub struct CanvasWidget {
     ongoing_render: bool,
     dirty_tiles: IRect,
     compositor: ImageCompositor,
+
+    middle_button_drag_start: Option<(Vec2, CanvasTransform)>,
 }
 
 impl CanvasWidget {
@@ -85,6 +90,8 @@ impl CanvasWidget {
             ongoing_render: false,
             dirty_tiles,
             compositor: ImageCompositor::new(),
+
+            middle_button_drag_start: None,
         })
     }
 
@@ -243,6 +250,8 @@ impl Render for CanvasWidget {
                     },
                     {
                         let widget = cx.entity().downgrade();
+                        let canvas = self.canvas.clone();
+
                         move |bounds, _, window, cx| {
                             if let Some(image) = widget
                                 .read_with(cx, |widget, _| widget.latest_image.clone())
@@ -268,15 +277,42 @@ impl Render for CanvasWidget {
                                         return;
                                     }
 
-                                    update_tool_proxy(
-                                        cx,
-                                        window,
-                                        &widget,
-                                        tool_proxy_id,
-                                        |tool_proxy, cx| {
-                                            tool_proxy.mouse_moved(event, cx);
-                                        },
-                                    );
+                                    if event
+                                        .pressed_button
+                                        .is_some_and(|b| b == MouseButton::Middle)
+                                    {
+                                        let position = Vec2::new(
+                                            event.position.x.into(),
+                                            event.position.y.into(),
+                                        );
+                                        let Ok(Some((start_position, original_transform))) = widget
+                                            .read_with(cx, |w, _| {
+                                                w.middle_button_drag_start.clone()
+                                            })
+                                        else {
+                                            return;
+                                        };
+                                        let delta = position - start_position;
+                                        canvas
+                                            .update(cx, |canvas, cx| {
+                                                canvas.transform =
+                                                    original_transform.translated(delta);
+                                            })
+                                            .ok();
+                                        cx.notify(widget.entity_id());
+                                    }
+
+                                    if event.pressed_button.is_none_or(|b| b == MouseButton::Left) {
+                                        update_tool_proxy(
+                                            cx,
+                                            window,
+                                            &widget,
+                                            tool_proxy_id,
+                                            |tool_proxy, cx| {
+                                                tool_proxy.mouse_moved(event, cx);
+                                            },
+                                        );
+                                    }
                                 }
                             });
 
@@ -303,13 +339,33 @@ impl Render for CanvasWidget {
                 .absolute()
                 .size_full(),
             )
-            .on_mouse_down(MouseButton::Left, {
+            .on_any_mouse_down({
                 let widget = cx.entity().downgrade();
-                move |event, window, cx| {
-                    update_tool_proxy(cx, window, &widget, tool_proxy_id, |tool_proxy, cx| {
-                        tool_proxy.mouse_pressed(event, cx);
-                    });
-                    cx.stop_propagation();
+                move |event, window, cx| match event.button {
+                    MouseButton::Left => {
+                        update_tool_proxy(cx, window, &widget, tool_proxy_id, |tool_proxy, cx| {
+                            tool_proxy.mouse_pressed(event, cx);
+                        });
+                        cx.stop_propagation();
+                    }
+                    MouseButton::Middle => {
+                        widget
+                            .update(cx, |widget, cx| {
+                                let Ok(canvas_transform) = widget
+                                    .canvas
+                                    .read_with(cx, |canvas, _| canvas.transform.clone())
+                                else {
+                                    return;
+                                };
+                                widget.middle_button_drag_start = Some((
+                                    Vec2::new(event.position.x.into(), event.position.y.into()),
+                                    canvas_transform,
+                                ));
+                            })
+                            .ok();
+                        cx.stop_propagation();
+                    }
+                    _ => {}
                 }
             })
             .on_scroll_wheel({
