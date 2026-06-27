@@ -1,0 +1,60 @@
+{
+  "name": "Default Tool Bindings",
+  "bindings": [
+    {
+      "shortcut": "h",
+      "tool": "pan_tool"
+    },
+    {
+      "shortcut": "r",
+      "tool": "rotate_tool"
+    },
+    {
+      "shortcut": "z",
+      "tool": "zoom_tool"
+    },
+    {
+      "shortcut": "space",
+      "tool": "pan_tool",
+      "is_temporary": true
+    },
+    {
+      "shortcut": "shift-space",
+      "tool": "rotate_tool",
+      "is_temporary": true
+    },
+    {
+      "shortcut": "ctrl-space",
+      "tool": "zoom_tool",
+      "is_temporary": true
+    },
+    {
+      "shortcut": "b",
+      "tool": "brush_tool"
+    },
+    {
+      "shortcut": "g",
+      "tool": "bucket_tool"
+    },
+    {
+      "shortcut": "m",
+      "tool": "rectangular_selection_tool"
+    },
+    {
+      "shortcut": "l",
+      "tool": "freehand_selection_tool"
+    },
+    {
+      "shortcut": "shift-m",
+      "tool": "elliptical_selection_tool"
+    },
+    {
+      "shortcut": "shift-l",
+      "tool": "polygon_selection_tool"
+    },
+    {
+      "shortcut": "w",
+      "tool": "magic_wand_selection_tool"
+    }
+  ]
+}

@@ -1961,14 +1961,20 @@ dependencies = [
 name = "cyancia_tools"
 version = "0.1.0"
 dependencies = [
+ "cyancia_assets",
  "cyancia_math",
  "cyancia_utils",
  "downcast-rs 2.0.2",
  "futures",
  "glam",
  "gpui",
+ "indexmap",
  "log",
  "parking_lot",
+ "parse-display",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "uuid",
  "wgpu 29.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

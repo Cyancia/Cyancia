@@ -2,49 +2,6 @@
   "name": "Default Key Bindings",
   "actions": [
     {
-      "shortcut": "h",
-      "action_name": "SwitchToPanToolAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "r",
-      "action_name": "SwitchToRotateToolAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "z",
-      "action_name": "SwitchToZoomToolAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "space",
-      "action_name": "SwitchToPanToolAction",
-      "revert_within": "Always",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "ctrl-space",
-      "action_name": "SwitchToRotateToolAction",
-      "revert_within": "Always",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "shift-space",
-      "action_name": "SwitchToZoomToolAction",
-      "revert_within": "Always",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "b",
-      "action_name": "SwitchToBrushToolAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "g",
-      "action_name": "SwitchToBucketToolAction",
-      "context": "main_view"
-    },
-    {
       "shortcut": "ctrl-o",
       "action_name": "OpenFileAction",
       "context": "main_view"
@@ -84,33 +41,8 @@
       "context": "main_view"
     },
     {
-      "shortcut": "m",
-      "action_name": "SwitchToRectangularSelectionToolAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "l",
-      "action_name": "SwitchToFreehandSelectionToolAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "shift-m",
-      "action_name": "SwitchToEllipticalSelectionToolAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "shift-l",
-      "action_name": "SwitchToPolygonSelectionToolAction",
-      "context": "main_view"
-    },
-    {
       "shortcut": "ctrl-d",
       "action_name": "DeleteSelectionAction",
-      "context": "main_view"
-    },
-    {
-      "shortcut": "w",
-      "action_name": "SwitchToMagicWandSelectionToolAction",
       "context": "main_view"
     }
   ]

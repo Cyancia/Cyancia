@@ -44,7 +44,7 @@ impl ToolFunction for BrushTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("brush_tool")
+        ToolId::new("brush_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {

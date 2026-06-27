@@ -1,19 +1,46 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, HashSet, hash_map::Entry},
     rc::Rc,
+    sync::Arc,
 };
 
+use cyancia_assets::AssetAppExt;
 use cyancia_utils::wrapper;
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, Global, IntoElement, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Window, div,
+    AnyElement, App, AppContext, BorrowAppContext, Context, Entity, FocusHandle, Global,
+    InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, RenderOnce, Styled, Window, div,
 };
+use indexmap::IndexSet;
+use log::info;
+use parse_display::Display;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wgpu::TextureView;
+
+use crate::manifest::{ToolBinding, ToolBindingManifest, ToolBindingManifestSerializer};
+
+pub mod manifest;
 
 pub fn init(cx: &mut App) {
     cx.set_global(ToolFunctionRegistry::default());
     cx.set_global(ToolProxies::default());
+    cx.set_global(TrackedKeys::default());
+
+    cx.add_asset_serializer::<ToolBindingManifestSerializer>();
+}
+
+pub fn finish(cx: &mut App) {
+    let manifests = cx.assets().all_handles_of::<ToolBindingManifest>().unwrap();
+    // TODO select other manifests on demand
+    let manifest = manifests.first().unwrap().get().unwrap();
+
+    let mut bindings = GlobalToolBindings::default();
+    for binding in &manifest.bindings {
+        let keystroke = Keystroke::parse(&binding.shortcut).unwrap();
+        bindings.bindings.insert(keystroke, binding.clone());
+    }
+    cx.set_global(bindings);
 }
 
 // pub struct ToolsPlugin;
@@ -36,8 +63,9 @@ impl ToolsAppExt for App {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub ToolId : &'static str
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, Serialize, Deserialize)]
+    #[display("{0}")]
+    pub ToolId : Arc<str>
 }
 
 pub trait ToolFunction: Send + Sync + 'static + Sized {
@@ -147,34 +175,33 @@ impl ToolFunctionRegistry {
 }
 
 struct State {
-    current_function: ToolId,
+    function: ToolId,
     is_updating: bool,
 }
 
 #[derive(Default)]
 pub struct ToolProxy {
-    state: Option<State>,
+    current_state: Option<State>,
+    override_state: Option<State>,
     tool_functions: HashMap<ToolId, Box<dyn ErasedToolFunction>>,
 }
 
 impl ToolProxy {
     pub fn switch_tool(&mut self, tool: ToolId, cx: &mut App) {
-        if self
-            .state
-            .as_ref()
-            .is_some_and(|s| s.current_function == tool)
-        {
+        if Some(&tool) == self.current_tool() {
             return;
         }
 
-        if let Some(st) = self.state.take() {
+        info!("Switched tool: {}", tool);
+
+        if let Some(st) = self.current_state.take() {
             self.tool_functions
-                .get_mut(&st.current_function)
+                .get_mut(&st.function)
                 .unwrap()
                 .deactivate(cx);
         }
 
-        let new_tool = match self.tool_functions.entry(tool) {
+        let new_tool = match self.tool_functions.entry(tool.clone()) {
             Entry::Occupied(e) => e.into_mut(),
             Entry::Vacant(e) => {
                 let registry = ToolFunctionRegistry::global(cx);
@@ -191,36 +218,89 @@ impl ToolProxy {
         };
 
         new_tool.activate(cx);
-        self.state = Some(State {
-            current_function: tool,
+        self.current_state = Some(State {
+            function: tool,
             is_updating: false,
         });
     }
 
+    pub fn switch_override_tool(&mut self, tool: Option<ToolId>, cx: &mut App) {
+        if tool.as_ref() == self.override_tool() {
+            return;
+        }
+
+        info!("Switched override tool: {:?}", tool);
+
+        if let Some(tool) = tool {
+            if let Some(state) = self.override_state.as_mut().or(self.current_state.as_mut()) {
+                self.tool_functions
+                    .get_mut(&state.function)
+                    .unwrap()
+                    .deactivate(cx);
+            }
+
+            let new_tool = match self.tool_functions.entry(tool.clone()) {
+                Entry::Occupied(e) => e.into_mut(),
+                Entry::Vacant(e) => {
+                    let registry = ToolFunctionRegistry::global(cx);
+                    if let Some(new_tool) = registry.spawners.get(&tool).cloned() {
+                        e.insert(new_tool(cx))
+                    } else {
+                        log::error!(
+                            "Unable to switch to tool {:?}: not found in registry.",
+                            tool
+                        );
+                        return;
+                    }
+                }
+            };
+            new_tool.activate(cx);
+
+            self.override_state = Some(State {
+                function: tool,
+                is_updating: false,
+            });
+        } else {
+            if let Some(state) = self.override_state.as_mut() {
+                self.tool_functions
+                    .get_mut(&state.function)
+                    .unwrap()
+                    .deactivate(cx);
+            }
+            if let Some(state) = self.current_state.as_mut() {
+                self.tool_functions
+                    .get_mut(&state.function)
+                    .unwrap()
+                    .activate(cx);
+            }
+            self.override_state = None;
+        }
+    }
+
     pub fn mouse_pressed(&mut self, mouse: &MouseDownEvent, cx: &mut App) {
-        if let Some(state) = self.state.as_mut() {
+        if let Some(state) = self.override_state.as_mut().or(self.current_state.as_mut()) {
             if state.is_updating {
                 return;
             }
             state.is_updating = true;
 
             self.tool_functions
-                .get_mut(&state.current_function)
+                .get_mut(&state.function)
                 .unwrap()
                 .begin(mouse, cx);
         }
     }
 
     pub fn mouse_moved(&mut self, mouse: &MouseMoveEvent, cx: &mut App) {
-        if let Some(state) = self.state.as_ref() {
+        if let Some(state) = self.override_state.as_ref().or(self.current_state.as_ref()) {
             if state.is_updating {
                 self.tool_functions
-                    .get_mut(&state.current_function)
+                    .get_mut(&state.function)
                     .unwrap()
                     .update(mouse, cx);
             } else {
                 self.tool_functions
-                    .get_mut(&state.current_function)
+                    .get_mut(&state.function)
                     .unwrap()
                     .hover(mouse, cx);
             }
@@ -228,24 +308,27 @@ impl ToolProxy {
     }
 
     pub fn mouse_released(&mut self, mouse: &MouseUpEvent, cx: &mut App) {
-        if let Some(state) = self.state.as_mut() {
+        if let Some(state) = self.override_state.as_mut().or(self.current_state.as_mut()) {
             if !state.is_updating {
                 return;
             }
 
             state.is_updating = false;
             self.tool_functions
-                .get_mut(&state.current_function)
+                .get_mut(&state.function)
                 .unwrap()
                 .end(mouse, cx);
         }
     }
 
     pub fn tool_option_widget(&mut self, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
-        let state = self.state.as_mut()?;
+        let state = self
+            .override_state
+            .as_mut()
+            .or(self.current_state.as_mut())?;
         Some(
             self.tool_functions
-                .get_mut(&state.current_function)
+                .get_mut(&state.function)
                 .unwrap()
                 .tool_option_widget(window, cx),
         )
@@ -257,12 +340,20 @@ impl ToolProxy {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if let Some(state) = self.state.as_mut() {
+        if let Some(state) = self.override_state.as_mut().or(self.current_state.as_mut()) {
             self.tool_functions
-                .get_mut(&state.current_function)
+                .get_mut(&state.function)
                 .unwrap()
                 .canvas_overlay(canvas_surface, window, cx);
         }
+    }
+
+    pub fn current_tool(&self) -> Option<&ToolId> {
+        Some(&self.current_state.as_ref()?.function)
+    }
+
+    pub fn override_tool(&self) -> Option<&ToolId> {
+        Some(&self.override_state.as_ref()?.function)
     }
 }
 
@@ -293,4 +384,182 @@ impl ToolProxies {
 
         id
     }
+}
+
+#[derive(Default)]
+pub struct GlobalToolBindings {
+    bindings: HashMap<Keystroke, ToolBinding>,
+}
+
+impl Global for GlobalToolBindings {}
+
+#[derive(Default)]
+pub struct TrackedKeys {
+    keys: IndexSet<String>,
+    modifiers: Modifiers,
+}
+
+impl Global for TrackedKeys {}
+
+#[derive(IntoElement)]
+pub struct ToolLayer {
+    children: Vec<AnyElement>,
+    target_tool_proxy: Option<ToolProxyId>,
+}
+
+impl ToolLayer {
+    pub fn new() -> Self {
+        Self {
+            target_tool_proxy: None,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn tool_proxy(mut self, tool_proxy: ToolProxyId) -> Self {
+        self.target_tool_proxy = Some(tool_proxy);
+        self
+    }
+}
+
+impl ParentElement for ToolLayer {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
+impl RenderOnce for ToolLayer {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let target_tool_proxy = self.target_tool_proxy;
+
+        // window.on_key_event(|event: &KeyDownEvent, phase, window, cx| {
+        //     dbg!(&event.keystroke);
+        // });
+
+        div()
+            .size_full()
+            .children(self.children)
+            .on_key_down(move |event, window, cx| {
+                if event.is_held {
+                    return;
+                }
+
+                cx.update_global::<TrackedKeys, _>(|tracked, cx| {
+                    tracked.keys.insert(event.keystroke.key.clone());
+
+                    switch_tool(target_tool_proxy, tracked, cx, true);
+                });
+            })
+            .on_key_up(move |event, window, cx| {
+                cx.update_global::<TrackedKeys, _>(|tracked, cx| {
+                    tracked.keys.shift_remove(&event.keystroke.key);
+
+                    switch_tool(target_tool_proxy, tracked, cx, false);
+                });
+            })
+            .on_modifiers_changed(move |event, window, cx| {
+                cx.update_global::<TrackedKeys, _>(|tracked, cx| {
+                    let old_count = count_modifiers(&tracked.modifiers);
+                    tracked.modifiers = window.modifiers();
+                    let new_count = count_modifiers(&tracked.modifiers);
+                    switch_tool(target_tool_proxy, tracked, cx, new_count > old_count);
+                });
+            })
+    }
+}
+
+fn count_modifiers(m: &Modifiers) -> u32 {
+    let mut n = 0;
+    if m.shift {
+        n += 1;
+    }
+    if m.control {
+        n += 1;
+    }
+    if m.alt {
+        n += 1;
+    }
+    if m.platform {
+        n += 1;
+    }
+    if m.function {
+        n += 1;
+    }
+
+    n
+}
+
+fn switch_tool(
+    tool_proxy: Option<ToolProxyId>,
+    tracked_keys: &TrackedKeys,
+    cx: &mut App,
+    is_keydown: bool,
+) {
+    let Some(tool_proxy) = tool_proxy else {
+        return;
+    };
+
+    let current_key = tracked_keys.keys.last().cloned();
+    let mut modifiers = tracked_keys.modifiers;
+
+    let current_keystroke = if let Some(key) = current_key {
+        Some(Keystroke {
+            modifiers,
+            key,
+            key_char: None,
+        })
+    } else {
+        use std::mem;
+
+        let key = if mem::take(&mut modifiers.shift) {
+            Some("shift".to_string())
+        } else if mem::take(&mut modifiers.control) {
+            Some("control".to_string())
+        } else if mem::take(&mut modifiers.alt) {
+            Some("alt".to_string())
+        } else if mem::take(&mut modifiers.platform) {
+            Some("platform".to_string())
+        } else if mem::take(&mut modifiers.function) {
+            Some("function".to_string())
+        } else {
+            None
+        };
+
+        key.map(|key| Keystroke {
+            modifiers,
+            key,
+            key_char: None,
+        })
+    };
+
+    let bindings = cx.global::<GlobalToolBindings>();
+    let Some(config) = current_keystroke.and_then(|k| bindings.bindings.get(&k)) else {
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            let tool_proxy = tool_proxies.get_mut(&tool_proxy);
+            tool_proxy.switch_override_tool(None, cx);
+        });
+        return;
+    };
+
+    let tool_id = config.tool.clone();
+    if config.is_temporary {
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            let tool_proxy = tool_proxies.get_mut(&tool_proxy);
+            tool_proxy.switch_override_tool(Some(tool_id), cx);
+        });
+    } else if is_keydown {
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            let tool_proxy = tool_proxies.get_mut(&tool_proxy);
+            tool_proxy.switch_tool(tool_id, cx);
+        });
+    }
+
+    // let tool_id = config.tool_id;
+    // cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+    //     let tool_proxy = tool_proxies.get_mut(&tool_proxy);
+    //     if is_override {
+    //         tool_proxy.switch_override_tool(Some(tool_id), cx);
+    //     } else {
+    //         tool_proxy.switch_tool(tool_id, cx);
+    //     }
+    // });
 }

@@ -54,7 +54,7 @@ impl ToolFunction for BucketTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("bucket_tool")
+        ToolId::new("bucket_tool".into())
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {

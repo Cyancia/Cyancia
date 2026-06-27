@@ -9,13 +9,19 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+cyancia_assets.workspace = true
 cyancia_math.workspace = true
 cyancia_utils.workspace = true
 downcast-rs.workspace = true
 futures.workspace = true
 glam.workspace = true
 gpui.workspace = true
+indexmap.workspace = true
 log.workspace = true
 parking_lot.workspace = true
+parse-display.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 uuid.workspace = true
 wgpu.workspace = true

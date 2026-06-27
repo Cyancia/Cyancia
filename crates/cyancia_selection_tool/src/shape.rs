@@ -86,7 +86,7 @@ impl ToolFunction for RectangularSelectionTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("rectangular_selection_tool")
+        ToolId::new("rectangular_selection_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
@@ -197,7 +197,7 @@ impl ToolFunction for EllipticalSelectionTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("elliptical_selection_tool")
+        ToolId::new("elliptical_selection_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {

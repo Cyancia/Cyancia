@@ -49,7 +49,7 @@ impl ToolFunction for FreehandSelectionTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("freehand_selection_tool")
+        ToolId::new("freehand_selection_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
@@ -205,7 +205,7 @@ impl ToolFunction for PolygonSelectionTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("polygon_selection_tool")
+        ToolId::new("polygon_selection_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, _cx: &mut Context<Self>) {

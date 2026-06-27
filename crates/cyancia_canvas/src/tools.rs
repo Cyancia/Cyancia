@@ -21,7 +21,7 @@ impl ToolFunction for PanTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("pan_tool")
+        ToolId::new("pan_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
@@ -54,7 +54,7 @@ impl ToolFunction for RotateTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("rotate_tool")
+        ToolId::new("rotate_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
@@ -92,7 +92,7 @@ impl ToolFunction for ZoomTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("zoom_tool")
+        ToolId::new("zoom_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {

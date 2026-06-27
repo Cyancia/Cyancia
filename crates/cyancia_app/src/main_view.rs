@@ -3,12 +3,12 @@ use std::sync::Arc;
 use cyancia_brush::tool::BrushTool;
 use cyancia_canvas::{CanvasAppExt, GlobalCanvasEvents, event::CanvasCreated};
 use cyancia_theme::SwitchThemeAction;
-use cyancia_tools::{ToolFunction, ToolProxies};
+use cyancia_tools::{ToolFunction, ToolLayer, ToolProxies};
 use cyancia_view::{View, ViewId};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, FocusHandle, InteractiveElement,
     IntoElement, Menu, MenuItem, ParentElement, Render, Styled, WeakEntity, Window, WindowHandle,
-    WindowOptions, div,
+    WindowOptions, div, prelude::FluentBuilder,
 };
 use gpui_component::{
     ActiveTheme, GlobalState, Root, Theme, ThemeRegistry, TitleBar,
@@ -172,13 +172,19 @@ fn build_menu_bar(cx: &App) -> Vec<Menu> {
 }
 
 impl Render for MainView {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .track_focus(&self.focus_handle)
-            .key_context(MAIN_VIEW_CONTEXT)
-            .w_full()
-            .h_full()
-            .child(TitleBar::new().child(self.menu_bar.clone()))
-            .child(self.dock_area.clone())
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        ToolLayer::new()
+            .when_some(cx.read_current_canvas(), |tool_layer, canvas| {
+                tool_layer.tool_proxy(canvas.tool_proxy_id())
+            })
+            .child(
+                div()
+                    .track_focus(&self.focus_handle)
+                    .key_context(MAIN_VIEW_CONTEXT)
+                    .w_full()
+                    .h_full()
+                    .child(TitleBar::new().child(self.menu_bar.clone()))
+                    .child(self.dock_area.clone()),
+            )
     }
 }

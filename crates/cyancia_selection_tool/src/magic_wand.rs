@@ -51,7 +51,7 @@ impl ToolFunction for MagicWandSelectionTool {
     }
 
     fn id() -> ToolId {
-        ToolId::new("magic_wand_selection_tool")
+        ToolId::new("magic_wand_selection_tool".into())
     }
 
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
