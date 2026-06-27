@@ -80,7 +80,7 @@ impl LayerStackWidget {
             SelectEvent::Confirm(Some(value)) => {
                 self.canvas
                     .update(cx, |canvas, cx| {
-                        canvas.image.active_layer_data_mut().blend_func = value.clone();
+                        canvas.active_layer_data_mut().blend_func = value.clone();
                         // TODO use layer bound
                         let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(IRect {
                             min: IVec2::ZERO,
@@ -101,7 +101,7 @@ impl LayerStackWidget {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let active_layer = canvas.read(cx).image.active_layer_data();
+        let active_layer = canvas.read(cx).active_layer_data();
 
         let blend_func = active_layer.blend_func.clone();
         self.blend_mode_select_state.update(cx, |state, cx| {
@@ -141,7 +141,7 @@ impl Render for LayerStackWidget {
                 h_flex()
                     .pl(px(20.0 * depth as f32))
                     .h(px(40.0))
-                    .when(canvas.image.active_layer == layer.id(), |d| {
+                    .when(canvas.active_layer_id() == layer.id(), |d| {
                         d.bg(cx.theme().accent)
                     })
                     .id(format!("layer-{}", layer.id()))
@@ -159,12 +159,7 @@ impl Render for LayerStackWidget {
                         move |_, _, cx| {
                             canvas_entity
                                 .update(cx, |canvas, cx| {
-                                    let old = canvas.image.active_layer;
-                                    canvas.image.active_layer = layer_id;
-                                    cx.emit(CanvasActiveLayerChanged {
-                                        from: old,
-                                        to: layer_id,
-                                    });
+                                    canvas.set_active_layer(layer_id, cx);
                                 })
                                 .ok();
                         }

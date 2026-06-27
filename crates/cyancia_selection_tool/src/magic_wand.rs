@@ -75,7 +75,7 @@ impl ToolFunction for MagicWandSelectionTool {
         let tiles = cx.tile_storage();
         let render_context = cx.global::<RenderContext>();
         // TODO Reference other layers
-        let ref_layer_id = canvas.image.active_layer;
+        let ref_layer_id = canvas.active_layer_id();
         let ref_layer_info = tiles.get_layer_tiles(ref_layer_id).unwrap();
         let ref_layer_info_buffer = tiles.get_layer_info(ref_layer_id).unwrap();
         let ref_layer = tiles.get_layer_binding_or_empty(ref_layer_id).unwrap();

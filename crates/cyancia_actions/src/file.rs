@@ -80,8 +80,8 @@ impl ActionFunction for OpenFileAction {
 
             canvas_entity.update(cx, |canvas, cx| {
                 cx.emit(CanvasActiveLayerChanged {
-                    from: canvas.image.active_layer,
-                    to: canvas.image.active_layer,
+                    from: canvas.active_layer_id(),
+                    to: canvas.active_layer_id(),
                 });
             });
         })

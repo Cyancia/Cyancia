@@ -40,8 +40,6 @@ pub fn init(cx: &mut App) {
 #[derive(Debug)]
 pub struct CImage {
     size: UVec2,
-    // TODO This should be in canvas, not image
-    pub active_layer: LayerId,
     texel_type: TexelType,
     layers: LayerStack,
     name_generator: LayerNameGenerator,
@@ -51,16 +49,9 @@ pub struct CImage {
 impl CImage {
     pub fn new(size: UVec2) -> Self {
         let layers = LayerStack::new();
-        let active_layer = layers
-            .root_node()
-            .children()
-            .first()
-            .expect("Background layer should be created by default")
-            .id();
 
         Self {
             size,
-            active_layer,
             texel_type: TexelType::RGBA8,
             layers,
             name_generator: LayerNameGenerator::default(),
@@ -70,16 +61,9 @@ impl CImage {
 
     pub fn from_layer(size: UVec2, layer: LayerData) -> Self {
         let layers = LayerStack::with_background_layer(layer);
-        let active_layer = layers
-            .root_node()
-            .children()
-            .first()
-            .expect("Background layer should be created by default")
-            .id();
 
         Self {
             size,
-            active_layer,
             texel_type: TexelType::RGBA8,
             layers,
             name_generator: Default::default(),
@@ -107,15 +91,6 @@ impl CImage {
         self.name_generator.next_of(base)
     }
 
-    pub fn parent_of_active_layer(&self) -> LayerId {
-        let l = self
-            .layers
-            .find_node(self.active_layer)
-            .expect("Active layer should always exist");
-        l.parent()
-            .expect("Active layer should always have a parent")
-    }
-
     pub fn layer_stack(&self) -> &LayerStack {
         &self.layers
     }
@@ -128,36 +103,8 @@ impl CImage {
         self.size
     }
 
-    pub fn root_id(&self) -> LayerId {
-        self.layers.root_id()
-    }
-
     pub fn texel_type(&self) -> TexelType {
         self.texel_type
-    }
-
-    pub fn active_layer_node(&self) -> &LayerStackNode {
-        self.layers
-            .find_node(self.active_layer)
-            .expect("Active layer should always exist")
-    }
-
-    pub fn active_layer_node_mut(&mut self) -> &mut LayerStackNode {
-        self.layers
-            .find_node_mut(self.active_layer)
-            .expect("Active layer should always exist")
-    }
-
-    pub fn active_layer_data(&self) -> &LayerData {
-        self.layers
-            .get_layer(self.active_layer)
-            .expect("Active layer should always exist")
-    }
-
-    pub fn active_layer_data_mut(&mut self) -> &mut LayerData {
-        self.layers
-            .get_layer_mut(self.active_layer)
-            .expect("Active layer should always exist")
     }
 
     pub fn selection_layer(&self) -> LayerId {

@@ -110,7 +110,10 @@ impl ImageCompositor {
         queue: &Queue,
     ) {
         let now = std::time::Instant::now();
-        let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
+        let root_data = image
+            .layer_stack()
+            .get_layer(image.layer_stack().root_id())
+            .unwrap();
         root_data.create_blend_cache(
             self,
             overriders,
@@ -139,7 +142,7 @@ impl ImageCompositor {
             ..Default::default()
         });
 
-        let mut root_layer_tiles = tiles.get_layer_mut(image.root_id()).unwrap();
+        let mut root_layer_tiles = tiles.get_layer_mut(image.layer_stack().root_id()).unwrap();
         root_layer_tiles.allocate_pixels(IRect {
             min: IVec2::ZERO,
             max: image.size.as_ivec2(),
@@ -147,7 +150,10 @@ impl ImageCompositor {
         let root_layer_binding = root_layer_tiles.binding().unwrap();
 
         let empty_layer_binding = GpuTileStorage::get_empty_layer_binding(image.texel_type());
-        let root_data = image.layer_stack().get_layer(image.root_id()).unwrap();
+        let root_data = image
+            .layer_stack()
+            .get_layer(image.layer_stack().root_id())
+            .unwrap();
         let now = std::time::Instant::now();
         root_data.prepare_blend_cache(
             self,

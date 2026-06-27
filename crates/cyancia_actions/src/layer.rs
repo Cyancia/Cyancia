@@ -25,8 +25,8 @@ impl ActionFunction for CreateNewLayerAction {
             .update_current_canvas(|canvas, _| {
                 // TODO: Check if this type of layer can be created under the current layer.
                 //       If can't, check it's parent, until find one.
-                let parent = canvas.image.parent_of_active_layer();
-                let active_layer_id = canvas.image.active_layer;
+                let parent = canvas.parent_id_of_active_layer();
+                let active_layer_id = canvas.active_layer_id();
 
                 let new_layer =
                     LayerData::new_normal_pixel(canvas.image.next_name_of_layer("Layer".into()));
@@ -66,8 +66,8 @@ impl ActionFunction for GroupActiveLayerAction {
             .update_current_canvas(|canvas, _| {
                 // TODO Support grouping multiple selected layers.
                 let group_name = canvas.image.next_name_of_layer("Group".to_string());
-                let active_layer_id = canvas.image.active_layer;
-                let active_layer_parent = canvas.image.parent_of_active_layer();
+                let active_layer_id = canvas.active_layer_id();
+                let active_layer_parent = canvas.parent_id_of_active_layer();
                 let parent = canvas
                     .image
                     .layer_stack()
@@ -101,8 +101,8 @@ impl ActionFunction for MoveLayerUpAction {
         let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
-        let active_layer_id = canvas.image.active_layer;
-        let active_layer_parent = canvas.image.parent_of_active_layer();
+        let active_layer_id = canvas.active_layer_id();
+        let active_layer_parent = canvas.parent_id_of_active_layer();
         let active_layer_parent_node = canvas
             .image
             .layer_stack()
@@ -175,8 +175,8 @@ impl ActionFunction for MoveLayerDownAction {
             return;
         };
 
-        let active_layer_id = canvas.image.active_layer;
-        let active_layer_parent = canvas.image.parent_of_active_layer();
+        let active_layer_id = canvas.active_layer_id();
+        let active_layer_parent = canvas.parent_id_of_active_layer();
         let active_layer_parent_node = canvas
             .image
             .layer_stack()

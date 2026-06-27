@@ -315,12 +315,7 @@ impl UndoCommand for InsertLayerCommand {
                 self.index,
                 self.layer.clone(),
             );
-            let old_active = canvas.image.active_layer;
-            canvas.image.active_layer = self.layer.id();
-            cx.emit(CanvasActiveLayerChanged {
-                from: old_active,
-                to: self.layer.id(),
-            });
+            canvas.set_active_layer(self.layer.id(), cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
@@ -332,12 +327,7 @@ impl UndoCommand for InsertLayerCommand {
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, cx| {
             canvas.image.layer_stack_mut().remove_layer(self.layer.id());
-            let old = canvas.image.active_layer;
-            canvas.image.active_layer = self.previous_active_layer;
-            cx.emit(CanvasActiveLayerChanged {
-                from: old,
-                to: self.previous_active_layer,
-            });
+            canvas.set_active_layer(self.previous_active_layer, cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
