@@ -3,21 +3,12 @@ use gpui::InvalidKeystrokeError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum RevertWithin {
-    Always,
-    Milliseconds(f32),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyBindingDef {
     pub shortcut: String,
     pub action_name: String,
     #[serde(default)]
     #[serde(skip_serializing_if = "is_null")]
     pub action_data: serde_json::Value,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "is_none")]
-    pub revert_within: Option<RevertWithin>,
     #[serde(default)]
     #[serde(skip_serializing_if = "is_none")]
     pub context: Option<String>,

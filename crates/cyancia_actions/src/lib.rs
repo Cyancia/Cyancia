@@ -125,7 +125,6 @@ impl ActionAppExt for App {
 
 pub trait ActionFunction: Action + Send + Sync + 'static {
     fn trigger(&self, cx: &mut App);
-    fn trigger_revert(&self, _cx: &mut App) {}
 }
 
 #[derive(Default)]
