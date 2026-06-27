@@ -107,7 +107,7 @@ impl ToolFunction for ZoomTool {
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
         cx.update_current_canvas(|canvas, _| {
             let d = mouse_position(mouse.position).y - self.start_pos.y;
-            let f = d / self.original_transform.widget_bounds.size().y + 1.0;
+            let f = -d / self.original_transform.widget_bounds.size().y + 1.0;
             canvas.transform = self
                 .original_transform
                 .clone()
