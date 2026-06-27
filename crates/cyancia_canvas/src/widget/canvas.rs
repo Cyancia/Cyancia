@@ -312,6 +312,43 @@ impl Render for CanvasWidget {
                     cx.stop_propagation();
                 }
             })
+            .on_scroll_wheel({
+                let canvas = self.canvas.clone();
+                move |event, window, cx| {
+                    canvas
+                        .update(cx, |canvas, cx| {
+                            let line_height = if event.alt { 30.0 } else { 15.0 };
+                            let delta = event.delta.pixel_delta(px(line_height));
+                            let delta = Vec2::new(delta.x.into(), delta.y.into());
+
+                            if event.modifiers.control {
+                                let position_ss =
+                                    Vec2::new(event.position.x.into(), event.position.y.into());
+                                if let Some(center) = canvas.transform.window_to_pixel(position_ss)
+                                {
+                                    let factor = line_height / 60.0;
+                                    canvas.transform.scale_around(
+                                        if delta.y > 0.0 {
+                                            1.0 + factor
+                                        } else {
+                                            1.0 - factor
+                                        },
+                                        center,
+                                    );
+                                }
+                            } else {
+                                if delta.x > 0.0 {
+                                    canvas.transform.translate(delta);
+                                } else if event.shift {
+                                    canvas.transform.translate(Vec2::X * delta.y);
+                                } else {
+                                    canvas.transform.translate(Vec2::Y * delta.y);
+                                }
+                            }
+                        })
+                        .ok();
+                }
+            })
     }
 }
 
