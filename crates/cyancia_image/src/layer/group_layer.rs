@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::{any::TypeId, sync::Arc};
 
 use bevy_math::IRect;
 use cyancia_render::bind_group_layout_entries::{BindGroupLayoutEntries, binding_types};
@@ -13,7 +13,7 @@ use wgpu::{
 
 use crate::{
     CImage,
-    composite::{ImageCompositor, LayerPreviewOverriders},
+    composite::{BlendFunctionId, BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders},
     dynamic_intermediate_buffer::IntermediateBuffer,
     layer::{Layer, LayerData, LayerStackNode},
     tile::{GpuTileInfo, GpuTileStorage},
@@ -39,13 +39,21 @@ impl Layer for GroupLayer {
         layer: &LayerData,
         node: &LayerStackNode,
         tiles: &GpuTileStorage,
+        blend_funcs: &BlendFunctionRegistry,
         device: &Device,
         queue: &Queue,
     ) {
         for child_node in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(child_node.id).unwrap();
             child_layer.create_blend_cache(
-                compositor, overriders, image, child_node, tiles, device, queue,
+                compositor,
+                overriders,
+                image,
+                child_node,
+                tiles,
+                blend_funcs,
+                device,
+                queue,
             );
         }
 
@@ -55,16 +63,19 @@ impl Layer for GroupLayer {
         });
 
         if let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer.id())
-            && cache.blend_func_name == layer.blend_func.name()
+            && cache.blend_func_name == layer.blend_func
             && cache.intermediate.texel_type() == image.texel_type()
             && cache.intermediate.tile_rect() == tile_rect
         {
             return;
         }
 
+        let blend_func = blend_funcs
+            .get(&layer.blend_func)
+            .expect(&format!("Blend function '{}' not found", layer.blend_func));
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
-            &layer.blend_func.wgsl_function_call("src", "dst"),
+            &blend_func.wgsl_function_call("src", "dst"),
         );
 
         let mut resolver = VirtualResolver::new();
@@ -138,7 +149,7 @@ impl Layer for GroupLayer {
         });
 
         let cache = GroupBlendCache {
-            blend_func_name: layer.blend_func.name(),
+            blend_func_name: layer.blend_func.clone(),
             intermediate: IntermediateBuffer::new(device, queue, tile_rect, image.texel_type()),
             layout,
             pipeline,
@@ -263,7 +274,7 @@ impl Layer for GroupLayer {
 }
 
 pub struct GroupBlendCache {
-    blend_func_name: String,
+    blend_func_name: BlendFunctionId,
     intermediate: IntermediateBuffer,
     layout: BindGroupLayout,
     pipeline: ComputePipeline,

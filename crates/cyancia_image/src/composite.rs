@@ -1,18 +1,70 @@
-use std::{any::Any, collections::HashMap};
+use std::{
+    any::Any,
+    collections::{HashMap, hash_map::Entry},
+    rc::Rc,
+    sync::Arc,
+};
 
 use bevy_math::IRect;
+use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use glam::IVec2;
-use gpui::Global;
+use gpui::{App, Global};
+use log::error;
+use parse_display::Display;
 use wgpu::{Buffer, ComputePassDescriptor, Device, Queue, TextureView};
 
 use crate::{CImage, layer::LayerId, tile::GpuTileStorage};
 
 pub trait BlendFunction: Send + Sync + DynClone + 'static {
-    fn name(&self) -> String;
+    fn id(&self) -> BlendFunctionId;
     fn wgsl_function_call(&self, src_ident: &str, dst_ident: &str) -> String;
 }
 dyn_clone::clone_trait_object!(BlendFunction);
+
+wrapper! {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+    #[display("{0}")]
+    pub BlendFunctionId : Arc<str>
+}
+
+pub trait BlendFunctionAppExt {
+    fn add_blend_function(&mut self, func: Rc<dyn BlendFunction>);
+}
+
+impl BlendFunctionAppExt for App {
+    fn add_blend_function(&mut self, func: Rc<dyn BlendFunction>) {
+        self.global_mut::<BlendFunctionRegistry>().register(func);
+    }
+}
+
+#[derive(Default)]
+pub struct BlendFunctionRegistry {
+    functions: HashMap<BlendFunctionId, Rc<dyn BlendFunction>>,
+}
+
+impl Global for BlendFunctionRegistry {}
+
+impl BlendFunctionRegistry {
+    pub fn global(cx: &App) -> &Self {
+        cx.global::<Self>()
+    }
+
+    pub fn register(&mut self, func: Rc<dyn BlendFunction>) {
+        match self.functions.entry(func.id()) {
+            Entry::Occupied(e) => {
+                error!("Blend function '{}' is already registered", e.key());
+            }
+            Entry::Vacant(e) => {
+                e.insert(func);
+            }
+        }
+    }
+
+    pub fn get(&self, name: &BlendFunctionId) -> Option<&Rc<dyn BlendFunction>> {
+        self.functions.get(name)
+    }
+}
 
 #[derive(Default)]
 pub struct ImageCompositor {
@@ -32,6 +84,7 @@ impl ImageCompositor {
         overriders: &mut LayerPreviewOverriders,
         image: &CImage,
         tiles: &GpuTileStorage,
+        blend_funcs: &BlendFunctionRegistry,
         device: &Device,
         queue: &Queue,
     ) {
@@ -43,6 +96,7 @@ impl ImageCompositor {
             image,
             image.layer_stack().root_node(),
             tiles,
+            blend_funcs,
             device,
             queue,
         );
@@ -52,7 +106,7 @@ impl ImageCompositor {
     pub fn composite(
         &mut self,
         overriders: &LayerPreviewOverriders,
-        __tiles: IRect,
+        _tiles: IRect,
         image: &CImage,
         tiles: &GpuTileStorage,
         device: &Device,

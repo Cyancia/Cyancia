@@ -1,6 +1,6 @@
 wesl::wesl_pkg!(pub image);
 
-use std::path::Path;
+use std::{path::Path, rc::Rc};
 
 use glam::UVec2;
 use gpui::App;
@@ -9,7 +9,9 @@ extern crate image as imagers;
 
 use crate::{
     blend_modes::BlendMode,
-    composite::LayerPreviewOverriders,
+    composite::{
+        BlendFunction, BlendFunctionAppExt, BlendFunctionRegistry, LayerPreviewOverriders,
+    },
     layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, LayerStackNode, SpecialLayers},
     texel::TexelType,
     tile::GpuTileStorage,
@@ -26,6 +28,11 @@ pub mod tile;
 pub fn init(cx: &mut App) {
     cx.set_global(GpuTileStorage::from_app(cx));
     cx.set_global(LayerPreviewOverriders::default());
+    cx.set_global(BlendFunctionRegistry::default());
+
+    for blend_mode in BlendMode::ALL {
+        cx.add_blend_function(Rc::new(blend_mode));
+    }
 
     tile::init(cx);
 }
@@ -92,7 +99,7 @@ impl CImage {
 
     pub fn from_image(img: imagers::DynamicImage, name: String, tiles: &GpuTileStorage) -> Self {
         let size = UVec2::new(img.width(), img.height());
-        let layer = LayerData::from_image(name, img, tiles, Box::new(BlendMode::Normal));
+        let layer = LayerData::from_image(name, img, tiles, BlendMode::Normal.id());
         Self::from_layer(size, layer)
     }
 

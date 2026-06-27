@@ -2,6 +2,7 @@ use cyancia_canvas::{CCanvas, CanvasManager};
 use cyancia_image::{
     CImage,
     blend_modes::BlendMode,
+    composite::BlendFunction,
     layer::LayerData,
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
@@ -36,7 +37,7 @@ impl ActionFunction for OpenFileAction {
             let width = img.width();
             let height = img.height();
             let layer = cx.read_global::<GpuTileStorage, _>(|tiles, _| {
-                LayerData::from_image("Background".into(), img, tiles, Box::new(BlendMode::Normal))
+                LayerData::from_image("Background".into(), img, tiles, BlendMode::Normal.id())
             });
 
             let image = CImage::from_layer(UVec2::new(width, height), layer);

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bevy_math::{IRect, Rect};
 use cyancia_image::{
-    composite::{ImageCompositor, LayerPreviewOverriders},
+    composite::{BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders},
     texel::{TexelFormat, TexelType},
     tile::{GpuTileStorage, TileStorageAppExt},
 };
@@ -108,9 +108,16 @@ impl CanvasWidget {
                     let tiles = cx.tile_storage();
                     let device = cx.render_device();
                     let queue = cx.render_queue();
+                    let blend_funcs = BlendFunctionRegistry::global(cx);
 
-                    self.compositor
-                        .create_cache(overriders, &canvas.image, tiles, device, queue);
+                    self.compositor.create_cache(
+                        overriders,
+                        &canvas.image,
+                        tiles,
+                        blend_funcs,
+                        device,
+                        queue,
+                    );
                     self.compositor.composite(
                         overriders,
                         dirty_tiles,

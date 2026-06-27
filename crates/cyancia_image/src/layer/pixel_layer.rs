@@ -14,7 +14,10 @@ use wgpu::{
 
 use crate::{
     CImage,
-    composite::{ImageCompositor, LayerPreviewOverriders, PixelPreviewOverrider},
+    composite::{
+        BlendFunctionId, BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders,
+        PixelPreviewOverrider,
+    },
     layer::{Layer, LayerData, LayerStackNode},
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage},
@@ -40,22 +43,26 @@ impl Layer for PixelLayer {
         layer: &LayerData,
         _: &LayerStackNode,
         tiles: &GpuTileStorage,
+        blend_funcs: &BlendFunctionRegistry,
         device: &Device,
         _: &Queue,
     ) {
         let layer_info = tiles.get_layer_info(layer.id()).unwrap();
 
         if let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer.id())
-            && cache.blend_func_name == layer.blend_func.name()
+            && cache.blend_func_name == layer.blend_func
             && cache.layer_texel_type == layer_info.texel_type
             && cache.image_texel_type == image.texel_type()
         {
             return;
         }
 
+        let blend_func = blend_funcs
+            .get(&layer.blend_func)
+            .expect(&format!("Blend function {} not found", layer.blend_func));
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
-            &layer.blend_func.wgsl_function_call("src", "dst"),
+            &blend_func.wgsl_function_call("src", "dst"),
         );
 
         let mut resolver = VirtualResolver::new();
@@ -191,7 +198,7 @@ impl Layer for PixelLayer {
             });
 
         let cache = PixelBlendCache {
-            blend_func_name: layer.blend_func.name(),
+            blend_func_name: layer.blend_func.clone(),
             layer_texel_type: layer_info.texel_type,
             image_texel_type: image.texel_type(),
             with_overrider_pipeline,
@@ -334,7 +341,7 @@ impl Layer for PixelLayer {
 }
 
 pub struct PixelBlendCache {
-    blend_func_name: String,
+    blend_func_name: BlendFunctionId,
     layer_texel_type: TexelType,
     image_texel_type: TexelType,
     with_overrider_pipeline: ComputePipeline,

@@ -1,6 +1,7 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    sync::Arc,
 };
 
 use cyancia_utils::wrapper;
@@ -13,7 +14,10 @@ use wgpu::{Buffer, ComputePass, Device, Queue, TextureView};
 use crate::{
     CImage,
     blend_modes::BlendMode,
-    composite::{BlendFunction, ImageCompositor, LayerPreviewOverriders},
+    composite::{
+        BlendFunction, BlendFunctionId, BlendFunctionRegistry, ImageCompositor,
+        LayerPreviewOverriders,
+    },
     layer::{group_layer::GroupLayer, pixel_layer::PixelLayer},
     tile::GpuTileStorage,
 };
@@ -43,7 +47,7 @@ wrapper! {
 pub struct LayerData {
     id: LayerId,
     pub name: String,
-    pub blend_func: Box<dyn BlendFunction>,
+    pub blend_func: BlendFunctionId,
     data: Box<dyn Layer>,
 }
 
@@ -52,13 +56,13 @@ impl std::fmt::Debug for LayerData {
         f.debug_struct("Layer")
             .field("id", &self.id)
             .field("name", &self.name)
-            .field("blend_func", &self.blend_func.name())
+            .field("blend_func", &self.blend_func)
             .finish()
     }
 }
 
 impl LayerData {
-    pub fn new(name: String, blend_func: Box<dyn BlendFunction>, data: Box<dyn Layer>) -> Self {
+    pub fn new(name: String, blend_func: BlendFunctionId, data: Box<dyn Layer>) -> Self {
         Self {
             id: LayerId::new(Uuid::new_v4()),
             name,
@@ -68,11 +72,11 @@ impl LayerData {
     }
 
     pub fn new_normal_pixel(name: String) -> Self {
-        Self::new(name, Box::new(BlendMode::Normal), Box::new(PixelLayer))
+        Self::new(name, BlendMode::Normal.id(), Box::new(PixelLayer))
     }
 
     pub fn new_normal_group(name: String) -> Self {
-        Self::new(name, Box::new(BlendMode::Normal), Box::new(GroupLayer))
+        Self::new(name, BlendMode::Normal.id(), Box::new(GroupLayer))
     }
 
     pub fn id(&self) -> LayerId {
@@ -83,7 +87,7 @@ impl LayerData {
         name: String,
         img: DynamicImage,
         tiles: &GpuTileStorage,
-        blend_func: Box<dyn BlendFunction>,
+        blend_func: BlendFunctionId,
     ) -> Self {
         let id = LayerId::new(Uuid::new_v4());
         tiles.upload_image(id, img);
@@ -111,11 +115,20 @@ impl LayerData {
         image: &CImage,
         node: &LayerStackNode,
         tiles: &GpuTileStorage,
+        blend_funcs: &BlendFunctionRegistry,
         device: &Device,
         queue: &Queue,
     ) {
         self.data.create_blend_cache(
-            compositor, overriders, image, self, node, tiles, device, queue,
+            compositor,
+            overriders,
+            image,
+            self,
+            node,
+            tiles,
+            blend_funcs,
+            device,
+            queue,
         )
     }
 
@@ -174,6 +187,7 @@ pub trait Layer: Send + Sync + DynClone + 'static {
         layer: &LayerData,
         node: &LayerStackNode,
         tiles: &GpuTileStorage,
+        blend_funcs: &BlendFunctionRegistry,
         device: &Device,
         queue: &Queue,
     );
