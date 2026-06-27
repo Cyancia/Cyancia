@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use cyancia_assets::{asset::Asset, loader::AssetSerializer};
 use serde::{Deserialize, Serialize};
 

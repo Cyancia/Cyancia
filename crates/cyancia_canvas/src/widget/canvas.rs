@@ -7,12 +7,12 @@ use cyancia_image::{
     tile::{GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_render::render_context::RenderContextAppExt;
-use cyancia_tools::{ToolProxies, ToolProxy, ToolProxyId};
+use cyancia_tools::{ToolProxies, ToolProxyId};
 use glam::{IVec2, UVec2, Vec2};
 use gpui::{
-    App, AppContext, BorrowAppContext, Context, Corners, InteractiveElement, IntoElement,
-    MouseButton, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage,
-    Styled, WeakEntity, Window, canvas, div, px,
+    AppContext, BorrowAppContext, Context, Corners, InteractiveElement, IntoElement, MouseButton,
+    MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage, Styled,
+    WeakEntity, Window, canvas, div, px,
 };
 use wgpu::PollType;
 
@@ -273,7 +273,7 @@ impl Render for CanvasWidget {
 
                             window.on_mouse_event({
                                 let widget = widget.clone();
-                                move |event: &MouseMoveEvent, phase, window, cx| {
+                                move |event: &MouseMoveEvent, phase, _window, cx| {
                                     if !phase.capture() {
                                         return;
                                     }
@@ -295,7 +295,7 @@ impl Render for CanvasWidget {
                                         };
                                         let delta = position - start_position;
                                         canvas
-                                            .update(cx, |canvas, cx| {
+                                            .update(cx, |canvas, _cx| {
                                                 canvas.transform =
                                                     original_transform.translated(delta);
                                             })
@@ -312,7 +312,7 @@ impl Render for CanvasWidget {
                             });
 
                             window.on_mouse_event(
-                                move |event: &MouseUpEvent, phase, window, cx| {
+                                move |event: &MouseUpEvent, phase, _window, cx| {
                                     if !phase.capture() || event.button != MouseButton::Left {
                                         return;
                                     }
@@ -331,7 +331,7 @@ impl Render for CanvasWidget {
             )
             .on_any_mouse_down({
                 let widget = cx.entity().downgrade();
-                move |event, window, cx| match event.button {
+                move |event, _window, cx| match event.button {
                     MouseButton::Left => {
                         cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
                             let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
@@ -361,9 +361,9 @@ impl Render for CanvasWidget {
             })
             .on_scroll_wheel({
                 let canvas = self.canvas.clone();
-                move |event, window, cx| {
+                move |event, _window, cx| {
                     canvas
-                        .update(cx, |canvas, cx| {
+                        .update(cx, |canvas, _cx| {
                             let line_height = if event.alt { 30.0 } else { 15.0 };
                             let delta = event.delta.pixel_delta(px(line_height));
                             let delta = Vec2::new(delta.x.into(), delta.y.into());

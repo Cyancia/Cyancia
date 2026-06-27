@@ -173,7 +173,7 @@ fn build_menu_bar(cx: &App) -> Vec<Menu> {
 
 impl Render for MainView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        ToolLayer::new()
+        ToolLayer::default()
             .when_some(cx.read_current_canvas(), |tool_layer, canvas| {
                 tool_layer.tool_proxy(canvas.tool_proxy_id())
             })

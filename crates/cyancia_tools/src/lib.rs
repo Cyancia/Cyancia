@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet, hash_map::Entry},
+    collections::{HashMap, hash_map::Entry},
     rc::Rc,
     sync::Arc,
 };
@@ -7,9 +7,9 @@ use std::{
 use cyancia_assets::AssetAppExt;
 use cyancia_utils::wrapper;
 use gpui::{
-    AnyElement, App, AppContext, BorrowAppContext, Context, Entity, FocusHandle, Global,
-    InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, RenderOnce, Styled, Window, div,
+    AnyElement, App, AppContext, BorrowAppContext, Context, Entity, Global, InteractiveElement,
+    IntoElement, Keystroke, Modifiers, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    RenderOnce, Styled, Window, div,
 };
 use indexmap::IndexSet;
 use log::info;
@@ -401,20 +401,13 @@ pub struct TrackedKeys {
 
 impl Global for TrackedKeys {}
 
-#[derive(IntoElement)]
+#[derive(IntoElement, Default)]
 pub struct ToolLayer {
     children: Vec<AnyElement>,
     target_tool_proxy: Option<ToolProxyId>,
 }
 
 impl ToolLayer {
-    pub fn new() -> Self {
-        Self {
-            target_tool_proxy: None,
-            children: Vec::new(),
-        }
-    }
-
     pub fn tool_proxy(mut self, tool_proxy: ToolProxyId) -> Self {
         self.target_tool_proxy = Some(tool_proxy);
         self
@@ -428,7 +421,7 @@ impl ParentElement for ToolLayer {
 }
 
 impl RenderOnce for ToolLayer {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let target_tool_proxy = self.target_tool_proxy;
 
         // window.on_key_event(|event: &KeyDownEvent, phase, window, cx| {
@@ -438,7 +431,7 @@ impl RenderOnce for ToolLayer {
         div()
             .size_full()
             .children(self.children)
-            .on_key_down(move |event, window, cx| {
+            .on_key_down(move |event, _, cx| {
                 if event.is_held {
                     return;
                 }
@@ -449,17 +442,17 @@ impl RenderOnce for ToolLayer {
                     switch_tool(target_tool_proxy, tracked, cx, true);
                 });
             })
-            .on_key_up(move |event, window, cx| {
+            .on_key_up(move |event, _, cx| {
                 cx.update_global::<TrackedKeys, _>(|tracked, cx| {
                     tracked.keys.shift_remove(&event.keystroke.key);
 
                     switch_tool(target_tool_proxy, tracked, cx, false);
                 });
             })
-            .on_modifiers_changed(move |event, window, cx| {
+            .on_modifiers_changed(move |event, _, cx| {
                 cx.update_global::<TrackedKeys, _>(|tracked, cx| {
                     let old_count = count_modifiers(&tracked.modifiers);
-                    tracked.modifiers = window.modifiers();
+                    tracked.modifiers = event.modifiers;
                     let new_count = count_modifiers(&tracked.modifiers);
                     switch_tool(target_tool_proxy, tracked, cx, new_count > old_count);
                 });

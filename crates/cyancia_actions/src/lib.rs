@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cyancia_assets::AssetAppExt;
-use gpui::{Action, App, DummyKeyboardMapper, Global, KeyBinding, KeyBindingContextPredicate};
+use gpui::{Action, App, Global, KeyBinding, KeyBindingContextPredicate};
 
 use crate::{
     brush::OpenBrushEditorAction,
