@@ -9,7 +9,8 @@ use bevy_math::IRect;
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use glam::IVec2;
-use gpui::{App, Global};
+use gpui::{App, Global, SharedString};
+use gpui_component::searchable_list::SearchableListItem;
 use log::error;
 use parse_display::Display;
 use wgpu::{Buffer, ComputePassDescriptor, Device, Queue, TextureView};
@@ -26,6 +27,18 @@ wrapper! {
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
     #[display("{0}")]
     pub BlendFunctionId : Arc<str>
+}
+
+impl SearchableListItem for BlendFunctionId {
+    type Value = Self;
+
+    fn title(&self) -> SharedString {
+        self.to_string().into()
+    }
+
+    fn value(&self) -> &Self::Value {
+        self
+    }
 }
 
 pub trait BlendFunctionAppExt {
@@ -63,6 +76,14 @@ impl BlendFunctionRegistry {
 
     pub fn get(&self, name: &BlendFunctionId) -> Option<&Rc<dyn BlendFunction>> {
         self.functions.get(name)
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = &Rc<dyn BlendFunction>> {
+        self.functions.values()
+    }
+
+    pub fn all_ids(&self) -> impl Iterator<Item = &BlendFunctionId> {
+        self.functions.keys()
     }
 }
 

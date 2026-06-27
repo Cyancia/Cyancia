@@ -1,4 +1,11 @@
-use cyancia_image::layer::LayerId;
+use bevy_math::IRect;
+use cyancia_image::{
+    blend_modes::BlendMode,
+    composite::{BlendFunctionId, BlendFunctionRegistry},
+    layer::LayerId,
+    tile::GpuTileStorage,
+};
+use glam::IVec2;
 use gpui::{
     AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
     Render, SharedString, StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
@@ -8,34 +15,112 @@ use gpui_component::{
     ActiveTheme, h_flex,
     input::{Input, InputState},
     scroll::ScrollableElement,
+    select::{SearchableVec, Select, SelectEvent, SelectState},
     v_flex,
 };
+use tracing::error;
 
-use crate::{CCanvas, event::CanvasLayerStackUpdated};
+use crate::{
+    CCanvas,
+    event::{CanvasActiveLayerChanged, CanvasLayerStackUpdated, CanvasUpdated},
+};
 
 pub struct LayerStackWidget {
     canvas: WeakEntity<CCanvas>,
     rename_input_state: Entity<InputState>,
     renaming_layer: Option<LayerId>,
+    blend_mode_select_state: Entity<SelectState<SearchableVec<BlendFunctionId>>>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl LayerStackWidget {
     pub fn new(canvas: Entity<CCanvas>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let subscriptions = vec![cx.subscribe_in(
-            &canvas,
-            window,
-            |_, _, _: &CanvasLayerStackUpdated, _, cx| {
-                cx.notify();
-            },
-        )];
+        let blend_mode_select_state = cx.new(|cx| {
+            let funcs = BlendFunctionRegistry::global(cx)
+                .all_ids()
+                .cloned()
+                .collect::<Vec<_>>();
+            SelectState::new(funcs.into(), None, window, cx)
+        });
+
+        let subscriptions = vec![
+            cx.subscribe_in(
+                &canvas,
+                window,
+                |_, _, _: &CanvasLayerStackUpdated, _, cx| {
+                    cx.notify();
+                },
+            ),
+            cx.subscribe_in(&canvas, window, Self::on_active_layer_changed),
+            cx.observe_global::<BlendFunctionRegistry>(Self::on_blend_function_registry_changed),
+            cx.subscribe_in(
+                &blend_mode_select_state,
+                window,
+                Self::on_blend_function_changed,
+            ),
+        ];
 
         Self {
             rename_input_state: cx.new(|cx| InputState::new(window, cx)),
             renaming_layer: None,
             canvas: canvas.downgrade(),
+            blend_mode_select_state,
             _subscriptions: subscriptions,
         }
+    }
+
+    fn on_blend_function_changed(
+        &mut self,
+        select_state: &Entity<SelectState<SearchableVec<BlendFunctionId>>>,
+        event: &SelectEvent<SearchableVec<BlendFunctionId>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            SelectEvent::Confirm(Some(value)) => {
+                self.canvas
+                    .update(cx, |canvas, cx| {
+                        canvas.image.active_layer_data_mut().blend_func = value.clone();
+                        // TODO use layer bound
+                        let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(IRect {
+                            min: IVec2::ZERO,
+                            max: canvas.image.size().as_ivec2(),
+                        });
+                        cx.emit(CanvasUpdated { dirty_tiles });
+                    })
+                    .ok();
+            }
+            _ => {}
+        }
+    }
+
+    fn on_active_layer_changed(
+        &mut self,
+        canvas: &Entity<CCanvas>,
+        event: &CanvasActiveLayerChanged,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let active_layer = canvas.read(cx).image.active_layer_data();
+
+        let blend_func = active_layer.blend_func.clone();
+        self.blend_mode_select_state.update(cx, |state, cx| {
+            state.set_selected_value(&blend_func, window, cx);
+        });
+    }
+
+    fn on_blend_function_registry_changed(&mut self, cx: &mut Context<Self>) {
+        self.blend_mode_select_state.update(cx, |state, cx| {
+            let funcs = BlendFunctionRegistry::global(cx)
+                .all_ids()
+                .cloned()
+                .collect::<Vec<_>>();
+
+            // TODO This is hacky. gpui-component is not using the window passed in.
+            #[allow(invalid_value)]
+            let dummy_window = unsafe { std::mem::zeroed() };
+            state.set_items(funcs.into(), dummy_window, cx);
+        });
     }
 }
 
@@ -74,18 +159,28 @@ impl Render for LayerStackWidget {
                         move |_, _, cx| {
                             canvas_entity
                                 .update(cx, |canvas, cx| {
+                                    let old = canvas.image.active_layer;
                                     canvas.image.active_layer = layer_id;
-                                    cx.emit(CanvasLayerStackUpdated {});
+                                    cx.emit(CanvasActiveLayerChanged {
+                                        from: old,
+                                        to: layer_id,
+                                    });
                                 })
                                 .ok();
                         }
                     })
             });
 
+        let layer_params = v_flex()
+            .p_2()
+            .child(Select::new(&self.blend_mode_select_state));
+
         v_flex()
             .w_full()
             .h_full()
             .overflow_scrollbar()
+            .gap_2()
+            .child(layer_params)
             .children(layers)
             .into_any_element()
     }

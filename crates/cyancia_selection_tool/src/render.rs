@@ -334,6 +334,7 @@ impl SelectionPipeline {
         )
     }
 
+    // TODO antialiasing
     fn render_internal(
         &mut self,
         device: &Device,

@@ -1,4 +1,4 @@
-use cyancia_canvas::{CCanvas, CanvasManager};
+use cyancia_canvas::{CCanvas, CanvasManager, event::CanvasActiveLayerChanged};
 use cyancia_image::{
     CImage,
     blend_modes::BlendMode,
@@ -10,7 +10,7 @@ use cyancia_image::{
 use cyancia_tools::{ToolProxies, ToolProxy};
 use cyancia_undo::{UndoStack, UndoStacks};
 use glam::UVec2;
-use gpui::{App, actions};
+use gpui::{App, AppContext, actions};
 use rfd::AsyncFileDialog;
 
 use crate::ActionFunction;
@@ -47,6 +47,8 @@ impl ActionFunction for OpenFileAction {
                 tool_proxies.add(ToolProxy::default())
             });
             let canvas = CCanvas::new(image, tool_proxy_id);
+            let canvas_id = canvas.id();
+
             cx.update_global::<UndoStacks, _>(|undo_stacks, _| {
                 undo_stacks.insert(*canvas.id(), UndoStack::new(200))
             });
@@ -71,8 +73,16 @@ impl ActionFunction for OpenFileAction {
                 );
             });
 
-            cx.update_global::<CanvasManager, _>(|canvas_manager, cx| {
+            let canvas_entity = cx.update_global::<CanvasManager, _>(|canvas_manager, cx| {
                 canvas_manager.add_canvas(canvas, cx);
+                canvas_manager.get(&canvas_id).unwrap().upgrade().unwrap()
+            });
+
+            canvas_entity.update(cx, |canvas, cx| {
+                cx.emit(CanvasActiveLayerChanged {
+                    from: canvas.image.active_layer,
+                    to: canvas.image.active_layer,
+                });
             });
         })
         .detach();

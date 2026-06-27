@@ -13,7 +13,8 @@ use uuid::Uuid;
 use crate::{
     control::CanvasTransform,
     event::{
-        CanvasCreated, CanvasLayerStackUpdated, CanvasRemoved, CanvasUpdated, CurrentCanvasChanged,
+        CanvasActiveLayerChanged, CanvasCreated, CanvasLayerStackUpdated, CanvasRemoved,
+        CanvasUpdated, CurrentCanvasChanged,
     },
     tools::{PanTool, RotateTool, ZoomTool},
 };
@@ -72,6 +73,8 @@ impl CCanvas {
 }
 
 impl EventEmitter<CanvasUpdated> for CCanvas {}
+
+impl EventEmitter<CanvasActiveLayerChanged> for CCanvas {}
 
 impl EventEmitter<CanvasLayerStackUpdated> for CCanvas {}
 

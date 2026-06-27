@@ -15,7 +15,10 @@ use wgpu::{
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
 };
 
-use crate::{CanvasAppExt, CanvasId, event::CanvasUpdated};
+use crate::{
+    CanvasAppExt, CanvasId,
+    event::{CanvasActiveLayerChanged, CanvasUpdated},
+};
 
 pub struct TileReplaceCommand {
     pub reason: Cow<'static, str>,
@@ -306,13 +309,18 @@ impl UndoCommand for InsertLayerCommand {
     }
 
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
+        cx.update_canvas(&self.canvas, |canvas, cx| {
             canvas.image.layer_stack_mut().add_layer(
                 self.parent_id,
                 self.index,
                 self.layer.clone(),
             );
+            let old_active = canvas.image.active_layer;
             canvas.image.active_layer = self.layer.id();
+            cx.emit(CanvasActiveLayerChanged {
+                from: old_active,
+                to: self.layer.id(),
+            });
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
@@ -322,9 +330,14 @@ impl UndoCommand for InsertLayerCommand {
     }
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
+        cx.update_canvas(&self.canvas, |canvas, cx| {
             canvas.image.layer_stack_mut().remove_layer(self.layer.id());
+            let old = canvas.image.active_layer;
             canvas.image.active_layer = self.previous_active_layer;
+            cx.emit(CanvasActiveLayerChanged {
+                from: old,
+                to: self.previous_active_layer,
+            });
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
@@ -340,6 +353,7 @@ pub struct GroupLayerCommand {
     pub children: Vec<GroupedLayer>,
     pub parent_id: LayerId,
     pub index: usize,
+    // TODO Set active layer to previous when undo
     pub previous_active_layer: LayerId,
 }
 
@@ -420,6 +434,7 @@ pub struct MoveLayerCommand {
     pub original_index: usize,
     pub new_parent: LayerId,
     pub new_index: usize,
+    // TODO Set active layer to previous when undo
 }
 
 impl UndoCommand for MoveLayerCommand {
