@@ -84,9 +84,9 @@ pub fn finish(cx: &mut App) {
                 &def.shortcut,
                 function_parser(def.action_data.clone())?,
                 context,
-                false,
+                true,
                 None,
-                &DummyKeyboardMapper,
+                cx.keyboard_mapper().as_ref(),
             )?)
         })
         .enumerate()
