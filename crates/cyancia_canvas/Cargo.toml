@@ -25,6 +25,7 @@ glam.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 image.workspace = true
+indexmap.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 parse-display.workspace = true

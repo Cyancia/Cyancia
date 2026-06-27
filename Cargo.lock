@@ -1809,6 +1809,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "image",
+ "indexmap",
  "log",
  "parking_lot",
  "parse-display",

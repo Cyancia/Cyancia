@@ -3,29 +3,43 @@ use std::borrow::BorrowMut;
 use bevy_math::IRect;
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
-    layer::LayerId,
+    layer::{LayerId, LayerStack},
     tile::GpuTileStorage,
 };
 use cyancia_undo::UndoStacks;
 use glam::IVec2;
 use gpui::{
-    App, AppContext, BorrowAppContext, Bounds, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, WeakEntity, Window, div, prelude::FluentBuilder, px,
+    App, AppContext, BorrowAppContext, Bounds, Context, DragMoveEvent, Entity, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, WeakEntity, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, h_flex,
+    ActiveTheme, ElementExt, h_flex,
     input::{Input, InputState},
     scroll::ScrollableElement,
     select::{SearchableVec, Select, SelectEvent, SelectState},
     v_flex,
 };
+use indexmap::IndexMap;
 
 use crate::{
-    CCanvas,
+    CCanvas, CanvasUndoStackAppExt,
     command::MoveLayerCommand,
     event::{CanvasActiveLayerChanged, CanvasLayerStackUpdated, CanvasUpdated},
 };
+
+#[derive(Debug, Clone)]
+struct LayerWidgetInfo {
+    layer_id: LayerId,
+    bounds: Bounds<Pixels>,
+}
+
+struct DropInfo {
+    parent: LayerId,
+    index: usize,
+    position: Point<Pixels>,
+    length: Pixels,
+}
 
 pub struct LayerStackWidget {
     canvas: WeakEntity<CCanvas>,
@@ -33,9 +47,9 @@ pub struct LayerStackWidget {
     rename_input_state: Entity<InputState>,
     renaming_layer: Option<LayerId>,
     blend_mode_select_state: Entity<SelectState<SearchableVec<BlendFunctionId>>>,
-    layer_widget_bounds: Vec<Bounds<Pixels>>,
-    /// (layer_id, depth) in display order
-    display_order: Vec<(LayerId, u32)>,
+    layer_widget_info: IndexMap<LayerId, LayerWidgetInfo>,
+    layer_drop_info: Option<DropInfo>,
+    layer_drop_indicator_offset: Point<Pixels>,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -72,8 +86,9 @@ impl LayerStackWidget {
             renaming_layer: None,
             canvas: canvas.downgrade(),
             blend_mode_select_state,
-            layer_widget_bounds: Vec::new(),
-            display_order: Vec::new(),
+            layer_widget_info: IndexMap::new(),
+            layer_drop_info: None,
+            layer_drop_indicator_offset: Point::default(),
             _subscriptions: subscriptions,
         }
     }
@@ -132,86 +147,26 @@ impl LayerStackWidget {
         });
     }
 
+    fn on_layer_drag_move(
+        &mut self,
+        event: &DragMoveEvent<LayerDragInfo>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.layer_drop_info =
+            self.resolve_drop_target(event.dragged_item().downcast_ref().unwrap(), window, cx);
+    }
+
     fn on_layer_drop(&mut self, info: &LayerDragInfo, window: &mut Window, cx: &mut Context<Self>) {
-        let dragged_id = info.id;
-        let mouse_pos = window.mouse_position();
-
-        let Some(target_index) = self.layer_widget_bounds.iter().position(|bounds| {
-            mouse_pos.y >= bounds.origin.y && mouse_pos.y < bounds.origin.y + bounds.size.height
-        }) else {
+        let Some(drop_info) = self.layer_drop_info.take() else {
             return;
         };
 
-        let Some(&(ref reference_id, depth)) = self.display_order.get(target_index) else {
-            return;
-        };
-
-        if *reference_id == dragged_id {
-            return;
-        }
-
-        let Some(canvas_entity) = self.canvas.upgrade() else {
-            return;
-        };
+        let canvas_entity = self.canvas.upgrade().unwrap();
         let canvas = canvas_entity.read(cx);
         let layer_stack = canvas.image.layer_stack();
 
-        let bounds = &self.layer_widget_bounds[target_index];
-        let center_y = bounds.origin.y + bounds.size.height / 2.0;
-        let position = if mouse_pos.y < center_y {
-            DropPosition::Above
-        } else {
-            self.resolve_below_or_nest(
-                mouse_pos.x,
-                dragged_id,
-                *reference_id,
-                depth,
-                target_index,
-                bounds,
-                layer_stack,
-            )
-        };
-
-        let (new_parent, new_index) = match position {
-            DropPosition::Above => {
-                let node = layer_stack.find_node(*reference_id);
-                let Some(node) = node else { return };
-                let Some(parent) = node.parent() else { return };
-                let idx_in_parent = layer_stack
-                    .find_node(parent)
-                    .and_then(|p| p.child_index(*reference_id))
-                    .unwrap_or(0);
-                (parent, idx_in_parent + 1)
-            }
-            DropPosition::Below => {
-                let node = layer_stack.find_node(*reference_id);
-                let Some(node) = node else { return };
-                let Some(parent) = node.parent() else { return };
-                let idx_in_parent = layer_stack
-                    .find_node(parent)
-                    .and_then(|p| p.child_index(*reference_id))
-                    .unwrap_or(0);
-                (parent, idx_in_parent)
-            }
-            DropPosition::AsChild => {
-                if layer_stack.is_ancestor(dragged_id, *reference_id) {
-                    return;
-                }
-                if !layer_stack
-                    .can_have_children_of(*reference_id, dragged_id)
-                    .unwrap_or(false)
-                {
-                    return;
-                }
-                let n_children = layer_stack
-                    .find_node(*reference_id)
-                    .map(|n| n.n_children())
-                    .unwrap_or(0);
-                (*reference_id, n_children)
-            }
-        };
-
-        let Some(dragged_node) = layer_stack.find_node(dragged_id) else {
+        let Some(dragged_node) = layer_stack.find_node(info.id) else {
             return;
         };
         let Some(original_parent) = dragged_node.parent() else {
@@ -219,10 +174,10 @@ impl LayerStackWidget {
         };
         let original_index = layer_stack
             .find_node(original_parent)
-            .and_then(|p| p.child_index(dragged_id))
+            .and_then(|p| p.child_index(info.id))
             .unwrap_or(0);
 
-        if original_parent == new_parent && original_index == new_index {
+        if original_parent == drop_info.parent && original_index == drop_info.index {
             return;
         }
 
@@ -230,71 +185,153 @@ impl LayerStackWidget {
 
         let command = MoveLayerCommand {
             canvas: canvas_id,
-            layer: dragged_id,
+            layer: info.id,
             original_parent,
             original_index,
-            new_parent,
-            new_index,
+            new_parent: drop_info.parent,
+            new_index: drop_info.index,
         };
 
-        let result = cx.update_global::<UndoStacks, _>(|stacks, cx| {
-            let app: &mut App = cx.borrow_mut();
-            let Some(stack) = stacks.get_mut(&canvas_id) else {
-                return Err(anyhow::anyhow!(
-                    "Undo stack not found for canvas {}",
-                    canvas_id
-                ));
-            };
-            stack.push_boxed(Box::new(command), app)
+        cx.push_undo_command(&canvas_id, command).ok();
+        canvas_entity.update(cx, |_, cx| {
+            cx.emit(CanvasLayerStackUpdated {});
         });
-
-        if result.is_ok() {
-            canvas_entity.update(cx, |_, cx| {
-                cx.emit(CanvasLayerStackUpdated {});
-            });
-        }
     }
 
-    fn resolve_below_or_nest(
+    fn resolve_drop_target(
         &self,
-        mouse_x: Pixels,
-        dragged_id: LayerId,
-        reference_id: LayerId,
-        depth: u32,
-        target_index: usize,
-        bounds: &Bounds<Pixels>,
-        layer_stack: &cyancia_image::layer::LayerStack,
-    ) -> DropPosition {
-        let is_last_child = self
-            .display_order
-            .get(target_index + 1)
-            .map_or(true, |(_, next_depth)| *next_depth < depth);
+        info: &LayerDragInfo,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<DropInfo> {
+        let mouse_pos = window.mouse_position();
 
-        if !is_last_child {
-            return DropPosition::Below;
+        let LayerWidgetInfo {
+            layer_id: target_id,
+            bounds: target_bounds,
+        } = self
+            .layer_widget_info
+            .values()
+            .find(|l| mouse_pos.y < l.bounds.bottom())?
+            .clone();
+
+        if target_id == info.id {
+            return None;
         }
 
-        let Some(group_id) = layer_stack.find_node(reference_id).and_then(|n| n.parent()) else {
-            return DropPosition::Below;
-        };
+        let canvas_entity = self.canvas.upgrade()?;
+        let canvas = canvas_entity.read(cx);
+        let layer_stack = canvas.image.layer_stack();
 
-        if !layer_stack
-            .can_have_children_of(group_id, dragged_id)
-            .unwrap_or(false)
-        {
-            return DropPosition::Below;
-        }
+        let center_y = target_bounds.center().y;
 
-        let child_indent_x = bounds.origin.x;
-        let group_indent_x = child_indent_x - px(20.0);
-
-        let dist_to_group = (mouse_x.as_f32() - group_indent_x.as_f32()).abs();
-        let dist_to_child = (mouse_x.as_f32() - child_indent_x.as_f32()).abs();
-
-        if dist_to_child < dist_to_group {
-            DropPosition::AsChild
+        if mouse_pos.y < center_y {
+            // Above target layer
+            let target_node = layer_stack.find_node(target_id)?;
+            let target_node_parent_node = layer_stack.find_node(target_node.parent()?)?;
+            let target_node_index = target_node_parent_node.child_index(target_id)?;
+            Some(DropInfo {
+                parent: target_node_parent_node.id(),
+                index: target_node_index + 1,
+                position: target_bounds.origin,
+                length: target_bounds.size.width,
+            })
         } else {
-            DropPosition::Below
+            // Below target layer
+
+            let target_node = layer_stack.find_node(target_id)?;
+            let target_node_parent_node = layer_stack.find_node(target_node.parent()?)?;
+            let target_node_index = target_node_parent_node.child_index(target_id)?;
+
+            // Target is not the child at bottom
+            if target_node_index != 0 {
+                let target_node = target_node_parent_node
+                    .children()
+                    .get(target_node_index - 1)?;
+                let target_bounds = self.layer_widget_info.get(&target_node.id())?.bounds;
+
+                if layer_stack.can_have_children_of(target_node.id(), info.id)? {
+                    return Some(DropInfo {
+                        parent: target_node.id(),
+                        index: target_node.n_children(),
+                        position: target_bounds.origin,
+                        length: target_bounds.size.width,
+                    });
+                } else {
+                    return Some(DropInfo {
+                        parent: target_node_parent_node.id(),
+                        index: target_node_index - 1,
+                        position: target_bounds.origin,
+                        length: target_bounds.size.width,
+                    });
+                }
+            }
+
+            // The mouse is right to the target, so insert after it.
+            if mouse_pos.x > target_bounds.left() {
+                if layer_stack.can_have_children_of(target_id, info.id)? {
+                    return Some(DropInfo {
+                        parent: target_id,
+                        index: target_node.n_children(),
+                        position: target_bounds.bottom_left(),
+                        length: target_bounds.size.width,
+                    });
+                } else {
+                    return Some(DropInfo {
+                        parent: target_node_parent_node.id(),
+                        index: target_node_index,
+                        position: target_bounds.bottom_left(),
+                        length: target_bounds.size.width,
+                    });
+                }
+            }
+
+            // The mouse is left to the target, and this is the bottom layer of the parent.
+            // If we are trying to insert at the bottom of the parent of target layer,
+            // it can be ambiguous to figure out which ancestor is going to be the parent.
+            let ancestors = layer_stack.ancestors(target_id);
+            let mut ambiguous_count = 0;
+            {
+                let mut previous_child = &target_id;
+                for ancestor in &ancestors {
+                    let ancestor_node = layer_stack.find_node(*ancestor)?;
+                    // Previous child at the bottom of its parent.
+                    if ancestor_node.child_index(*previous_child) == Some(0) {
+                        ambiguous_count += 1;
+                    } else {
+                        break;
+                    }
+                    previous_child = ancestor;
+                }
+            }
+
+            let mut resolved_sibling_index = 0;
+            // Find the first ancestor that the mouse is to the right of, it is going to be the sibling,
+            // on top of the dragged layer.
+            for (index, ancestor) in ancestors.iter().take(ambiguous_count).enumerate() {
+                let bounds = self.layer_widget_info.get(ancestor)?.bounds;
+                if mouse_pos.x > bounds.left() {
+                    resolved_sibling_index = index;
+                    break;
+                }
+            }
+            let resolved_sibling = ancestors[resolved_sibling_index];
+            let resolved_sibling_bounds = self.layer_widget_info.get(&resolved_sibling)?.bounds;
+            let resolved_parent = ancestors[resolved_sibling_index + 1];
+
+            Some(DropInfo {
+                parent: resolved_parent,
+                index: if resolved_sibling_index + 1 == ambiguous_count {
+                    // If the sibling is the last one, insert after that.
+                    let resolved_parent_node = layer_stack.find_node(resolved_parent)?;
+                    resolved_parent_node.child_index(resolved_sibling)?
+                } else {
+                    // Otherwise, insert at the bottom directly.
+                    0
+                },
+                position: Point::new(resolved_sibling_bounds.origin.x, target_bounds.bottom()),
+                length: resolved_sibling_bounds.size.width,
+            })
         }
     }
 }
@@ -305,43 +342,57 @@ impl Render for LayerStackWidget {
             return div().into_any_element();
         };
 
+        self.layer_widget_info.clear();
+
         let canvas = canvas_entity.read(cx);
 
-        self.display_order = canvas
-            .image
-            .layer_stack()
-            .iter_layers_dfs_display_order_without_root()
-            .map(|(layer, depth)| (layer.id(), depth))
-            .collect();
-
+        let widget = cx.entity().downgrade();
         let layers = canvas
             .image
             .layer_stack()
             .iter_layers_dfs_display_order_without_root()
-            .map(|(layer, depth)| {
+            .map(|(layer, node, depth)| {
                 let drag_info = LayerDragInfo::new(layer.id(), layer.name.clone().into());
+                let layer_id = layer.id();
+
                 h_flex()
-                    .pl(px(20.0 * depth as f32))
+                    .ml(px(20.0 * depth as f32))
                     .h(px(40.0))
-                    .when(canvas.active_layer_id() == layer.id(), |d| {
+                    .when(canvas.active_layer_id() == layer_id, |d| {
                         d.bg(cx.theme().accent)
                     })
-                    .id(format!("layer-{}", layer.id()))
+                    .id(format!("layer-{}", layer_id))
                     .when_else(
-                        Some(layer.id()) == self.renaming_layer,
+                        Some(layer_id) == self.renaming_layer,
                         |d| d.child(Input::new(&self.rename_input_state).w_full()),
                         |d| d.child(layer.name.clone()),
                     )
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
                     })
+                    .on_drag_move(cx.listener(Self::on_layer_drag_move))
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
-                        let layer_id = layer.id();
                         move |_, _, cx| {
                             canvas_entity
                                 .update(cx, |canvas, cx| {
                                     canvas.set_active_layer(layer_id, cx);
+                                })
+                                .ok();
+                        }
+                    })
+                    .on_prepaint({
+                        let widget = widget.clone();
+                        move |bounds, window, cx| {
+                            widget
+                                .update(cx, |widget, cx| {
+                                    widget.layer_widget_info.insert(
+                                        layer_id,
+                                        LayerWidgetInfo {
+                                            layer_id: layer_id,
+                                            bounds,
+                                        },
+                                    );
                                 })
                                 .ok();
                         }
@@ -361,19 +412,30 @@ impl Render for LayerStackWidget {
                 div()
                     .size_full()
                     .children(layers)
-                    .on_children_prepainted({
-                        let widget = cx.entity().downgrade();
-                        move |bounds, window, cx| {
-                            widget
-                                .update(cx, |widget, cx| {
-                                    widget.layer_widget_bounds = bounds;
-                                })
-                                .ok();
-                        }
-                    })
                     .on_drop(cx.listener(Self::on_layer_drop))
                     .overflow_scrollbar(),
             )
+            .when_some(self.layer_drop_info.as_ref(), |d, info| {
+                d.on_prepaint({
+                    let widget = widget.clone();
+                    move |bounds, window, cx| {
+                        widget
+                            .update(cx, |widget, cx| {
+                                widget.layer_drop_indicator_offset = bounds.origin;
+                            })
+                            .ok();
+                    }
+                })
+                .child(
+                    div()
+                        .w(info.length)
+                        .absolute()
+                        .left(info.position.x - self.layer_drop_indicator_offset.x)
+                        .top(info.position.y - self.layer_drop_indicator_offset.y)
+                        .border_1()
+                        .border_color(cx.theme().accent_foreground),
+                )
+            })
             .into_any_element()
     }
 }

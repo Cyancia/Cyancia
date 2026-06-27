@@ -100,8 +100,9 @@ impl LayerData {
         }
     }
 
-    pub fn can_have_children_of<T: Layer>(&self) -> bool {
-        self.data.can_have_children_of(std::any::TypeId::of::<T>())
+    pub fn can_have_children_of(&self, maybe_child: &Self) -> bool {
+        self.data
+            .can_have_children_of(maybe_child.data.as_ref().type_id())
     }
 
     pub fn can_contain_pixels(&self) -> bool {
@@ -322,7 +323,7 @@ impl LayerStack {
 
     pub fn iter_layers_dfs_display_order_without_root(
         &self,
-    ) -> impl Iterator<Item = (&LayerData, u32)> {
+    ) -> impl Iterator<Item = (&LayerData, &LayerStackNode, u32)> {
         let mut stack = self
             .root_node()
             .iter_children_display_order()
@@ -337,7 +338,7 @@ impl LayerStack {
                     .rev()
                     .map(|child| (child, depth + 1)),
             );
-            Some((self.layers.get(&node.id())?, depth))
+            Some((self.layers.get(&node.id())?, node, depth))
         })
     }
 
@@ -355,7 +356,17 @@ impl LayerStack {
         )
     }
 
-    /// Returns true if `maybe_ancestor` is an ancestor of `descendant_id` in the layer tree.
+    /// In order from target to root, excluding the target itself.
+    pub fn ancestors(&self, target: LayerId) -> Vec<LayerId> {
+        let mut ancestors = Vec::new();
+        let mut current = target;
+        while let Some(parent) = self.find_node(current).and_then(|n| n.parent()) {
+            ancestors.push(parent);
+            current = parent;
+        }
+        ancestors
+    }
+
     pub fn is_ancestor(&self, maybe_ancestor: LayerId, descendant: LayerId) -> bool {
         let mut current = descendant;
         loop {
