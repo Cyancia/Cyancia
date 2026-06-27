@@ -354,6 +354,18 @@ impl LayerStack {
                 .can_have_children_of(child_layer.data.as_ref().type_id()),
         )
     }
+
+    /// Returns true if `maybe_ancestor` is an ancestor of `descendant_id` in the layer tree.
+    pub fn is_ancestor(&self, maybe_ancestor: LayerId, descendant: LayerId) -> bool {
+        let mut current = descendant;
+        loop {
+            match self.find_node(current).and_then(|n| n.parent()) {
+                Some(parent) if parent == maybe_ancestor => return true,
+                Some(parent) => current = parent,
+                None => return false,
+            }
+        }
+    }
 }
 
 fn find_node_recursive(node: &LayerStackNode, layer_id: LayerId) -> Option<&LayerStackNode> {
