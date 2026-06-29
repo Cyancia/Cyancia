@@ -278,21 +278,36 @@ impl LayerStack {
         self.layers.is_empty()
     }
 
-    pub fn move_layer(&mut self, layer_id: LayerId, parent_id: LayerId, index: usize) {
+    /// Move `layer_id` so that, after the move, it is the `new_index`-th child of
+    /// `new_parent_id`. `new_index` is the *final* index (the layer is inserted
+    /// at `new_index` once it has already been removed from its old position), so
+    /// callers never need to compensate for the index shift that removing it
+    /// causes.
+    pub fn move_layer(&mut self, layer_id: LayerId, new_parent_id: LayerId, new_index: usize) {
         let Some(node) = self.find_node(layer_id) else {
             return;
         };
-
-        let Some(parent) = node.parent().and_then(|parent| self.find_node_mut(parent)) else {
+        let Some(old_parent_id) = node.parent() else {
             return;
         };
+        let old_index = self
+            .find_node(old_parent_id)
+            .and_then(|p| p.child_index(layer_id))
+            .unwrap();
 
-        let removed_node = parent.remove_child(layer_id).unwrap();
-
-        let Some(new_parent) = self.find_node_mut(parent_id) else {
+        if new_parent_id == layer_id || self.is_ancestor(layer_id, new_parent_id) {
             return;
-        };
-        new_parent.insert_child(index, removed_node);
+        }
+
+        if self.find_node(new_parent_id).is_none() {
+            return;
+        }
+
+        let old_parent = self.find_node_mut(old_parent_id).unwrap();
+        let removed = old_parent.remove_child_at(old_index).unwrap();
+
+        let new_parent = self.find_node_mut(new_parent_id).unwrap();
+        new_parent.insert_child(new_index.min(new_parent.n_children()), removed);
     }
 
     pub fn remove_layer(&mut self, layer_id: LayerId) -> Option<(LayerData, LayerStackNode)> {

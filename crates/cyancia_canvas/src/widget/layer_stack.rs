@@ -1,17 +1,14 @@
-use std::borrow::BorrowMut;
-
 use bevy_math::IRect;
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
     layer::{LayerId, LayerStack},
     tile::GpuTileStorage,
 };
-use cyancia_undo::UndoStacks;
 use glam::IVec2;
 use gpui::{
-    App, AppContext, BorrowAppContext, Bounds, Context, DragMoveEvent, Entity, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, WeakEntity, Window, div, prelude::FluentBuilder, px,
+    AppContext, Bounds, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, WeakEntity, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
     ActiveTheme, ElementExt, h_flex,
@@ -223,116 +220,127 @@ impl LayerStackWidget {
         let canvas = canvas_entity.read(cx);
         let layer_stack = canvas.image.layer_stack();
 
+        if layer_stack.is_ancestor(info.id, target_id) {
+            return None;
+        }
+
+        let target_node = layer_stack.find_node(target_id)?;
         let center_y = target_bounds.center().y;
+        let old_index = layer_stack
+            .find_node(info.id)
+            .and_then(|n| n.parent())
+            .and_then(|p| layer_stack.find_node(p))
+            .and_then(|p| p.child_index(info.id))?;
 
         if mouse_pos.y < center_y {
-            // Above target layer
-            let target_node = layer_stack.find_node(target_id)?;
-            let target_node_parent_node = layer_stack.find_node(target_node.parent()?)?;
-            let target_node_index = target_node_parent_node.child_index(target_id)?;
-            Some(DropInfo {
-                parent: target_node_parent_node.id(),
-                index: target_node_index + 1,
+            // Above the target's row: drop as a sibling, just above the target.
+            let parent = target_node.parent()?;
+            let target_index = layer_stack.find_node(parent)?.child_index(target_id)?;
+            let dragged_parent = layer_stack.find_node(info.id)?.parent()?;
+            let index = if dragged_parent == parent && old_index < target_index {
+                target_index
+            } else {
+                target_index + 1
+            };
+            return Some(DropInfo {
+                parent,
+                index,
                 position: target_bounds.origin,
                 length: target_bounds.size.width,
-            })
-        } else {
-            // Below target layer
+            });
+        }
 
-            let target_node = layer_stack.find_node(target_id)?;
-            let target_node_parent_node = layer_stack.find_node(target_node.parent()?)?;
-            let target_node_index = target_node_parent_node.child_index(target_id)?;
+        // Below the target's row.
+        let target_parent = target_node.parent()?;
+        let target_parent_node = layer_stack.find_node(target_parent)?;
+        let target_index = target_parent_node.child_index(target_id)?;
+        let dragged_parent = layer_stack.find_node(info.id)?.parent()?;
 
-            // Target is not the child at bottom
-            if target_node_index != 0 {
-                let target_node = target_node_parent_node
-                    .children()
-                    .get(target_node_index - 1)?;
-                let target_bounds = self.layer_widget_info.get(&target_node.id())?.bounds;
+        // If the target can hold children and the cursor is at the target's own
+        // indent (inside the target's row, not in a shallower ancestor's gutter),
+        // dropping on its lower half nests the dragged layer as the target's new
+        // top child (preview at the target's bottom edge). A shallower cursor
+        // falls through to the x-driven ancestor matching below.
+        if mouse_pos.x >= target_bounds.left()
+            && layer_stack.can_have_children_of(target_id, info.id)?
+        {
+            let n_children = layer_stack.find_node(target_id)?.n_children();
+            return Some(DropInfo {
+                parent: target_id,
+                index: n_children,
+                position: target_bounds.bottom_left(),
+                length: target_bounds.size.width,
+            });
+        }
 
-                if layer_stack.can_have_children_of(target_node.id(), info.id)? {
-                    return Some(DropInfo {
-                        parent: target_node.id(),
-                        index: target_node.n_children(),
-                        position: target_bounds.origin,
-                        length: target_bounds.size.width,
-                    });
+        // The target can't hold children (or the cursor is at a shallower indent),
+        // so the dragged layer lands below it as a sibling. When the target is the
+        // bottom child of its parent, "below it" is ambiguous: it could mean a new
+        // bottom of the target's parent, or the bottom of an ancestor further up.
+        // The cursor's horizontal indent picks which ancestor's bottom to append to.
+        if target_index != 0 {
+            // Target has a lower sibling, so "below the target" stays inside the
+            // target's parent, just under the target.
+            return Some(DropInfo {
+                parent: target_parent,
+                index: if dragged_parent == target_parent && old_index < target_index {
+                    target_index - 1
                 } else {
-                    return Some(DropInfo {
-                        parent: target_node_parent_node.id(),
-                        index: target_node_index - 1,
-                        position: target_bounds.origin,
-                        length: target_bounds.size.width,
-                    });
-                }
-            }
+                    target_index
+                },
+                position: target_bounds.bottom_left(),
+                length: target_bounds.size.width,
+            });
+        }
 
-            // The mouse is right to the target, so insert after it.
-            if mouse_pos.x > target_bounds.left() {
-                if layer_stack.can_have_children_of(target_id, info.id)? {
-                    return Some(DropInfo {
-                        parent: target_id,
-                        index: target_node.n_children(),
-                        position: target_bounds.bottom_left(),
-                        length: target_bounds.size.width,
-                    });
+        // Target is the bottom child. Only ancestors for which the target's
+        // branch is also the bottom child are valid "append to bottom" targets.
+        let ancestors = layer_stack.ancestors(target_id); // target -> root, target excluded
+        let mut ambiguous_count = 0;
+        {
+            let mut previous_child = target_id;
+            for ancestor in &ancestors {
+                let ancestor_node = layer_stack.find_node(*ancestor)?;
+                if ancestor_node.child_index(previous_child) == Some(0) {
+                    ambiguous_count += 1;
                 } else {
-                    return Some(DropInfo {
-                        parent: target_node_parent_node.id(),
-                        index: target_node_index,
-                        position: target_bounds.bottom_left(),
-                        length: target_bounds.size.width,
-                    });
-                }
-            }
-
-            // The mouse is left to the target, and this is the bottom layer of the parent.
-            // If we are trying to insert at the bottom of the parent of target layer,
-            // it can be ambiguous to figure out which ancestor is going to be the parent.
-            let ancestors = layer_stack.ancestors(target_id);
-            let mut ambiguous_count = 0;
-            {
-                let mut previous_child = &target_id;
-                for ancestor in &ancestors {
-                    let ancestor_node = layer_stack.find_node(*ancestor)?;
-                    // Previous child at the bottom of its parent.
-                    if ancestor_node.child_index(*previous_child) == Some(0) {
-                        ambiguous_count += 1;
-                    } else {
-                        break;
-                    }
-                    previous_child = ancestor;
-                }
-            }
-
-            let mut resolved_sibling_index = 0;
-            // Find the first ancestor that the mouse is to the right of, it is going to be the sibling,
-            // on top of the dragged layer.
-            for (index, ancestor) in ancestors.iter().take(ambiguous_count).enumerate() {
-                let bounds = self.layer_widget_info.get(ancestor)?.bounds;
-                if mouse_pos.x > bounds.left() {
-                    resolved_sibling_index = index;
                     break;
                 }
+                previous_child = *ancestor;
             }
-            let resolved_sibling = ancestors[resolved_sibling_index];
-            let resolved_sibling_bounds = self.layer_widget_info.get(&resolved_sibling)?.bounds;
-            let resolved_parent = ancestors[resolved_sibling_index + 1];
-
-            Some(DropInfo {
-                parent: resolved_parent,
-                index: if resolved_sibling_index + 1 == ambiguous_count {
-                    // If the sibling is the last one, insert after that.
-                    let resolved_parent_node = layer_stack.find_node(resolved_parent)?;
-                    resolved_parent_node.child_index(resolved_sibling)?
-                } else {
-                    // Otherwise, insert at the bottom directly.
-                    0
-                },
-                position: Point::new(resolved_sibling_bounds.origin.x, target_bounds.bottom()),
-                length: resolved_sibling_bounds.size.width,
-            })
         }
+
+        // The deepest candidate ancestor whose row the cursor is still inside is
+        // the new parent; the dragged layer becomes its new bottom child. If the
+        // cursor is left of every candidate, append to the shallowest one.
+        let mut resolved_parent_index = ambiguous_count - 1;
+        for (index, ancestor) in ancestors.iter().take(ambiguous_count).enumerate() {
+            let bounds = self.layer_widget_info.get(ancestor)?.bounds;
+            if mouse_pos.x >= bounds.left() {
+                resolved_parent_index = index;
+                break;
+            }
+        }
+        let resolved_parent = ancestors[resolved_parent_index];
+        if layer_stack.is_ancestor(info.id, resolved_parent) {
+            return None;
+        }
+
+        let resolved_preview_bounds = if resolved_parent_index == 0 {
+            target_bounds
+        } else {
+            self.layer_widget_info
+                .get(&ancestors[resolved_parent_index - 1])
+                .unwrap()
+                .bounds
+        };
+
+        Some(DropInfo {
+            parent: resolved_parent,
+            index: 0,
+            position: Point::new(resolved_preview_bounds.origin.x, target_bounds.bottom()),
+            length: resolved_preview_bounds.size.width,
+        })
     }
 }
 
@@ -476,10 +484,4 @@ pub enum ExpandState {
     Expanded,
     Collapsed,
     Unexpandable,
-}
-
-enum DropPosition {
-    Above,
-    Below,
-    AsChild,
 }
