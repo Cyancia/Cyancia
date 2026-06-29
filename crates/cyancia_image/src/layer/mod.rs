@@ -253,12 +253,13 @@ impl LayerStack {
     }
 
     pub fn add_layer(&mut self, parent_id: LayerId, index: usize, mut layer: LayerStackNode) {
-        let parent_node = self.get_layer_mut(&parent_id);
-        if let Some(parent_node) = parent_node {
-            layer.parent = Some(parent_id);
-            parent_node.insert_child(index, *layer.id());
-            self.layers.insert(*layer.id(), layer);
-        }
+        let Some(parent_node) = self.get_layer_mut(&parent_id) else {
+            return;
+        };
+
+        layer.parent = Some(parent_id);
+        parent_node.insert_child(index, *layer.id());
+        self.layers.insert(*layer.id(), layer);
     }
 
     pub fn insert_isolated_layer(&mut self, mut layer: LayerStackNode) {
@@ -288,9 +289,10 @@ impl LayerStack {
             return;
         };
 
-        let old_parent_id = node.parent().copied().unwrap();
-        let old_parent = self.layers.get(&old_parent_id).unwrap();
-        let old_index = old_parent.child_index(&layer_id).unwrap();
+        let old_parent_id = node.parent().copied();
+        let old_index = old_parent_id
+            .and_then(|id| self.layers.get(&id))
+            .and_then(|n| n.child_index(&layer_id));
 
         if new_parent_id == layer_id || self.is_ancestor(&layer_id, &new_parent_id) {
             return;
@@ -299,19 +301,45 @@ impl LayerStack {
         let node = self.layers.get_mut(&layer_id).unwrap();
         node.parent = Some(new_parent_id);
 
-        let old_parent = self.layers.get_mut(&old_parent_id).unwrap();
-        old_parent.remove_child_at(old_index);
+        if let Some(old_index) = old_index {
+            let old_parent = self
+                .layers
+                .get_mut(old_parent_id.as_ref().unwrap())
+                .unwrap();
+            old_parent.remove_child_at(old_index);
+        }
 
         let new_parent = self.layers.get_mut(&new_parent_id).unwrap();
         new_parent.insert_child(new_index.min(new_parent.n_children()), layer_id);
     }
 
-    pub fn remove_layer(&mut self, layer_id: &LayerId) -> Option<LayerStackNode> {
-        let node = self.layers.remove(layer_id)?;
-        let parent = self.layers.get_mut(node.parent().unwrap()).unwrap();
-        parent.remove_child(layer_id);
+    pub fn remove_layer(&mut self, layer_id: &LayerId) -> HashMap<LayerId, LayerStackNode> {
+        let Some(mut node) = self.layers.remove(layer_id) else {
+            return HashMap::new();
+        };
+        if let Some(parent_node) = self.layers.get_mut(node.parent().unwrap()) {
+            parent_node.remove_child(layer_id);
+        }
+        node.parent = None;
 
-        Some(node)
+        fn remove_recursive(
+            removed: &mut HashMap<LayerId, LayerStackNode>,
+            parent_id: &LayerId,
+            layer_stack: &mut LayerStack,
+        ) {
+            let node = layer_stack.layers.remove(parent_id).unwrap();
+            for child_id in node.children.iter() {
+                remove_recursive(removed, child_id, layer_stack);
+            }
+            removed.insert(*node.id(), node);
+        }
+
+        let mut removed = HashMap::new();
+        for child_id in node.children.iter() {
+            remove_recursive(&mut removed, child_id, self);
+        }
+        removed.insert(*node.id(), node);
+        removed
     }
 
     pub fn get_layer(&self, layer_id: &LayerId) -> Option<&LayerStackNode> {

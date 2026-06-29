@@ -15,10 +15,7 @@ use wgpu::{
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
 };
 
-use crate::{
-    CanvasAppExt, CanvasId,
-    event::CanvasUpdated,
-};
+use crate::{CanvasAppExt, CanvasId, event::CanvasUpdated};
 
 pub struct TileReplaceCommand {
     pub reason: Cow<'static, str>,
@@ -326,10 +323,7 @@ impl UndoCommand for InsertLayerCommand {
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, cx| {
-            canvas
-                .image
-                .layer_stack_mut()
-                .remove_layer(self.layer.id());
+            canvas.image.layer_stack_mut().remove_layer(self.layer.id());
             canvas.set_active_layer(self.previous_active_layer, cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
@@ -384,37 +378,27 @@ impl UndoCommand for GroupLayerCommand {
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, _| {
-            let children = self
-                .children
-                .iter()
-                .map(|ch| {
-                    canvas
-                        .image
-                        .layer_stack_mut()
-                        .remove_layer(&ch.id)
-                        .unwrap()
-                })
-                .collect::<Vec<_>>();
-            // This must be done before moving children, because on of the children has
-            // same parent with the group layer, AND it's before the group layer index,
-            // then the original index of the child will be incorrect.
-            canvas
+            let mut removed_nodes = canvas
                 .image
                 .layer_stack_mut()
-                .remove_layer(self.group.id())
-                .unwrap();
+                .remove_layer(&self.group.id());
+
+            removed_nodes.remove(self.group.id()).unwrap();
+
             // TODO: Here's actually a pitfall. We have to ensure the children are stored in correct order.
             //       If child A at index 0 is before child B at index 1, they should be stored in the order
             //       child A and child B, then this insertion works.
             //       Otherwise B will be inserted before A, which is incorrect.
             //       Sort it first probably.
-            for (child, node) in self.children.iter().zip(children) {
+            for child in &self.children {
                 canvas.image.layer_stack_mut().add_layer(
                     child.original_parent,
                     child.original_index,
-                    node,
+                    removed_nodes.remove(&child.id).unwrap(),
                 );
             }
+
+            assert!(removed_nodes.is_empty());
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
