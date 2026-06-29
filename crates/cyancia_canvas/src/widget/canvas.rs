@@ -159,7 +159,7 @@ impl CanvasWidget {
             &canvas.transform,
             canvas.image.size(),
             tiles,
-            canvas.image.layer_stack().root_id(),
+            *canvas.image.layer_stack().root_id(),
             canvas.image.selection_layer(),
         );
 

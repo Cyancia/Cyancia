@@ -110,15 +110,14 @@ impl ImageCompositor {
         queue: &Queue,
     ) {
         let now = std::time::Instant::now();
-        let root_data = image
+        let root_node = image
             .layer_stack()
             .get_layer(image.layer_stack().root_id())
             .unwrap();
-        root_data.create_blend_cache(
+        root_node.data().create_blend_cache(
             self,
             overriders,
             image,
-            image.layer_stack().root_node(),
             tiles,
             blend_funcs,
             device,
@@ -142,7 +141,7 @@ impl ImageCompositor {
             ..Default::default()
         });
 
-        let mut root_layer_tiles = tiles.get_layer_mut(image.layer_stack().root_id()).unwrap();
+        let mut root_layer_tiles = tiles.get_layer_mut(*image.layer_stack().root_id()).unwrap();
         root_layer_tiles.allocate_pixels(IRect {
             min: IVec2::ZERO,
             max: image.size.as_ivec2(),
@@ -150,16 +149,15 @@ impl ImageCompositor {
         let root_layer_binding = root_layer_tiles.binding().unwrap();
 
         let empty_layer_binding = GpuTileStorage::get_empty_layer_binding(image.texel_type());
-        let root_data = image
+        let root_node = image
             .layer_stack()
             .get_layer(image.layer_stack().root_id())
             .unwrap();
         let now = std::time::Instant::now();
-        root_data.prepare_blend_cache(
+        root_node.data().prepare_blend_cache(
             self,
             overriders,
             image,
-            image.layer_stack().root_node(),
             tiles,
             &empty_layer_binding.texture,
             &empty_layer_binding.tile_info_buffer,
@@ -171,13 +169,9 @@ impl ImageCompositor {
         log::debug!("Blend cache prepared in {:?}", now.elapsed());
 
         let now = std::time::Instant::now();
-        root_data.dispatch_blend(
-            self,
-            &mut pass,
-            image,
-            image.layer_stack().root_node(),
-            tiles,
-        );
+        root_node
+            .data()
+            .dispatch_blend(self, &mut pass, image, tiles);
         log::debug!("Blend dispatched in {:?}", now.elapsed());
 
         drop(pass);

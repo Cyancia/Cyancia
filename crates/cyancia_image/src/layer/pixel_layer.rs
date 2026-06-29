@@ -18,7 +18,7 @@ use crate::{
         BlendFunctionId, BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders,
         PixelPreviewOverrider,
     },
-    layer::{Layer, LayerData, LayerStackNode},
+    layer::{Layer, LayerId},
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage},
 };
@@ -40,26 +40,28 @@ impl Layer for PixelLayer {
         compositor: &mut ImageCompositor,
         _: &mut LayerPreviewOverriders,
         image: &CImage,
-        layer: &LayerData,
-        _: &LayerStackNode,
+        layer_id: LayerId,
         tiles: &GpuTileStorage,
         blend_funcs: &BlendFunctionRegistry,
         device: &Device,
         _: &Queue,
     ) {
-        let layer_info = tiles.get_layer_info(layer.id()).unwrap();
+        let layer_info = tiles.get_layer_info(layer_id).unwrap();
 
-        if let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer.id())
-            && cache.blend_func_name == layer.blend_func
+        let node = image.layer_stack().get_layer(&layer_id).unwrap();
+
+        if let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer_id)
+            && cache.blend_func_name == node.data().blend_func
             && cache.layer_texel_type == layer_info.texel_type
             && cache.image_texel_type == image.texel_type()
         {
             return;
         }
 
-        let blend_func = blend_funcs
-            .get(&layer.blend_func)
-            .expect(&format!("Blend function {} not found", layer.blend_func));
+        let blend_func = blend_funcs.get(&node.data().blend_func).expect(&format!(
+            "Blend function {} not found",
+            node.data().blend_func
+        ));
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &blend_func.wgsl_function_call("src", "dst"),
@@ -198,7 +200,7 @@ impl Layer for PixelLayer {
             });
 
         let cache = PixelBlendCache {
-            blend_func_name: layer.blend_func.clone(),
+            blend_func_name: node.data().blend_func.clone(),
             layer_texel_type: layer_info.texel_type,
             image_texel_type: image.texel_type(),
             with_overrider_pipeline,
@@ -207,7 +209,7 @@ impl Layer for PixelLayer {
             without_overrider_layout,
             dispatch: None,
         };
-        compositor.insert_blend_cache(layer.id(), cache);
+        compositor.insert_blend_cache(layer_id, cache);
     }
 
     fn prepare_blend_cache(
@@ -215,8 +217,7 @@ impl Layer for PixelLayer {
         compositor: &mut ImageCompositor,
         overriders: &LayerPreviewOverriders,
         image: &CImage,
-        layer: &LayerData,
-        _: &LayerStackNode,
+        layer_id: LayerId,
         tiles: &GpuTileStorage,
         dst_buffer: &TextureView,
         dst_tile_info: &Buffer,
@@ -225,89 +226,88 @@ impl Layer for PixelLayer {
         device: &Device,
         _: &Queue,
     ) {
-        let src = tiles.get_layer_binding_or_empty(layer.id).unwrap();
-        let Some(cache) = compositor.get_blend_cache_mut::<PixelBlendCache>(&layer.id()) else {
-            log::error!("BlendCache is not created for layer {:?}", layer.id());
+        let src = tiles.get_layer_binding_or_empty(layer_id).unwrap();
+        let Some(cache) = compositor.get_blend_cache_mut::<PixelBlendCache>(&layer_id) else {
+            log::error!("BlendCache is not created for layer {:?}", layer_id);
             return;
         };
 
-        let (bind_group, pipeline) = if let Some(overrider) =
-            overriders.get_overrider::<PixelPreviewOverrider>(&layer.id())
-        {
-            let bg = device.create_bind_group(&BindGroupDescriptor {
-                label: "pixel layer blend bind group with overrider".into(),
-                layout: &cache.with_overrider_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: BindingResource::TextureView(&src.texture),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: src.tile_info_buffer.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: BindingResource::TextureView(dst_buffer),
-                    },
-                    BindGroupEntry {
-                        binding: 3,
-                        resource: dst_tile_info.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 4,
-                        resource: BindingResource::TextureView(output),
-                    },
-                    BindGroupEntry {
-                        binding: 5,
-                        resource: output_tile_info.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 6,
-                        resource: BindingResource::TextureView(&overrider.texture),
-                    },
-                    BindGroupEntry {
-                        binding: 7,
-                        resource: overrider.tile_info_buffer.as_entire_binding(),
-                    },
-                ],
-            });
+        let (bind_group, pipeline) =
+            if let Some(overrider) = overriders.get_overrider::<PixelPreviewOverrider>(&layer_id) {
+                let bg = device.create_bind_group(&BindGroupDescriptor {
+                    label: "pixel layer blend bind group with overrider".into(),
+                    layout: &cache.with_overrider_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&src.texture),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: src.tile_info_buffer.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: BindingResource::TextureView(dst_buffer),
+                        },
+                        BindGroupEntry {
+                            binding: 3,
+                            resource: dst_tile_info.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 4,
+                            resource: BindingResource::TextureView(output),
+                        },
+                        BindGroupEntry {
+                            binding: 5,
+                            resource: output_tile_info.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 6,
+                            resource: BindingResource::TextureView(&overrider.texture),
+                        },
+                        BindGroupEntry {
+                            binding: 7,
+                            resource: overrider.tile_info_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
 
-            (bg, cache.with_overrider_pipeline.clone())
-        } else {
-            let bg = device.create_bind_group(&BindGroupDescriptor {
-                label: "pixel layer blend bind group without overrider".into(),
-                layout: &cache.without_overrider_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: BindingResource::TextureView(&src.texture),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: src.tile_info_buffer.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: BindingResource::TextureView(dst_buffer),
-                    },
-                    BindGroupEntry {
-                        binding: 3,
-                        resource: dst_tile_info.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 4,
-                        resource: BindingResource::TextureView(output),
-                    },
-                    BindGroupEntry {
-                        binding: 5,
-                        resource: output_tile_info.as_entire_binding(),
-                    },
-                ],
-            });
+                (bg, cache.with_overrider_pipeline.clone())
+            } else {
+                let bg = device.create_bind_group(&BindGroupDescriptor {
+                    label: "pixel layer blend bind group without overrider".into(),
+                    layout: &cache.without_overrider_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&src.texture),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: src.tile_info_buffer.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: BindingResource::TextureView(dst_buffer),
+                        },
+                        BindGroupEntry {
+                            binding: 3,
+                            resource: dst_tile_info.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 4,
+                            resource: BindingResource::TextureView(output),
+                        },
+                        BindGroupEntry {
+                            binding: 5,
+                            resource: output_tile_info.as_entire_binding(),
+                        },
+                    ],
+                });
 
-            (bg, cache.without_overrider_pipeline.clone())
-        };
+                (bg, cache.without_overrider_pipeline.clone())
+            };
 
         let workgroup_count =
             UVec3::new(image.size().x.div_ceil(16), image.size().y.div_ceil(16), 1);
@@ -320,12 +320,11 @@ impl Layer for PixelLayer {
         compositor: &ImageCompositor,
         pass: &mut ComputePass,
         _: &CImage,
-        layer: &LayerData,
-        _: &LayerStackNode,
+        layer_id: LayerId,
         _: &GpuTileStorage,
     ) {
-        let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer.id()) else {
-            log::error!("BlendCache is not created for layer {:?}", layer.id());
+        let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer_id) else {
+            log::error!("BlendCache is not created for layer {:?}", layer_id);
             return;
         };
 

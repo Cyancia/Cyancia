@@ -12,7 +12,7 @@ use crate::{
     composite::{
         BlendFunction, BlendFunctionAppExt, BlendFunctionRegistry, LayerPreviewOverriders,
     },
-    layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, LayerStackNode, SpecialLayers},
+    layer::{LayerData, LayerId, LayerNameGenerator, LayerStack, SpecialLayers},
     texel::TexelType,
     tile::GpuTileStorage,
 };

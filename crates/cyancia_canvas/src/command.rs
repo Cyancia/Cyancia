@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use bevy_math::IRect;
 use cyancia_image::{
-    layer::{LayerData, LayerId},
+    layer::{LayerData, LayerId, LayerStackNode},
     tile::{DynamicLayerStorage, GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_render::render_context::RenderContextAppExt;
@@ -17,7 +17,7 @@ use wgpu::{
 
 use crate::{
     CanvasAppExt, CanvasId,
-    event::{CanvasActiveLayerChanged, CanvasUpdated},
+    event::CanvasUpdated,
 };
 
 pub struct TileReplaceCommand {
@@ -313,9 +313,9 @@ impl UndoCommand for InsertLayerCommand {
             canvas.image.layer_stack_mut().add_layer(
                 self.parent_id,
                 self.index,
-                self.layer.clone(),
+                LayerStackNode::without_parent(self.layer.clone()),
             );
-            canvas.set_active_layer(self.layer.id(), cx);
+            canvas.set_active_layer(*self.layer.id(), cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
@@ -326,7 +326,10 @@ impl UndoCommand for InsertLayerCommand {
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, cx| {
-            canvas.image.layer_stack_mut().remove_layer(self.layer.id());
+            canvas
+                .image
+                .layer_stack_mut()
+                .remove_layer(self.layer.id());
             canvas.set_active_layer(self.previous_active_layer, cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
@@ -363,13 +366,13 @@ impl UndoCommand for GroupLayerCommand {
             canvas.image.layer_stack_mut().add_layer(
                 self.parent_id,
                 self.index,
-                self.group.clone(),
+                LayerStackNode::without_parent(self.group.clone()),
             );
             for (i, child) in self.children.iter().enumerate() {
                 canvas
                     .image
                     .layer_stack_mut()
-                    .move_layer(child.id, self.group.id(), i);
+                    .move_layer(child.id, *self.group.id(), i);
             }
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
@@ -384,7 +387,13 @@ impl UndoCommand for GroupLayerCommand {
             let children = self
                 .children
                 .iter()
-                .map(|ch| canvas.image.layer_stack_mut().remove_layer(ch.id).unwrap())
+                .map(|ch| {
+                    canvas
+                        .image
+                        .layer_stack_mut()
+                        .remove_layer(&ch.id)
+                        .unwrap()
+                })
                 .collect::<Vec<_>>();
             // This must be done before moving children, because on of the children has
             // same parent with the group layer, AND it's before the group layer index,
@@ -399,14 +408,12 @@ impl UndoCommand for GroupLayerCommand {
             //       child A and child B, then this insertion works.
             //       Otherwise B will be inserted before A, which is incorrect.
             //       Sort it first probably.
-            for (child, (data, node)) in self.children.iter().zip(children) {
-                let original_parent = canvas
-                    .image
-                    .layer_stack_mut()
-                    .find_node_mut(child.original_parent)
-                    .unwrap();
-                original_parent.insert_child(child.original_index, node);
-                canvas.image.layer_stack_mut().insert_isolated_layer(data);
+            for (child, node) in self.children.iter().zip(children) {
+                canvas.image.layer_stack_mut().add_layer(
+                    child.original_parent,
+                    child.original_index,
+                    node,
+                );
             }
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))

@@ -10,7 +10,7 @@ use cyancia_image::{
 use cyancia_tools::{ToolProxies, ToolProxy};
 use cyancia_undo::{UndoStack, UndoStacks};
 use glam::UVec2;
-use gpui::{App, AppContext, actions};
+use gpui::{App, actions};
 use rfd::AsyncFileDialog;
 
 use crate::ActionFunction;
@@ -57,7 +57,7 @@ impl ActionFunction for OpenFileAction {
             cx.read_global::<GpuTileStorage, _>(|tiles, _| {
                 for layer in canvas.image.layer_stack().iter_layers() {
                     tiles.declare_layer(
-                        layer.id(),
+                        *layer.id(),
                         GpuLayerInfo {
                             // TODO
                             texel_type: TexelType::RGBA8,

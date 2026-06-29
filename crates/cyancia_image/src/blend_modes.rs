@@ -1,4 +1,4 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use parse_display::Display;
 use serde::{Deserialize, Serialize};

@@ -1,7 +1,7 @@
 use bevy_math::IRect;
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
-    layer::{LayerId, LayerStack},
+    layer::LayerId,
     tile::GpuTileStorage,
 };
 use glam::IVec2;
@@ -163,15 +163,15 @@ impl LayerStackWidget {
         let canvas = canvas_entity.read(cx);
         let layer_stack = canvas.image.layer_stack();
 
-        let Some(dragged_node) = layer_stack.find_node(info.id) else {
+        let Some(dragged_node) = layer_stack.get_layer(&info.id) else {
             return;
         };
-        let Some(original_parent) = dragged_node.parent() else {
+        let Some(original_parent) = dragged_node.parent().copied() else {
             return;
         };
         let original_index = layer_stack
-            .find_node(original_parent)
-            .and_then(|p| p.child_index(info.id))
+            .get_layer(&original_parent)
+            .and_then(|p| p.child_index(&info.id))
             .unwrap_or(0);
 
         if original_parent == drop_info.parent && original_index == drop_info.index {
@@ -220,23 +220,23 @@ impl LayerStackWidget {
         let canvas = canvas_entity.read(cx);
         let layer_stack = canvas.image.layer_stack();
 
-        if layer_stack.is_ancestor(info.id, target_id) {
+        if layer_stack.is_ancestor(&info.id, &target_id) {
             return None;
         }
 
-        let target_node = layer_stack.find_node(target_id)?;
+        let target_node = layer_stack.get_layer(&target_id)?;
         let center_y = target_bounds.center().y;
         let old_index = layer_stack
-            .find_node(info.id)
+            .get_layer(&info.id)
             .and_then(|n| n.parent())
-            .and_then(|p| layer_stack.find_node(p))
-            .and_then(|p| p.child_index(info.id))?;
+            .and_then(|p| layer_stack.get_layer(p))
+            .and_then(|p| p.child_index(&info.id))?;
 
         if mouse_pos.y < center_y {
             // Above the target's row: drop as a sibling, just above the target.
-            let parent = target_node.parent()?;
-            let target_index = layer_stack.find_node(parent)?.child_index(target_id)?;
-            let dragged_parent = layer_stack.find_node(info.id)?.parent()?;
+            let parent = target_node.parent().copied()?;
+            let target_index = layer_stack.get_layer(&parent)?.child_index(&target_id)?;
+            let dragged_parent = layer_stack.get_layer(&info.id)?.parent().copied()?;
             let index = if dragged_parent == parent && old_index < target_index {
                 target_index
             } else {
@@ -251,10 +251,10 @@ impl LayerStackWidget {
         }
 
         // Below the target's row.
-        let target_parent = target_node.parent()?;
-        let target_parent_node = layer_stack.find_node(target_parent)?;
-        let target_index = target_parent_node.child_index(target_id)?;
-        let dragged_parent = layer_stack.find_node(info.id)?.parent()?;
+        let target_parent = target_node.parent().copied()?;
+        let target_parent_node = layer_stack.get_layer(&target_parent)?;
+        let target_index = target_parent_node.child_index(&target_id)?;
+        let dragged_parent = layer_stack.get_layer(&info.id)?.parent().copied()?;
 
         // If the target can hold children and the cursor is at the target's own
         // indent (inside the target's row, not in a shallower ancestor's gutter),
@@ -262,9 +262,9 @@ impl LayerStackWidget {
         // top child (preview at the target's bottom edge). A shallower cursor
         // falls through to the x-driven ancestor matching below.
         if mouse_pos.x >= target_bounds.left()
-            && layer_stack.can_have_children_of(target_id, info.id)?
+            && layer_stack.can_have_children_of(&target_id, &info.id)?
         {
-            let n_children = layer_stack.find_node(target_id)?.n_children();
+            let n_children = layer_stack.get_layer(&target_id)?.n_children();
             return Some(DropInfo {
                 parent: target_id,
                 index: n_children,
@@ -295,13 +295,13 @@ impl LayerStackWidget {
 
         // Target is the bottom child. Only ancestors for which the target's
         // branch is also the bottom child are valid "append to bottom" targets.
-        let ancestors = layer_stack.ancestors(target_id); // target -> root, target excluded
+        let ancestors = layer_stack.ancestors(&target_id); // target -> root, target excluded
         let mut ambiguous_count = 0;
         {
             let mut previous_child = target_id;
             for ancestor in &ancestors {
-                let ancestor_node = layer_stack.find_node(*ancestor)?;
-                if ancestor_node.child_index(previous_child) == Some(0) {
+                let ancestor_node = layer_stack.get_layer(ancestor)?;
+                if ancestor_node.child_index(&previous_child) == Some(0) {
                     ambiguous_count += 1;
                 } else {
                     break;
@@ -322,7 +322,7 @@ impl LayerStackWidget {
             }
         }
         let resolved_parent = ancestors[resolved_parent_index];
-        if layer_stack.is_ancestor(info.id, resolved_parent) {
+        if layer_stack.is_ancestor(&info.id, &resolved_parent) {
             return None;
         }
 
@@ -359,9 +359,10 @@ impl Render for LayerStackWidget {
             .image
             .layer_stack()
             .iter_layers_dfs_display_order_without_root()
-            .map(|(layer, node, depth)| {
-                let drag_info = LayerDragInfo::new(layer.id(), layer.name.clone().into());
-                let layer_id = layer.id();
+            .map(|(node, depth)| {
+                let layer_id = *node.id();
+                let drag_info =
+                    LayerDragInfo::new(layer_id, node.data().name.clone().into());
 
                 h_flex()
                     .ml(px(20.0 * depth as f32))
@@ -373,7 +374,7 @@ impl Render for LayerStackWidget {
                     .when_else(
                         Some(layer_id) == self.renaming_layer,
                         |d| d.child(Input::new(&self.rename_input_state).w_full()),
-                        |d| d.child(layer.name.clone()),
+                        |d| d.child(node.data().name.clone()),
                     )
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))

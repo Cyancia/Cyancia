@@ -48,13 +48,12 @@ pub struct CCanvas {
 
 impl CCanvas {
     pub fn new(image: CImage, tool_proxy_id: ToolProxyId) -> Self {
-        let background_layer = image
+        let background_layer = *image
             .layer_stack()
             .root_node()
             .children()
             .first()
-            .expect("Root layer should have at least one child")
-            .id();
+            .expect("Root layer should have at least one child");
 
         Self {
             id: CanvasId(Uuid::new_v4()),
@@ -100,38 +99,40 @@ impl CCanvas {
     pub fn active_layer_node(&self) -> &LayerStackNode {
         self.image
             .layer_stack()
-            .find_node(self.active_layer)
+            .get_layer(&self.active_layer)
             .expect("Active layer should always exist")
     }
 
     pub fn active_layer_node_mut(&mut self) -> &mut LayerStackNode {
         self.image
             .layer_stack_mut()
-            .find_node_mut(self.active_layer)
+            .get_layer_mut(&self.active_layer)
             .expect("Active layer should always exist")
     }
 
     pub fn active_layer_data(&self) -> &LayerData {
         self.image
             .layer_stack()
-            .get_layer(self.active_layer)
+            .get_layer(&self.active_layer)
             .expect("Active layer should always exist")
+            .data()
     }
 
     pub fn active_layer_data_mut(&mut self) -> &mut LayerData {
         self.image
             .layer_stack_mut()
-            .get_layer_mut(self.active_layer)
+            .get_layer_mut(&self.active_layer)
             .expect("Active layer should always exist")
+            .data_mut()
     }
 
     pub fn parent_id_of_active_layer(&self) -> LayerId {
         let l = self
             .image
             .layer_stack()
-            .find_node(self.active_layer)
+            .get_layer(&self.active_layer)
             .expect("Active layer should always exist");
-        l.parent()
+        *l.parent()
             .expect("Active layer should always have a parent")
     }
 }
