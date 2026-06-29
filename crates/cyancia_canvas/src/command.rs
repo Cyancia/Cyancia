@@ -1,5 +1,6 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
+use anyhow::bail;
 use bevy_math::IRect;
 use cyancia_image::{
     layer::{LayerData, LayerId, LayerStackNode},
@@ -15,7 +16,7 @@ use wgpu::{
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
 };
 
-use crate::{CanvasAppExt, CanvasId, event::CanvasUpdated};
+use crate::{CCanvas, CanvasAppExt, CanvasId, event::CanvasUpdated};
 
 pub struct TileReplaceCommand {
     pub reason: Cow<'static, str>,
@@ -323,7 +324,7 @@ impl UndoCommand for InsertLayerCommand {
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, cx| {
-            canvas.image.layer_stack_mut().remove_layer(self.layer.id());
+            canvas.image.layer_stack_mut().remove_layer_recursive(self.layer.id());
             canvas.set_active_layer(self.previous_active_layer, cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
@@ -381,7 +382,7 @@ impl UndoCommand for GroupLayerCommand {
             let mut removed_nodes = canvas
                 .image
                 .layer_stack_mut()
-                .remove_layer(&self.group.id());
+                .remove_layer_recursive(&self.group.id());
 
             removed_nodes.remove(self.group.id()).unwrap();
 
