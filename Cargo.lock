@@ -1803,6 +1803,7 @@ dependencies = [
  "cyancia_tools",
  "cyancia_undo",
  "cyancia_utils",
+ "cyancia_widgets",
  "encase",
  "futures",
  "glam",
@@ -2038,6 +2039,7 @@ dependencies = [
  "cyancia_math",
  "glam",
  "gpui",
+ "gpui-component",
  "num-traits",
  "refineable",
 ]

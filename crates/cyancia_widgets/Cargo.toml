@@ -13,5 +13,6 @@ bevy_math.workspace = true
 cyancia_math.workspace = true
 glam.workspace = true
 gpui.workspace = true
+gpui-component.workspace = true
 num-traits.workspace = true
 refineable = { git = "https://github.com/zed-industries/zed" }

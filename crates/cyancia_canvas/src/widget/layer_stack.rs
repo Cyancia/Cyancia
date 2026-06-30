@@ -5,6 +5,7 @@ use cyancia_image::{
     tile::GpuTileStorage,
 };
 use cyancia_utils::log_err::LogErr;
+use cyancia_widgets::spin_slider::{SpinSlider, SpinSliderEvent, SpinSliderState};
 use glam::IVec2;
 use gpui::{
     Action, AppContext, Bounds, Context, DragMoveEvent, Entity, Focusable, InteractiveElement,
@@ -12,7 +13,7 @@ use gpui::{
     Styled, Subscription, WeakEntity, Window, actions, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, ElementExt, h_flex,
+    ActiveTheme, ElementExt, Sizable, h_flex,
     input::{Input, InputEvent, InputState},
     menu::{ContextMenuExt, PopupMenuItem},
     scroll::ScrollableElement,
@@ -58,6 +59,7 @@ pub struct LayerStackWidget {
     layer_widget_info: IndexMap<LayerId, LayerWidgetInfo>,
     layer_drop_info: Option<DropInfo>,
     layer_drop_indicator_offset: Point<Pixels>,
+    opacity_state: Entity<SpinSliderState>,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -73,6 +75,7 @@ impl LayerStackWidget {
         });
 
         let rename_input_state = cx.new(|cx| InputState::new(window, cx));
+        let opacity_state = cx.new(|cx| SpinSliderState::new(window, cx));
 
         let subscriptions = vec![
             cx.subscribe_in(
@@ -90,6 +93,7 @@ impl LayerStackWidget {
                 Self::on_blend_function_changed,
             ),
             cx.subscribe_in(&rename_input_state, window, Self::on_rename_input_event),
+            cx.subscribe_in(&opacity_state, window, Self::on_opacity_changed),
         ];
 
         Self {
@@ -100,6 +104,7 @@ impl LayerStackWidget {
             layer_widget_info: IndexMap::new(),
             layer_drop_info: None,
             layer_drop_indicator_offset: Point::default(),
+            opacity_state,
             _subscriptions: subscriptions,
         }
     }
@@ -207,6 +212,21 @@ impl LayerStackWidget {
         canvas_entity.update(cx, |_, cx| {
             cx.emit(CanvasLayerStackUpdated {});
         });
+    }
+
+    fn on_opacity_changed(
+        &mut self,
+        state: &Entity<SpinSliderState>,
+        event: &SpinSliderEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            SpinSliderEvent::Release(val) => {
+                dbg!(val);
+            }
+            _ => {}
+        }
     }
 
     fn resolve_drop_target(
@@ -492,7 +512,13 @@ impl Render for LayerStackWidget {
 
         let layer_params = v_flex()
             .p_2()
-            .child(Select::new(&self.blend_mode_select_state));
+            .child(Select::new(&self.blend_mode_select_state))
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child("Opacity")
+                    .child(SpinSlider::new(&self.opacity_state).small()),
+            );
 
         v_flex()
             .key_context(LAYER_STACK_CONTEXT)
