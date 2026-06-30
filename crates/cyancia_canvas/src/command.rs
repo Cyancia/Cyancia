@@ -484,7 +484,7 @@ pub struct DeleteLayersCommand {
 }
 
 impl DeleteLayersCommand {
-    pub fn new(canvas: &CCanvas, mut layers: Vec<LayerId>) -> Self {
+    pub fn new(canvas: &CCanvas, mut layers: Vec<LayerId>) -> anyhow::Result<Self> {
         layers.sort_by_cached_key(|l| canvas.image.layer_stack().depth_of(l));
 
         let mut filtered_layers = HashSet::with_capacity(layers.len());
@@ -506,6 +506,21 @@ impl DeleteLayersCommand {
 
             filtered_layers.insert(layer);
             i += 1;
+        }
+
+        // Reject if all layers are going to be deleted, other than the root layer.
+        {
+            let root = canvas.image.layer_stack().root_node();
+            let mut reject = true;
+            for child in root.children() {
+                if !filtered_layers.contains(child) {
+                    reject = false;
+                    break;
+                }
+            }
+            if reject {
+                return Err(anyhow::anyhow!("No children of root node after deletion."));
+            }
         }
 
         let is_layer_deleted = |layer: &LayerId| {
@@ -549,12 +564,12 @@ impl DeleteLayersCommand {
             Some(new_active_layer)
         };
 
-        Self {
+        Ok(Self {
             canvas: canvas.id(),
             active_layer_from_to: new_active_layer.map(|new| (canvas.active_layer_id(), new)),
             delete_roots: filtered_layers.into_iter().collect(),
             nodes: None,
-        }
+        })
     }
 }
 

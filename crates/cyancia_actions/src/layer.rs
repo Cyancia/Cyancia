@@ -256,7 +256,10 @@ impl ActionFunction for DeleteActiveLayerAction {
             return;
         };
 
-        let cmd = DeleteLayersCommand::new(canvas, vec![canvas.active_layer_id()]);
-        cx.push_undo_command_to_current(cmd).log_err();
+        if let Ok(cmd) =
+            DeleteLayersCommand::new(canvas, vec![canvas.active_layer_id()]).logged_err()
+        {
+            cx.push_undo_command_to_current(cmd).log_err();
+        }
     }
 }
