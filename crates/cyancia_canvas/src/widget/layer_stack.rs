@@ -430,18 +430,37 @@ impl Render for LayerStackWidget {
                 let layer_id = *node.id();
                 let drag_info = LayerDragInfo::new(layer_id, node.data().name.clone().into());
 
-                h_flex()
+                let inner = h_flex()
+                    .size_full()
                     .ml(px(20.0 * depth as f32))
-                    .h(px(40.0))
-                    .when(canvas.active_layer_id() == layer_id, |d| {
-                        d.bg(cx.theme().accent)
-                    })
-                    .id(format!("layer-{}", layer_id))
                     .when_else(
                         Some(layer_id) == self.renaming_layer,
                         |d| d.child(Input::new(&self.rename_input_state).w_full()),
                         |d| d.child(node.data().name.clone()),
                     )
+                    .on_prepaint({
+                        let widget = widget.clone();
+                        move |bounds, window, cx| {
+                            widget
+                                .update(cx, |widget, cx| {
+                                    widget.layer_widget_info.insert(
+                                        layer_id,
+                                        LayerWidgetInfo {
+                                            layer_id: layer_id,
+                                            bounds,
+                                        },
+                                    );
+                                })
+                                .ok();
+                        }
+                    });
+
+                h_flex()
+                    .h(px(40.0))
+                    .when(canvas.active_layer_id() == layer_id, |d| {
+                        d.bg(cx.theme().accent)
+                    })
+                    .id(format!("layer-{}", layer_id))
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
                     })
@@ -462,22 +481,7 @@ impl Render for LayerStackWidget {
                             PopupMenuItem::new("Rename").action(Box::new(RenameLayer { layer_id })),
                         )
                     })
-                    .on_prepaint({
-                        let widget = widget.clone();
-                        move |bounds, window, cx| {
-                            widget
-                                .update(cx, |widget, cx| {
-                                    widget.layer_widget_info.insert(
-                                        layer_id,
-                                        LayerWidgetInfo {
-                                            layer_id: layer_id,
-                                            bounds,
-                                        },
-                                    );
-                                })
-                                .ok();
-                        }
-                    })
+                    .child(inner)
             });
 
         let layer_params = v_flex()
