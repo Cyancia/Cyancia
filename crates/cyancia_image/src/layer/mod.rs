@@ -333,27 +333,10 @@ impl LayerStack {
         new_parent.insert_child(new_index.min(new_parent.n_children()), layer_id);
     }
 
-    /// Remove a single layer, and set all its children's parent to `None`.
-    ///
-    /// The returned node has it's previous hierarchy.
-    pub fn remove_layer(&mut self, layer_id: &LayerId) -> Option<LayerStackNode> {
-        let node = self.layers.remove(layer_id)?;
-
-        if let Some(parent_node) = self.layers.get_mut(node.parent().unwrap()) {
-            parent_node.remove_child(layer_id);
-        }
-
-        for child_id in node.children.iter() {
-            self.layers.get_mut(child_id).unwrap().parent = None;
-        }
-
-        Some(node)
-    }
-
     /// Removes a layer and all its children recursively, returning the removed nodes.
     ///
     /// The hierarchy inside of `layer_id` is preserved.
-    pub fn remove_layer_recursive(
+    pub fn remove_layer_hierarchy(
         &mut self,
         layer_id: &LayerId,
     ) -> HashMap<LayerId, LayerStackNode> {

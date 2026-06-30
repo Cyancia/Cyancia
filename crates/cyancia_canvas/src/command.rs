@@ -330,7 +330,7 @@ impl UndoCommand for InsertLayerCommand {
             canvas
                 .image
                 .layer_stack_mut()
-                .remove_layer_recursive(self.layer.id());
+                .remove_layer_hierarchy(self.layer.id());
             canvas.set_active_layer(self.previous_active_layer, cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
@@ -388,7 +388,7 @@ impl UndoCommand for GroupLayerCommand {
             let mut removed_nodes = canvas
                 .image
                 .layer_stack_mut()
-                .remove_layer_recursive(&self.group.id());
+                .remove_layer_hierarchy(&self.group.id());
 
             removed_nodes.remove(self.group.id()).unwrap();
 
@@ -573,7 +573,7 @@ impl UndoCommand for DeleteLayersCommand {
             let mut nodes = Vec::with_capacity(self.delete_roots.len());
             for root in &self.delete_roots {
                 let (parent, index) = canvas.image.layer_stack().get_layer_position(root).unwrap();
-                let deleted = canvas.image.layer_stack_mut().remove_layer_recursive(root);
+                let deleted = canvas.image.layer_stack_mut().remove_layer_hierarchy(root);
                 nodes.push(DeletedNode {
                     root: *root,
                     nodes: deleted,
