@@ -6,7 +6,10 @@ use gpui::{Action, App, Global, KeyBinding, KeyBindingContextPredicate};
 use crate::{
     brush::OpenBrushEditorAction,
     file::OpenFileAction,
-    layer::{CreateNewLayerAction, GroupActiveLayerAction, MoveLayerDownAction, MoveLayerUpAction},
+    layer::{
+        CreateNewLayerAction, DeleteActiveLayerAction, GroupActiveLayerAction, MoveLayerDownAction,
+        MoveLayerUpAction,
+    },
     manifest::{KeyBindingDefManifest, KeyBindingDefManifestLoader},
     selection::DeleteSelectionAction,
     undo::{RedoAction, UndoAction},
@@ -45,6 +48,7 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<CreateNewLayerAction>();
     cx.add_action_function::<MoveLayerUpAction>();
     cx.add_action_function::<MoveLayerDownAction>();
+    cx.add_action_function::<DeleteActiveLayerAction>();
     cx.add_action_function::<GroupActiveLayerAction>();
     cx.add_action_function::<OpenBrushEditorAction>();
     cx.add_action_function::<UndoAction>();

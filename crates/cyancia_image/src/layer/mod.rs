@@ -262,6 +262,26 @@ impl LayerStack {
         self.layers.insert(*layer.id(), layer);
     }
 
+    pub fn add_layer_hierarchy(
+        &mut self,
+        parent_id: LayerId,
+        index: usize,
+        root: LayerId,
+        mut layers: HashMap<LayerId, LayerStackNode>,
+    ) {
+        let Some(parent_node) = self.get_layer_mut(&parent_id) else {
+            return;
+        };
+
+        let Some(root_node) = layers.get_mut(&root) else {
+            return;
+        };
+
+        root_node.parent = Some(parent_id);
+        parent_node.insert_child(index, root);
+        self.layers.extend(layers);
+    }
+
     pub fn insert_isolated_layer(&mut self, mut layer: LayerStackNode) {
         layer.parent = None;
         self.layers.insert(*layer.id(), layer);
@@ -363,6 +383,22 @@ impl LayerStack {
         }
         removed.insert(*node.id(), node);
         removed
+    }
+
+    pub fn get_layer_position(&self, layer_id: &LayerId) -> Option<(LayerId, usize)> {
+        let parent_id = self.layers.get(layer_id)?.parent()?;
+        let parent_node = self.layers.get(parent_id)?;
+        Some((*parent_id, parent_node.child_index(layer_id)?))
+    }
+
+    pub fn depth_of(&self, layer_id: &LayerId) -> Option<u32> {
+        let mut depth = 0;
+        let mut current = self.layers.get(layer_id)?;
+        while let Some(parent) = current.parent() {
+            depth += 1;
+            current = self.layers.get(parent)?;
+        }
+        Some(depth)
     }
 
     pub fn get_layer(&self, layer_id: &LayerId) -> Option<&LayerStackNode> {

@@ -1,4 +1,7 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 
 use anyhow::bail;
 use bevy_math::IRect;
@@ -324,7 +327,10 @@ impl UndoCommand for InsertLayerCommand {
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, cx| {
-            canvas.image.layer_stack_mut().remove_layer_recursive(self.layer.id());
+            canvas
+                .image
+                .layer_stack_mut()
+                .remove_layer_recursive(self.layer.id());
             canvas.set_active_layer(self.previous_active_layer, cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
@@ -460,5 +466,160 @@ impl UndoCommand for MoveLayerCommand {
             && self.new_index == rhs.original_index
             && self.original_parent == rhs.new_parent
             && self.original_index == rhs.new_index
+    }
+}
+
+struct DeletedNode {
+    root: LayerId,
+    nodes: HashMap<LayerId, LayerStackNode>,
+    original_parent: LayerId,
+    original_index: usize,
+}
+
+pub struct DeleteLayersCommand {
+    canvas: CanvasId,
+    active_layer_from_to: Option<(LayerId, LayerId)>,
+    nodes: Option<Vec<DeletedNode>>,
+    delete_roots: Vec<LayerId>,
+}
+
+impl DeleteLayersCommand {
+    pub fn new(canvas: &CCanvas, mut layers: Vec<LayerId>) -> Self {
+        layers.sort_by_cached_key(|l| canvas.image.layer_stack().depth_of(l));
+
+        let mut filtered_layers = HashSet::with_capacity(layers.len());
+        let mut i = 0;
+
+        'outer: while i < layers.len() {
+            let layer = layers[i];
+
+            for maybe_ancestor in &filtered_layers {
+                if canvas
+                    .image
+                    .layer_stack()
+                    .is_ancestor(maybe_ancestor, &layer)
+                {
+                    i += 1;
+                    continue 'outer;
+                }
+            }
+
+            filtered_layers.insert(layer);
+            i += 1;
+        }
+
+        let is_layer_deleted = |layer: &LayerId| {
+            if filtered_layers.contains(layer) {
+                return true;
+            }
+
+            for deleted in &filtered_layers {
+                if canvas.image.layer_stack().is_ancestor(deleted, layer) {
+                    return true;
+                }
+            }
+
+            false
+        };
+
+        let new_active_layer = if !is_layer_deleted(&canvas.active_layer_id()) {
+            None
+        } else {
+            let mut current = canvas.active_layer_id();
+            let mut current_parent = canvas
+                .image
+                .layer_stack()
+                .get_layer(&canvas.parent_id_of_active_layer())
+                .unwrap();
+            // Find the first non-deleted parent
+            while is_layer_deleted(current_parent.id()) {
+                current = *current_parent.id();
+                current_parent = canvas
+                    .image
+                    .layer_stack()
+                    .get_layer(&current_parent.parent().unwrap())
+                    .unwrap();
+            }
+
+            let new_active_layer = current_parent
+                .child_below(&current)
+                .or_else(|| current_parent.child_above(&current))
+                .unwrap_or(*current_parent.id());
+
+            Some(new_active_layer)
+        };
+
+        Self {
+            canvas: canvas.id(),
+            active_layer_from_to: new_active_layer.map(|new| (canvas.active_layer_id(), new)),
+            delete_roots: filtered_layers.into_iter().collect(),
+            nodes: None,
+        }
+    }
+}
+
+impl UndoCommand for DeleteLayersCommand {
+    fn label(&self) -> Cow<'static, str> {
+        "Delete Layers".into()
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
+        cx.update_canvas(&self.canvas, |canvas, cx| {
+            if self.nodes.is_some() {
+                bail!("Called redo twice consecutively is not valid")
+            }
+
+            let mut nodes = Vec::with_capacity(self.delete_roots.len());
+            for root in &self.delete_roots {
+                let (parent, index) = canvas.image.layer_stack().get_layer_position(root).unwrap();
+                let deleted = canvas.image.layer_stack_mut().remove_layer_recursive(root);
+                nodes.push(DeletedNode {
+                    root: *root,
+                    nodes: deleted,
+                    original_parent: parent,
+                    original_index: index,
+                });
+            }
+            self.nodes = Some(nodes);
+
+            if let Some((_, new_active)) = self.active_layer_from_to {
+                canvas.set_active_layer(new_active, cx);
+            }
+
+            Ok(())
+        })
+        .unwrap()?;
+        cx.refresh_windows();
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
+        cx.update_canvas(&self.canvas, |canvas, cx| {
+            let Some(nodes) = self.nodes.take() else {
+                bail!("Called undo twice consecutively is not valid")
+            };
+
+            for node in nodes {
+                canvas.image.layer_stack_mut().add_layer_hierarchy(
+                    node.original_parent,
+                    node.original_index,
+                    node.root,
+                    node.nodes,
+                );
+            }
+
+            if let Some((old_active, _)) = self.active_layer_from_to {
+                canvas.set_active_layer(old_active, cx);
+            }
+
+            Ok(())
+        })
+        .unwrap()?;
+        cx.refresh_windows();
+
+        Ok(())
     }
 }

@@ -31,6 +31,11 @@
       "context": "main_view"
     },
     {
+      "shortcut": "ctrl-delete",
+      "action_name": "DeleteActiveLayerAction",
+      "context": "main_view"
+    },
+    {
       "shortcut": "ctrl-z",
       "action_name": "UndoAction",
       "context": "main_view"

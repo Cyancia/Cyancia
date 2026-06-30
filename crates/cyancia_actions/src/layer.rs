@@ -1,6 +1,8 @@
 use cyancia_canvas::{
     CanvasAppExt, CanvasUndoStackAppExt,
-    command::{GroupLayerCommand, GroupedLayer, InsertLayerCommand, MoveLayerCommand},
+    command::{
+        DeleteLayersCommand, GroupLayerCommand, GroupedLayer, InsertLayerCommand, MoveLayerCommand,
+    },
 };
 use cyancia_image::{
     layer::LayerData,
@@ -16,7 +18,8 @@ actions!([
     CreateNewLayerAction,
     GroupActiveLayerAction,
     MoveLayerUpAction,
-    MoveLayerDownAction
+    MoveLayerDownAction,
+    DeleteActiveLayerAction,
 ]);
 
 impl ActionFunction for CreateNewLayerAction {
@@ -138,8 +141,7 @@ impl ActionFunction for MoveLayerUpAction {
                     active_layer_parent_node.child_index(&sibling_id).unwrap(),
                 )
             }
-        } else if let Some(active_layer_parent_parent) =
-            active_layer_parent_node.parent().copied()
+        } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent().copied()
         {
             // Active node is the last child, so we are moving it out of its parent.
             let active_layer_parent_parent_node = canvas
@@ -218,8 +220,7 @@ impl ActionFunction for MoveLayerDownAction {
                     active_layer_parent_node.child_index(&sibling_id).unwrap(),
                 )
             }
-        } else if let Some(active_layer_parent_parent) =
-            active_layer_parent_node.parent().copied()
+        } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent().copied()
         {
             // Active node is the first child, so we are moving it out of its parent.
             let active_layer_parent_parent_node = canvas
@@ -246,5 +247,16 @@ impl ActionFunction for MoveLayerDownAction {
             new_index,
         })
         .log_err();
+    }
+}
+
+impl ActionFunction for DeleteActiveLayerAction {
+    fn trigger(&self, cx: &mut App) {
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+
+        let cmd = DeleteLayersCommand::new(canvas, vec![canvas.active_layer_id()]);
+        cx.push_undo_command_to_current(cmd).log_err();
     }
 }
