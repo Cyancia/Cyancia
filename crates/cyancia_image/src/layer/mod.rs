@@ -7,6 +7,8 @@ use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use image::DynamicImage;
 use parse_display::Display;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wgpu::{Buffer, ComputePass, Device, Queue, TextureView};
 
@@ -38,7 +40,7 @@ impl LayerNameGenerator {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, Serialize, Deserialize, JsonSchema)]
     pub LayerId : Uuid
 }
 

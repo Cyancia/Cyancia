@@ -1813,6 +1813,7 @@ dependencies = [
  "log",
  "parking_lot",
  "parse-display",
+ "schemars",
  "serde",
  "tracing",
  "uuid",
@@ -1844,6 +1845,7 @@ dependencies = [
  "parking_lot",
  "parse-display",
  "rayon",
+ "schemars",
  "serde",
  "uuid",
  "wesl",
@@ -6558,6 +6560,7 @@ dependencies = [
  "schemars_derive",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

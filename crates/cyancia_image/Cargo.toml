@@ -29,6 +29,7 @@ palette.workspace = true
 parking_lot.workspace = true
 parse-display.workspace = true
 rayon.workspace = true
+schemars.workspace = true
 serde.workspace = true
 uuid.workspace = true
 wesl.workspace = true

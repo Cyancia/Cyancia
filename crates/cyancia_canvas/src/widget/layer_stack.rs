@@ -6,24 +6,34 @@ use cyancia_image::{
 };
 use glam::IVec2;
 use gpui::{
-    AppContext, Bounds, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, WeakEntity, Window, div, prelude::FluentBuilder, px,
+    Action, AppContext, Bounds, Context, DragMoveEvent, Entity, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, WeakEntity, Window, actions, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
     ActiveTheme, ElementExt, h_flex,
-    input::{Input, InputState},
+    input::{Input, InputEvent, InputState},
+    menu::{ContextMenuExt, PopupMenuItem},
     scroll::ScrollableElement,
     select::{SearchableVec, Select, SelectEvent, SelectState},
     v_flex,
 };
 use indexmap::IndexMap;
+use schemars::JsonSchema;
+use serde::Deserialize;
 
 use crate::{
     CCanvas, CanvasUndoStackAppExt,
     command::MoveLayerCommand,
     event::{CanvasActiveLayerChanged, CanvasLayerStackUpdated, CanvasUpdated},
 };
+
+pub const LAYER_STACK_CONTEXT: &'static str = "layer_stack";
+
+#[derive(Action, Clone, PartialEq, JsonSchema, Deserialize)]
+pub struct RenameLayer {
+    pub layer_id: LayerId,
+}
 
 #[derive(Debug, Clone)]
 struct LayerWidgetInfo {
@@ -61,6 +71,8 @@ impl LayerStackWidget {
             SelectState::new(funcs.into(), None, window, cx)
         });
 
+        let rename_input_state = cx.new(|cx| InputState::new(window, cx));
+
         let subscriptions = vec![
             cx.subscribe_in(
                 &canvas,
@@ -76,10 +88,11 @@ impl LayerStackWidget {
                 window,
                 Self::on_blend_function_changed,
             ),
+            cx.subscribe_in(&rename_input_state, window, Self::on_rename_input_event),
         ];
 
         Self {
-            rename_input_state: cx.new(|cx| InputState::new(window, cx)),
+            rename_input_state,
             renaming_layer: None,
             canvas: canvas.downgrade(),
             blend_mode_select_state,
@@ -342,6 +355,60 @@ impl LayerStackWidget {
             length: resolved_preview_bounds.size.width,
         })
     }
+
+    fn on_rename_layer(
+        &mut self,
+        action: &RenameLayer,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let layer_name = self
+            .canvas
+            .read_with(cx, |canvas, cx| {
+                let layer = canvas.image.layer_stack().get_layer(&action.layer_id)?;
+                Some(layer.data().name.clone())
+            })
+            .ok()
+            .flatten();
+
+        let Some(layer_name) = layer_name else {
+            return;
+        };
+
+        self.rename_input_state.update(cx, |state, cx| {
+            state.set_value(layer_name, window, cx);
+            cx.focus_self(window);
+        });
+        self.renaming_layer = Some(action.layer_id);
+    }
+
+    fn on_rename_input_event(
+        &mut self,
+        state: &Entity<InputState>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                let Some(layer_id) = self.renaming_layer.take() else {
+                    return;
+                };
+                let value = state.read(cx).value();
+                self.canvas
+                    .update(cx, |canvas, cx| {
+                        let layer = canvas
+                            .image
+                            .layer_stack_mut()
+                            .get_layer_mut(&layer_id)
+                            .unwrap();
+                        layer.data_mut().name = value.into();
+                    })
+                    .ok();
+            }
+            InputEvent::Change | InputEvent::Focus => {}
+        }
+    }
 }
 
 impl Render for LayerStackWidget {
@@ -361,8 +428,7 @@ impl Render for LayerStackWidget {
             .iter_layers_dfs_display_order_without_root()
             .map(|(node, depth)| {
                 let layer_id = *node.id();
-                let drag_info =
-                    LayerDragInfo::new(layer_id, node.data().name.clone().into());
+                let drag_info = LayerDragInfo::new(layer_id, node.data().name.clone().into());
 
                 h_flex()
                     .ml(px(20.0 * depth as f32))
@@ -390,6 +456,12 @@ impl Render for LayerStackWidget {
                                 .ok();
                         }
                     })
+                    .on_action(cx.listener(Self::on_rename_layer))
+                    .context_menu(move |menu, window, cx| {
+                        menu.item(
+                            PopupMenuItem::new("Rename").action(Box::new(RenameLayer { layer_id })),
+                        )
+                    })
                     .on_prepaint({
                         let widget = widget.clone();
                         move |bounds, window, cx| {
@@ -413,6 +485,7 @@ impl Render for LayerStackWidget {
             .child(Select::new(&self.blend_mode_select_state));
 
         v_flex()
+            .key_context(LAYER_STACK_CONTEXT)
             .w_full()
             .h_full()
             .gap_2()
