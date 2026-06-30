@@ -753,6 +753,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
         let graph = ctx.cx.entity().downgrade();
+        // TODO Use blend function registry
         let items = BlendMode::ALL.map(BlendModeItem);
         let select_state = ctx
             .window
