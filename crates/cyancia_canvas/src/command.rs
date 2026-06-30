@@ -638,3 +638,44 @@ impl UndoCommand for DeleteLayersCommand {
         Ok(())
     }
 }
+
+pub struct RenameLayerCommand {
+    pub canvas: CanvasId,
+    pub layer_id: LayerId,
+    pub new_name: String,
+    pub old_name: String,
+}
+
+impl UndoCommand for RenameLayerCommand {
+    fn label(&self) -> Cow<'static, str> {
+        "Rename Layer".into()
+    }
+
+    fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
+        cx.update_canvas(&self.canvas, |canvas, _cx| {
+            let layer = canvas
+                .image
+                .layer_stack_mut()
+                .get_layer_mut(&self.layer_id)
+                .unwrap();
+            layer.data_mut().name = self.new_name.clone();
+        });
+        cx.refresh_windows();
+
+        Ok(())
+    }
+
+    fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
+        cx.update_canvas(&self.canvas, |canvas, _cx| {
+            let layer = canvas
+                .image
+                .layer_stack_mut()
+                .get_layer_mut(&self.layer_id)
+                .unwrap();
+            layer.data_mut().name = self.old_name.clone();
+        });
+        cx.refresh_windows();
+
+        Ok(())
+    }
+}

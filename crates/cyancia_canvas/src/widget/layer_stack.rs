@@ -4,6 +4,7 @@ use cyancia_image::{
     layer::LayerId,
     tile::GpuTileStorage,
 };
+use cyancia_utils::log_err::LogErr;
 use glam::IVec2;
 use gpui::{
     Action, AppContext, Bounds, Context, DragMoveEvent, Entity, Focusable, InteractiveElement,
@@ -24,7 +25,7 @@ use serde::Deserialize;
 
 use crate::{
     CCanvas, CanvasUndoStackAppExt,
-    command::MoveLayerCommand,
+    command::{MoveLayerCommand, RenameLayerCommand},
     event::{CanvasActiveLayerChanged, CanvasLayerStackUpdated, CanvasUpdated},
 };
 
@@ -395,16 +396,21 @@ impl LayerStackWidget {
                     return;
                 };
                 let value = state.read(cx).value();
-                self.canvas
-                    .update(cx, |canvas, cx| {
-                        let layer = canvas
-                            .image
-                            .layer_stack_mut()
-                            .get_layer_mut(&layer_id)
-                            .unwrap();
-                        layer.data_mut().name = value.into();
-                    })
-                    .ok();
+                let Some(canvas) = self.canvas.upgrade() else {
+                    return;
+                };
+                let canvas = canvas.read(cx);
+                let Some(layer) = canvas.image.layer_stack().get_layer(&layer_id) else {
+                    return;
+                };
+
+                let cmd = RenameLayerCommand {
+                    canvas: canvas.id(),
+                    layer_id,
+                    new_name: value.into(),
+                    old_name: layer.data().name.clone(),
+                };
+                cx.push_undo_command_to_current(cmd).log_err();
             }
             InputEvent::Change | InputEvent::Focus => {}
         }
