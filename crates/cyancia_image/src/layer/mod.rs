@@ -543,7 +543,7 @@ impl LayerStackNode {
 
     pub fn child_below(&self, sibling_id: &LayerId) -> Option<LayerId> {
         self.children
-            .get(self.child_index(sibling_id)? - 1)
+            .get(self.child_index(sibling_id)?.checked_sub(1)?)
             .cloned()
     }
 

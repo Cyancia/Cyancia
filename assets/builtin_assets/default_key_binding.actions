@@ -49,6 +49,16 @@
       "shortcut": "ctrl-d",
       "action_name": "DeleteSelectionAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-down",
+      "action_name": "SelectNextLayerAction",
+      "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-up",
+      "action_name": "SelectPreviousLayerAction",
+      "context": "main_view"
     }
   ]
 }

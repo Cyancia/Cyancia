@@ -84,6 +84,9 @@ impl CCanvas {
     }
 
     pub fn set_active_layer(&mut self, layer_id: LayerId, cx: &mut Context<Self>) {
+        if layer_id == self.active_layer || layer_id == *self.image.layer_stack().root_id() {
+            return;
+        }
         let old = self.active_layer;
         self.active_layer = layer_id;
         cx.emit(CanvasActiveLayerChanged {

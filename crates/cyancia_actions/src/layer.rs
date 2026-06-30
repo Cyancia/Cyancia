@@ -20,6 +20,8 @@ actions!([
     MoveLayerUpAction,
     MoveLayerDownAction,
     DeleteActiveLayerAction,
+    SelectPreviousLayerAction,
+    SelectNextLayerAction,
 ]);
 
 impl ActionFunction for CreateNewLayerAction {
@@ -261,5 +263,68 @@ impl ActionFunction for DeleteActiveLayerAction {
         {
             cx.push_undo_command_to_current(cmd).log_err();
         }
+    }
+}
+
+impl ActionFunction for SelectPreviousLayerAction {
+    fn trigger(&self, cx: &mut App) {
+        cx.update_current_canvas(|canvas, cx| {
+            let active_node = canvas.active_layer_node();
+            let active_parent_node = canvas
+                .image
+                .layer_stack()
+                .get_layer(active_node.parent().unwrap())
+                .unwrap();
+            if let Some(layer) = active_parent_node.child_above(active_node.id()) {
+                // Find the closest *visual* sibling
+                let mut current = canvas.image.layer_stack().get_layer(&layer).unwrap();
+                while let Some(child) = current.children().first() {
+                    current = canvas.image.layer_stack().get_layer(child).unwrap();
+                }
+                canvas.set_active_layer(*current.id(), cx);
+            } else {
+                canvas.set_active_layer(*active_parent_node.id(), cx);
+            }
+        });
+        cx.refresh_windows();
+    }
+}
+
+impl ActionFunction for SelectNextLayerAction {
+    fn trigger(&self, cx: &mut App) {
+        cx.update_current_canvas(|canvas, cx| {
+            let active_node = canvas.active_layer_node();
+
+            if let Some(child) = active_node.children().last() {
+                canvas.set_active_layer(*child, cx);
+                return;
+            }
+
+            let active_parent_node = canvas
+                .image
+                .layer_stack()
+                .get_layer(active_node.parent().unwrap())
+                .unwrap();
+
+            if let Some(layer) = active_parent_node.child_below(active_node.id()) {
+                // Not the last node
+                canvas.set_active_layer(layer, cx);
+                return;
+            }
+
+            // Is the last node, find the next *visual* sibling
+            let mut current = active_parent_node;
+            while let Some(current_parent) = current
+                .parent()
+                .and_then(|p| canvas.image.layer_stack().get_layer(p))
+            {
+                if let Some(layer) = current_parent.child_below(current.id()) {
+                    canvas.set_active_layer(layer, cx);
+                    return;
+                }
+                current = current_parent;
+            }
+        });
+        cx.refresh_windows();
     }
 }
