@@ -13,7 +13,7 @@ use gpui::{
     Styled, Subscription, WeakEntity, Window, actions, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, ElementExt, Sizable, h_flex,
+    ActiveTheme, ElementExt, Sizable, StyledExt, h_flex,
     input::{Input, InputEvent, InputState},
     menu::{ContextMenuExt, PopupMenuItem},
     scroll::ScrollableElement,
@@ -483,9 +483,10 @@ impl Render for LayerStackWidget {
 
                 h_flex()
                     .h(px(40.0))
-                    .when(canvas.active_layer_id() == layer_id, |d| {
+                    .when(canvas.selected_layer_ids().contains(&layer_id), |d| {
                         d.bg(cx.theme().accent)
                     })
+                    .when(canvas.active_layer == layer_id, |d| d.font_bold())
                     .id(format!("layer-{}", layer_id))
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
@@ -493,10 +494,14 @@ impl Render for LayerStackWidget {
                     .on_drag_move(cx.listener(Self::on_layer_drag_move))
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
-                        move |_, _, cx| {
+                        move |event, _, cx| {
                             canvas_entity
                                 .update(cx, |canvas, cx| {
-                                    canvas.set_active_layer(layer_id, cx);
+                                    if event.modifiers().control {
+                                        canvas.toggle_layer_selection_and_active(layer_id, cx);
+                                    } else {
+                                        canvas.set_active_layer_and_clear_select(layer_id, cx);
+                                    }
                                 })
                                 .ok();
                         }

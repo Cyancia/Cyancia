@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy_math::IRect;
 use cyancia_image::{
@@ -9,6 +9,7 @@ use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_undo::{UndoCommand, UndoStack, UndoStacks};
 use cyancia_utils::wrapper;
 use gpui::{App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, Global, WeakEntity};
+use indexmap::IndexSet;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -43,6 +44,8 @@ pub struct CCanvas {
     pub image: CImage,
     pub transform: CanvasTransform,
     active_layer: LayerId,
+    // Also contains active_layer
+    selected_layers: IndexSet<LayerId>,
     dirty_tiles: IRect,
 }
 
@@ -61,6 +64,7 @@ impl CCanvas {
             image,
             transform: CanvasTransform::default(),
             active_layer: background_layer,
+            selected_layers: IndexSet::from([background_layer]),
             dirty_tiles: IRect::default(),
         }
     }
@@ -89,10 +93,52 @@ impl CCanvas {
         }
         let old = self.active_layer;
         self.active_layer = layer_id;
+        self.selected_layers.insert(layer_id);
+
         cx.emit(CanvasActiveLayerChanged {
             from: old,
             to: layer_id,
         });
+    }
+
+    pub fn set_active_layer_and_clear_select(&mut self, layer_id: LayerId, cx: &mut Context<Self>) {
+        self.selected_layers.clear();
+        self.set_active_layer(layer_id, cx);
+    }
+
+    pub fn select_layer(&mut self, layer_id: LayerId) {
+        self.selected_layers.insert(layer_id);
+    }
+
+    pub fn deselect_layer(&mut self, layer_id: LayerId, cx: &mut Context<Self>) {
+        if self.selected_layers.contains(&layer_id) && self.selected_layers.len() == 1 {
+            return;
+        }
+
+        self.selected_layers.shift_remove(&layer_id);
+        if self.active_layer == layer_id {
+            self.set_active_layer(self.selected_layers.first().copied().unwrap(), cx);
+        }
+    }
+
+    pub fn toggle_layer_selection_and_active(&mut self, layer_id: LayerId, cx: &mut Context<Self>) {
+        if self.selected_layers.contains(&layer_id) {
+            self.deselect_layer(layer_id, cx);
+        } else {
+            self.set_active_layer(layer_id, cx);
+        }
+    }
+
+    pub fn toggle_layer_selection(&mut self, layer_id: LayerId, cx: &mut Context<Self>) {
+        if self.selected_layers.contains(&layer_id) {
+            self.deselect_layer(layer_id, cx);
+        } else {
+            self.select_layer(layer_id);
+        }
+    }
+
+    pub fn selected_layer_ids(&self) -> &IndexSet<LayerId> {
+        &self.selected_layers
     }
 
     pub fn active_layer_id(&self) -> LayerId {
