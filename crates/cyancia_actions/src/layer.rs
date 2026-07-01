@@ -44,6 +44,7 @@ impl ActionFunction for CreateNewLayerAction {
                     parent_id: parent,
                     index: index + 1,
                     previous_active_layer: active_layer_id,
+                    previous_selected_layers: canvas.selected_layer_ids().clone(),
                 }
             })
             .unwrap();

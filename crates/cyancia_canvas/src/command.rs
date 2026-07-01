@@ -14,6 +14,7 @@ use cyancia_undo::UndoCommand;
 use cyancia_utils::log_err::LogErr;
 use glam::IVec2;
 use gpui::App;
+use indexmap::IndexSet;
 use wgpu::{
     Device, Extent3d, ImageSubresourceRange, Origin3d, Queue, TexelCopyTextureInfo, Texture,
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
@@ -302,6 +303,7 @@ pub struct InsertLayerCommand {
     pub parent_id: LayerId,
     pub index: usize,
     pub previous_active_layer: LayerId,
+    pub previous_selected_layers: IndexSet<LayerId>,
 }
 
 impl UndoCommand for InsertLayerCommand {
@@ -316,7 +318,7 @@ impl UndoCommand for InsertLayerCommand {
                 self.index,
                 LayerStackNode::without_parent(self.layer.clone()),
             );
-            canvas.set_active_layer(*self.layer.id(), cx);
+            canvas.set_active_layer_and_clear_select(*self.layer.id(), cx);
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
@@ -331,7 +333,10 @@ impl UndoCommand for InsertLayerCommand {
                 .image
                 .layer_stack_mut()
                 .remove_layer_hierarchy(self.layer.id());
-            canvas.set_active_layer(self.previous_active_layer, cx);
+            canvas.set_active_layer_and_clear_select(self.previous_active_layer, cx);
+            for layer_id in &self.previous_selected_layers {
+                canvas.select_layer(*layer_id);
+            }
         })
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
