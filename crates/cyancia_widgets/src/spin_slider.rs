@@ -11,7 +11,7 @@ use gpui_component::{
     input::{
         Escape, Input, InputEvent, InputState, MaskPattern, NumberInputEvent, SelectAll, StepAction,
     },
-    slider::{SliderEvent, SliderState, SliderValue},
+    slider::{SliderEvent, SliderScale, SliderState, SliderValue},
 };
 
 const KEY_CONTEXT: &str = "SpinSlider";
@@ -47,10 +47,12 @@ pub struct SpinSliderState {
     min: f32,
     max: f32,
     step: f32,
-    drag_step: f32,
     precision: usize,
-    // TODO Log scale
+    scale: SliderScale,
     // TODO Hold shift to slide more precisely
+    // TODO Value display scale
+    // TODO Prefix and suffix
+    // TODO Percentage slider preset
     pending_edit: bool,
     editing: bool,
     value_before_edit: f32,
@@ -62,8 +64,6 @@ impl SpinSliderState {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let min = 0.0;
         let max = 1.0;
-        let step = 0.1;
-        let drag_step = 0.01;
         let precision = 2;
 
         let input_state = cx.new(|cx| {
@@ -82,8 +82,8 @@ impl SpinSliderState {
             value: min,
             min,
             max,
-            step,
-            drag_step,
+            step: 0.01,
+            scale: SliderScale::Linear,
             precision,
             editing: false,
             value_before_edit: min,
@@ -110,16 +110,6 @@ impl SpinSliderState {
         self
     }
 
-    pub fn drag_step(
-        mut self,
-        drag_step: f32,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) -> Self {
-        self.drag_step = drag_step;
-        self
-    }
-
     pub fn precision(
         mut self,
         precision: usize,
@@ -137,7 +127,13 @@ impl SpinSliderState {
                 cx,
             );
         });
+        self.step = 0.1f32.powf(self.precision as f32);
         self.sync_input_from_value(window, cx);
+        self
+    }
+
+    pub fn scale(mut self, scale: SliderScale) -> Self {
+        self.scale = scale;
         self
     }
 
@@ -145,15 +141,6 @@ impl SpinSliderState {
         self.value = value.clamp(self.min, self.max);
         self.sync_input_from_value(window, cx);
         self
-    }
-
-    pub fn fill_fraction(&self) -> f32 {
-        let range = self.max - self.min;
-        if range <= 0.0 {
-            0.0
-        } else {
-            ((self.value - self.min) / range).clamp(0.0, 1.0)
-        }
     }
 
     pub fn editing(&self) -> bool {
@@ -241,8 +228,9 @@ impl SpinSliderState {
     ) {
         self.pending_edit = false;
         cx.stop_propagation();
-        let delta = window.mouse_position().x - event.bounds.origin.x;
-        let value = (delta / event.bounds.size.width) * (self.max - self.min) + self.min;
+        let percentage =
+            (window.mouse_position().x - event.bounds.origin.x) / event.bounds.size.width;
+        let value = self.percentage_to_value(percentage);
         self.set_value(value, cx);
         self.sync_input_from_value(window, cx);
     }
@@ -275,6 +263,38 @@ impl SpinSliderState {
         self.input_state.update(cx, |state, cx| {
             state.set_value(text, window, cx);
         });
+    }
+
+    // Copied from gpui-component
+    fn percentage_to_value(&self, percentage: f32) -> f32 {
+        match self.scale {
+            SliderScale::Linear => self.min + (self.max - self.min) * percentage,
+            SliderScale::Logarithmic => {
+                // when percentage is 0, this simplifies to (max/min)^0 * min = 1 * min = min
+                // when percentage is 1, this simplifies to (max/min)^1 * min = (max*min)/min = max
+                // we clamp just to make sure we don't have issue with floating point precision
+                let base = self.max / self.min;
+                (base.powf(percentage) * self.min).clamp(self.min, self.max)
+            }
+        }
+    }
+
+    // Copied from gpui-component
+    fn value_to_percentage(&self, value: f32) -> f32 {
+        match self.scale {
+            SliderScale::Linear => {
+                let range = self.max - self.min;
+                if range <= 0.0 {
+                    0.0
+                } else {
+                    (value - self.min) / range
+                }
+            }
+            SliderScale::Logarithmic => {
+                let base = self.max / self.min;
+                (value / self.min).log(base).clamp(0.0, 1.0)
+            }
+        }
     }
 }
 
@@ -336,7 +356,7 @@ impl RenderOnce for SpinSlider {
         let theme = cx.theme();
         let state_ref = self.state.read(cx);
         let input_state = state_ref.input_state.clone();
-        let fill_fraction = state_ref.fill_fraction();
+        let fill_fraction = state_ref.value_to_percentage(state_ref.value);
         let editing = state_ref.editing;
         let value = state_ref.value;
         let precision = state_ref.precision;
