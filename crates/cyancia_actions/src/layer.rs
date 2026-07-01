@@ -16,7 +16,7 @@ use crate::ActionFunction;
 
 actions!([
     CreateNewLayerAction,
-    GroupActiveLayerAction,
+    GroupSelectedLayersAction,
     MoveLayerUpAction,
     MoveLayerDownAction,
     DeleteActiveLayerAction,
@@ -66,34 +66,43 @@ impl ActionFunction for CreateNewLayerAction {
     }
 }
 
-impl ActionFunction for GroupActiveLayerAction {
+impl ActionFunction for GroupSelectedLayersAction {
     fn trigger(&self, cx: &mut App) {
         let cmd = cx
             .update_current_canvas(|canvas, _| {
-                // TODO Support grouping multiple selected layers.
                 let group_name = canvas.image.next_name_of_layer("Group".to_string());
-                let active_layer_id = canvas.active_layer_id();
-                let active_layer_parent = canvas.parent_id_of_active_layer();
-                let parent = canvas
+                let sorted_selected_layers = canvas
                     .image
                     .layer_stack()
-                    .get_layer(&active_layer_parent)
+                    .sort_layers_insertion_safe(canvas.selected_layer_ids().iter().copied())
                     .unwrap();
-                let active_layer_index = parent.child_index(&active_layer_id).unwrap();
+                let children_layers = sorted_selected_layers
+                    .into_iter()
+                    .map(|l| {
+                        let (parent, index) =
+                            canvas.image.layer_stack().get_position_of(&l).unwrap();
+                        GroupedLayer {
+                            id: l,
+                            original_parent: *parent.id(),
+                            original_index: index,
+                        }
+                    })
+                    .collect();
+
+                let (active_layer_parent, active_layer_index) = canvas
+                    .image
+                    .layer_stack()
+                    .get_position_of(&canvas.active_layer_id())
+                    .unwrap();
 
                 let group_layer = LayerData::new_normal_group(group_name);
 
                 GroupLayerCommand {
                     canvas: canvas.id(),
                     group: group_layer,
-                    children: vec![GroupedLayer {
-                        id: active_layer_id,
-                        original_parent: active_layer_parent,
-                        original_index: active_layer_index,
-                    }],
-                    parent_id: active_layer_parent,
+                    children: children_layers,
+                    parent_id: *active_layer_parent.id(),
                     index: active_layer_index,
-                    previous_active_layer: active_layer_id,
                 }
             })
             .unwrap();

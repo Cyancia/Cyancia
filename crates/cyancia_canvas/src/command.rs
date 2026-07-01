@@ -352,8 +352,6 @@ pub struct GroupLayerCommand {
     pub children: Vec<GroupedLayer>,
     pub parent_id: LayerId,
     pub index: usize,
-    // TODO Set active layer to previous when undo
-    pub previous_active_layer: LayerId,
 }
 
 pub struct GroupedLayer {
@@ -397,11 +395,6 @@ impl UndoCommand for GroupLayerCommand {
 
             removed_nodes.remove(self.group.id()).unwrap();
 
-            // TODO: Here's actually a pitfall. We have to ensure the children are stored in correct order.
-            //       If child A at index 0 is before child B at index 1, they should be stored in the order
-            //       child A and child B, then this insertion works.
-            //       Otherwise B will be inserted before A, which is incorrect.
-            //       Sort it first probably.
             for child in &self.children {
                 canvas.image.layer_stack_mut().add_layer(
                     child.original_parent,

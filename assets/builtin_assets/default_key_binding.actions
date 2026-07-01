@@ -17,7 +17,7 @@
     },
     {
       "shortcut": "ctrl-g",
-      "action_name": "GroupActiveLayerAction",
+      "action_name": "GroupSelectedLayersAction",
       "context": "main_view"
     },
     {

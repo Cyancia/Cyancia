@@ -289,6 +289,23 @@ impl LayerStack {
         self.layers.insert(*layer.id(), layer);
     }
 
+    pub fn sort_layers_insertion_safe(
+        &self,
+        layers: impl IntoIterator<Item = LayerId>,
+    ) -> Option<Vec<LayerId>> {
+        let mut same_parent = HashMap::<LayerId, Vec<LayerId>>::new();
+        for layer in layers {
+            let parent = self.get_layer(&layer)?.parent?;
+            same_parent.entry(parent).or_default().push(layer);
+        }
+
+        for (parent, layers) in &mut same_parent {
+            layers.sort_by_cached_key(|l| self.get_layer(parent).unwrap().child_index(l).unwrap());
+        }
+
+        Some(same_parent.into_values().flatten().collect())
+    }
+
     pub fn len(&self) -> usize {
         self.layers.len()
     }
@@ -392,6 +409,16 @@ impl LayerStack {
 
     pub fn get_layer_mut(&mut self, layer_id: &LayerId) -> Option<&mut LayerStackNode> {
         self.layers.get_mut(layer_id)
+    }
+
+    pub fn get_parent_of(&self, layer_id: &LayerId) -> Option<&LayerStackNode> {
+        self.layers.get(self.layers.get(layer_id)?.parent()?)
+    }
+
+    pub fn get_position_of(&self, layer_id: &LayerId) -> Option<(&LayerStackNode, usize)> {
+        let parent = self.get_parent_of(layer_id)?;
+        let index = parent.child_index(layer_id)?;
+        Some((parent, index))
     }
 
     pub fn iter_layers_dfs_display_order_without_root(
