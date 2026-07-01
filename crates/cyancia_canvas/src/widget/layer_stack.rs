@@ -514,10 +514,10 @@ impl Render for LayerStackWidget {
             .p_2()
             .child(Select::new(&self.blend_mode_select_state))
             .child(
-                h_flex()
-                    .gap_2()
-                    .child("Opacity")
-                    .child(SpinSlider::new(&self.opacity_state).small()),
+                SpinSlider::new(&self.opacity_state)
+                    .small()
+                    .prefix("Opacity: ")
+                    .suffix("%"),
             );
 
         v_flex()

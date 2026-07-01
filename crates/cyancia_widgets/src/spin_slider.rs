@@ -1,8 +1,8 @@
 use gpui::{
-    App, AppContext, Bounds, ClickEvent, Context, DragMoveEvent, Empty, Entity, EntityId,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, Modifiers,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
-    Render, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Subscription,
+    AnyElement, App, AppContext, Bounds, ClickEvent, Context, DragMoveEvent, Empty, Entity,
+    EntityId, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
+    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, Render, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Subscription,
     TextAlign, Window, actions, div, prelude::FluentBuilder as _, px, relative,
 };
 use gpui_component::{
@@ -312,6 +312,8 @@ pub struct SpinSlider {
     size: Size,
     disabled: bool,
     style: StyleRefinement,
+    prefix: Option<AnyElement>,
+    suffix: Option<AnyElement>,
 }
 
 impl SpinSlider {
@@ -321,7 +323,19 @@ impl SpinSlider {
             size: Size::default(),
             disabled: false,
             style: StyleRefinement::default(),
+            prefix: None,
+            suffix: None,
         }
+    }
+
+    pub fn prefix(mut self, prefix: impl IntoElement) -> Self {
+        self.prefix = Some(prefix.into_any_element());
+        self
+    }
+
+    pub fn suffix(mut self, suffix: impl IntoElement) -> Self {
+        self.suffix = Some(suffix.into_any_element());
+        self
     }
 }
 
@@ -431,7 +445,9 @@ impl RenderOnce for SpinSlider {
                         .items_center()
                         .justify_center()
                         .text_color(text_color)
-                        .child(format!("{:.*}", precision, value)),
+                        .when_some(self.prefix, |this, pre| this.child(pre))
+                        .child(format!("{:.*}", precision, value))
+                        .when_some(self.suffix, |this, suf| this.child(suf)),
                 )
             });
 
