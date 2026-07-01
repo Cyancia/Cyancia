@@ -120,7 +120,7 @@ impl LayerStackWidget {
             SelectEvent::Confirm(Some(value)) => {
                 self.canvas
                     .update(cx, |canvas, cx| {
-                        canvas.active_layer_data_mut().blend_func = value.clone();
+                        canvas.active_layer_node_mut().data_mut().blend_func = value.clone();
                         // TODO use layer bound
                         let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(IRect {
                             min: IVec2::ZERO,
@@ -141,9 +141,9 @@ impl LayerStackWidget {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let active_layer = canvas.read(cx).active_layer_data();
+        let active_layer = canvas.read(cx).active_layer_node();
 
-        let blend_func = active_layer.blend_func.clone();
+        let blend_func = active_layer.data().blend_func.clone();
         self.blend_mode_select_state.update(cx, |state, cx| {
             state.set_selected_value(&blend_func, window, cx);
         });

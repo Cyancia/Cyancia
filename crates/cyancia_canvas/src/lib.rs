@@ -113,22 +113,6 @@ impl CCanvas {
             .expect("Active layer should always exist")
     }
 
-    pub fn active_layer_data(&self) -> &LayerData {
-        self.image
-            .layer_stack()
-            .get_layer(&self.active_layer)
-            .expect("Active layer should always exist")
-            .data()
-    }
-
-    pub fn active_layer_data_mut(&mut self) -> &mut LayerData {
-        self.image
-            .layer_stack_mut()
-            .get_layer_mut(&self.active_layer)
-            .expect("Active layer should always exist")
-            .data_mut()
-    }
-
     pub fn parent_id_of_active_layer(&self) -> LayerId {
         let l = self
             .image
