@@ -75,7 +75,7 @@ impl LayerStackWidget {
         });
 
         let rename_input_state = cx.new(|cx| InputState::new(window, cx));
-        let opacity_state = cx.new(|cx| SpinSliderState::new(window, cx));
+        let opacity_state = cx.new(|cx| SpinSliderState::new_percent(window, cx));
 
         let subscriptions = vec![
             cx.subscribe_in(

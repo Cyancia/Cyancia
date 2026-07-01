@@ -50,9 +50,6 @@ pub struct SpinSliderState {
     precision: usize,
     scale: SliderScale,
     // TODO Hold shift to slide more precisely
-    // TODO Value display scale
-    // TODO Prefix and suffix
-    // TODO Percentage slider preset
     pending_edit: bool,
     editing: bool,
     value_before_edit: f32,
@@ -61,18 +58,15 @@ pub struct SpinSliderState {
 }
 
 impl SpinSliderState {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let min = 0.0;
-        let max = 1.0;
-        let precision = 2;
+    const DEFAULT_PRECISION: usize = 2;
 
+    pub fn new(min: f32, max: f32, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input_state = cx.new(|cx| {
-            InputState::new(window, cx)
-                .mask_pattern(MaskPattern::Number {
-                    separator: None,
-                    fraction: Some(precision),
-                })
-                .default_value(format!("{:.*}", precision, min))
+            InputState::new(window, cx).default_value(format!(
+                "{:.*}",
+                Self::DEFAULT_PRECISION,
+                min
+            ))
         });
 
         let _subscriptions = vec![cx.subscribe_in(&input_state, window, Self::on_input_event)];
@@ -84,7 +78,7 @@ impl SpinSliderState {
             max,
             step: 0.01,
             scale: SliderScale::Linear,
-            precision,
+            precision: Self::DEFAULT_PRECISION,
             editing: false,
             value_before_edit: min,
             pending_edit: false,
@@ -92,16 +86,12 @@ impl SpinSliderState {
         }
     }
 
-    pub fn min(mut self, min: f32, cx: &mut Context<Self>) -> Self {
-        self.min = min;
-        self.set_value(self.value, cx);
-        self
+    pub fn new_01(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new(0.0, 1.0, window, cx)
     }
 
-    pub fn max(mut self, max: f32, cx: &mut Context<Self>) -> Self {
-        self.max = max;
-        self.set_value(self.value, cx);
-        self
+    pub fn new_percent(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new(0.0, 100.0, window, cx).precision(0, window, cx)
     }
 
     pub fn step(mut self, step: f32, cx: &mut Context<Self>) -> Self {
@@ -117,16 +107,6 @@ impl SpinSliderState {
         cx: &mut Context<Self>,
     ) -> Self {
         self.precision = precision;
-        self.input_state.update(cx, |state, cx| {
-            state.set_mask_pattern(
-                MaskPattern::Number {
-                    separator: None,
-                    fraction: Some(self.precision),
-                },
-                window,
-                cx,
-            );
-        });
         self.step = 0.1f32.powf(self.precision as f32);
         self.sync_input_from_value(window, cx);
         self
