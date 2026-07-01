@@ -211,7 +211,9 @@ impl SpinSliderState {
         let percentage =
             (window.mouse_position().x - event.bounds.origin.x) / event.bounds.size.width;
         let value = self.percentage_to_value(percentage);
-        self.set_value(value, cx);
+        let step = 0.1f32.powf(self.precision as f32);
+        let snapped = (value / step).round() * step;
+        self.set_value(snapped.clamp(self.min, self.max), cx);
         self.sync_input_from_value(window, cx);
     }
 
