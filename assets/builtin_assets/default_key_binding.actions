@@ -32,7 +32,7 @@
     },
     {
       "shortcut": "ctrl-delete",
-      "action_name": "DeleteActiveLayerAction",
+      "action_name": "DeleteSelectedLayersAction",
       "context": "main_view"
     },
     {

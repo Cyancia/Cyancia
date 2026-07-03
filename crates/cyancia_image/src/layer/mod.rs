@@ -1,11 +1,12 @@
 use std::{
     any::{Any, TypeId},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
 };
 
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use image::DynamicImage;
+use indexmap::IndexSet;
 use parse_display::Display;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -289,21 +290,78 @@ impl LayerStack {
         self.layers.insert(*layer.id(), layer);
     }
 
+    /// Returns the input layers that can be safely inserted back.
+    ///
+    /// The input layers must be sorted by depth.
     pub fn sort_layers_insertion_safe(
         &self,
         layers: impl IntoIterator<Item = LayerId>,
     ) -> Option<Vec<LayerId>> {
-        let mut same_parent = HashMap::<LayerId, Vec<LayerId>>::new();
+        // Insertion order: The deeper the earlier, the closer to the front in same parent, the earlier.
+        let mut cached_layer_depth = HashMap::new();
+        let mut same_parent = Vec::<HashMap<LayerId, Vec<LayerId>>>::new();
+
         for layer in layers {
             let parent = self.get_layer(&layer)?.parent?;
-            same_parent.entry(parent).or_default().push(layer);
+            let depth = *cached_layer_depth
+                .entry(parent)
+                .or_insert_with(|| self.depth_of(&parent).unwrap())
+                as usize;
+
+            if depth >= same_parent.len() {
+                same_parent.resize(depth + 1, HashMap::new());
+            }
+
+            same_parent[depth].entry(parent).or_default().push(layer);
         }
 
-        for (parent, layers) in &mut same_parent {
-            layers.sort_by_cached_key(|l| self.get_layer(parent).unwrap().child_index(l).unwrap());
+        for layers in &mut same_parent {
+            for (parent, layers) in layers.iter_mut() {
+                layers.sort_by_cached_key(|l| {
+                    self.get_layer(parent).unwrap().child_index(l).unwrap()
+                });
+            }
         }
 
-        Some(same_parent.into_values().flatten().collect())
+        Some(
+            same_parent
+                .into_iter()
+                .rev()
+                .flat_map(HashMap::into_values)
+                .flatten()
+                .collect(),
+        )
+    }
+
+    /// Returns a list of layers without overlapping ancestors and sorted by depth descending.
+    ///
+    /// The input layers must be sorted by depth descending.
+    pub fn reduce_ancestors(
+        &self,
+        layers: impl IntoIterator<Item = LayerId>,
+    ) -> Option<Vec<LayerId>> {
+        let mut result = IndexSet::new();
+        for layer in layers {
+            let mut overlapped = false;
+            for ancestor in self.ancestors(&layer) {
+                if result.contains(&ancestor) {
+                    overlapped = true;
+                    break;
+                }
+            }
+            if !overlapped {
+                result.insert(layer);
+            }
+        }
+        Some(result.into_iter().collect())
+    }
+
+    pub fn sort_by_depth_asc(&self, layers: &mut Vec<LayerId>) {
+        layers.sort_by_cached_key(|l| self.depth_of(l));
+    }
+
+    pub fn sort_by_depth_desc(&self, layers: &mut Vec<LayerId>) {
+        layers.sort_by_cached_key(|l| self.depth_of(l).map(|d| -(d as i32)));
     }
 
     pub fn len(&self) -> usize {

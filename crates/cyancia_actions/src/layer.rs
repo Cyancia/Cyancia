@@ -19,7 +19,7 @@ actions!([
     GroupSelectedLayersAction,
     MoveLayerUpAction,
     MoveLayerDownAction,
-    DeleteActiveLayerAction,
+    DeleteSelectedLayersAction,
     SelectPreviousLayerAction,
     SelectNextLayerAction,
 ]);
@@ -262,14 +262,17 @@ impl ActionFunction for MoveLayerDownAction {
     }
 }
 
-impl ActionFunction for DeleteActiveLayerAction {
+impl ActionFunction for DeleteSelectedLayersAction {
     fn trigger(&self, cx: &mut App) {
         let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
 
-        if let Ok(cmd) =
-            DeleteLayersCommand::new(canvas, vec![canvas.active_layer_id()]).logged_err()
+        if let Ok(cmd) = DeleteLayersCommand::new(
+            canvas,
+            canvas.selected_layer_ids().iter().copied().collect(),
+        )
+        .logged_err()
         {
             cx.push_undo_command_to_current(cmd).log_err();
         }

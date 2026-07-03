@@ -485,26 +485,8 @@ impl DeleteLayersCommand {
     pub fn new(canvas: &CCanvas, mut layers: Vec<LayerId>) -> anyhow::Result<Self> {
         layers.sort_by_cached_key(|l| canvas.image.layer_stack().depth_of(l));
 
-        let mut filtered_layers = HashSet::with_capacity(layers.len());
-        let mut i = 0;
-
-        'outer: while i < layers.len() {
-            let layer = layers[i];
-
-            for maybe_ancestor in &filtered_layers {
-                if canvas
-                    .image
-                    .layer_stack()
-                    .is_ancestor(maybe_ancestor, &layer)
-                {
-                    i += 1;
-                    continue 'outer;
-                }
-            }
-
-            filtered_layers.insert(layer);
-            i += 1;
-        }
+        canvas.image.layer_stack().sort_by_depth_desc(&mut layers);
+        let filtered_layers = canvas.image.layer_stack().reduce_ancestors(layers).unwrap();
 
         // Reject if all layers are going to be deleted, other than the root layer.
         {
@@ -562,10 +544,16 @@ impl DeleteLayersCommand {
             Some(new_active_layer)
         };
 
+        let sorted_layers = canvas
+            .image
+            .layer_stack()
+            .sort_layers_insertion_safe(filtered_layers)
+            .unwrap();
+
         Ok(Self {
             canvas: canvas.id(),
             active_layer_from_to: new_active_layer.map(|new| (canvas.active_layer_id(), new)),
-            delete_roots: filtered_layers.into_iter().collect(),
+            delete_roots: sorted_layers,
             nodes: None,
         })
     }
@@ -584,7 +572,7 @@ impl UndoCommand for DeleteLayersCommand {
             }
 
             let mut nodes = Vec::with_capacity(self.delete_roots.len());
-            for root in &self.delete_roots {
+            for root in self.delete_roots.iter().rev() {
                 let (parent, index) = canvas.image.layer_stack().get_layer_position(root).unwrap();
                 let deleted = canvas.image.layer_stack_mut().remove_layer_hierarchy(root);
                 nodes.push(DeletedNode {
@@ -615,7 +603,7 @@ impl UndoCommand for DeleteLayersCommand {
                 bail!("Called undo twice consecutively is not valid")
             };
 
-            for node in nodes {
+            for node in nodes.into_iter().rev() {
                 canvas.image.layer_stack_mut().add_layer_hierarchy(
                     node.original_parent,
                     node.original_index,
