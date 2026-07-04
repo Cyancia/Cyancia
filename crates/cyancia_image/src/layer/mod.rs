@@ -291,9 +291,7 @@ impl LayerStack {
     }
 
     /// Returns the input layers that can be safely inserted back.
-    ///
-    /// The input layers must be sorted by depth.
-    pub fn sort_layers_insertion_safe(
+    pub fn sort_layers_insert_back_safe(
         &self,
         layers: impl IntoIterator<Item = LayerId>,
     ) -> Option<Vec<LayerId>> {
@@ -318,7 +316,10 @@ impl LayerStack {
         for layers in &mut same_parent {
             for (parent, layers) in layers.iter_mut() {
                 layers.sort_by_cached_key(|l| {
-                    self.get_layer(parent).unwrap().child_index(l).unwrap()
+                    let index = self.get_layer(parent).unwrap().child_index(l).unwrap();
+                    // Callers are most likely to use the returned vec reversely.
+                    // Redo commands like delete layers will delete layers in reverse order.
+                    -(index as isize)
                 });
             }
         }

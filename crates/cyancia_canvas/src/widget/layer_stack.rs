@@ -27,7 +27,7 @@ use serde::Deserialize;
 
 use crate::{
     CCanvas, CanvasUndoStackAppExt,
-    command::{MoveLayerCommand, RenameLayerCommand},
+    command::{MoveLayersCommand, RenameLayerCommand},
     event::{CanvasActiveLayerChanged, CanvasLayerStackUpdated, CanvasUpdated},
 };
 
@@ -200,15 +200,12 @@ impl LayerStackWidget {
 
         let canvas_id = canvas.id();
 
-        let command = MoveLayerCommand {
-            canvas: canvas_id,
-            layer: info.id,
-            original_parent,
-            original_index,
-            new_parent: drop_info.parent,
-            new_index: drop_info.index,
-        };
-
+        let command = MoveLayersCommand::new(
+            canvas,
+            canvas.selected_layer_ids().iter().copied(),
+            drop_info.parent,
+            drop_info.index,
+        );
         cx.push_undo_command(&canvas_id, command).ok();
         canvas_entity.update(cx, |_, cx| {
             cx.emit(CanvasLayerStackUpdated {});

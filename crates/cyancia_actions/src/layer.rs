@@ -1,7 +1,8 @@
 use cyancia_canvas::{
     CanvasAppExt, CanvasUndoStackAppExt,
     command::{
-        DeleteLayersCommand, GroupLayerCommand, GroupedLayer, InsertLayerCommand, MoveLayerCommand,
+        DeleteLayersCommand, GroupLayerCommand, InsertLayerCommand, LayerWithPosition,
+        MoveLayersCommand,
     },
 };
 use cyancia_image::{
@@ -74,14 +75,14 @@ impl ActionFunction for GroupSelectedLayersAction {
                 let sorted_selected_layers = canvas
                     .image
                     .layer_stack()
-                    .sort_layers_insertion_safe(canvas.selected_layer_ids().iter().copied())
+                    .sort_layers_insert_back_safe(canvas.selected_layer_ids().iter().copied())
                     .unwrap();
                 let children_layers = sorted_selected_layers
                     .into_iter()
                     .map(|l| {
                         let (parent, index) =
                             canvas.image.layer_stack().get_position_of(&l).unwrap();
-                        GroupedLayer {
+                        LayerWithPosition {
                             id: l,
                             original_parent: *parent.id(),
                             original_index: index,
@@ -172,14 +173,12 @@ impl ActionFunction for MoveLayerUpAction {
             return;
         };
 
-        cx.push_undo_command_to_current(MoveLayerCommand {
-            canvas: canvas.id(),
-            layer: active_layer_id,
-            original_parent: active_layer_parent,
-            original_index: active_layer_index,
-            new_parent,
-            new_index,
-        })
+        cx.push_undo_command_to_current(MoveLayersCommand::new(
+            canvas,
+            [active_layer_id],
+            active_layer_parent,
+            active_layer_index,
+        ))
         .log_err();
     }
 }
@@ -250,14 +249,12 @@ impl ActionFunction for MoveLayerDownAction {
             return;
         };
 
-        cx.push_undo_command_to_current(MoveLayerCommand {
-            canvas: canvas.id(),
-            layer: active_layer_id,
-            original_parent: active_layer_parent,
-            original_index: active_layer_index,
+        cx.push_undo_command_to_current(MoveLayersCommand::new(
+            canvas,
+            [active_layer_id],
             new_parent,
             new_index,
-        })
+        ))
         .log_err();
     }
 }

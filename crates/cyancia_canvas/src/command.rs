@@ -349,12 +349,12 @@ impl UndoCommand for InsertLayerCommand {
 pub struct GroupLayerCommand {
     pub canvas: CanvasId,
     pub group: LayerData,
-    pub children: Vec<GroupedLayer>,
+    pub children: Vec<LayerWithPosition>,
     pub parent_id: LayerId,
     pub index: usize,
 }
 
-pub struct GroupedLayer {
+pub struct LayerWithPosition {
     pub id: LayerId,
     pub original_parent: LayerId,
     pub original_index: usize,
@@ -413,27 +413,63 @@ impl UndoCommand for GroupLayerCommand {
     }
 }
 
-pub struct MoveLayerCommand {
-    pub canvas: CanvasId,
-    pub layer: LayerId,
-    pub original_parent: LayerId,
-    pub original_index: usize,
-    pub new_parent: LayerId,
-    pub new_index: usize,
-    // TODO Set active layer to previous when undo
+pub struct MoveLayersCommand {
+    canvas: CanvasId,
+    layers: Vec<LayerWithPosition>,
+    new_parent: LayerId,
+    new_index: usize,
 }
 
-impl UndoCommand for MoveLayerCommand {
+impl MoveLayersCommand {
+    pub fn new(
+        canvas: &CCanvas,
+        layers: impl IntoIterator<Item = LayerId>,
+        new_parent: LayerId,
+        new_index: usize,
+    ) -> Self {
+        let reduced_layers = canvas.image.layer_stack().reduce_ancestors(layers).unwrap();
+
+        let sorted = canvas
+            .image
+            .layer_stack()
+            .sort_layers_insert_back_safe(reduced_layers)
+            .unwrap();
+
+        let layers = sorted
+            .into_iter()
+            .map(|l| {
+                let (parent, index) = canvas.image.layer_stack().get_position_of(&l).unwrap();
+                LayerWithPosition {
+                    id: l,
+                    original_parent: *parent.id(),
+                    original_index: index,
+                }
+            })
+            .collect();
+
+        Self {
+            canvas: canvas.id(),
+            layers,
+            new_parent,
+            new_index,
+        }
+    }
+}
+
+impl UndoCommand for MoveLayersCommand {
     fn label(&self) -> Cow<'static, str> {
         "Move Layer".into()
     }
 
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, _| {
-            canvas
-                .image
-                .layer_stack_mut()
-                .move_layer(self.layer, self.new_parent, self.new_index);
+            for layer in self.layers.iter().rev() {
+                canvas.image.layer_stack_mut().move_layer(
+                    layer.id,
+                    self.new_parent,
+                    self.new_index,
+                );
+            }
         });
         cx.refresh_windows();
 
@@ -442,28 +478,17 @@ impl UndoCommand for MoveLayerCommand {
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, _| {
-            canvas.image.layer_stack_mut().move_layer(
-                self.layer,
-                self.original_parent,
-                self.original_index,
-            );
+            for layer in self.layers.iter().rev() {
+                canvas.image.layer_stack_mut().move_layer(
+                    layer.id,
+                    layer.original_parent,
+                    layer.original_index,
+                );
+            }
         });
         cx.refresh_windows();
 
         Ok(())
-    }
-
-    fn can_cancel_out(&self, rhs: &dyn UndoCommand) -> bool {
-        let Some(rhs) = rhs.downcast_ref::<Self>() else {
-            return false;
-        };
-
-        self.canvas == rhs.canvas
-            && self.layer == rhs.layer
-            && self.new_parent == rhs.original_parent
-            && self.new_index == rhs.original_index
-            && self.original_parent == rhs.new_parent
-            && self.original_index == rhs.new_index
     }
 }
 
@@ -547,7 +572,7 @@ impl DeleteLayersCommand {
         let sorted_layers = canvas
             .image
             .layer_stack()
-            .sort_layers_insertion_safe(filtered_layers)
+            .sort_layers_insert_back_safe(filtered_layers)
             .unwrap();
 
         Ok(Self {
