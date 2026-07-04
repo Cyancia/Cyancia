@@ -1823,6 +1823,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_color"
+version = "0.1.0"
+
+[[package]]
 name = "cyancia_image"
 version = "0.1.0"
 dependencies = [
