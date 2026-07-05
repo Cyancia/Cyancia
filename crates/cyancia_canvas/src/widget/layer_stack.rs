@@ -9,7 +9,7 @@ use cyancia_widgets::spin_slider::{SpinSlider, SpinSliderEvent, SpinSliderState}
 use glam::IVec2;
 use gpui::{
     Action, AppContext, Bounds, Context, DragMoveEvent, Entity, Focusable, InteractiveElement,
-    IntoElement, Modifiers, ParentElement, Pixels, Point, Render, SharedString,
+    IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Point, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, actions, div,
     prelude::FluentBuilder, px,
 };
@@ -479,14 +479,14 @@ impl Render for LayerStackWidget {
                         cx.new(|_| info.clone().with_position(position))
                     })
                     .on_drag_move(cx.listener(Self::on_layer_drag_move))
-                    .on_click({
+                    .on_mouse_down(MouseButton::Left, {
                         let canvas_entity = canvas_entity.downgrade();
                         move |event, _, cx| {
                             canvas_entity
                                 .update(cx, |canvas, cx| {
-                                    if event.modifiers() == Modifiers::control() {
+                                    if event.modifiers == Modifiers::control() {
                                         canvas.toggle_layer_selection_and_active(layer_id, cx);
-                                    } else if event.modifiers() == Modifiers::shift() {
+                                    } else if event.modifiers == Modifiers::shift() {
                                         let active_layer = canvas.active_layer_id();
                                         if layer_id == active_layer {
                                             return;
@@ -508,7 +508,11 @@ impl Render for LayerStackWidget {
                                         }
                                         canvas.set_active_layer(layer_id, cx);
                                     } else {
-                                        canvas.set_active_layer_and_clear_select(layer_id, cx);
+                                        if !canvas.selected_layer_ids().contains(&layer_id) {
+                                            canvas.set_active_layer_and_clear_select(layer_id, cx);
+                                        } else {
+                                            canvas.set_active_layer(layer_id, cx);
+                                        }
                                     }
                                 })
                                 .ok();
