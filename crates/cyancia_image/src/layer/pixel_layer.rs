@@ -1,6 +1,11 @@
 use std::any::TypeId;
 
-use cyancia_render::bind_group_layout_entries::{BindGroupLayoutEntries, binding_types};
+use cyancia_render::{
+    bind_group_entries::DynamicBindGroupEntries,
+    bind_group_layout_entries::{
+        BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
+    },
+};
 use encase::ShaderType;
 use glam::UVec3;
 use wesl::{VirtualResolver, Wesl};
@@ -112,7 +117,7 @@ impl Layer for PixelLayer {
             source: ShaderSource::Wgsl(without_overrider_shader.into()),
         });
 
-        let mut entries = BindGroupLayoutEntries::sequential(
+        let mut entries = DynamicBindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
                 binding_types::texture_storage_2d_array(
@@ -139,28 +144,25 @@ impl Layer for PixelLayer {
                 entries: &entries,
             });
 
-        entries.extend([
-            BindGroupLayoutEntry {
-                binding: 6,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::StorageTexture {
-                    access: StorageTextureAccess::ReadOnly,
-                    format: image.texel_type().wgpu_format(),
-                    view_dimension: TextureViewDimension::D2Array,
-                },
-                count: None,
-            },
-            BindGroupLayoutEntry {
-                binding: 7,
-                visibility: ShaderStages::COMPUTE,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(GpuTileInfo::min_size()),
-                },
-                count: None,
-            },
-        ]);
+        entries.extend(
+            BindGroupLayoutEntries::with_indices(
+                ShaderStages::COMPUTE,
+                (
+                    (
+                        6,
+                        binding_types::texture_storage_2d_array(
+                            image.texel_type().wgpu_format(),
+                            StorageTextureAccess::ReadOnly,
+                        ),
+                    ),
+                    (
+                        7,
+                        binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    ),
+                ),
+            )
+            .as_ref(),
+        );
         let with_overrider_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: "pixel layer blend bind group layout with overrider".into(),
             entries: &entries,
@@ -205,8 +207,6 @@ impl Layer for PixelLayer {
             image_texel_type: image.texel_type(),
             with_overrider_pipeline,
             without_overrider_pipeline,
-            with_overrider_layout,
-            without_overrider_layout,
             dispatch: None,
         };
         compositor.insert_blend_cache(layer_id, cache);
@@ -232,82 +232,32 @@ impl Layer for PixelLayer {
             return;
         };
 
-        let (bind_group, pipeline) =
+        let mut entries = DynamicBindGroupEntries::sequential((
+            &src.texture,
+            src.tile_info_buffer.as_entire_binding(),
+            dst_buffer,
+            dst_tile_info.as_entire_binding(),
+            output,
+            output_tile_info.as_entire_binding(),
+        ));
+
+        let pipeline =
             if let Some(overrider) = overriders.get_overrider::<PixelPreviewOverrider>(&layer_id) {
-                let bg = device.create_bind_group(&BindGroupDescriptor {
-                    label: "pixel layer blend bind group with overrider".into(),
-                    layout: &cache.with_overrider_layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::TextureView(&src.texture),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: src.tile_info_buffer.as_entire_binding(),
-                        },
-                        BindGroupEntry {
-                            binding: 2,
-                            resource: BindingResource::TextureView(dst_buffer),
-                        },
-                        BindGroupEntry {
-                            binding: 3,
-                            resource: dst_tile_info.as_entire_binding(),
-                        },
-                        BindGroupEntry {
-                            binding: 4,
-                            resource: BindingResource::TextureView(output),
-                        },
-                        BindGroupEntry {
-                            binding: 5,
-                            resource: output_tile_info.as_entire_binding(),
-                        },
-                        BindGroupEntry {
-                            binding: 6,
-                            resource: BindingResource::TextureView(&overrider.texture),
-                        },
-                        BindGroupEntry {
-                            binding: 7,
-                            resource: overrider.tile_info_buffer.as_entire_binding(),
-                        },
-                    ],
-                });
+                entries = entries.extend_sequential((
+                    &overrider.texture,
+                    overrider.tile_info_buffer.as_entire_binding(),
+                ));
 
-                (bg, cache.with_overrider_pipeline.clone())
+                cache.with_overrider_pipeline.clone()
             } else {
-                let bg = device.create_bind_group(&BindGroupDescriptor {
-                    label: "pixel layer blend bind group without overrider".into(),
-                    layout: &cache.without_overrider_layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::TextureView(&src.texture),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: src.tile_info_buffer.as_entire_binding(),
-                        },
-                        BindGroupEntry {
-                            binding: 2,
-                            resource: BindingResource::TextureView(dst_buffer),
-                        },
-                        BindGroupEntry {
-                            binding: 3,
-                            resource: dst_tile_info.as_entire_binding(),
-                        },
-                        BindGroupEntry {
-                            binding: 4,
-                            resource: BindingResource::TextureView(output),
-                        },
-                        BindGroupEntry {
-                            binding: 5,
-                            resource: output_tile_info.as_entire_binding(),
-                        },
-                    ],
-                });
-
-                (bg, cache.without_overrider_pipeline.clone())
+                cache.without_overrider_pipeline.clone()
             };
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: "pixel layer blend bind group".into(),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &entries,
+        });
 
         let workgroup_count =
             UVec3::new(image.size().x.div_ceil(16), image.size().y.div_ceil(16), 1);
@@ -345,7 +295,5 @@ pub struct PixelBlendCache {
     image_texel_type: TexelType,
     with_overrider_pipeline: ComputePipeline,
     without_overrider_pipeline: ComputePipeline,
-    with_overrider_layout: BindGroupLayout,
-    without_overrider_layout: BindGroupLayout,
     dispatch: Option<(ComputePipeline, BindGroup, UVec3)>,
 }

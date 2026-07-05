@@ -1,7 +1,10 @@
 use std::any::TypeId;
 
 use bevy_math::IRect;
-use cyancia_render::bind_group_layout_entries::{BindGroupLayoutEntries, binding_types};
+use cyancia_render::{
+    bind_group_entries::BindGroupEntries,
+    bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
+};
 use glam::{IVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
@@ -206,34 +209,15 @@ impl Layer for GroupLayer {
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: "layer blend bind group".into(),
             layout: &cache.layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(
-                        &cache.intermediate.textures()[1 - next_output],
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: cache.intermediate.tile_info_buffer().as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(dst_buffer),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: dst_tile_info.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 4,
-                    resource: BindingResource::TextureView(output),
-                },
-                BindGroupEntry {
-                    binding: 5,
-                    resource: output_tile_info.as_entire_binding(),
-                },
-            ],
+            entries: BindGroupEntries::sequential((
+                &cache.intermediate.textures()[1 - next_output],
+                cache.intermediate.tile_info_buffer().as_entire_binding(),
+                dst_buffer,
+                dst_tile_info.as_entire_binding(),
+                output,
+                output_tile_info.as_entire_binding(),
+            ))
+            .as_ref(),
         });
 
         let workgroup_count =
@@ -253,7 +237,9 @@ impl Layer for GroupLayer {
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
         for child_node in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(&child_node).unwrap();
-            child_layer.data().dispatch_blend(compositor, pass, image, tiles);
+            child_layer
+                .data()
+                .dispatch_blend(compositor, pass, image, tiles);
         }
 
         let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer_id) else {
