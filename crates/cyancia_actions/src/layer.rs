@@ -6,7 +6,7 @@ use cyancia_canvas::{
     },
 };
 use cyancia_image::{
-    layer::LayerData,
+    layer::{LayerData, LayerPosition},
     texel::TexelType,
     tile::{GpuLayerInfo, TileStorageAppExt},
 };
@@ -128,13 +128,8 @@ impl ActionFunction for MoveLayerUpAction {
             .layer_stack()
             .get_layer(&active_layer_parent)
             .expect("Parent of active layer should always exist");
-        let active_layer_index = active_layer_parent_node
-            .children()
-            .iter()
-            .position(|child| *child == active_layer_id)
-            .expect("Active layer should always be a child of its parent");
 
-        let (new_parent, new_index) = if let Some(sibling_id) =
+        let (new_parent, new_position) = if let Some(sibling_id) =
             active_layer_parent_node.child_above(&active_layer_id)
         {
             // Parent node has a sibling. So the node won't go out of parent node.
@@ -145,33 +140,17 @@ impl ActionFunction for MoveLayerUpAction {
                 .expect("Sibling layer should always exist")
             {
                 // Sibling node can have active layer as children, so move active layer into sibling node.
-                (sibling_id, 0)
+                (sibling_id, LayerPosition::background())
             } else {
                 // If can't, swap them.
-                let active_layer_parent_node = canvas
-                    .image
-                    .layer_stack()
-                    .get_layer(&active_layer_parent)
-                    .expect("Parent of active layer should always exist");
-                (
-                    active_layer_parent,
-                    active_layer_parent_node.child_index(&sibling_id).unwrap(),
-                )
+                (active_layer_parent, LayerPosition::above(sibling_id))
             }
         } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent().copied()
         {
             // Active node is the last child, so we are moving it out of its parent.
-            let active_layer_parent_parent_node = canvas
-                .image
-                .layer_stack()
-                .get_layer(&active_layer_parent_parent)
-                .expect("Parent of parent of active layer should always exist");
             (
                 active_layer_parent_parent,
-                active_layer_parent_parent_node
-                    .child_index(&active_layer_parent)
-                    .unwrap()
-                    + 1,
+                LayerPosition::above(active_layer_parent),
             )
         } else {
             return;
@@ -180,8 +159,8 @@ impl ActionFunction for MoveLayerUpAction {
         cx.push_undo_command_to_current(MoveLayersCommand::new(
             canvas,
             [active_layer_id],
-            active_layer_parent,
-            active_layer_index,
+            new_parent,
+            new_position,
         ))
         .log_err();
     }
@@ -200,13 +179,8 @@ impl ActionFunction for MoveLayerDownAction {
             .layer_stack()
             .get_layer(&active_layer_parent)
             .expect("Parent of active layer should always exist");
-        let active_layer_index = active_layer_parent_node
-            .children()
-            .iter()
-            .position(|child| *child == active_layer_id)
-            .expect("Active layer should always be a child of its parent");
 
-        let (new_parent, new_index) = if let Some(sibling_id) =
+        let (new_parent, new_position) = if let Some(sibling_id) =
             active_layer_parent_node.child_below(&active_layer_id)
         {
             // Parent node has a sibling. So the node won't go out of parent node.
@@ -217,37 +191,17 @@ impl ActionFunction for MoveLayerDownAction {
                 .expect("Sibling layer should always exist")
             {
                 // Sibling node can have active layer as children, so move active layer into sibling node.
-                let sibling_node = canvas
-                    .image
-                    .layer_stack()
-                    .get_layer(&sibling_id)
-                    .expect("Sibling layer should always exist");
-                (sibling_id, sibling_node.n_children())
+                (sibling_id, LayerPosition::foreground())
             } else {
                 // If can't, swap them.
-                let active_layer_parent_node = canvas
-                    .image
-                    .layer_stack()
-                    .get_layer(&active_layer_parent)
-                    .expect("Parent of active layer should always exist");
-                (
-                    active_layer_parent,
-                    active_layer_parent_node.child_index(&sibling_id).unwrap(),
-                )
+                (active_layer_parent, LayerPosition::below(sibling_id))
             }
         } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent().copied()
         {
             // Active node is the first child, so we are moving it out of its parent.
-            let active_layer_parent_parent_node = canvas
-                .image
-                .layer_stack()
-                .get_layer(&active_layer_parent_parent)
-                .expect("Parent of parent of active layer should always exist");
             (
                 active_layer_parent_parent,
-                active_layer_parent_parent_node
-                    .child_index(&active_layer_parent)
-                    .unwrap(),
+                LayerPosition::below(active_layer_parent),
             )
         } else {
             return;
@@ -257,7 +211,7 @@ impl ActionFunction for MoveLayerDownAction {
             canvas,
             [active_layer_id],
             new_parent,
-            new_index,
+            new_position,
         ))
         .log_err();
     }

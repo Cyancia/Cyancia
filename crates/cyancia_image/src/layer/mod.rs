@@ -631,7 +631,7 @@ impl LayerStackNode {
             LayerPosition::Above(Some(sibling_id)) => Some(self.child_index(&sibling_id)? + 1),
             LayerPosition::Above(None) => Some(0),
             LayerPosition::Below(Some(sibling_id)) => self.child_index(&sibling_id),
-            LayerPosition::Below(None) => Some(self.children.len() - 1),
+            LayerPosition::Below(None) => Some(self.children.len()),
         }
     }
 
