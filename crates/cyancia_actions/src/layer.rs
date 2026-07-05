@@ -121,44 +121,47 @@ impl ActionFunction for MoveLayerUpAction {
         let Some(canvas) = cx.read_current_canvas() else {
             return;
         };
-        let active_layer_id = canvas.active_layer_id();
-        let active_layer_parent = canvas.parent_id_of_active_layer();
-        let active_layer_parent_node = canvas
+
+        let mut layers = canvas
+            .selected_layer_ids()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        canvas.image.layer_stack().sort_by_visual_index(&mut layers);
+
+        let head = layers.last().copied().unwrap();
+        let head_parent = canvas.image.layer_stack().get_parent_of(&head).unwrap();
+        let head_parent_node = canvas
             .image
             .layer_stack()
-            .get_layer(&active_layer_parent)
-            .expect("Parent of active layer should always exist");
+            .get_layer(head_parent.id())
+            .unwrap();
 
-        let (new_parent, new_position) = if let Some(sibling_id) =
-            active_layer_parent_node.child_above(&active_layer_id)
-        {
-            // Parent node has a sibling. So the node won't go out of parent node.
-            if canvas
-                .image
-                .layer_stack()
-                .can_have_children_of(&sibling_id, &active_layer_id)
-                .expect("Sibling layer should always exist")
-            {
-                // Sibling node can have active layer as children, so move active layer into sibling node.
-                (sibling_id, LayerPosition::background())
+        let (new_parent, new_position) =
+            if let Some(sibling_id) = head_parent_node.child_above(&head) {
+                // Parent node has a sibling. So the node won't go out of parent node.
+                if canvas
+                    .image
+                    .layer_stack()
+                    .can_have_children_of(&sibling_id, &head)
+                    .unwrap()
+                {
+                    // Sibling node can have active layer as children, so move active layer into sibling node.
+                    (sibling_id, LayerPosition::background())
+                } else {
+                    // If can't, swap them.
+                    (*head_parent.id(), LayerPosition::above(sibling_id))
+                }
+            } else if let Some(head_parent_parent) = head_parent_node.parent().copied() {
+                // Active node is the last child, so we are moving it out of its parent.
+                (head_parent_parent, LayerPosition::above(*head_parent.id()))
             } else {
-                // If can't, swap them.
-                (active_layer_parent, LayerPosition::above(sibling_id))
-            }
-        } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent().copied()
-        {
-            // Active node is the last child, so we are moving it out of its parent.
-            (
-                active_layer_parent_parent,
-                LayerPosition::above(active_layer_parent),
-            )
-        } else {
-            return;
-        };
+                return;
+            };
 
         cx.push_undo_command_to_current(MoveLayersCommand::new(
             canvas,
-            [active_layer_id],
+            layers,
             new_parent,
             new_position,
         ))
@@ -172,44 +175,46 @@ impl ActionFunction for MoveLayerDownAction {
             return;
         };
 
-        let active_layer_id = canvas.active_layer_id();
-        let active_layer_parent = canvas.parent_id_of_active_layer();
-        let active_layer_parent_node = canvas
+        let mut layers = canvas
+            .selected_layer_ids()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        canvas.image.layer_stack().sort_by_visual_index(&mut layers);
+
+        let tail = layers.first().copied().unwrap();
+        let tail_parent = canvas.image.layer_stack().get_parent_of(&tail).unwrap();
+        let tail_parent_node = canvas
             .image
             .layer_stack()
-            .get_layer(&active_layer_parent)
-            .expect("Parent of active layer should always exist");
+            .get_layer(tail_parent.id())
+            .unwrap();
 
-        let (new_parent, new_position) = if let Some(sibling_id) =
-            active_layer_parent_node.child_below(&active_layer_id)
-        {
-            // Parent node has a sibling. So the node won't go out of parent node.
-            if canvas
-                .image
-                .layer_stack()
-                .can_have_children_of(&sibling_id, &active_layer_id)
-                .expect("Sibling layer should always exist")
-            {
-                // Sibling node can have active layer as children, so move active layer into sibling node.
-                (sibling_id, LayerPosition::foreground())
+        let (new_parent, new_position) =
+            if let Some(sibling_id) = tail_parent_node.child_below(&tail) {
+                // Parent node has a sibling. So the node won't go out of parent node.
+                if canvas
+                    .image
+                    .layer_stack()
+                    .can_have_children_of(&sibling_id, &tail)
+                    .expect("Sibling layer should always exist")
+                {
+                    // Sibling node can have active layer as children, so move active layer into sibling node.
+                    (sibling_id, LayerPosition::foreground())
+                } else {
+                    // If can't, swap them.
+                    (*tail_parent.id(), LayerPosition::below(sibling_id))
+                }
+            } else if let Some(tail_parent_parent) = tail_parent_node.parent().copied() {
+                // Active node is the first child, so we are moving it out of its parent.
+                (tail_parent_parent, LayerPosition::below(*tail_parent.id()))
             } else {
-                // If can't, swap them.
-                (active_layer_parent, LayerPosition::below(sibling_id))
-            }
-        } else if let Some(active_layer_parent_parent) = active_layer_parent_node.parent().copied()
-        {
-            // Active node is the first child, so we are moving it out of its parent.
-            (
-                active_layer_parent_parent,
-                LayerPosition::below(active_layer_parent),
-            )
-        } else {
-            return;
-        };
+                return;
+            };
 
         cx.push_undo_command_to_current(MoveLayersCommand::new(
             canvas,
-            [active_layer_id],
+            layers,
             new_parent,
             new_position,
         ))

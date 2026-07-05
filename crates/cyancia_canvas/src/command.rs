@@ -463,13 +463,24 @@ impl UndoCommand for MoveLayersCommand {
     }
 
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            for layer in &self.layers {
-                canvas.image.layer_stack_mut().move_layer(
-                    layer.id,
-                    self.new_parent,
-                    self.new_position,
-                );
+        cx.update_canvas(&self.canvas, |canvas, _| match self.new_position {
+            LayerPosition::Above(_) => {
+                for layer in self.layers.iter().rev() {
+                    canvas.image.layer_stack_mut().move_layer(
+                        layer.id,
+                        self.new_parent,
+                        self.new_position,
+                    );
+                }
+            }
+            LayerPosition::Absolute(_) | LayerPosition::Below(_) => {
+                for layer in self.layers.iter() {
+                    canvas.image.layer_stack_mut().move_layer(
+                        layer.id,
+                        self.new_parent,
+                        self.new_position,
+                    );
+                }
             }
         });
         cx.refresh_windows();
@@ -478,13 +489,24 @@ impl UndoCommand for MoveLayersCommand {
     }
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _| {
-            for layer in &self.layers {
-                canvas.image.layer_stack_mut().move_layer(
-                    layer.id,
-                    layer.original_parent,
-                    LayerPosition::Above(layer.original_above),
-                );
+        cx.update_canvas(&self.canvas, |canvas, _| match self.new_position {
+            LayerPosition::Above(_) => {
+                for layer in self.layers.iter().rev() {
+                    canvas.image.layer_stack_mut().move_layer(
+                        layer.id,
+                        layer.original_parent,
+                        LayerPosition::Above(layer.original_above),
+                    );
+                }
+            }
+            LayerPosition::Absolute(_) | LayerPosition::Below(_) => {
+                for layer in self.layers.iter() {
+                    canvas.image.layer_stack_mut().move_layer(
+                        layer.id,
+                        layer.original_parent,
+                        LayerPosition::Above(layer.original_above),
+                    );
+                }
             }
         });
         cx.refresh_windows();

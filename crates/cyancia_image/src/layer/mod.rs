@@ -370,6 +370,41 @@ impl LayerStack {
         )
     }
 
+    pub fn sort_by_visual_index(&self, layers: &mut [LayerId]) {
+        layers.sort_by_cached_key(|l| self.visual_index(l).unwrap());
+    }
+
+    /// Returns the visual index of a layer.
+    ///
+    /// For example, the visual_index of layer E D C B A is `1 2 3 4 5`
+    ///
+    /// ```text
+    /// - A
+    ///   - B
+    ///     - C
+    ///     - D
+    ///   - E
+    /// - Background
+    /// ```
+    pub fn visual_index(&self, layer_id: &LayerId) -> Option<usize> {
+        let mut current = self.layers.get(layer_id)?;
+        let mut index = self.child_count_recursive(layer_id)?;
+        while let Some(parent) = current.parent().and_then(|p| self.layers.get(p)) {
+            index += parent.child_index(current.id()).unwrap();
+            current = parent;
+        }
+        Some(index)
+    }
+
+    pub fn child_count_recursive(&self, layer_id: &LayerId) -> Option<usize> {
+        let mut count = 0;
+        let node = self.layers.get(layer_id)?;
+        for child in &node.children {
+            count += self.child_count_recursive(child)?;
+        }
+        Some(count)
+    }
+
     /// Returns a list of layers without overlapping ancestors.
     pub fn reduce_ancestors(&self, layers: impl IntoIterator<Item = LayerId>) -> Vec<LayerId> {
         let set = layers.into_iter().collect::<IndexSet<_>>();
@@ -379,11 +414,11 @@ impl LayerStack {
             .collect()
     }
 
-    pub fn sort_by_depth_asc(&self, layers: &mut Vec<LayerId>) {
+    pub fn sort_by_depth_asc(&self, layers: &mut [LayerId]) {
         layers.sort_by_cached_key(|l| self.depth_of(l));
     }
 
-    pub fn sort_by_depth_desc(&self, layers: &mut Vec<LayerId>) {
+    pub fn sort_by_depth_desc(&self, layers: &mut [LayerId]) {
         layers.sort_by_cached_key(|l| self.depth_of(l).map(|d| -(d as i32)));
     }
 
