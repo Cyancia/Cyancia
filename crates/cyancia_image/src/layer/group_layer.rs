@@ -4,19 +4,23 @@ use bevy_math::IRect;
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
+    buffer::DynamicBuffer,
 };
 use glam::{IVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindingResource, Buffer, ComputePass, ComputePipeline, ComputePipelineDescriptor, Device,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    BindingResource, Buffer, BufferUsages, ComputePass, ComputePipeline, ComputePipelineDescriptor,
+    Device, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TextureView,
 };
 
 use crate::{
     CImage,
-    composite::{BlendFunctionId, BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders},
+    composite::{
+        BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
+        LayerPreviewOverriders,
+    },
     dynamic_intermediate_buffer::IntermediateBuffer,
     layer::{Layer, LayerId},
     tile::{GpuTileInfo, GpuTileStorage},
@@ -117,6 +121,7 @@ impl Layer for GroupLayer {
             entries: &BindGroupLayoutEntries::sequential(
                 ShaderStages::COMPUTE,
                 (
+                    binding_types::uniform_buffer::<GpuTileInfo>(false),
                     binding_types::texture_storage_2d_array(
                         image.texel_type().wgpu_format(),
                         StorageTextureAccess::ReadOnly,
@@ -151,9 +156,15 @@ impl Layer for GroupLayer {
             cache: None,
         });
 
+        let params_buffer = DynamicBuffer::new(
+            Some("group layer blend params buffer".into()),
+            BufferUsages::UNIFORM,
+        );
+
         let cache = GroupBlendCache {
             blend_func_name: node.data().blend_func.clone(),
             intermediate: IntermediateBuffer::new(device, queue, tile_rect, image.texel_type()),
+            params_buffer,
             layout,
             pipeline,
             dispatch: None,
@@ -175,10 +186,19 @@ impl Layer for GroupLayer {
         device: &Device,
         queue: &Queue,
     ) {
-        let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer_id) else {
+        let Some(cache) = compositor.get_blend_cache_mut::<GroupBlendCache>(&layer_id) else {
             log::error!("BlendCache is not created for layer {}", layer_id);
             return;
         };
+        let node = image.layer_stack().get_layer(&layer_id).unwrap();
+
+        cache.params_buffer.clear();
+        cache.params_buffer.push(&BlendLayerParams {
+            src_opacity: node.data().opacity,
+            src_disabled_channels: 0,
+            _pad: Default::default(),
+        });
+        cache.params_buffer.write_buffer(device, queue);
 
         let mut next_output = 1;
         let textures = cache.intermediate.textures().clone();
@@ -210,6 +230,7 @@ impl Layer for GroupLayer {
             label: "layer blend bind group".into(),
             layout: &cache.layout,
             entries: BindGroupEntries::sequential((
+                cache.params_buffer.binding().unwrap(),
                 &cache.intermediate.textures()[1 - next_output],
                 cache.intermediate.tile_info_buffer().as_entire_binding(),
                 dst_buffer,
@@ -261,6 +282,7 @@ impl Layer for GroupLayer {
 pub struct GroupBlendCache {
     blend_func_name: BlendFunctionId,
     intermediate: IntermediateBuffer,
+    params_buffer: DynamicBuffer<BlendLayerParams>,
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
     dispatch: Option<(BindGroup, UVec3)>,

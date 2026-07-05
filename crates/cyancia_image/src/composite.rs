@@ -8,6 +8,7 @@ use std::{
 use bevy_math::IRect;
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
+use encase::ShaderType;
 use glam::IVec2;
 use gpui::{App, Global, SharedString};
 use gpui_component::searchable_list::SearchableListItem;
@@ -169,6 +170,9 @@ impl ImageCompositor {
         log::debug!("Blend cache prepared in {:?}", now.elapsed());
 
         let now = std::time::Instant::now();
+        unsafe {
+            device.start_graphics_debugger_capture();
+        }
         root_node
             .data()
             .dispatch_blend(self, &mut pass, image, tiles);
@@ -177,6 +181,9 @@ impl ImageCompositor {
         drop(pass);
 
         queue.submit([ec.finish()]);
+        unsafe {
+            device.stop_graphics_debugger_capture();
+        }
     }
 
     pub fn get_blend_cache<T: Send + Sync + 'static>(&self, layer_id: &LayerId) -> Option<&T> {
@@ -226,4 +233,12 @@ impl Global for LayerPreviewOverriders {}
 pub struct PixelPreviewOverrider {
     pub texture: TextureView,
     pub tile_info_buffer: Buffer,
+}
+
+#[derive(Debug, Clone, Copy, ShaderType)]
+pub struct BlendLayerParams {
+    pub src_opacity: f32,
+    // ...abgr bits
+    pub src_disabled_channels: u32,
+    pub _pad: [u32; 2],
 }

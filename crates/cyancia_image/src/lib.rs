@@ -2,7 +2,8 @@ wesl::wesl_pkg!(pub image);
 
 use std::{path::Path, rc::Rc};
 
-use glam::UVec2;
+use bevy_math::IRect;
+use glam::{IVec2, UVec2};
 use gpui::App;
 // TODO move CImage to another place to avoid this.
 extern crate image as imagers;
@@ -109,5 +110,12 @@ impl CImage {
 
     pub fn selection_layer(&self) -> LayerId {
         self.special_layers.selection_layer()
+    }
+
+    pub fn image_tile_rect(&self) -> IRect {
+        GpuTileStorage::pixel_rect_to_tile(IRect {
+            min: IVec2::ZERO,
+            max: self.size.as_ivec2(),
+        })
     }
 }

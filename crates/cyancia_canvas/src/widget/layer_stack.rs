@@ -121,6 +121,7 @@ impl LayerStackWidget {
             SelectEvent::Confirm(Some(value)) => {
                 self.canvas
                     .update(cx, |canvas, cx| {
+                        // TODO command based
                         canvas.active_layer_node_mut().data_mut().blend_func = value.clone();
                         // TODO use layer bound
                         let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(IRect {
@@ -145,9 +146,14 @@ impl LayerStackWidget {
         let active_layer = canvas.read(cx).active_layer_node();
 
         let blend_func = active_layer.data().blend_func.clone();
+        let opacity = active_layer.data().opacity;
+
         self.blend_mode_select_state.update(cx, |state, cx| {
             state.set_selected_value(&blend_func, window, cx);
         });
+        self.opacity_state.update(cx, |state, cx| {
+            state.set_value(opacity * 100.0, cx);
+        })
     }
 
     fn on_blend_function_registry_changed(&mut self, cx: &mut Context<Self>) {
@@ -228,8 +234,25 @@ impl LayerStackWidget {
         cx: &mut Context<Self>,
     ) {
         match event {
-            SpinSliderEvent::Release(val) => {
-                dbg!(val);
+            SpinSliderEvent::Change(val) => {
+                self.canvas
+                    .update(cx, |canvas, cx| {
+                        let active_layer = canvas.active_layer_id();
+                        let Some(layer) =
+                            canvas.image.layer_stack_mut().get_layer_mut(&active_layer)
+                        else {
+                            return;
+                        };
+
+                        // TODO Command based
+                        layer.data_mut().opacity = val / 100.0;
+                        dbg!(layer.data().opacity);
+                        // TODO use layer bounds
+                        cx.emit(CanvasUpdated {
+                            dirty_tiles: canvas.image.image_tile_rect(),
+                        });
+                    })
+                    .ok();
             }
             _ => {}
         }

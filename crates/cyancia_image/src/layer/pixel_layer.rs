@@ -5,23 +5,24 @@ use cyancia_render::{
     bind_group_layout_entries::{
         BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
     },
+    buffer::DynamicBuffer,
 };
 use encase::ShaderType;
 use glam::UVec3;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, ComputePass,
-    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
+    ComputePass, ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor,
+    Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
     TextureViewDimension,
 };
 
 use crate::{
     CImage,
     composite::{
-        BlendFunctionId, BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders,
-        PixelPreviewOverrider,
+        BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
+        LayerPreviewOverriders, PixelPreviewOverrider,
     },
     layer::{Layer, LayerId},
     texel::TexelType,
@@ -49,13 +50,13 @@ impl Layer for PixelLayer {
         tiles: &GpuTileStorage,
         blend_funcs: &BlendFunctionRegistry,
         device: &Device,
-        _: &Queue,
+        queue: &Queue,
     ) {
         let layer_info = tiles.get_layer_info(layer_id).unwrap();
 
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
 
-        if let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer_id)
+        if let Some(cache) = compositor.get_blend_cache_mut::<PixelBlendCache>(&layer_id)
             && cache.blend_func_name == node.data().blend_func
             && cache.layer_texel_type == layer_info.texel_type
             && cache.image_texel_type == image.texel_type()
@@ -120,6 +121,7 @@ impl Layer for PixelLayer {
         let mut entries = DynamicBindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
+                binding_types::uniform_buffer::<BlendLayerParams>(false),
                 binding_types::texture_storage_2d_array(
                     layer_info.texel_type.wgpu_format(),
                     StorageTextureAccess::ReadOnly,
@@ -149,14 +151,14 @@ impl Layer for PixelLayer {
                 ShaderStages::COMPUTE,
                 (
                     (
-                        6,
+                        7,
                         binding_types::texture_storage_2d_array(
                             image.texel_type().wgpu_format(),
                             StorageTextureAccess::ReadOnly,
                         ),
                     ),
                     (
-                        7,
+                        8,
                         binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
                     ),
                 ),
@@ -201,10 +203,16 @@ impl Layer for PixelLayer {
                 cache: None,
             });
 
+        let params_buffer = DynamicBuffer::new(
+            Some("pixel layer blend params buffer".into()),
+            BufferUsages::UNIFORM,
+        );
+
         let cache = PixelBlendCache {
             blend_func_name: node.data().blend_func.clone(),
             layer_texel_type: layer_info.texel_type,
             image_texel_type: image.texel_type(),
+            params_buffer,
             with_overrider_pipeline,
             without_overrider_pipeline,
             dispatch: None,
@@ -224,15 +232,25 @@ impl Layer for PixelLayer {
         output: &TextureView,
         output_tile_info: &Buffer,
         device: &Device,
-        _: &Queue,
+        queue: &Queue,
     ) {
         let src = tiles.get_layer_binding_or_empty(layer_id).unwrap();
         let Some(cache) = compositor.get_blend_cache_mut::<PixelBlendCache>(&layer_id) else {
             log::error!("BlendCache is not created for layer {:?}", layer_id);
             return;
         };
+        let node = image.layer_stack().get_layer(&layer_id).unwrap();
+
+        cache.params_buffer.clear();
+        cache.params_buffer.push(&BlendLayerParams {
+            src_opacity: node.data().opacity,
+            src_disabled_channels: 0,
+            _pad: Default::default(),
+        });
+        cache.params_buffer.write_buffer(device, queue);
 
         let mut entries = DynamicBindGroupEntries::sequential((
+            cache.params_buffer.binding().unwrap(),
             &src.texture,
             src.tile_info_buffer.as_entire_binding(),
             dst_buffer,
@@ -293,6 +311,7 @@ pub struct PixelBlendCache {
     blend_func_name: BlendFunctionId,
     layer_texel_type: TexelType,
     image_texel_type: TexelType,
+    params_buffer: DynamicBuffer<BlendLayerParams>,
     with_overrider_pipeline: ComputePipeline,
     without_overrider_pipeline: ComputePipeline,
     dispatch: Option<(ComputePipeline, BindGroup, UVec3)>,

@@ -50,6 +50,7 @@ pub struct LayerData {
     id: LayerId,
     pub name: String,
     pub blend_func: BlendFunctionId,
+    pub opacity: f32,
     data: Box<dyn Layer>,
 }
 
@@ -59,6 +60,7 @@ impl std::fmt::Debug for LayerData {
             .field("id", &self.id)
             .field("name", &self.name)
             .field("blend_func", &self.blend_func)
+            .field("opacity", &self.opacity)
             .finish()
     }
 }
@@ -69,6 +71,7 @@ impl LayerData {
             id: LayerId::new(Uuid::new_v4()),
             name,
             blend_func,
+            opacity: 1.0,
             data,
         }
     }
@@ -91,15 +94,9 @@ impl LayerData {
         tiles: &GpuTileStorage,
         blend_func: BlendFunctionId,
     ) -> Self {
-        let id = LayerId::new(Uuid::new_v4());
-        tiles.upload_image(id, img);
-
-        Self {
-            id,
-            name,
-            blend_func,
-            data: Box::new(PixelLayer),
-        }
+        let layer = Self::new(name, blend_func, Box::new(PixelLayer));
+        tiles.upload_image(layer.id, img);
+        layer
     }
 
     pub fn can_have_children_of(&self, maybe_child: &Self) -> bool {
