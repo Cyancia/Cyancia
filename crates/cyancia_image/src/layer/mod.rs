@@ -213,6 +213,41 @@ pub trait Layer: Send + Sync + DynClone + 'static {
 }
 dyn_clone::clone_trait_object!(Layer);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerPosition {
+    Absolute(usize),
+    Above(Option<LayerId>),
+    Below(Option<LayerId>),
+}
+
+impl LayerPosition {
+    pub fn above(layer_id: LayerId) -> Self {
+        LayerPosition::Above(Some(layer_id))
+    }
+
+    pub fn below(layer_id: LayerId) -> Self {
+        LayerPosition::Below(Some(layer_id))
+    }
+
+    pub fn foreground() -> Self {
+        LayerPosition::Below(None)
+    }
+
+    pub fn background() -> Self {
+        LayerPosition::Above(None)
+    }
+
+    pub fn absolute(index: usize) -> Self {
+        LayerPosition::Absolute(index)
+    }
+}
+
+impl From<usize> for LayerPosition {
+    fn from(value: usize) -> Self {
+        LayerPosition::Absolute(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LayerStack {
     root: LayerId,
@@ -255,20 +290,27 @@ impl LayerStack {
         self.layers.get(&self.root).unwrap()
     }
 
-    pub fn add_layer(&mut self, parent_id: LayerId, index: usize, mut layer: LayerStackNode) {
+    pub fn add_layer(
+        &mut self,
+        parent_id: LayerId,
+        position: impl Into<LayerPosition>,
+        mut layer: LayerStackNode,
+    ) {
         let Some(parent_node) = self.get_layer_mut(&parent_id) else {
             return;
         };
 
+        if parent_node.insert_child(position, *layer.id()).is_none() {
+            return;
+        }
         layer.parent = Some(parent_id);
-        parent_node.insert_child(index, *layer.id());
         self.layers.insert(*layer.id(), layer);
     }
 
     pub fn add_layer_hierarchy(
         &mut self,
         parent_id: LayerId,
-        index: usize,
+        position: impl Into<LayerPosition>,
         root: LayerId,
         mut layers: HashMap<LayerId, LayerStackNode>,
     ) {
@@ -280,8 +322,10 @@ impl LayerStack {
             return;
         };
 
+        if parent_node.insert_child(position, root).is_none() {
+            return;
+        }
         root_node.parent = Some(parent_id);
-        parent_node.insert_child(index, root);
         self.layers.extend(layers);
     }
 
@@ -290,21 +334,16 @@ impl LayerStack {
         self.layers.insert(*layer.id(), layer);
     }
 
-    /// Returns the input layers that can be safely inserted back.
-    pub fn sort_layers_insert_back_safe(
+    pub fn sort_by_depth_and_index(
         &self,
         layers: impl IntoIterator<Item = LayerId>,
     ) -> Option<Vec<LayerId>> {
-        // Insertion order: The deeper the earlier, the closer to the front in same parent, the earlier.
-        let mut cached_layer_depth = HashMap::new();
+        // The deeper the closer to the front, the closer to the front in same parent, the closer to the front.
         let mut same_parent = Vec::<HashMap<LayerId, Vec<LayerId>>>::new();
 
         for layer in layers {
             let parent = self.get_layer(&layer)?.parent?;
-            let depth = *cached_layer_depth
-                .entry(parent)
-                .or_insert_with(|| self.depth_of(&parent).unwrap())
-                as usize;
+            let depth = self.depth_of(&parent).unwrap() as usize;
 
             if depth >= same_parent.len() {
                 same_parent.resize(depth + 1, HashMap::new());
@@ -316,10 +355,7 @@ impl LayerStack {
         for layers in &mut same_parent {
             for (parent, layers) in layers.iter_mut() {
                 layers.sort_by_cached_key(|l| {
-                    let index = self.get_layer(parent).unwrap().child_index(l).unwrap();
-                    // Callers are most likely to use the returned vec reversely.
-                    // Redo commands like delete layers will delete layers in reverse order.
-                    -(index as isize)
+                    self.get_layer(parent).unwrap().child_index(l).unwrap()
                 });
             }
         }
@@ -334,27 +370,13 @@ impl LayerStack {
         )
     }
 
-    /// Returns a list of layers without overlapping ancestors and sorted by depth descending.
-    ///
-    /// The input layers must be sorted by depth descending.
-    pub fn reduce_ancestors(
-        &self,
-        layers: impl IntoIterator<Item = LayerId>,
-    ) -> Option<Vec<LayerId>> {
-        let mut result = IndexSet::new();
-        for layer in layers {
-            let mut overlapped = false;
-            for ancestor in self.ancestors(&layer) {
-                if result.contains(&ancestor) {
-                    overlapped = true;
-                    break;
-                }
-            }
-            if !overlapped {
-                result.insert(layer);
-            }
-        }
-        Some(result.into_iter().collect())
+    /// Returns a list of layers without overlapping ancestors.
+    pub fn reduce_ancestors(&self, layers: impl IntoIterator<Item = LayerId>) -> Vec<LayerId> {
+        let set = layers.into_iter().collect::<IndexSet<_>>();
+        set.iter()
+            .copied()
+            .filter(|l| self.ancestors(*l).all(|anc| !set.contains(&anc)))
+            .collect()
     }
 
     pub fn sort_by_depth_asc(&self, layers: &mut Vec<LayerId>) {
@@ -378,7 +400,12 @@ impl LayerStack {
     /// at `new_index` once it has already been removed from its old position), so
     /// callers never need to compensate for the index shift that removing it
     /// causes.
-    pub fn move_layer(&mut self, layer_id: LayerId, new_parent_id: LayerId, new_index: usize) {
+    pub fn move_layer(
+        &mut self,
+        layer_id: LayerId,
+        new_parent_id: LayerId,
+        new_position: impl Into<LayerPosition>,
+    ) {
         if !self.layers.contains_key(&new_parent_id) {
             return;
         }
@@ -408,7 +435,7 @@ impl LayerStack {
         }
 
         let new_parent = self.layers.get_mut(&new_parent_id).unwrap();
-        new_parent.insert_child(new_index.min(new_parent.n_children()), layer_id);
+        new_parent.insert_child(new_position, layer_id).unwrap();
     }
 
     /// Removes a layer and all its children recursively, returning the removed nodes.
@@ -513,14 +540,13 @@ impl LayerStack {
     }
 
     /// In order from target to root, excluding the target itself.
-    pub fn ancestors(&self, target: &LayerId) -> Vec<LayerId> {
-        let mut ancestors = Vec::new();
+    pub fn ancestors(&self, target: LayerId) -> impl Iterator<Item = LayerId> {
         let mut current = target;
-        while let Some(parent) = self.layers.get(&current).and_then(|n| n.parent()) {
-            ancestors.push(*parent);
-            current = parent;
-        }
-        ancestors
+        std::iter::from_fn(move || {
+            let parent = self.layers.get(&current).and_then(|n| n.parent())?;
+            current = *parent;
+            Some(current)
+        })
     }
 
     pub fn is_ancestor(&self, maybe_ancestor: &LayerId, descendant: &LayerId) -> bool {
@@ -599,6 +625,16 @@ impl LayerStackNode {
         self.children.swap(lhs_index, rhs_index);
     }
 
+    pub fn resolve_index(&self, position: LayerPosition) -> Option<usize> {
+        match position {
+            LayerPosition::Absolute(index) => Some(index),
+            LayerPosition::Above(Some(sibling_id)) => Some(self.child_index(&sibling_id)? + 1),
+            LayerPosition::Above(None) => Some(0),
+            LayerPosition::Below(Some(sibling_id)) => self.child_index(&sibling_id),
+            LayerPosition::Below(None) => Some(self.children.len() - 1),
+        }
+    }
+
     pub fn iter_children_composite_order(&self) -> impl DoubleEndedIterator<Item = &LayerId> {
         self.children.iter()
     }
@@ -619,7 +655,17 @@ impl LayerStackNode {
         self.children.iter().position(|child| child == child_id)
     }
 
-    pub fn insert_child(&mut self, index: usize, child: LayerId) {
+    pub fn insert_child(
+        &mut self,
+        position: impl Into<LayerPosition>,
+        child: LayerId,
+    ) -> Option<usize> {
+        let i = self.resolve_index(position.into())?;
+        self.insert_child_at(i, child);
+        Some(i)
+    }
+
+    pub fn insert_child_at(&mut self, index: usize, child: LayerId) {
         self.children.insert(index, child);
     }
 

@@ -72,20 +72,24 @@ impl ActionFunction for GroupSelectedLayersAction {
         let cmd = cx
             .update_current_canvas(|canvas, _| {
                 let group_name = canvas.image.next_name_of_layer("Group".to_string());
+                let reduced_layers = canvas
+                    .image
+                    .layer_stack()
+                    .reduce_ancestors(canvas.selected_layer_ids().iter().copied());
                 let sorted_selected_layers = canvas
                     .image
                     .layer_stack()
-                    .sort_layers_insert_back_safe(canvas.selected_layer_ids().iter().copied())
+                    .sort_by_depth_and_index(reduced_layers)
                     .unwrap();
                 let children_layers = sorted_selected_layers
                     .into_iter()
                     .map(|l| {
-                        let (parent, index) =
-                            canvas.image.layer_stack().get_position_of(&l).unwrap();
+                        let parent = canvas.image.layer_stack().get_parent_of(&l).unwrap();
+                        let above = parent.child_below(&l);
                         LayerWithPosition {
                             id: l,
                             original_parent: *parent.id(),
-                            original_index: index,
+                            original_above: above,
                         }
                     })
                     .collect();

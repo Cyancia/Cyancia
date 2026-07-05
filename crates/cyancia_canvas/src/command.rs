@@ -6,7 +6,7 @@ use std::{
 use anyhow::bail;
 use bevy_math::IRect;
 use cyancia_image::{
-    layer::{LayerData, LayerId, LayerStackNode},
+    layer::{LayerData, LayerId, LayerPosition, LayerStackNode},
     tile::{DynamicLayerStorage, GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_render::render_context::RenderContextAppExt;
@@ -357,7 +357,7 @@ pub struct GroupLayerCommand {
 pub struct LayerWithPosition {
     pub id: LayerId,
     pub original_parent: LayerId,
-    pub original_index: usize,
+    pub original_above: Option<LayerId>,
 }
 
 impl UndoCommand for GroupLayerCommand {
@@ -398,7 +398,7 @@ impl UndoCommand for GroupLayerCommand {
             for child in &self.children {
                 canvas.image.layer_stack_mut().add_layer(
                     child.original_parent,
-                    child.original_index,
+                    LayerPosition::Above(child.original_above),
                     removed_nodes.remove(&child.id).unwrap(),
                 );
             }
@@ -417,7 +417,7 @@ pub struct MoveLayersCommand {
     canvas: CanvasId,
     layers: Vec<LayerWithPosition>,
     new_parent: LayerId,
-    new_index: usize,
+    new_position: LayerPosition,
 }
 
 impl MoveLayersCommand {
@@ -425,24 +425,25 @@ impl MoveLayersCommand {
         canvas: &CCanvas,
         layers: impl IntoIterator<Item = LayerId>,
         new_parent: LayerId,
-        new_index: usize,
+        new_position: impl Into<LayerPosition>,
     ) -> Self {
-        let reduced_layers = canvas.image.layer_stack().reduce_ancestors(layers).unwrap();
+        let reduced_layers = canvas.image.layer_stack().reduce_ancestors(layers);
 
         let sorted = canvas
             .image
             .layer_stack()
-            .sort_layers_insert_back_safe(reduced_layers)
+            .sort_by_depth_and_index(reduced_layers)
             .unwrap();
 
         let layers = sorted
             .into_iter()
             .map(|l| {
-                let (parent, index) = canvas.image.layer_stack().get_position_of(&l).unwrap();
+                let parent = canvas.image.layer_stack().get_parent_of(&l).unwrap();
+                let above = parent.child_below(&l);
                 LayerWithPosition {
                     id: l,
                     original_parent: *parent.id(),
-                    original_index: index,
+                    original_above: above,
                 }
             })
             .collect();
@@ -451,7 +452,7 @@ impl MoveLayersCommand {
             canvas: canvas.id(),
             layers,
             new_parent,
-            new_index,
+            new_position: new_position.into(),
         }
     }
 }
@@ -463,11 +464,11 @@ impl UndoCommand for MoveLayersCommand {
 
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, _| {
-            for layer in self.layers.iter().rev() {
+            for layer in &self.layers {
                 canvas.image.layer_stack_mut().move_layer(
                     layer.id,
                     self.new_parent,
-                    self.new_index,
+                    self.new_position,
                 );
             }
         });
@@ -478,11 +479,11 @@ impl UndoCommand for MoveLayersCommand {
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
         cx.update_canvas(&self.canvas, |canvas, _| {
-            for layer in self.layers.iter().rev() {
+            for layer in &self.layers {
                 canvas.image.layer_stack_mut().move_layer(
                     layer.id,
                     layer.original_parent,
-                    layer.original_index,
+                    LayerPosition::Above(layer.original_above),
                 );
             }
         });
@@ -496,7 +497,7 @@ struct DeletedNode {
     root: LayerId,
     nodes: HashMap<LayerId, LayerStackNode>,
     original_parent: LayerId,
-    original_index: usize,
+    original_above: Option<LayerId>,
 }
 
 pub struct DeleteLayersCommand {
@@ -507,11 +508,8 @@ pub struct DeleteLayersCommand {
 }
 
 impl DeleteLayersCommand {
-    pub fn new(canvas: &CCanvas, mut layers: Vec<LayerId>) -> anyhow::Result<Self> {
-        layers.sort_by_cached_key(|l| canvas.image.layer_stack().depth_of(l));
-
-        canvas.image.layer_stack().sort_by_depth_desc(&mut layers);
-        let filtered_layers = canvas.image.layer_stack().reduce_ancestors(layers).unwrap();
+    pub fn new(canvas: &CCanvas, layers: Vec<LayerId>) -> anyhow::Result<Self> {
+        let filtered_layers = canvas.image.layer_stack().reduce_ancestors(layers);
 
         // Reject if all layers are going to be deleted, other than the root layer.
         {
@@ -572,7 +570,7 @@ impl DeleteLayersCommand {
         let sorted_layers = canvas
             .image
             .layer_stack()
-            .sort_layers_insert_back_safe(filtered_layers)
+            .sort_by_depth_and_index(filtered_layers)
             .unwrap();
 
         Ok(Self {
@@ -597,14 +595,17 @@ impl UndoCommand for DeleteLayersCommand {
             }
 
             let mut nodes = Vec::with_capacity(self.delete_roots.len());
-            for root in self.delete_roots.iter().rev() {
-                let (parent, index) = canvas.image.layer_stack().get_layer_position(root).unwrap();
+
+            for root in &self.delete_roots {
+                let parent = canvas.image.layer_stack().get_parent_of(root).unwrap();
+                let parent_id = *parent.id();
+                let above = parent.child_below(root);
                 let deleted = canvas.image.layer_stack_mut().remove_layer_hierarchy(root);
                 nodes.push(DeletedNode {
                     root: *root,
                     nodes: deleted,
-                    original_parent: parent,
-                    original_index: index,
+                    original_parent: parent_id,
+                    original_above: above,
                 });
             }
             self.nodes = Some(nodes);
@@ -628,10 +629,10 @@ impl UndoCommand for DeleteLayersCommand {
                 bail!("Called undo twice consecutively is not valid")
             };
 
-            for node in nodes.into_iter().rev() {
+            for node in nodes.into_iter() {
                 canvas.image.layer_stack_mut().add_layer_hierarchy(
                     node.original_parent,
-                    node.original_index,
+                    LayerPosition::Above(node.original_above),
                     node.root,
                     node.nodes,
                 );

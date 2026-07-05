@@ -1,7 +1,7 @@
 use bevy_math::IRect;
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
-    layer::LayerId,
+    layer::{LayerId, LayerPosition},
     tile::GpuTileStorage,
 };
 use cyancia_utils::log_err::LogErr;
@@ -46,7 +46,7 @@ struct LayerWidgetInfo {
 
 struct DropInfo {
     parent: LayerId,
-    index: usize,
+    child_position: LayerPosition,
     position: Point<Pixels>,
     length: Pixels,
 }
@@ -194,7 +194,15 @@ impl LayerStackWidget {
             .and_then(|p| p.child_index(&info.id))
             .unwrap_or(0);
 
-        if original_parent == drop_info.parent && original_index == drop_info.index {
+        let resolved_index = {
+            let parent = canvas
+                .image
+                .layer_stack()
+                .get_layer(&drop_info.parent)
+                .unwrap();
+            parent.resolve_index(drop_info.child_position).unwrap()
+        };
+        if original_parent == drop_info.parent && original_index == resolved_index {
             return;
         }
 
@@ -204,7 +212,7 @@ impl LayerStackWidget {
             canvas,
             canvas.selected_layer_ids().iter().copied(),
             drop_info.parent,
-            drop_info.index,
+            drop_info.child_position,
         );
         cx.push_undo_command(&canvas_id, command).ok();
         canvas_entity.update(cx, |_, cx| {
@@ -258,25 +266,12 @@ impl LayerStackWidget {
 
         let target_node = layer_stack.get_layer(&target_id)?;
         let center_y = target_bounds.center().y;
-        let old_index = layer_stack
-            .get_layer(&info.id)
-            .and_then(|n| n.parent())
-            .and_then(|p| layer_stack.get_layer(p))
-            .and_then(|p| p.child_index(&info.id))?;
 
         if mouse_pos.y < center_y {
             // Above the target's row: drop as a sibling, just above the target.
-            let parent = target_node.parent().copied()?;
-            let target_index = layer_stack.get_layer(&parent)?.child_index(&target_id)?;
-            let dragged_parent = layer_stack.get_layer(&info.id)?.parent().copied()?;
-            let index = if dragged_parent == parent && old_index < target_index {
-                target_index
-            } else {
-                target_index + 1
-            };
             return Some(DropInfo {
-                parent,
-                index,
+                parent: *target_node.parent()?,
+                child_position: LayerPosition::above(target_id),
                 position: target_bounds.origin,
                 length: target_bounds.size.width,
             });
@@ -286,7 +281,6 @@ impl LayerStackWidget {
         let target_parent = target_node.parent().copied()?;
         let target_parent_node = layer_stack.get_layer(&target_parent)?;
         let target_index = target_parent_node.child_index(&target_id)?;
-        let dragged_parent = layer_stack.get_layer(&info.id)?.parent().copied()?;
 
         // If the target can hold children and the cursor is at the target's own
         // indent (inside the target's row, not in a shallower ancestor's gutter),
@@ -296,10 +290,9 @@ impl LayerStackWidget {
         if mouse_pos.x >= target_bounds.left()
             && layer_stack.can_have_children_of(&target_id, &info.id)?
         {
-            let n_children = layer_stack.get_layer(&target_id)?.n_children();
             return Some(DropInfo {
                 parent: target_id,
-                index: n_children,
+                child_position: LayerPosition::foreground(),
                 position: target_bounds.bottom_left(),
                 length: target_bounds.size.width,
             });
@@ -315,11 +308,7 @@ impl LayerStackWidget {
             // target's parent, just under the target.
             return Some(DropInfo {
                 parent: target_parent,
-                index: if dragged_parent == target_parent && old_index < target_index {
-                    target_index - 1
-                } else {
-                    target_index
-                },
+                child_position: LayerPosition::below(target_id),
                 position: target_bounds.bottom_left(),
                 length: target_bounds.size.width,
             });
@@ -327,7 +316,7 @@ impl LayerStackWidget {
 
         // Target is the bottom child. Only ancestors for which the target's
         // branch is also the bottom child are valid "append to bottom" targets.
-        let ancestors = layer_stack.ancestors(&target_id); // target -> root, target excluded
+        let ancestors = layer_stack.ancestors(target_id).collect::<Vec<_>>();
         let mut ambiguous_count = 0;
         {
             let mut previous_child = target_id;
@@ -369,7 +358,7 @@ impl LayerStackWidget {
 
         Some(DropInfo {
             parent: resolved_parent,
-            index: 0,
+            child_position: LayerPosition::background(),
             position: Point::new(resolved_preview_bounds.origin.x, target_bounds.bottom()),
             length: resolved_preview_bounds.size.width,
         })
