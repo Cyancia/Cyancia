@@ -200,6 +200,8 @@ impl Layer for GroupLayer {
         });
         cache.params_buffer.write_buffer(device, queue);
 
+        cache.intermediate.clear(device, queue);
+
         let mut next_output = 1;
         let textures = cache.intermediate.textures().clone();
         let tile_info = cache.intermediate.tile_info_buffer().clone();
