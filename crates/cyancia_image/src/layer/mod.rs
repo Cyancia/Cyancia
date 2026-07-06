@@ -94,6 +94,10 @@ impl LayerData {
         &self.id
     }
 
+    pub fn ty(&self) -> &dyn Layer {
+        self.data.as_ref()
+    }
+
     pub fn from_image(
         name: String,
         img: DynamicImage,

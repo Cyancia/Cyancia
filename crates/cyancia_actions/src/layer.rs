@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use cyancia_canvas::{
     CanvasAppExt, CanvasUndoStackAppExt,
     command::{
@@ -6,12 +8,15 @@ use cyancia_canvas::{
     },
 };
 use cyancia_image::{
-    layer::{LayerData, LayerPosition},
+    blend_modes::BlendMode,
+    composite::BlendFunction,
+    layer::{LayerData, LayerPosition, pixel_layer::PixelLayer},
     texel::TexelType,
     tile::{GpuLayerInfo, TileStorageAppExt},
 };
+use cyancia_undo::BatchedUndoCommand;
 use cyancia_utils::log_err::LogErr;
-use gpui::{App, actions};
+use gpui::{App, ClipboardEntry, actions};
 
 use crate::ActionFunction;
 
@@ -23,6 +28,7 @@ actions!([
     DeleteSelectedLayersAction,
     SelectPreviousLayerAction,
     SelectNextLayerAction,
+    PasteIntoNewLayerAction,
 ]);
 
 impl ActionFunction for CreateNewLayerAction {
@@ -39,31 +45,11 @@ impl ActionFunction for CreateNewLayerAction {
                 let parent_node = canvas.image.layer_stack().get_layer(&parent).unwrap();
                 let index = parent_node.child_index(&active_layer_id).unwrap();
 
-                InsertLayerCommand {
-                    canvas: canvas.id(),
-                    layer: new_layer,
-                    parent_id: parent,
-                    index: index + 1,
-                    previous_active_layer: active_layer_id,
-                    previous_selected_layers: canvas.selected_layer_ids().clone(),
-                }
+                InsertLayerCommand::new(canvas, new_layer, parent, index + 1)
             })
             .unwrap();
 
-        let new_layer_id = *cmd.layer.id();
-
-        if cx.push_undo_command_to_current(cmd).logged_err().is_err() {
-            return;
-        }
-
-        let tiles = cx.tile_storage();
-        tiles.declare_layer(
-            new_layer_id,
-            GpuLayerInfo {
-                // TODO use image format
-                texel_type: TexelType::RGBA8,
-            },
-        );
+        cx.push_undo_command_to_current(cmd).log_err();
     }
 }
 
@@ -299,5 +285,123 @@ impl ActionFunction for SelectNextLayerAction {
             }
         });
         cx.refresh_windows();
+    }
+}
+
+impl ActionFunction for PasteIntoNewLayerAction {
+    fn trigger(&self, cx: &mut App) {
+        let Some(clipboard) = cx.read_from_clipboard() else {
+            return;
+        };
+
+        let Some(entry) = clipboard
+            .entries()
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    ClipboardEntry::ExternalPaths(_) | ClipboardEntry::Image(_)
+                )
+            })
+            .next()
+        else {
+            return;
+        };
+
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+
+        let (parent, position) = {
+            let mut cur_parent = canvas.active_layer_node();
+            let mut cur_position = LayerPosition::foreground();
+            while !cur_parent
+                .data()
+                .ty()
+                .can_have_children_of(TypeId::of::<PixelLayer>())
+            {
+                let Some(parent_id) = canvas
+                    .image
+                    .layer_stack()
+                    .get_layer(cur_parent.parent().unwrap())
+                else {
+                    return;
+                };
+                cur_position = LayerPosition::above(*cur_parent.id());
+                cur_parent = canvas
+                    .image
+                    .layer_stack()
+                    .get_layer(parent_id.id())
+                    .unwrap();
+            }
+
+            (*cur_parent.id(), cur_position)
+        };
+
+        match entry {
+            ClipboardEntry::Image(image) => {
+                let format = match image.format() {
+                    gpui::ImageFormat::Png => image::ImageFormat::Png,
+                    gpui::ImageFormat::Jpeg => image::ImageFormat::Jpeg,
+                    gpui::ImageFormat::Webp => image::ImageFormat::WebP,
+                    gpui::ImageFormat::Gif => image::ImageFormat::Gif,
+                    gpui::ImageFormat::Svg => {
+                        // TODO Handle svg pasting?
+                        return;
+                    }
+                    gpui::ImageFormat::Bmp => image::ImageFormat::Bmp,
+                    gpui::ImageFormat::Tiff => image::ImageFormat::Tiff,
+                    gpui::ImageFormat::Ico => image::ImageFormat::Ico,
+                    gpui::ImageFormat::Pnm => image::ImageFormat::Pnm,
+                };
+
+                let Ok(img) =
+                    image::load_from_memory_with_format(image.bytes(), format).logged_err()
+                else {
+                    return;
+                };
+
+                let layer = LayerData::from_image(
+                    "Pasted Image".into(),
+                    img,
+                    cx.tile_storage(),
+                    BlendMode::Normal.id(),
+                );
+                let cmd = InsertLayerCommand::new(canvas, layer, parent, position);
+                cx.push_undo_command_to_current(cmd).log_err();
+            }
+            ClipboardEntry::ExternalPaths(external_paths) => {
+                let mut commands = Vec::new();
+                let mut cur_position = position;
+
+                for path in external_paths.paths() {
+                    let filename = path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    let Ok(img) = image::open(path).logged_err() else {
+                        continue;
+                    };
+                    let layer = LayerData::from_image(
+                        filename,
+                        img,
+                        cx.tile_storage(),
+                        BlendMode::Normal.id(),
+                    );
+                    let layer_id = *layer.id();
+
+                    commands.push(InsertLayerCommand::new(canvas, layer, parent, cur_position));
+                    cur_position = LayerPosition::above(layer_id);
+                }
+
+                cx.push_undo_command_to_current(BatchedUndoCommand::new(
+                    "Paste Images".into(),
+                    commands,
+                ))
+                .log_err();
+            }
+            _ => {}
+        }
     }
 }

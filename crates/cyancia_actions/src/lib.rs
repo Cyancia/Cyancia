@@ -7,8 +7,9 @@ use crate::{
     brush::OpenBrushEditorAction,
     file::OpenFileAction,
     layer::{
-        CreateNewLayerAction, DeleteSelectedLayersAction, GroupSelectedLayersAction, MoveLayerDownAction,
-        MoveLayerUpAction, SelectNextLayerAction, SelectPreviousLayerAction,
+        CreateNewLayerAction, DeleteSelectedLayersAction, GroupSelectedLayersAction,
+        MoveLayerDownAction, MoveLayerUpAction, PasteIntoNewLayerAction, SelectNextLayerAction,
+        SelectPreviousLayerAction,
     },
     manifest::{KeyBindingDefManifest, KeyBindingDefManifestLoader},
     selection::DeleteSelectionAction,
@@ -52,6 +53,7 @@ pub fn init(cx: &mut App) {
     cx.add_action_function::<GroupSelectedLayersAction>();
     cx.add_action_function::<SelectNextLayerAction>();
     cx.add_action_function::<SelectPreviousLayerAction>();
+    cx.add_action_function::<PasteIntoNewLayerAction>();
     cx.add_action_function::<OpenBrushEditorAction>();
     cx.add_action_function::<UndoAction>();
     cx.add_action_function::<RedoAction>();

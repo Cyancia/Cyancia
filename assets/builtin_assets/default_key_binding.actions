@@ -59,6 +59,11 @@
       "shortcut": "ctrl-up",
       "action_name": "SelectPreviousLayerAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-v",
+      "action_name": "PasteIntoNewLayerAction",
+      "context": "main_view"
     }
   ]
 }

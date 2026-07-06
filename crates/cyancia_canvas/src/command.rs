@@ -7,7 +7,8 @@ use anyhow::bail;
 use bevy_math::IRect;
 use cyancia_image::{
     layer::{LayerData, LayerId, LayerPosition, LayerStackNode},
-    tile::{DynamicLayerStorage, GpuTileStorage, TileStorageAppExt},
+    texel::TexelType,
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_undo::UndoCommand;
@@ -301,12 +302,33 @@ impl UndoCommand for TileReplaceCommand {
 }
 
 pub struct InsertLayerCommand {
-    pub canvas: CanvasId,
-    pub layer: LayerData,
-    pub parent_id: LayerId,
-    pub index: usize,
-    pub previous_active_layer: LayerId,
-    pub previous_selected_layers: IndexSet<LayerId>,
+    canvas: CanvasId,
+    layer: LayerData,
+    parent_id: LayerId,
+    position: LayerPosition,
+    previous_active_layer: LayerId,
+    previous_selected_layers: IndexSet<LayerId>,
+}
+
+impl InsertLayerCommand {
+    pub fn new(
+        canvas: &CCanvas,
+        layer: LayerData,
+        parent: LayerId,
+        position: impl Into<LayerPosition>,
+    ) -> Self {
+        let active_layer = canvas.active_layer_id();
+        let selected_layers = canvas.selected_layer_ids().clone();
+
+        Self {
+            canvas: canvas.id(),
+            layer,
+            parent_id: parent,
+            position: position.into(),
+            previous_active_layer: active_layer,
+            previous_selected_layers: selected_layers,
+        }
+    }
 }
 
 impl UndoCommand for InsertLayerCommand {
@@ -318,7 +340,7 @@ impl UndoCommand for InsertLayerCommand {
         cx.update_canvas(&self.canvas, |canvas, cx| {
             canvas.image.layer_stack_mut().add_layer(
                 self.parent_id,
-                self.index,
+                self.position,
                 LayerStackNode::without_parent(self.layer.clone()),
             );
             canvas.set_active_layer_and_clear_select(*self.layer.id(), cx);
@@ -326,6 +348,14 @@ impl UndoCommand for InsertLayerCommand {
         .ok_or(anyhow::anyhow!("Canvas {} not found", self.canvas))
         .log_err();
         cx.refresh_windows();
+
+        cx.tile_storage().declare_layer(
+            *self.layer.id(),
+            GpuLayerInfo {
+                // TODO use image format
+                texel_type: TexelType::RGBA8,
+            },
+        );
 
         Ok(())
     }
