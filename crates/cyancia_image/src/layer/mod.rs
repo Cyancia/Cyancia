@@ -53,6 +53,7 @@ pub struct LayerData {
     pub opacity: f32,
     pub is_visible: bool,
     pub is_locked: bool,
+    pub disabled_channels: u32,
     data: Box<dyn Layer>,
 }
 
@@ -65,6 +66,7 @@ impl std::fmt::Debug for LayerData {
             .field("opacity", &self.opacity)
             .field("visible", &self.is_visible)
             .field("locked", &self.is_locked)
+            .field("locked_channels", &self.disabled_channels)
             .finish()
     }
 }
@@ -78,6 +80,7 @@ impl LayerData {
             opacity: 1.0,
             is_visible: true,
             is_locked: false,
+            disabled_channels: 0,
             data,
         }
     }
@@ -107,6 +110,18 @@ impl LayerData {
         let layer = Self::new(name, blend_func, Box::new(PixelLayer));
         tiles.upload_image(layer.id, img);
         layer
+    }
+
+    pub fn set_channel_disabled(&mut self, channel: u32, locked: bool) {
+        if locked {
+            self.disabled_channels |= 1 << channel;
+        } else {
+            self.disabled_channels &= !(1 << channel);
+        }
+    }
+
+    pub fn is_channel_disabled(&self, channel: u32) -> bool {
+        self.disabled_channels & (1 << channel) != 0
     }
 
     pub fn can_have_children_of(&self, maybe_child: &Self) -> bool {

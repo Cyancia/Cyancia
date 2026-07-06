@@ -55,6 +55,13 @@ impl TexelType {
         }
     }
 
+    pub fn alpha_channel_index(&self) -> u32 {
+        match self.format {
+            TexelFormat::Rgba => 3,
+            TexelFormat::Alpha => 0,
+        }
+    }
+
     pub fn convert_image_to_wgpu(&self, img: DynamicImage) -> Vec<u8> {
         match (self.format, self.depth) {
             (TexelFormat::Rgba, TexelDepth::Bit8) => {

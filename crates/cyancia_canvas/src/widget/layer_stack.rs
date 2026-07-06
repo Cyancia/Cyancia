@@ -2,7 +2,7 @@ use bevy_math::IRect;
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
     layer::{LayerData, LayerId, LayerPosition},
-    tile::GpuTileStorage,
+    tile::{GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_utils::log_err::LogErr;
 use cyancia_widgets::spin_slider::{SpinSlider, SpinSliderEvent, SpinSliderState};
@@ -630,6 +630,45 @@ impl Render for LayerStackWidget {
                         }
                     });
 
+                let alpha_index = cx
+                    .tile_storage()
+                    .get_layer_info(layer_id)
+                    .map(|info| info.texel_type.alpha_channel_index())
+                    .unwrap_or(canvas.image.texel_type().alpha_channel_index());
+                let inherit_alpha_toggle_button = Button::new("inherit-alpha-toggle-button")
+                    .aspect_square()
+                    .selected(node.data().is_channel_disabled(alpha_index))
+                    .ghost()
+                    .child("A")
+                    .block_mouse_except_scroll()
+                    .on_click({
+                        let canvas_entity = canvas_entity.downgrade();
+                        move |event, window, cx| {
+                            let cmd = canvas_entity
+                                .read_with(cx, |canvas, _| {
+                                    let layer =
+                                        canvas.image.layer_stack().get_layer(&layer_id).unwrap();
+                                    let old = layer.data().clone();
+                                    let new = {
+                                        let mut d = old.clone();
+                                        d.set_channel_disabled(
+                                            alpha_index,
+                                            !d.is_channel_disabled(alpha_index),
+                                        );
+                                        d
+                                    };
+                                    LayerPropertyChangeCommand {
+                                        canvas: canvas.id(),
+                                        layer_id,
+                                        old,
+                                        new,
+                                    }
+                                })
+                                .unwrap();
+                            cx.push_undo_command_to_current(cmd).log_err();
+                        }
+                    });
+
                 h_flex()
                     .h(px(40.0))
                     .p_1()
@@ -643,6 +682,9 @@ impl Render for LayerStackWidget {
                     .child(visible_checkbox)
                     .child(inner)
                     .child(lock_toggle_button)
+                    .when(node.data().can_contain_pixels(), |d| {
+                        d.child(inherit_alpha_toggle_button)
+                    })
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
                     })

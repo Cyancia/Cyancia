@@ -195,7 +195,7 @@ impl Layer for GroupLayer {
         cache.params_buffer.clear();
         cache.params_buffer.push(&BlendLayerParams {
             src_opacity: node.data().opacity,
-            src_disabled_channels: 0,
+            src_disabled_channels: node.data().disabled_channels,
             _pad: Default::default(),
         });
         cache.params_buffer.write_buffer(device, queue);
