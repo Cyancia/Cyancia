@@ -17,8 +17,8 @@ use uuid::Uuid;
 use crate::{
     control::CanvasTransform,
     event::{
-        CanvasActiveLayerChanged, CanvasCreated, CanvasLayerStackUpdated, CanvasRemoved,
-        CanvasUpdated, CurrentCanvasChanged,
+        CanvasActiveLayerChanged, CanvasCreated, CanvasLayerPropertyChanged,
+        CanvasLayerStackUpdated, CanvasRemoved, CanvasUpdated, CurrentCanvasChanged,
     },
     tools::{PanTool, RotateTool, ZoomTool},
 };
@@ -175,6 +175,8 @@ impl EventEmitter<CanvasUpdated> for CCanvas {}
 impl EventEmitter<CanvasActiveLayerChanged> for CCanvas {}
 
 impl EventEmitter<CanvasLayerStackUpdated> for CCanvas {}
+
+impl EventEmitter<CanvasLayerPropertyChanged> for CCanvas {}
 
 pub fn init(cx: &mut App) {
     let cm = CanvasManager::new(cx);

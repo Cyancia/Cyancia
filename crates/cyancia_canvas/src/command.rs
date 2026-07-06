@@ -20,7 +20,10 @@ use wgpu::{
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
 };
 
-use crate::{CCanvas, CanvasAppExt, CanvasId, event::CanvasUpdated};
+use crate::{
+    CCanvas, CanvasAppExt, CanvasId,
+    event::{CanvasLayerPropertyChanged, CanvasUpdated},
+};
 
 pub struct TileReplaceCommand {
     pub reason: Cow<'static, str>,
@@ -693,8 +696,13 @@ impl UndoCommand for LayerPropertyChangeCommand {
                 .get_layer_mut(&self.layer_id)
                 .unwrap();
             *layer.data_mut() = self.new.clone();
+            // TODO use layer bounds
             cx.emit(CanvasUpdated {
                 dirty_tiles: canvas.image.image_tile_rect(),
+            });
+            cx.emit(CanvasLayerPropertyChanged {
+                layer_id: self.layer_id,
+                old: self.old.clone(),
             });
         });
         cx.refresh_windows();
@@ -710,8 +718,13 @@ impl UndoCommand for LayerPropertyChangeCommand {
                 .get_layer_mut(&self.layer_id)
                 .unwrap();
             *layer.data_mut() = self.old.clone();
+            // TODO use layer bounds
             cx.emit(CanvasUpdated {
                 dirty_tiles: canvas.image.image_tile_rect(),
+            });
+            cx.emit(CanvasLayerPropertyChanged {
+                layer_id: self.layer_id,
+                old: self.new.clone(),
             });
         });
         cx.refresh_windows();

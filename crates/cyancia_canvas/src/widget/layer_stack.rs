@@ -31,7 +31,10 @@ use serde::Deserialize;
 use crate::{
     CCanvas, CanvasUndoStackAppExt,
     command::{LayerPropertyChangeCommand, MoveLayersCommand},
-    event::{CanvasActiveLayerChanged, CanvasLayerStackUpdated, CanvasUpdated},
+    event::{
+        CanvasActiveLayerChanged, CanvasLayerPropertyChanged, CanvasLayerStackUpdated,
+        CanvasUpdated,
+    },
 };
 
 pub const LAYER_STACK_CONTEXT: &'static str = "layer_stack";
@@ -99,6 +102,7 @@ impl LayerStackWidget {
             ),
             cx.subscribe_in(&rename_input_state, window, Self::on_rename_input_event),
             cx.subscribe_in(&opacity_state, window, Self::on_opacity_changed),
+            cx.subscribe_in(&canvas, window, Self::on_layer_property_changed),
         ];
 
         Self {
@@ -153,17 +157,8 @@ impl LayerStackWidget {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let active_layer = canvas.read(cx).active_layer_node();
-
-        let blend_func = active_layer.data().blend_func.clone();
-        let opacity = active_layer.data().opacity;
-
-        self.blend_mode_select_state.update(cx, |state, cx| {
-            state.set_selected_value(&blend_func, window, cx);
-        });
-        self.opacity_state.update(cx, |state, cx| {
-            state.set_value(opacity * 100.0, cx);
-        })
+        let props = canvas.read(cx).active_layer_node().data().clone();
+        self.sync_layer_properties(props, window, cx);
     }
 
     fn on_blend_function_registry_changed(&mut self, cx: &mut Context<Self>) {
@@ -301,6 +296,36 @@ impl LayerStackWidget {
                 cx.push_undo_command_to_current(cmd).log_err();
             }
         }
+    }
+
+    fn on_layer_property_changed(
+        &mut self,
+        canvas: &Entity<CCanvas>,
+        event: &CanvasLayerPropertyChanged,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let canvas = canvas.read(cx);
+        if canvas.active_layer_id() != event.layer_id {
+            return;
+        }
+
+        let props = canvas.active_layer_node().data().clone();
+        self.sync_layer_properties(props, window, cx);
+    }
+
+    fn sync_layer_properties(
+        &mut self,
+        props: LayerData,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.opacity_state.update(cx, |state, cx| {
+            state.set_value(props.opacity * 100.0, cx);
+        });
+        self.blend_mode_select_state.update(cx, |state, cx| {
+            state.set_selected_value(&props.blend_func, window, cx);
+        });
     }
 
     fn resolve_drop_target(
