@@ -14,7 +14,15 @@ use gpui::{
     prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, ElementExt, Sizable, StyledExt, button::Button, checkbox::Checkbox, h_flex, input::{Input, InputEvent, InputState}, menu::{ContextMenuExt, PopupMenuItem}, scroll::ScrollableElement, select::{SearchableVec, Select, SelectEvent, SelectState}, v_flex
+    ActiveTheme, ElementExt, IconName, Selectable, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    checkbox::Checkbox,
+    h_flex,
+    input::{Input, InputEvent, InputState},
+    menu::{ContextMenuExt, PopupMenuItem},
+    scroll::ScrollableElement,
+    select::{SearchableVec, Select, SelectEvent, SelectState},
+    v_flex,
 };
 use indexmap::IndexMap;
 use schemars::JsonSchema;
@@ -522,6 +530,30 @@ impl Render for LayerStackWidget {
                         }
                     });
 
+                let lock_toggle_button = Button::new("lock-toggle-button")
+                    .aspect_square()
+                    .selected(node.data().is_locked)
+                    .ghost()
+                    // TODO Use icon
+                    .child("L")
+                    .block_mouse_except_scroll()
+                    .on_click({
+                        let canvas_entity = canvas_entity.downgrade();
+                        move |event, window, cx| {
+                            canvas_entity
+                                .update(cx, |canvas, _| {
+                                    let layer = canvas
+                                        .image
+                                        .layer_stack_mut()
+                                        .get_layer_mut(&layer_id)
+                                        .unwrap();
+                                    // TODO Use command
+                                    layer.data_mut().is_locked = !layer.data().is_locked;
+                                })
+                                .ok();
+                        }
+                    });
+
                 h_flex()
                     .h(px(40.0))
                     .p_1()
@@ -534,6 +566,7 @@ impl Render for LayerStackWidget {
                     .when(canvas.active_layer == layer_id, |d| d.font_bold())
                     .child(visible_checkbox)
                     .child(inner)
+                    .child(lock_toggle_button)
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
                     })

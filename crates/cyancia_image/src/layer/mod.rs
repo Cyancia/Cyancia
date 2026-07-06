@@ -52,6 +52,7 @@ pub struct LayerData {
     pub blend_func: BlendFunctionId,
     pub opacity: f32,
     pub is_visible: bool,
+    pub is_locked: bool,
     data: Box<dyn Layer>,
 }
 
@@ -63,6 +64,7 @@ impl std::fmt::Debug for LayerData {
             .field("blend_func", &self.blend_func)
             .field("opacity", &self.opacity)
             .field("visible", &self.is_visible)
+            .field("locked", &self.is_locked)
             .finish()
     }
 }
@@ -75,6 +77,7 @@ impl LayerData {
             blend_func,
             opacity: 1.0,
             is_visible: true,
+            is_locked: false,
             data,
         }
     }
