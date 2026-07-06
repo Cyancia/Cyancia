@@ -9,9 +9,9 @@ use cyancia_render::{
 use glam::{IVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindingResource, Buffer, BufferUsages, ComputePass, ComputePipeline, ComputePipelineDescriptor,
-    Device, PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer,
+    BufferUsages, ComputePass, ComputePipeline, ComputePipelineDescriptor, Device,
+    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TextureView,
 };
 
@@ -76,10 +76,9 @@ impl Layer for GroupLayer {
             return;
         }
 
-        let blend_func = blend_funcs.get(&node.data().blend_func).expect(&format!(
-            "Blend function '{}' not found",
-            node.data().blend_func
-        ));
+        let blend_func = blend_funcs
+            .get(&node.data().blend_func)
+            .unwrap_or_else(|| panic!("Blend function '{}' not found", node.data().blend_func));
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &blend_func.wgsl_function_call("src", "dst"),
@@ -263,7 +262,7 @@ impl Layer for GroupLayer {
     ) {
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
         for child_node in node.iter_children_composite_order() {
-            let child_layer = image.layer_stack().get_layer(&child_node).unwrap();
+            let child_layer = image.layer_stack().get_layer(child_node).unwrap();
             if !child_layer.data().is_visible {
                 continue;
             }

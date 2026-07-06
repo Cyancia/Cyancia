@@ -1,6 +1,6 @@
 use std::{
     any::{Any, TypeId},
-    collections::{HashMap, HashSet},
+    collections::HashMap,
 };
 
 use cyancia_utils::wrapper;
@@ -594,7 +594,7 @@ impl LayerStack {
             .collect::<Vec<_>>();
         std::iter::from_fn(move || {
             let (id, depth) = stack.pop()?;
-            let node = self.layers.get(&id)?;
+            let node = self.layers.get(id)?;
             stack.extend(
                 node.iter_children_display_order()
                     .rev()

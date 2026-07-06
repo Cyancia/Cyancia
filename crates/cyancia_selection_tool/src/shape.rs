@@ -97,7 +97,7 @@ impl ToolFunction for RectangularSelectionTool {
         common_update(&mut self.state, mouse, cx);
     }
 
-    fn end(&mut self, _mouse: &MouseUpEvent, cx: &mut Context<Self>) {
+    fn end(&mut self, _: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(state) = self.state.take() else {
             return;
         };
@@ -130,7 +130,7 @@ impl ToolFunction for RectangularSelectionTool {
         }
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _window: &mut Window, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };
@@ -192,7 +192,7 @@ pub struct EllipticalSelectionTool {
 }
 
 impl ToolFunction for EllipticalSelectionTool {
-    fn new(_cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -208,7 +208,7 @@ impl ToolFunction for EllipticalSelectionTool {
         common_update(&mut self.state, mouse, cx);
     }
 
-    fn end(&mut self, _mouse: &MouseUpEvent, cx: &mut Context<Self>) {
+    fn end(&mut self, _: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(state) = self.state.take() else {
             return;
         };
@@ -240,7 +240,7 @@ impl ToolFunction for EllipticalSelectionTool {
         }
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _window: &mut Window, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };

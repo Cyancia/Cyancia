@@ -81,40 +81,42 @@ impl BlendMode {
         BlendMode::Color,
         BlendMode::Luminosity,
     ];
+}
 
-    pub const ALL_IDS: LazyLock<[BlendFunctionId; 28]> = LazyLock::new(|| {
-        [
-            BlendFunctionId::new("blend_normal".into()),
-            BlendFunctionId::new("blend_darken".into()),
-            BlendFunctionId::new("blend_multiply".into()),
-            BlendFunctionId::new("blend_color_burn".into()),
-            BlendFunctionId::new("blend_linear_burn".into()),
-            BlendFunctionId::new("blend_darker_color".into()),
-            BlendFunctionId::new("blend_lighten".into()),
-            BlendFunctionId::new("blend_screen".into()),
-            BlendFunctionId::new("blend_color_dodge".into()),
-            BlendFunctionId::new("blend_linear_dodge".into()),
-            BlendFunctionId::new("blend_additive".into()),
-            BlendFunctionId::new("blend_lighter_color".into()),
-            BlendFunctionId::new("blend_overlay".into()),
-            BlendFunctionId::new("blend_soft_light".into()),
-            BlendFunctionId::new("blend_hard_light".into()),
-            BlendFunctionId::new("blend_vivid_light".into()),
-            BlendFunctionId::new("blend_linear_light".into()),
-            BlendFunctionId::new("blend_pin_light".into()),
-            BlendFunctionId::new("blend_hard_mix".into()),
-            BlendFunctionId::new("blend_difference".into()),
-            BlendFunctionId::new("blend_exclusion".into()),
-            BlendFunctionId::new("blend_subtract".into()),
-            BlendFunctionId::new("blend_subtractive".into()),
-            BlendFunctionId::new("blend_divide".into()),
-            BlendFunctionId::new("blend_hue".into()),
-            BlendFunctionId::new("blend_saturation".into()),
-            BlendFunctionId::new("blend_color".into()),
-            BlendFunctionId::new("blend_luminosity".into()),
-        ]
-    });
+pub static ALL_IDS: LazyLock<[BlendFunctionId; 28]> = LazyLock::new(|| {
+    [
+        BlendFunctionId::new("blend_normal".into()),
+        BlendFunctionId::new("blend_darken".into()),
+        BlendFunctionId::new("blend_multiply".into()),
+        BlendFunctionId::new("blend_color_burn".into()),
+        BlendFunctionId::new("blend_linear_burn".into()),
+        BlendFunctionId::new("blend_darker_color".into()),
+        BlendFunctionId::new("blend_lighten".into()),
+        BlendFunctionId::new("blend_screen".into()),
+        BlendFunctionId::new("blend_color_dodge".into()),
+        BlendFunctionId::new("blend_linear_dodge".into()),
+        BlendFunctionId::new("blend_additive".into()),
+        BlendFunctionId::new("blend_lighter_color".into()),
+        BlendFunctionId::new("blend_overlay".into()),
+        BlendFunctionId::new("blend_soft_light".into()),
+        BlendFunctionId::new("blend_hard_light".into()),
+        BlendFunctionId::new("blend_vivid_light".into()),
+        BlendFunctionId::new("blend_linear_light".into()),
+        BlendFunctionId::new("blend_pin_light".into()),
+        BlendFunctionId::new("blend_hard_mix".into()),
+        BlendFunctionId::new("blend_difference".into()),
+        BlendFunctionId::new("blend_exclusion".into()),
+        BlendFunctionId::new("blend_subtract".into()),
+        BlendFunctionId::new("blend_subtractive".into()),
+        BlendFunctionId::new("blend_divide".into()),
+        BlendFunctionId::new("blend_hue".into()),
+        BlendFunctionId::new("blend_saturation".into()),
+        BlendFunctionId::new("blend_color".into()),
+        BlendFunctionId::new("blend_luminosity".into()),
+    ]
+});
 
+impl BlendMode {
     pub fn shader_func(&self) -> &'static str {
         match self {
             BlendMode::Normal => "blend_normal",
@@ -151,7 +153,7 @@ impl BlendMode {
 
 impl BlendFunction for BlendMode {
     fn id(&self) -> BlendFunctionId {
-        Self::ALL_IDS.get(*self as usize).unwrap().clone()
+        ALL_IDS.get(*self as usize).unwrap().clone()
     }
 
     fn wgsl_function_call(&self, src_ident: &str, dst_ident: &str) -> String {

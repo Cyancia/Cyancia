@@ -44,7 +44,7 @@ impl Default for FreehandSelectionTool {
 }
 
 impl ToolFunction for FreehandSelectionTool {
-    fn new(_cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -94,7 +94,7 @@ impl ToolFunction for FreehandSelectionTool {
         state.aabb = state.aabb.union_point(point_ps);
     }
 
-    fn end(&mut self, _mouse: &MouseUpEvent, cx: &mut Context<Self>) {
+    fn end(&mut self, _: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(state) = self.state.take() else {
             return;
         };
@@ -123,7 +123,7 @@ impl ToolFunction for FreehandSelectionTool {
         }
     }
 
-    fn tool_option_widget(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn tool_option_widget(&mut self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .p_2()
             .size_full()
@@ -155,7 +155,7 @@ impl ToolFunction for FreehandSelectionTool {
             .into_any_element()
     }
 
-    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _window: &mut Window, cx: &mut App) {
+    fn canvas_overlay(&mut self, canvas_surface: &TextureView, _: &mut Window, cx: &mut App) {
         let Some(state) = &self.state else {
             return;
         };
@@ -200,7 +200,7 @@ impl Default for PolygonSelectionTool {
 }
 
 impl ToolFunction for PolygonSelectionTool {
-    fn new(_cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 
@@ -208,7 +208,7 @@ impl ToolFunction for PolygonSelectionTool {
         ToolId::new("polygon_selection_tool".into())
     }
 
-    fn begin(&mut self, mouse: &MouseDownEvent, _cx: &mut Context<Self>) {
+    fn begin(&mut self, mouse: &MouseDownEvent, _: &mut Context<Self>) {
         if self.state.is_none() {
             self.state = Some(FreehandSelectionState {
                 aabb: Rect::EMPTY,
@@ -270,7 +270,7 @@ impl ToolFunction for PolygonSelectionTool {
         state.aabb = state.aabb.union_point(point_ps);
     }
 
-    fn tool_option_widget(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn tool_option_widget(&mut self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .p_2()
             .size_full()

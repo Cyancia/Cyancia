@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::{HashMap, HashSet},
-};
+use std::{borrow::Cow, collections::HashMap};
 
 use anyhow::bail;
 use bevy_math::IRect;
@@ -424,7 +421,7 @@ impl UndoCommand for GroupLayerCommand {
             let mut removed_nodes = canvas
                 .image
                 .layer_stack_mut()
-                .remove_layer_hierarchy(&self.group.id());
+                .remove_layer_hierarchy(self.group.id());
 
             removed_nodes.remove(self.group.id()).unwrap();
 
@@ -610,7 +607,7 @@ impl DeleteLayersCommand {
                 current_parent = canvas
                     .image
                     .layer_stack()
-                    .get_layer(&current_parent.parent().unwrap())
+                    .get_layer(current_parent.parent().unwrap())
                     .unwrap();
             }
 

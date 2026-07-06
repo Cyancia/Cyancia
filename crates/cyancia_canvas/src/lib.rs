@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bevy_math::IRect;
 use cyancia_image::{
     CImage,
-    layer::{LayerData, LayerId, LayerStackNode},
+    layer::{LayerId, LayerStackNode},
 };
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_undo::{UndoCommand, UndoStack, UndoStacks};

@@ -7,15 +7,12 @@ use cyancia_render::{
     },
     buffer::DynamicBuffer,
 };
-use encase::ShaderType;
 use glam::UVec3;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferUsages,
-    ComputePass, ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor,
-    Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
-    TextureViewDimension,
+    BindGroup, BindGroupDescriptor, BindGroupLayoutDescriptor, Buffer, BufferUsages, ComputePass,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
 };
 
 use crate::{
@@ -50,7 +47,7 @@ impl Layer for PixelLayer {
         tiles: &GpuTileStorage,
         blend_funcs: &BlendFunctionRegistry,
         device: &Device,
-        queue: &Queue,
+        _: &Queue,
     ) {
         let layer_info = tiles.get_layer_info(layer_id).unwrap();
 
@@ -64,10 +61,9 @@ impl Layer for PixelLayer {
             return;
         }
 
-        let blend_func = blend_funcs.get(&node.data().blend_func).expect(&format!(
-            "Blend function {} not found",
-            node.data().blend_func
-        ));
+        let blend_func = blend_funcs
+            .get(&node.data().blend_func)
+            .unwrap_or_else(|| panic!("Blend function {} not found", node.data().blend_func));
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &blend_func.wgsl_function_call("src", "dst"),

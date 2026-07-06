@@ -1,20 +1,18 @@
-use bevy_math::IRect;
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
     layer::{LayerData, LayerId, LayerPosition},
-    tile::{GpuTileStorage, TileStorageAppExt},
+    tile::TileStorageAppExt,
 };
 use cyancia_utils::log_err::LogErr;
 use cyancia_widgets::spin_slider::{SpinSlider, SpinSliderEvent, SpinSliderState};
-use glam::IVec2;
 use gpui::{
-    Action, AppContext, Bounds, Context, DragMoveEvent, Entity, Focusable, InteractiveElement,
-    IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, actions, div,
+    Action, AppContext, Bounds, Context, DragMoveEvent, Entity, InteractiveElement, IntoElement,
+    Modifiers, MouseButton, ParentElement, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, div,
     prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, ElementExt, IconName, Selectable, Sizable, StyledExt,
+    ActiveTheme, ElementExt, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
     h_flex,
@@ -34,7 +32,7 @@ use crate::{
     event::{CanvasActiveLayerChanged, CanvasLayerPropertyChanged, CanvasUpdated},
 };
 
-pub const LAYER_STACK_CONTEXT: &'static str = "layer_stack";
+pub const LAYER_STACK_CONTEXT: &str = "layer_stack";
 
 #[derive(Action, Clone, PartialEq, JsonSchema, Deserialize)]
 pub struct RenameLayer {
@@ -111,40 +109,37 @@ impl LayerStackWidget {
 
     fn on_blend_function_changed(
         &mut self,
-        select_state: &Entity<SelectState<SearchableVec<BlendFunctionId>>>,
+        _: &Entity<SelectState<SearchableVec<BlendFunctionId>>>,
         event: &SelectEvent<SearchableVec<BlendFunctionId>>,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match event {
-            SelectEvent::Confirm(Some(value)) => {
-                let cmd = self
-                    .canvas
-                    .update(cx, |canvas, cx| {
-                        let old = canvas.active_layer_node().data().clone();
-                        let new = {
-                            let mut data = old.clone();
-                            data.blend_func = value.clone();
-                            data
-                        };
-                        LayerPropertyChangeCommand {
-                            canvas: canvas.id(),
-                            layer_id: canvas.active_layer_id(),
-                            old,
-                            new,
-                        }
-                    })
-                    .unwrap();
-                cx.push_undo_command_to_current(cmd).log_err();
-            }
-            _ => {}
+        if let SelectEvent::Confirm(Some(value)) = event {
+            let cmd = self
+                .canvas
+                .update(cx, |canvas, _| {
+                    let old = canvas.active_layer_node().data().clone();
+                    let new = {
+                        let mut data = old.clone();
+                        data.blend_func = value.clone();
+                        data
+                    };
+                    LayerPropertyChangeCommand {
+                        canvas: canvas.id(),
+                        layer_id: canvas.active_layer_id(),
+                        old,
+                        new,
+                    }
+                })
+                .unwrap();
+            cx.push_undo_command_to_current(cmd).log_err();
         }
     }
 
     fn on_active_layer_changed(
         &mut self,
         canvas: &Entity<CCanvas>,
-        event: &CanvasActiveLayerChanged,
+        _: &CanvasActiveLayerChanged,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -176,7 +171,7 @@ impl LayerStackWidget {
             self.resolve_drop_target(event.dragged_item().downcast_ref().unwrap(), window, cx);
     }
 
-    fn on_layer_drop(&mut self, info: &LayerDragInfo, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_layer_drop(&mut self, info: &LayerDragInfo, _: &mut Window, cx: &mut Context<Self>) {
         let Some(drop_info) = self.layer_drop_info.take() else {
             return;
         };
@@ -221,9 +216,9 @@ impl LayerStackWidget {
 
     fn on_opacity_changed(
         &mut self,
-        state: &Entity<SpinSliderState>,
+        _: &Entity<SpinSliderState>,
         event: &SpinSliderEvent,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
@@ -454,7 +449,7 @@ impl LayerStackWidget {
     ) {
         let layer_name = self
             .canvas
-            .read_with(cx, |canvas, cx| {
+            .read_with(cx, |canvas, _| {
                 let layer = canvas.image.layer_stack().get_layer(&action.layer_id)?;
                 Some(layer.data().name.clone())
             })
@@ -476,7 +471,7 @@ impl LayerStackWidget {
         &mut self,
         state: &Entity<InputState>,
         event: &InputEvent,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
@@ -541,16 +536,12 @@ impl Render for LayerStackWidget {
                     )
                     .on_prepaint({
                         let widget = widget.clone();
-                        move |bounds, window, cx| {
+                        move |bounds, _, cx| {
                             widget
-                                .update(cx, |widget, cx| {
-                                    widget.layer_widget_info.insert(
-                                        layer_id,
-                                        LayerWidgetInfo {
-                                            layer_id: layer_id,
-                                            bounds,
-                                        },
-                                    );
+                                .update(cx, |widget, _| {
+                                    widget
+                                        .layer_widget_info
+                                        .insert(layer_id, LayerWidgetInfo { layer_id, bounds });
                                 })
                                 .ok();
                         }
@@ -572,7 +563,7 @@ impl Render for LayerStackWidget {
                     .block_mouse_except_scroll()
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
-                        move |checked, window, cx| {
+                        move |checked, _, cx| {
                             let cmd = canvas_entity
                                 .update(cx, |canvas, cx| {
                                     let layer = canvas
@@ -608,7 +599,7 @@ impl Render for LayerStackWidget {
                     .block_mouse_except_scroll()
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
-                        move |event, window, cx| {
+                        move |_, _, cx| {
                             let cmd = canvas_entity
                                 .read_with(cx, |canvas, _| {
                                     let layer =
@@ -644,7 +635,7 @@ impl Render for LayerStackWidget {
                     .block_mouse_except_scroll()
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
-                        move |event, window, cx| {
+                        move |_, _, cx| {
                             let cmd = canvas_entity
                                 .read_with(cx, |canvas, _| {
                                     let layer =
@@ -677,7 +668,7 @@ impl Render for LayerStackWidget {
                     .block_mouse_except_scroll()
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
-                        move |event, window, cx| {
+                        move |_, _, cx| {
                             let cmd = canvas_entity
                                 .read_with(cx, |canvas, _| {
                                     let layer =
@@ -768,7 +759,7 @@ impl Render for LayerStackWidget {
                         }
                     })
                     .on_action(cx.listener(Self::on_rename_layer))
-                    .context_menu(move |menu, window, cx| {
+                    .context_menu(move |menu, _, _| {
                         menu.item(
                             PopupMenuItem::new("Rename").action(Box::new(RenameLayer { layer_id })),
                         )
@@ -800,9 +791,9 @@ impl Render for LayerStackWidget {
             .on_prepaint({
                 let widget = widget.clone();
                 let root_id = *canvas.image.layer_stack().root_id();
-                move |bounds, window, cx| {
+                move |bounds, _, cx| {
                     widget
-                        .update(cx, |widget, cx| {
+                        .update(cx, |widget, _| {
                             widget.layer_drop_indicator_offset = bounds.origin;
                             widget.layer_widget_info.insert(
                                 root_id,

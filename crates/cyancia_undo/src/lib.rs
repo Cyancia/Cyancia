@@ -152,7 +152,7 @@ pub trait UndoCommand: 'static + Downcast {
     fn label(&self) -> Cow<'static, str>;
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()>;
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()>;
-    fn can_cancel_out(&self, _rhs: &dyn UndoCommand) -> bool {
+    fn can_cancel_out(&self, _: &dyn UndoCommand) -> bool {
         false
     }
 }

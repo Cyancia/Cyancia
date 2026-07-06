@@ -11,8 +11,7 @@ use cyancia_image::{
     blend_modes::BlendMode,
     composite::BlendFunction,
     layer::{LayerData, LayerId, LayerPosition, pixel_layer::PixelLayer},
-    texel::TexelType,
-    tile::{GpuLayerInfo, TileStorageAppExt},
+    tile::TileStorageAppExt,
 };
 use cyancia_undo::BatchedUndoCommand;
 use cyancia_utils::log_err::LogErr;
@@ -55,9 +54,7 @@ impl ActionFunction for CreateNewLayerAction {
     fn trigger(&self, cx: &mut App) {
         let cmd = cx
             .update_current_canvas(|canvas, _| {
-                let Some((parent, position)) = find_proper_parent_position(&canvas) else {
-                    return None;
-                };
+                let (parent, position) = find_proper_parent_position(canvas)?;
 
                 let new_layer =
                     LayerData::new_normal_pixel(canvas.image.next_name_of_layer("Layer".into()));
@@ -311,17 +308,12 @@ impl ActionFunction for PasteIntoNewLayerAction {
             return;
         };
 
-        let Some(entry) = clipboard
-            .entries()
-            .iter()
-            .filter(|e| {
-                matches!(
-                    e,
-                    ClipboardEntry::ExternalPaths(_) | ClipboardEntry::Image(_)
-                )
-            })
-            .next()
-        else {
+        let Some(entry) = clipboard.entries().iter().find(|e| {
+            matches!(
+                e,
+                ClipboardEntry::ExternalPaths(_) | ClipboardEntry::Image(_)
+            )
+        }) else {
             return;
         };
 
@@ -329,7 +321,7 @@ impl ActionFunction for PasteIntoNewLayerAction {
             return;
         };
 
-        let Some((parent, position)) = find_proper_parent_position(&canvas) else {
+        let Some((parent, position)) = find_proper_parent_position(canvas) else {
             return;
         };
 

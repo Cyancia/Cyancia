@@ -1,17 +1,15 @@
 use gpui::{
-    AnyElement, App, AppContext, Bounds, ClickEvent, Context, DragMoveEvent, Empty, Entity,
-    EntityId, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
-    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Subscription,
-    TextAlign, Window, actions, div, prelude::FluentBuilder as _, px, relative,
+    AnyElement, App, AppContext, ClickEvent, Context, DragMoveEvent, Empty, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, MouseButton,
+    MouseDownEvent, MouseUpEvent, ParentElement, Render, RenderOnce, StatefulInteractiveElement,
+    StyleRefinement, Styled, Subscription, TextAlign, Window, actions, div, prelude::FluentBuilder,
+    px, relative,
 };
 use gpui_component::{
-    ActiveTheme, Colorize, Disableable, ElementExt, IconName, Sizable, Size, StyleSized, StyledExt,
+    ActiveTheme, Disableable, IconName, Sizable, Size, StyleSized, StyledExt,
     button::Button,
-    input::{
-        Escape, Input, InputEvent, InputState, MaskPattern, NumberInputEvent, SelectAll, StepAction,
-    },
-    slider::{SliderEvent, SliderScale, SliderState, SliderValue},
+    input::{Escape, Input, InputEvent, InputState, StepAction},
+    slider::SliderScale,
 };
 
 const KEY_CONTEXT: &str = "SpinSlider";
@@ -27,10 +25,10 @@ pub fn init(cx: &mut App) {
 }
 
 #[derive(Clone)]
-struct DragSlider(EntityId);
+struct DragSlider;
 
 impl Render for DragSlider {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         Empty
     }
 }
@@ -158,7 +156,7 @@ impl SpinSliderState {
 
     fn on_input_event(
         &mut self,
-        state: &Entity<InputState>,
+        _: &Entity<InputState>,
         event: &InputEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -217,7 +215,7 @@ impl SpinSliderState {
         self.sync_input_from_value(window, cx);
     }
 
-    fn on_mouse_down(&mut self, _: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_mouse_down(&mut self, _: &MouseDownEvent, _: &mut Window, _: &mut Context<Self>) {
         self.pending_edit = true;
     }
 
@@ -402,7 +400,7 @@ impl RenderOnce for SpinSlider {
             .when(!editing, |this| {
                 this.when(!disabled, |this| {
                     this.cursor_text()
-                        .on_drag(DragSlider(self.state.entity_id()), |drag, _, _, cx| {
+                        .on_drag(DragSlider, |drag, _, _, cx| {
                             cx.stop_propagation();
                             cx.new(|_| drag.clone())
                         })

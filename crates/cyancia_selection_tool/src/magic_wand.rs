@@ -46,7 +46,7 @@ impl Default for MagicWandSelectionTool {
 }
 
 impl ToolFunction for MagicWandSelectionTool {
-    fn new(_cx: &mut Context<Self>) -> Self {
+    fn new(_: &mut Context<Self>) -> Self {
         Self::default()
     }
 

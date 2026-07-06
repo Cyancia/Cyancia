@@ -130,7 +130,7 @@ impl ImageCompositor {
     pub fn composite(
         &mut self,
         overriders: &LayerPreviewOverriders,
-        _tiles: IRect,
+        _: IRect,
         image: &CImage,
         tiles: &GpuTileStorage,
         device: &Device,
