@@ -105,13 +105,13 @@ fn is_channel_disabled(channel: u32) -> bool {
 fn main(@builtin(global_invocation_id) id: vec3u) {
     let pixel = id.xy;
     let src_color = get_src_color(vec2i(pixel));
-    let disabled_channel_factor = vec4f(
-        select(1.0, 0.0, is_channel_disabled(0)),
-        select(1.0, 0.0, is_channel_disabled(1)),
-        select(1.0, 0.0, is_channel_disabled(2)),
-        select(1.0, 0.0, is_channel_disabled(3))
-    );
     let dst_color = get_dst_color(vec2i(pixel));
-    let blended_color = blend(vec4f(src_color.rgb, src_color.a * params.src_opacity) * disabled_channel_factor, dst_color);
-    set_output_color(vec2i(pixel), blended_color);
+    let blended_color = blend(vec4f(src_color.rgb, src_color.a * params.src_opacity), dst_color);
+    let disabled_channel_factor = vec4f(
+        select(0.0, 1.0, is_channel_disabled(0)),
+        select(0.0, 1.0, is_channel_disabled(1)),
+        select(0.0, 1.0, is_channel_disabled(2)),
+        select(0.0, 1.0, is_channel_disabled(3))
+    );
+    set_output_color(vec2i(pixel), mix(blended_color, dst_color, disabled_channel_factor));
 }
