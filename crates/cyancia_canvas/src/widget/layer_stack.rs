@@ -128,7 +128,8 @@ impl LayerStackWidget {
     ) {
         match event {
             SelectEvent::Confirm(Some(value)) => {
-                self.canvas
+                let cmd = self
+                    .canvas
                     .update(cx, |canvas, cx| {
                         let old = canvas.active_layer_node().data().clone();
                         let new = {
@@ -136,15 +137,15 @@ impl LayerStackWidget {
                             data.blend_func = value.clone();
                             data
                         };
-                        let cmd = LayerPropertyChangeCommand {
+                        LayerPropertyChangeCommand {
                             canvas: canvas.id(),
                             layer_id: canvas.active_layer_id(),
                             old,
                             new,
-                        };
-                        cx.push_undo_command_to_current(cmd).log_err();
+                        }
                     })
-                    .ok();
+                    .unwrap();
+                cx.push_undo_command_to_current(cmd).log_err();
             }
             _ => {}
         }
