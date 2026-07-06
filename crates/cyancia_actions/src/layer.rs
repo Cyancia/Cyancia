@@ -1,7 +1,7 @@
 use std::any::TypeId;
 
 use cyancia_canvas::{
-    CanvasAppExt, CanvasUndoStackAppExt,
+    CCanvas, CanvasAppExt, CanvasUndoStackAppExt,
     command::{
         DeleteLayersCommand, GroupLayerCommand, InsertLayerCommand, LayerWithPosition,
         MoveLayersCommand,
@@ -10,7 +10,7 @@ use cyancia_canvas::{
 use cyancia_image::{
     blend_modes::BlendMode,
     composite::BlendFunction,
-    layer::{LayerData, LayerPosition, pixel_layer::PixelLayer},
+    layer::{LayerData, LayerId, LayerPosition, pixel_layer::PixelLayer},
     texel::TexelType,
     tile::{GpuLayerInfo, TileStorageAppExt},
 };
@@ -31,22 +31,39 @@ actions!([
     PasteIntoNewLayerAction,
 ]);
 
+fn find_proper_parent_position(canvas: &CCanvas) -> Option<(LayerId, LayerPosition)> {
+    let mut cur_parent = canvas.active_layer_node();
+    let mut cur_position = LayerPosition::foreground();
+    while !cur_parent
+        .data()
+        .ty()
+        .can_have_children_of(TypeId::of::<PixelLayer>())
+    {
+        let parent_id = canvas.image.layer_stack().get_layer(cur_parent.parent()?)?;
+        cur_position = LayerPosition::above(*cur_parent.id());
+        cur_parent = canvas
+            .image
+            .layer_stack()
+            .get_layer(parent_id.id())
+            .unwrap();
+    }
+
+    Some((*cur_parent.id(), cur_position))
+}
+
 impl ActionFunction for CreateNewLayerAction {
     fn trigger(&self, cx: &mut App) {
         let cmd = cx
             .update_current_canvas(|canvas, _| {
-                // TODO: Check if this type of layer can be created under the current layer.
-                //       If can't, check it's parent, until find one.
-                let parent = canvas.parent_id_of_active_layer();
-                let active_layer_id = canvas.active_layer_id();
+                let Some((parent, position)) = find_proper_parent_position(&canvas) else {
+                    return None;
+                };
 
                 let new_layer =
                     LayerData::new_normal_pixel(canvas.image.next_name_of_layer("Layer".into()));
-                let parent_node = canvas.image.layer_stack().get_layer(&parent).unwrap();
-                let index = parent_node.child_index(&active_layer_id).unwrap();
-
-                InsertLayerCommand::new(canvas, new_layer, parent, index + 1)
+                Some(InsertLayerCommand::new(canvas, new_layer, parent, position))
             })
+            .unwrap()
             .unwrap();
 
         cx.push_undo_command_to_current(cmd).log_err();
@@ -312,30 +329,8 @@ impl ActionFunction for PasteIntoNewLayerAction {
             return;
         };
 
-        let (parent, position) = {
-            let mut cur_parent = canvas.active_layer_node();
-            let mut cur_position = LayerPosition::foreground();
-            while !cur_parent
-                .data()
-                .ty()
-                .can_have_children_of(TypeId::of::<PixelLayer>())
-            {
-                let Some(parent_id) = canvas
-                    .image
-                    .layer_stack()
-                    .get_layer(cur_parent.parent().unwrap())
-                else {
-                    return;
-                };
-                cur_position = LayerPosition::above(*cur_parent.id());
-                cur_parent = canvas
-                    .image
-                    .layer_stack()
-                    .get_layer(parent_id.id())
-                    .unwrap();
-            }
-
-            (*cur_parent.id(), cur_position)
+        let Some((parent, position)) = find_proper_parent_position(&canvas) else {
+            return;
         };
 
         match entry {
