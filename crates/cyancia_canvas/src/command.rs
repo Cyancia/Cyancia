@@ -673,26 +673,29 @@ impl UndoCommand for DeleteLayersCommand {
     }
 }
 
-pub struct RenameLayerCommand {
+pub struct LayerPropertyChangeCommand {
     pub canvas: CanvasId,
     pub layer_id: LayerId,
-    pub new_name: String,
-    pub old_name: String,
+    pub old: LayerData,
+    pub new: LayerData,
 }
 
-impl UndoCommand for RenameLayerCommand {
+impl UndoCommand for LayerPropertyChangeCommand {
     fn label(&self) -> Cow<'static, str> {
-        "Rename Layer".into()
+        "Layer Property Change".into()
     }
 
     fn redo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _cx| {
+        cx.update_canvas(&self.canvas, |canvas, cx| {
             let layer = canvas
                 .image
                 .layer_stack_mut()
                 .get_layer_mut(&self.layer_id)
                 .unwrap();
-            layer.data_mut().name = self.new_name.clone();
+            *layer.data_mut() = self.new.clone();
+            cx.emit(CanvasUpdated {
+                dirty_tiles: canvas.image.image_tile_rect(),
+            });
         });
         cx.refresh_windows();
 
@@ -700,13 +703,16 @@ impl UndoCommand for RenameLayerCommand {
     }
 
     fn undo(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        cx.update_canvas(&self.canvas, |canvas, _cx| {
+        cx.update_canvas(&self.canvas, |canvas, cx| {
             let layer = canvas
                 .image
                 .layer_stack_mut()
                 .get_layer_mut(&self.layer_id)
                 .unwrap();
-            layer.data_mut().name = self.old_name.clone();
+            *layer.data_mut() = self.old.clone();
+            cx.emit(CanvasUpdated {
+                dirty_tiles: canvas.image.image_tile_rect(),
+            });
         });
         cx.refresh_windows();
 

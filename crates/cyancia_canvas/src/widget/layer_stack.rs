@@ -1,7 +1,7 @@
 use bevy_math::IRect;
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
-    layer::{LayerId, LayerPosition},
+    layer::{LayerData, LayerId, LayerPosition},
     tile::GpuTileStorage,
 };
 use cyancia_utils::log_err::LogErr;
@@ -30,7 +30,7 @@ use serde::Deserialize;
 
 use crate::{
     CCanvas, CanvasUndoStackAppExt,
-    command::{MoveLayersCommand, RenameLayerCommand},
+    command::{LayerPropertyChangeCommand, MoveLayersCommand},
     event::{CanvasActiveLayerChanged, CanvasLayerStackUpdated, CanvasUpdated},
 };
 
@@ -64,6 +64,7 @@ pub struct LayerStackWidget {
     layer_drop_info: Option<DropInfo>,
     layer_drop_indicator_offset: Point<Pixels>,
     opacity_state: Entity<SpinSliderState>,
+    recorded_opacity: Option<f32>,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -109,6 +110,7 @@ impl LayerStackWidget {
             layer_drop_info: None,
             layer_drop_indicator_offset: Point::default(),
             opacity_state,
+            recorded_opacity: None,
             _subscriptions: subscriptions,
         }
     }
@@ -124,14 +126,19 @@ impl LayerStackWidget {
             SelectEvent::Confirm(Some(value)) => {
                 self.canvas
                     .update(cx, |canvas, cx| {
-                        // TODO command based
-                        canvas.active_layer_node_mut().data_mut().blend_func = value.clone();
-                        // TODO use layer bound
-                        let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(IRect {
-                            min: IVec2::ZERO,
-                            max: canvas.image.size().as_ivec2(),
-                        });
-                        cx.emit(CanvasUpdated { dirty_tiles });
+                        let old = canvas.active_layer_node().data().clone();
+                        let new = {
+                            let mut data = old.clone();
+                            data.blend_func = value.clone();
+                            data
+                        };
+                        let cmd = LayerPropertyChangeCommand {
+                            canvas: canvas.id(),
+                            layer_id: canvas.active_layer_id(),
+                            old,
+                            new,
+                        };
+                        cx.push_undo_command_to_current(cmd).log_err();
                     })
                     .ok();
             }
@@ -247,9 +254,11 @@ impl LayerStackWidget {
                             return;
                         };
 
-                        // TODO Command based
+                        self.recorded_opacity.get_or_insert(layer.data().opacity);
+                        // This is only used for preview purpose. The original opacity is recorded and
+                        // is going to be restored on release.
                         layer.data_mut().opacity = val / 100.0;
-                        dbg!(layer.data().opacity);
+
                         // TODO use layer bounds
                         cx.emit(CanvasUpdated {
                             dirty_tiles: canvas.image.image_tile_rect(),
@@ -257,7 +266,40 @@ impl LayerStackWidget {
                     })
                     .ok();
             }
-            _ => {}
+            SpinSliderEvent::Release(val) => {
+                let cmd = self
+                    .canvas
+                    .read_with(cx, |canvas, _| {
+                        let layer = canvas
+                            .image
+                            .layer_stack()
+                            .get_layer(&canvas.active_layer_id())
+                            .unwrap();
+                        let old = {
+                            let mut data = layer.data().clone();
+                            // Get the recorded opacity, if this event is initiated by end dragging.
+                            // If the value is typed directly, no opacity is recorded, as well as no
+                            // layer opacity is changed before.
+                            if let Some(old_opacity) = self.recorded_opacity {
+                                data.opacity = old_opacity;
+                            }
+                            data
+                        };
+                        let new = {
+                            let mut data = old.clone();
+                            data.opacity = val / 100.0;
+                            data
+                        };
+                        LayerPropertyChangeCommand {
+                            canvas: canvas.id(),
+                            layer_id: canvas.active_layer_id(),
+                            old,
+                            new,
+                        }
+                    })
+                    .unwrap();
+                cx.push_undo_command_to_current(cmd).log_err();
+            }
         }
     }
 
@@ -437,11 +479,17 @@ impl LayerStackWidget {
                     return;
                 };
 
-                let cmd = RenameLayerCommand {
+                let old = layer.data().clone();
+                let new = {
+                    let mut data = old.clone();
+                    data.name = value.into();
+                    data
+                };
+                let cmd = LayerPropertyChangeCommand {
                     canvas: canvas.id(),
                     layer_id,
-                    new_name: value.into(),
-                    old_name: layer.data().name.clone(),
+                    old,
+                    new,
                 };
                 cx.push_undo_command_to_current(cmd).log_err();
             }
@@ -511,22 +559,29 @@ impl Render for LayerStackWidget {
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
                         move |checked, window, cx| {
-                            canvas_entity
+                            let cmd = canvas_entity
                                 .update(cx, |canvas, cx| {
                                     let layer = canvas
                                         .image
                                         .layer_stack_mut()
                                         .get_layer_mut(&layer_id)
                                         .unwrap();
-                                    // TODO Use command
-                                    layer.data_mut().is_visible = *checked;
-                                    // TODO use layer bounds
-                                    cx.emit(CanvasUpdated {
-                                        dirty_tiles: canvas.image.image_tile_rect(),
-                                    });
+                                    let old = layer.data().clone();
+                                    let new = {
+                                        let mut data = old.clone();
+                                        data.is_visible = *checked;
+                                        data
+                                    };
                                     cx.stop_propagation();
+                                    LayerPropertyChangeCommand {
+                                        canvas: canvas.id(),
+                                        layer_id,
+                                        old,
+                                        new,
+                                    }
                                 })
-                                .ok();
+                                .unwrap();
+                            cx.push_undo_command_to_current(cmd).log_err();
                         }
                     });
 
@@ -540,17 +595,25 @@ impl Render for LayerStackWidget {
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
                         move |event, window, cx| {
-                            canvas_entity
-                                .update(cx, |canvas, _| {
-                                    let layer = canvas
-                                        .image
-                                        .layer_stack_mut()
-                                        .get_layer_mut(&layer_id)
-                                        .unwrap();
-                                    // TODO Use command
-                                    layer.data_mut().is_locked = !layer.data().is_locked;
+                            let cmd = canvas_entity
+                                .read_with(cx, |canvas, _| {
+                                    let layer =
+                                        canvas.image.layer_stack().get_layer(&layer_id).unwrap();
+                                    let old = layer.data().clone();
+                                    let new = {
+                                        let mut d = old.clone();
+                                        d.is_locked = !old.is_locked;
+                                        d
+                                    };
+                                    LayerPropertyChangeCommand {
+                                        canvas: canvas.id(),
+                                        layer_id,
+                                        old,
+                                        new,
+                                    }
                                 })
-                                .ok();
+                                .unwrap();
+                            cx.push_undo_command_to_current(cmd).log_err();
                         }
                     });
 
