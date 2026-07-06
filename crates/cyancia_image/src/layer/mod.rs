@@ -45,6 +45,9 @@ wrapper! {
     pub LayerId : Uuid
 }
 
+// TODO This should not be a fixed struct.
+//      For example, for vector layers, the locked_channels is not valid.
+//      In the future, this might be a dynamic map provided by the specific layer type?
 #[derive(Clone)]
 pub struct LayerData {
     id: LayerId,

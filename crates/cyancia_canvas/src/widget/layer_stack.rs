@@ -787,8 +787,7 @@ impl Render for LayerStackWidget {
 
         v_flex()
             .key_context(LAYER_STACK_CONTEXT)
-            .w_full()
-            .h_full()
+            .size_full()
             .gap_2()
             .child(layer_params)
             .child(
@@ -798,18 +797,26 @@ impl Render for LayerStackWidget {
                     .on_drop(cx.listener(Self::on_layer_drop))
                     .overflow_scrollbar(),
             )
+            .on_prepaint({
+                let widget = widget.clone();
+                let root_id = *canvas.image.layer_stack().root_id();
+                move |bounds, window, cx| {
+                    widget
+                        .update(cx, |widget, cx| {
+                            widget.layer_drop_indicator_offset = bounds.origin;
+                            widget.layer_widget_info.insert(
+                                root_id,
+                                LayerWidgetInfo {
+                                    layer_id: root_id,
+                                    bounds,
+                                },
+                            )
+                        })
+                        .ok();
+                }
+            })
             .when_some(self.layer_drop_info.as_ref(), |d, info| {
-                d.on_prepaint({
-                    let widget = widget.clone();
-                    move |bounds, window, cx| {
-                        widget
-                            .update(cx, |widget, cx| {
-                                widget.layer_drop_indicator_offset = bounds.origin;
-                            })
-                            .ok();
-                    }
-                })
-                .child(
+                d.child(
                     div()
                         .w(info.length)
                         .absolute()
