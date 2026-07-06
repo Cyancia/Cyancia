@@ -31,10 +31,7 @@ use serde::Deserialize;
 use crate::{
     CCanvas, CanvasUndoStackAppExt,
     command::{LayerPropertyChangeCommand, MoveLayersCommand},
-    event::{
-        CanvasActiveLayerChanged, CanvasLayerPropertyChanged, CanvasLayerStackUpdated,
-        CanvasUpdated,
-    },
+    event::{CanvasActiveLayerChanged, CanvasLayerPropertyChanged, CanvasUpdated},
 };
 
 pub const LAYER_STACK_CONTEXT: &'static str = "layer_stack";
@@ -86,13 +83,6 @@ impl LayerStackWidget {
         let opacity_state = cx.new(|cx| SpinSliderState::new_percent(window, cx));
 
         let subscriptions = vec![
-            cx.subscribe_in(
-                &canvas,
-                window,
-                |_, _, _: &CanvasLayerStackUpdated, _, cx| {
-                    cx.notify();
-                },
-            ),
             cx.subscribe_in(&canvas, window, Self::on_active_layer_changed),
             cx.observe_global::<BlendFunctionRegistry>(Self::on_blend_function_registry_changed),
             cx.subscribe_in(
@@ -227,9 +217,6 @@ impl LayerStackWidget {
             drop_info.child_position,
         );
         cx.push_undo_command(&canvas_id, command).ok();
-        canvas_entity.update(cx, |_, cx| {
-            cx.emit(CanvasLayerStackUpdated {});
-        });
     }
 
     fn on_opacity_changed(

@@ -25,9 +25,6 @@ pub struct CanvasUpdated {
 }
 
 #[derive(Debug, Clone)]
-pub struct CanvasLayerStackUpdated {}
-
-#[derive(Debug, Clone)]
 pub struct CanvasActiveLayerChanged {
     pub from: LayerId,
     pub to: LayerId,
