@@ -14,7 +14,9 @@ use gpui::{
     prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, ElementExt, Sizable, StyledExt, h_flex,
+    ActiveTheme, ElementExt, Sizable, StyledExt,
+    checkbox::Checkbox,
+    h_flex,
     input::{Input, InputEvent, InputState},
     menu::{ContextMenuExt, PopupMenuItem},
     scroll::ScrollableElement,
@@ -491,13 +493,53 @@ impl Render for LayerStackWidget {
                         }
                     });
 
+                let ancestor_visible = canvas.image.layer_stack().ancestors(layer_id).all(|a| {
+                    canvas
+                        .image
+                        .layer_stack()
+                        .get_layer(&a)
+                        .unwrap()
+                        .data()
+                        .is_visible
+                });
+
                 h_flex()
                     .h(px(40.0))
+                    .p_1()
+                    .gap_1()
+                    .items_center()
+                    .id(format!("layer-{}", layer_id))
                     .when(canvas.selected_layer_ids().contains(&layer_id), |d| {
                         d.bg(cx.theme().accent)
                     })
                     .when(canvas.active_layer == layer_id, |d| d.font_bold())
-                    .id(format!("layer-{}", layer_id))
+                    .child(
+                        Checkbox::new("visible-checkbox")
+                            .checked(node.data().is_visible)
+                            .when(!ancestor_visible, |c| c.opacity(0.5))
+                            .block_mouse_except_scroll()
+                            .on_click({
+                                let canvas_entity = canvas_entity.downgrade();
+                                move |checked, window, cx| {
+                                    canvas_entity
+                                        .update(cx, |canvas, cx| {
+                                            let layer = canvas
+                                                .image
+                                                .layer_stack_mut()
+                                                .get_layer_mut(&layer_id)
+                                                .unwrap();
+                                            // TODO Use command
+                                            layer.data_mut().is_visible = *checked;
+                                            // TODO use layer bounds
+                                            cx.emit(CanvasUpdated {
+                                                dirty_tiles: canvas.image.image_tile_rect(),
+                                            });
+                                            cx.stop_propagation();
+                                        })
+                                        .ok();
+                                }
+                            }),
+                    )
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
                     })

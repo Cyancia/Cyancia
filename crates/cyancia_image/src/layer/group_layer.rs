@@ -207,6 +207,10 @@ impl Layer for GroupLayer {
 
         for child_node in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(child_node).unwrap();
+            if !child_layer.data().is_visible {
+                continue;
+            }
+
             child_layer.data().prepare_blend_cache(
                 compositor,
                 overriders,
@@ -258,6 +262,10 @@ impl Layer for GroupLayer {
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
         for child_node in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(&child_node).unwrap();
+            if !child_layer.data().is_visible {
+                continue;
+            }
+
             child_layer
                 .data()
                 .dispatch_blend(compositor, pass, image, tiles);

@@ -51,6 +51,7 @@ pub struct LayerData {
     pub name: String,
     pub blend_func: BlendFunctionId,
     pub opacity: f32,
+    pub is_visible: bool,
     data: Box<dyn Layer>,
 }
 
@@ -61,6 +62,7 @@ impl std::fmt::Debug for LayerData {
             .field("name", &self.name)
             .field("blend_func", &self.blend_func)
             .field("opacity", &self.opacity)
+            .field("visible", &self.is_visible)
             .finish()
     }
 }
@@ -72,6 +74,7 @@ impl LayerData {
             name,
             blend_func,
             opacity: 1.0,
+            is_visible: true,
             data,
         }
     }
