@@ -170,9 +170,9 @@ impl ImageCompositor {
         log::debug!("Blend cache prepared in {:?}", now.elapsed());
 
         let now = std::time::Instant::now();
-        unsafe {
-            device.start_graphics_debugger_capture();
-        }
+        // unsafe {
+        //     device.start_graphics_debugger_capture();
+        // }
         root_node
             .data()
             .dispatch_blend(self, &mut pass, image, tiles);
@@ -181,9 +181,9 @@ impl ImageCompositor {
         drop(pass);
 
         queue.submit([ec.finish()]);
-        unsafe {
-            device.stop_graphics_debugger_capture();
-        }
+        // unsafe {
+        //     device.stop_graphics_debugger_capture();
+        // }
     }
 
     pub fn get_blend_cache<T: Send + Sync + 'static>(&self, layer_id: &LayerId) -> Option<&T> {

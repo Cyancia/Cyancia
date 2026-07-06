@@ -263,7 +263,7 @@ impl LayerStackWidget {
                             // Get the recorded opacity, if this event is initiated by end dragging.
                             // If the value is typed directly, no opacity is recorded, as well as no
                             // layer opacity is changed before.
-                            if let Some(old_opacity) = self.recorded_opacity {
+                            if let Some(old_opacity) = self.recorded_opacity.take() {
                                 data.opacity = old_opacity;
                             }
                             data
@@ -308,6 +308,7 @@ impl LayerStackWidget {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        dbg!(props.opacity);
         self.opacity_state.update(cx, |state, cx| {
             state.set_value(props.opacity * 100.0, cx);
         });

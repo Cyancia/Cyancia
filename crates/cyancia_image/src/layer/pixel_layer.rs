@@ -241,6 +241,7 @@ impl Layer for PixelLayer {
         };
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
 
+        dbg!(node.data().opacity);
         cache.params_buffer.clear();
         cache.params_buffer.push(&BlendLayerParams {
             src_opacity: node.data().opacity,
