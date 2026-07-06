@@ -257,9 +257,9 @@ impl ActionFunction for SelectPreviousLayerAction {
                 while let Some(child) = current.children().first() {
                     current = canvas.image.layer_stack().get_layer(child).unwrap();
                 }
-                canvas.set_active_layer(*current.id(), cx);
+                canvas.set_active_layer_and_clear_select(*current.id(), cx);
             } else {
-                canvas.set_active_layer(*active_parent_node.id(), cx);
+                canvas.set_active_layer_and_clear_select(*active_parent_node.id(), cx);
             }
         });
         cx.refresh_windows();
@@ -272,7 +272,7 @@ impl ActionFunction for SelectNextLayerAction {
             let active_node = canvas.active_layer_node();
 
             if let Some(child) = active_node.children().last() {
-                canvas.set_active_layer(*child, cx);
+                canvas.set_active_layer_and_clear_select(*child, cx);
                 return;
             }
 
@@ -284,7 +284,7 @@ impl ActionFunction for SelectNextLayerAction {
 
             if let Some(layer) = active_parent_node.child_below(active_node.id()) {
                 // Not the last node
-                canvas.set_active_layer(layer, cx);
+                canvas.set_active_layer_and_clear_select(layer, cx);
                 return;
             }
 
@@ -295,7 +295,7 @@ impl ActionFunction for SelectNextLayerAction {
                 .and_then(|p| canvas.image.layer_stack().get_layer(p))
             {
                 if let Some(layer) = current_parent.child_below(current.id()) {
-                    canvas.set_active_layer(layer, cx);
+                    canvas.set_active_layer_and_clear_select(layer, cx);
                     return;
                 }
                 current = current_parent;
