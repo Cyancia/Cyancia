@@ -640,7 +640,7 @@ impl Render for LayerStackWidget {
                     .aspect_square()
                     .selected(node.data().is_channel_disabled(alpha_index))
                     .ghost()
-                    .child("A")
+                    .child("α")
                     .block_mouse_except_scroll()
                     .on_click({
                         let canvas_entity = canvas_entity.downgrade();
@@ -669,6 +669,39 @@ impl Render for LayerStackWidget {
                             cx.push_undo_command_to_current(cmd).log_err();
                         }
                     });
+                let lock_alpha_toggle_button = Button::new("lock-alpha-toggle-button")
+                    .aspect_square()
+                    .selected(node.data().is_channel_locked(alpha_index))
+                    .ghost()
+                    .child("A")
+                    .block_mouse_except_scroll()
+                    .on_click({
+                        let canvas_entity = canvas_entity.downgrade();
+                        move |event, window, cx| {
+                            let cmd = canvas_entity
+                                .read_with(cx, |canvas, _| {
+                                    let layer =
+                                        canvas.image.layer_stack().get_layer(&layer_id).unwrap();
+                                    let old = layer.data().clone();
+                                    let new = {
+                                        let mut d = old.clone();
+                                        d.set_channel_locked(
+                                            alpha_index,
+                                            !d.is_channel_locked(alpha_index),
+                                        );
+                                        d
+                                    };
+                                    LayerPropertyChangeCommand {
+                                        canvas: canvas.id(),
+                                        layer_id,
+                                        old,
+                                        new,
+                                    }
+                                })
+                                .unwrap();
+                            cx.push_undo_command_to_current(cmd).log_err();
+                        }
+                    });
 
                 h_flex()
                     .h(px(40.0))
@@ -682,9 +715,14 @@ impl Render for LayerStackWidget {
                     .when(canvas.active_layer == layer_id, |d| d.font_bold())
                     .child(visible_checkbox)
                     .child(inner)
+                    // TODO These property buttons should be provided by specific layer types.
+                    //      For example the preferred api should look like PixelLayer::property_shortcuts
                     .child(lock_toggle_button)
                     .when(node.data().can_contain_pixels(), |d| {
                         d.child(inherit_alpha_toggle_button)
+                    })
+                    .when(node.data().can_contain_pixels(), |d| {
+                        d.child(lock_alpha_toggle_button)
                     })
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
