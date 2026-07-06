@@ -14,14 +14,7 @@ use gpui::{
     prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, ElementExt, Sizable, StyledExt,
-    checkbox::Checkbox,
-    h_flex,
-    input::{Input, InputEvent, InputState},
-    menu::{ContextMenuExt, PopupMenuItem},
-    scroll::ScrollableElement,
-    select::{SearchableVec, Select, SelectEvent, SelectState},
-    v_flex,
+    ActiveTheme, ElementExt, Sizable, StyledExt, button::Button, checkbox::Checkbox, h_flex, input::{Input, InputEvent, InputState}, menu::{ContextMenuExt, PopupMenuItem}, scroll::ScrollableElement, select::{SearchableVec, Select, SelectEvent, SelectState}, v_flex
 };
 use indexmap::IndexMap;
 use schemars::JsonSchema;
@@ -503,6 +496,32 @@ impl Render for LayerStackWidget {
                         .is_visible
                 });
 
+                let visible_checkbox = Checkbox::new("visible-checkbox")
+                    .checked(node.data().is_visible)
+                    .when(!ancestor_visible, |c| c.opacity(0.5))
+                    .block_mouse_except_scroll()
+                    .on_click({
+                        let canvas_entity = canvas_entity.downgrade();
+                        move |checked, window, cx| {
+                            canvas_entity
+                                .update(cx, |canvas, cx| {
+                                    let layer = canvas
+                                        .image
+                                        .layer_stack_mut()
+                                        .get_layer_mut(&layer_id)
+                                        .unwrap();
+                                    // TODO Use command
+                                    layer.data_mut().is_visible = *checked;
+                                    // TODO use layer bounds
+                                    cx.emit(CanvasUpdated {
+                                        dirty_tiles: canvas.image.image_tile_rect(),
+                                    });
+                                    cx.stop_propagation();
+                                })
+                                .ok();
+                        }
+                    });
+
                 h_flex()
                     .h(px(40.0))
                     .p_1()
@@ -513,33 +532,8 @@ impl Render for LayerStackWidget {
                         d.bg(cx.theme().accent)
                     })
                     .when(canvas.active_layer == layer_id, |d| d.font_bold())
-                    .child(
-                        Checkbox::new("visible-checkbox")
-                            .checked(node.data().is_visible)
-                            .when(!ancestor_visible, |c| c.opacity(0.5))
-                            .block_mouse_except_scroll()
-                            .on_click({
-                                let canvas_entity = canvas_entity.downgrade();
-                                move |checked, window, cx| {
-                                    canvas_entity
-                                        .update(cx, |canvas, cx| {
-                                            let layer = canvas
-                                                .image
-                                                .layer_stack_mut()
-                                                .get_layer_mut(&layer_id)
-                                                .unwrap();
-                                            // TODO Use command
-                                            layer.data_mut().is_visible = *checked;
-                                            // TODO use layer bounds
-                                            cx.emit(CanvasUpdated {
-                                                dirty_tiles: canvas.image.image_tile_rect(),
-                                            });
-                                            cx.stop_propagation();
-                                        })
-                                        .ok();
-                                }
-                            }),
-                    )
+                    .child(visible_checkbox)
+                    .child(inner)
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
                     })
@@ -589,7 +583,6 @@ impl Render for LayerStackWidget {
                             PopupMenuItem::new("Rename").action(Box::new(RenameLayer { layer_id })),
                         )
                     })
-                    .child(inner)
             });
 
         let layer_params = v_flex()
