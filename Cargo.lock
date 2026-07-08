@@ -1797,6 +1797,7 @@ dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "bytemuck",
  "cyancia_assets",
+ "cyancia_color",
  "cyancia_image",
  "cyancia_math",
  "cyancia_render",
@@ -1831,6 +1832,8 @@ dependencies = [
  "gpui",
  "moxcms",
  "parse-display",
+ "raw-window-handle",
+ "windows 0.62.2",
 ]
 
 [[package]]

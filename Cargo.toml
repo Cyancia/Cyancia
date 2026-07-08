@@ -92,6 +92,7 @@ parse-display = "0.11"
 path-clean = "1"
 proc-macro2 = "1"
 quote = "1"
+raw-window-handle = "0.6"
 rayon = "1"
 rfd = "0.17"
 ringbuffer = "0.16"
@@ -111,6 +112,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 variadics_please = "2"
 wesl = { version = "0.4", features = ["package", "naga-ext"] }
 wgpu = "29"
+windows = "0.62"
 winit = "0.30"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "8"

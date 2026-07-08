@@ -13,6 +13,7 @@ anyhow.workspace = true
 bevy_math.workspace = true
 bytemuck.workspace = true
 cyancia_assets.workspace = true
+cyancia_color.workspace = true
 cyancia_image.workspace = true
 cyancia_math.workspace = true
 cyancia_render.workspace = true

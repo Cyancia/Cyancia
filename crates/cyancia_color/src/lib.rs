@@ -1,2 +1,2 @@
-pub mod profile;
+pub mod platform;
 pub mod shader;
