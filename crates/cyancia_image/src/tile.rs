@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use anyhow::Result;
 use bevy_math::IRect;
 use cyancia_render::{buffer::BufferVec, render_context::RenderContextAppExt};
 use cyancia_utils::Deref;
@@ -13,6 +14,7 @@ use glam::{IVec2, UVec2};
 use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView};
 use indexmap::IndexMap;
+use moxcms::ColorProfile;
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, Texture,
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages, TextureView,
@@ -20,6 +22,7 @@ use wgpu::{
 };
 
 use crate::{
+    convert::ColorProfileConvertPipeline,
     layer::LayerId,
     texel::{TexelDepth, TexelFormat, TexelType},
 };
@@ -712,5 +715,21 @@ impl DynamicLayerStorage {
         }
 
         sibling
+    }
+
+    pub fn convert_color_space(&self, src_pr: &ColorProfile, dst_pr: &ColorProfile) -> Result<()> {
+        let Some(texture) = &self.texture else {
+            return Ok(());
+        };
+
+        let converter = ColorProfileConvertPipeline::new(
+            &self.device,
+            self.layer_info.texel_type,
+            src_pr,
+            dst_pr,
+        )?;
+        converter.convert(&self.device, &self.queue, texture);
+
+        Ok(())
     }
 }

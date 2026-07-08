@@ -18,6 +18,7 @@ pub mod resources;
 pub mod texture;
 pub mod texture_atlas;
 pub mod util;
+pub mod wesl_jit;
 
 pub fn init(cx: &mut App) {
     cx.set_global(RenderContext::request_new());

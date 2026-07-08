@@ -1,4 +1,9 @@
-use std::any::TypeId;
+use std::{
+    any::TypeId,
+    fs::File,
+    io::{BufReader, Cursor},
+    path::PathBuf,
+};
 
 use cyancia_canvas::{
     CCanvas, CanvasAppExt, CanvasUndoStackAppExt,
@@ -8,10 +13,11 @@ use cyancia_canvas::{
     },
 };
 use cyancia_image::{
+    CImage,
     blend_modes::BlendMode,
     composite::BlendFunction,
     layer::{LayerData, LayerId, LayerPosition, pixel_layer::PixelLayer},
-    tile::TileStorageAppExt,
+    tile::{GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_undo::BatchedUndoCommand;
 use cyancia_utils::log_err::LogErr;
@@ -327,33 +333,30 @@ impl ActionFunction for PasteIntoNewLayerAction {
 
         match entry {
             ClipboardEntry::Image(image) => {
-                let format = match image.format() {
-                    gpui::ImageFormat::Png => image::ImageFormat::Png,
-                    gpui::ImageFormat::Jpeg => image::ImageFormat::Jpeg,
-                    gpui::ImageFormat::Webp => image::ImageFormat::WebP,
-                    gpui::ImageFormat::Gif => image::ImageFormat::Gif,
-                    gpui::ImageFormat::Svg => {
-                        // TODO Handle svg pasting?
-                        return;
-                    }
-                    gpui::ImageFormat::Bmp => image::ImageFormat::Bmp,
-                    gpui::ImageFormat::Tiff => image::ImageFormat::Tiff,
-                    gpui::ImageFormat::Ico => image::ImageFormat::Ico,
-                    gpui::ImageFormat::Pnm => image::ImageFormat::Pnm,
-                };
-
-                let Ok(img) =
-                    image::load_from_memory_with_format(image.bytes(), format).logged_err()
+                let Ok((image, profile)) =
+                    CImage::load_image_with_profile(BufReader::new(Cursor::new(image.bytes())))
+                        .logged_err()
                 else {
                     return;
                 };
 
                 let layer = LayerData::from_image(
                     "Pasted Image".into(),
-                    img,
+                    image,
                     cx.tile_storage(),
                     BlendMode::Normal.id(),
                 );
+
+                let layer_storage = cx.tile_storage().get_layer(*layer.id()).unwrap();
+                if layer_storage
+                    .convert_color_space(&profile, canvas.image.profile())
+                    .logged_err()
+                    .is_err()
+                {
+                    return;
+                }
+                drop(layer_storage);
+
                 let cmd = InsertLayerCommand::new(canvas, layer, parent, position);
                 cx.push_undo_command_to_current(cmd).log_err();
             }
@@ -362,22 +365,13 @@ impl ActionFunction for PasteIntoNewLayerAction {
                 let mut cur_position = position;
 
                 for path in external_paths.paths() {
-                    let filename = path
-                        .file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    let Ok(img) = image::open(path).logged_err() else {
+                    let Ok(layer) =
+                        LayerData::from_path(path, cx.tile_storage(), canvas.image.profile())
+                            .logged_err()
+                    else {
                         continue;
                     };
-                    let layer = LayerData::from_image(
-                        filename,
-                        img,
-                        cx.tile_storage(),
-                        BlendMode::Normal.id(),
-                    );
                     let layer_id = *layer.id();
-
                     commands.push(InsertLayerCommand::new(canvas, layer, parent, cur_position));
                     cur_position = LayerPosition::above(layer_id);
                 }

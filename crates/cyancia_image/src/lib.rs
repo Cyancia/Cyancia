@@ -1,6 +1,11 @@
 wesl::wesl_pkg!(pub image);
 
-use std::{path::Path, rc::Rc};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, Seek},
+    path::Path,
+    rc::Rc,
+};
 
 use anyhow::Result;
 use bevy_math::IRect;
@@ -23,6 +28,7 @@ use crate::{
 
 pub mod blend_modes;
 pub mod composite;
+pub mod convert;
 pub mod dynamic_intermediate_buffer;
 pub mod layer;
 pub mod scan_pixels;
@@ -85,15 +91,20 @@ impl CImage {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        let mut decoder = ImageReader::open(path)?
-            .with_guessed_format()?
-            .into_decoder()?;
+        let (img, profile) = Self::load_image_with_profile(BufReader::new(File::open(path)?))?;
+        Ok(Self::from_image(img, profile, name, tiles))
+    }
+
+    pub fn load_image_with_profile<R: BufRead + Seek>(
+        r: R,
+    ) -> Result<(imagers::DynamicImage, ColorProfile)> {
+        let mut decoder = ImageReader::new(r).with_guessed_format()?.into_decoder()?;
         let profile = match decoder.icc_profile()? {
             Some(buf) => ColorProfile::new_from_slice(&buf)?,
             None => ColorProfile::new_srgb(),
         };
         let img = imagers::DynamicImage::from_decoder(decoder)?;
-        Ok(Self::from_image(img, profile, name, tiles))
+        Ok((img, profile))
     }
 
     pub fn from_image(

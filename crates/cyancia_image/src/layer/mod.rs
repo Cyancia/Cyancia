@@ -1,12 +1,17 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    fs::File,
+    io::BufReader,
+    path::Path,
 };
 
+use anyhow::Result;
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use image::DynamicImage;
 use indexmap::IndexSet;
+use moxcms::ColorProfile;
 use parse_display::Display;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -105,6 +110,26 @@ impl LayerData {
 
     pub fn ty(&self) -> &dyn Layer {
         self.data.as_ref()
+    }
+
+    pub fn from_path(
+        path: impl AsRef<Path>,
+        tiles: &GpuTileStorage,
+        dst_profile: &ColorProfile,
+    ) -> Result<Self> {
+        let path = path.as_ref();
+        let filename = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let (image, profile) = CImage::load_image_with_profile(BufReader::new(File::open(path)?))?;
+
+        let layer = Self::from_image(filename, image, tiles, BlendMode::Normal.id());
+        let layer_storage = tiles.get_layer(layer.id).unwrap();
+        layer_storage.convert_color_space(&profile, dst_profile)?;
+
+        Ok(layer)
     }
 
     pub fn from_image(

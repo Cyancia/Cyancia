@@ -12,6 +12,7 @@ workspace = true
 anyhow.workspace = true
 bevy_math.workspace = true
 bytemuck.workspace = true
+cyancia_color.workspace = true
 cyancia_render.workspace = true
 cyancia_shader_graph.workspace = true
 cyancia_utils.workspace = true
