@@ -9,6 +9,7 @@ use cyancia_image::{
 };
 use cyancia_tools::{ToolProxies, ToolProxy};
 use cyancia_undo::{UndoStack, UndoStacks};
+use cyancia_utils::log_err::LogErr;
 use glam::UVec2;
 use gpui::{App, actions};
 use rfd::AsyncFileDialog;
@@ -25,22 +26,14 @@ impl ActionFunction for OpenFileAction {
                 return;
             };
 
-            let img = match image::load_from_memory(&file.read().await) {
-                Ok(i) => i,
-                Err(e) => {
-                    log::error!("Unable to open image from file {:?}: {}", file, e);
-                    return;
-                }
+            let Ok(image) = cx
+                .read_global::<GpuTileStorage, _>(|tiles, _| CImage::from_file(file.path(), tiles))
+                .logged_err()
+            else {
+                return;
             };
+
             log::info!("Opened image from file {:?}.", file);
-
-            let width = img.width();
-            let height = img.height();
-            let layer = cx.read_global::<GpuTileStorage, _>(|tiles, _| {
-                LayerData::from_image("Background".into(), img, tiles, BlendMode::Normal.id())
-            });
-
-            let image = CImage::from_layer(UVec2::new(width, height), layer);
 
             let tool_proxy_id = cx.update_global::<ToolProxies, _>(|tool_proxies, _| {
                 // Tool switch is handled in canvas dock, which is outside of async environment.

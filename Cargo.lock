@@ -1827,7 +1827,10 @@ name = "cyancia_color"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cyancia_utils",
+ "gpui",
  "moxcms",
+ "parse-display",
 ]
 
 [[package]]
@@ -1850,6 +1853,7 @@ dependencies = [
  "image",
  "indexmap",
  "log",
+ "moxcms",
  "palette",
  "parking_lot",
  "parse-display",

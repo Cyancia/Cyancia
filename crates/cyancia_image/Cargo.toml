@@ -25,6 +25,7 @@ half.workspace = true
 image.workspace = true
 indexmap.workspace = true
 log.workspace = true
+moxcms.workspace = true
 palette.workspace = true
 parking_lot.workspace = true
 parse-display.workspace = true
