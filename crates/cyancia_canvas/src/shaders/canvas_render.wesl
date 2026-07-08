@@ -107,8 +107,12 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
         let img = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles, tile_index.xy, tile_index.z));
         let calibrated = calibrate_color(img.rgb);
         let transparent_checkerboard = checkerboard_pattern(vec2u(canvas_pos));
-        let tile_checkerboard = tile_checkerboard_pattern(vec2u(canvas_pos));
-        color = mix(transparent_checkerboard, vec4f(calibrated, img.a), img.a) * tile_checkerboard;
+        color = mix(transparent_checkerboard, vec4f(calibrated, img.a), img.a);
+
+        @if (DEBUG_TILE_CHECKERBOARD) {
+            let tile_checkerboard = tile_checkerboard_pattern(vec2u(canvas_pos));
+            color *= tile_checkerboard;
+        }
     }
 
     write_pixel(pixel_pos, color);

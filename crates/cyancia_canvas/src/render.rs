@@ -297,6 +297,10 @@ impl CanvasRenderPipeline {
         let mut wesl = Wesl::new_barebones().set_custom_resolver(resolver);
         wesl.set_mangler(Default::default());
         wesl.set_options(Default::default());
+        wesl.set_feature(
+            "DEBUG_TILE_CHECKERBOARD",
+            std::env::var("DEBUG_CANVAS_TILE_CHECKER_BOARD").is_ok_and(|v| v == "1"),
+        );
         let shader = wesl
             .compile(&"package::canvas_render".parse().unwrap())
             .inspect(|s| println!("{}", s))
