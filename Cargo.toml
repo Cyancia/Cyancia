@@ -92,7 +92,7 @@ parse-display = "0.11"
 path-clean = "1"
 proc-macro2 = "1"
 quote = "1"
-raw-window-handle = "0.6"
+raw-window-handle = { version = "0.6", features = ["std"] }
 rayon = "1"
 rfd = "0.17"
 ringbuffer = "0.16"

@@ -42,7 +42,10 @@ impl IccTransformShader {
         let dst_g_trc_fn = gamma_function(&dst_g_trc_fn_ident, "f32", &dst_g_trc)?;
         let dst_b_trc_fn = gamma_function(&dst_b_trc_fn_ident, "f32", &dst_b_trc)?;
 
-        let combined_matrix = dst_pr.colorant_matrix().mat_mul(src_pr.colorant_matrix());
+        let combined_matrix = dst_pr
+            .colorant_matrix()
+            .inverse()
+            .mat_mul(src_pr.colorant_matrix());
         let combined_matrix_fn_ident = format!("_{}_combined_matrix", ident);
         let combined_matrix_fn = matrix_function(&combined_matrix_fn_ident, &combined_matrix)?;
 
