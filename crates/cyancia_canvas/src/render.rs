@@ -14,6 +14,7 @@ use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
+    wesl_jit::compile_wesl,
 };
 use cyancia_utils::include_shader;
 use encase::ShaderType;
@@ -270,46 +271,13 @@ impl CanvasRenderPipeline {
 
         let shader = include_str!("shaders/canvas_render.wesl")
             .replace("//CODEGEN_FLAG_CALIBRATE_COLOR", &icc_transform.function);
-        let mut resolver = VirtualResolver::new();
-        resolver.add_module("package::canvas_render".parse().unwrap(), shader.into());
-        fn add_module(
-            resolver: &mut VirtualResolver,
-            module: &CodegenModule,
-            base_path: ModulePath,
-        ) {
-            resolver.add_module(base_path.clone(), module.source.into());
-
-            for submodule in module.submodules {
-                let mut path = base_path.clone();
-                path.push(submodule.name);
-                add_module(resolver, submodule, path);
-            }
-        }
-        add_module(
-            &mut resolver,
-            &cyancia_image::image::MODULE,
-            ModulePath::new(
-                PathOrigin::Package(cyancia_image::image::MODULE.name.to_string()),
-                Vec::new(),
-            ),
-        );
-
-        let mut wesl = Wesl::new_barebones().set_custom_resolver(resolver);
-        wesl.set_mangler(Default::default());
-        wesl.set_options(Default::default());
-        wesl.set_feature(
-            "DEBUG_TILE_CHECKERBOARD",
-            std::env::var("DEBUG_CANVAS_TILE_CHECKER_BOARD").is_ok_and(|v| v == "1"),
-        );
-        let shader = wesl
-            .compile(&"package::canvas_render".parse().unwrap())
-            .inspect(|s| println!("{}", s))
-            .inspect_err(|e| println!("{}", e))
-            .unwrap();
-
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("canvas shader"),
-            source: ShaderSource::Wgsl(shader.to_string().into()),
+            source: ShaderSource::Wgsl(
+                compile_wesl(shader, &[cyancia_image::image::PACKAGE])
+                    .unwrap()
+                    .into(),
+            ),
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
