@@ -54,6 +54,7 @@ impl CanvasWidget {
         tool_proxy_id: ToolProxyId,
         window: &mut Window,
         cx: &mut Context<Self>,
+        manage_color: bool,
     ) -> anyhow::Result<Self> {
         let canvas_entity = cx
             .canvas(&canvas_id)
@@ -63,9 +64,13 @@ impl CanvasWidget {
         let canvas = canvas_entity.read(cx);
         let device = cx.render_device();
 
-        let display_profile = cyancia_color::platform::get_window_color_profile(window)?;
-        let icc_transform =
-            IccTransformShader::new("calibrate_color", canvas.image.profile(), &display_profile)?;
+        let ident = "calibrate_color";
+        let icc_transform = if manage_color {
+            let display_profile = cyancia_color::platform::get_window_color_profile(window)?;
+            IccTransformShader::new(ident, canvas.image.profile(), &display_profile)?
+        } else {
+            IccTransformShader::unmanaged(ident)
+        };
 
         let renderer = CanvasRenderer::new(
             device,

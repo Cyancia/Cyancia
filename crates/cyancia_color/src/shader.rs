@@ -76,6 +76,17 @@ impl IccTransformShader {
 
         Ok(Self { function })
     }
+
+    pub fn unmanaged(ident: &str) -> Self {
+        let function = format!(
+            "fn {ident}(c: vec3f) -> vec3f {{
+                return c;
+            }}
+            "
+        );
+
+        Self { function }
+    }
 }
 
 fn linear_function(ident: &str, component_ty: &str, trc: &ToneReprCurve) -> Result<String> {
