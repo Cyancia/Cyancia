@@ -172,14 +172,24 @@ fn gamma_function(ident: &str, component_ty: &str, trc: &ToneReprCurve) -> Resul
 fn matrix_function(ident: &str, matrix: &Matrix3d) -> Result<String> {
     let m = &matrix.v;
     Ok(format!(
+        // Matrices in wgsl are column major
         "fn {ident}(x: vec3f) -> vec3f {{
             const MAT = mat3x3f(
                 {:e}, {:e}, {:e},
                 {:e}, {:e}, {:e},
                 {:e}, {:e}, {:e}
             );
-            return x * MAT;
+            return MAT * x;
         }}",
-        m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2], m[2][0], m[2][1], m[2][2],
+        // While in moxcms, they are row major
+        m[0][0],
+        m[1][0],
+        m[2][0],
+        m[0][1],
+        m[1][1],
+        m[2][1],
+        m[0][2],
+        m[1][2],
+        m[2][2],
     ))
 }
