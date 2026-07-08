@@ -84,6 +84,7 @@ indexmap = { version = "2", features = ["serde"] }
 log = "0.4"
 lyon = "1"
 md5 = "0.8"
+moxcms = "0.8"
 num-traits = "0.2"
 palette = "0.7"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }

@@ -1825,6 +1825,10 @@ dependencies = [
 [[package]]
 name = "cyancia_color"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "moxcms",
+]
 
 [[package]]
 name = "cyancia_image"
