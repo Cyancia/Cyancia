@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bevy_math::{IRect, Rect};
+use cyancia_color::shader::IccTransformShader;
 use cyancia_image::{
     composite::{BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders},
     texel::{TexelFormat, TexelType},
@@ -53,10 +54,19 @@ impl CanvasWidget {
         tool_proxy_id: ToolProxyId,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Option<Self> {
-        let canvas_entity = cx.canvas(&canvas_id)?.upgrade()?;
+    ) -> anyhow::Result<Self> {
+        let canvas_entity = cx
+            .canvas(&canvas_id)
+            .and_then(|e| e.upgrade())
+            .ok_or_else(|| anyhow::anyhow!("Canvas {} not found.", canvas_id))?;
+
         let canvas = canvas_entity.read(cx);
         let device = cx.render_device();
+
+        let display_profile = cyancia_color::platform::get_window_color_profile(window)?;
+        let icc_transform =
+            IccTransformShader::new("calibrate_color", canvas.image.profile(), &display_profile)?;
+
         let renderer = CanvasRenderer::new(
             device,
             canvas.image.texel_type(),
@@ -65,6 +75,7 @@ impl CanvasWidget {
                 format: TexelFormat::Alpha,
                 depth: canvas.image.texel_type().depth,
             },
+            &icc_transform,
         );
         let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(IRect {
             min: IVec2::ZERO,
@@ -81,7 +92,7 @@ impl CanvasWidget {
         )
         .detach();
 
-        Some(Self {
+        Ok(Self {
             tool_proxy_id,
             canvas: canvas_entity.downgrade(),
             renderer,

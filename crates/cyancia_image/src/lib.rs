@@ -185,6 +185,10 @@ impl CImage {
         &mut self.layers
     }
 
+    pub fn profile(&self) -> &ColorProfile {
+        &self.profile
+    }
+
     pub fn size(&self) -> UVec2 {
         self.size
     }

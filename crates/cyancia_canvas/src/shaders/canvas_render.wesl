@@ -87,6 +87,8 @@ fn write_pixel(pixel_pos: vec2u, color: vec4f) {
     textureStore(output, pixel_pos, color.bgra);
 }
 
+//CODEGEN_FLAG_CALIBRATE_COLOR
+
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) index: vec3u) {
@@ -103,9 +105,10 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
     if all(canvas_pos >= vec2f(0.0)) && all(canvas_pos < vec2f(canvas.size)) {
         let tile_index = convert_pixel_to_tile_index(vec2i(canvas_pos));
         let img = image::texture_unpack::unpack_rgba8_texel(textureLoad(tiles, tile_index.xy, tile_index.z));
+        let calibrated = calibrate_color(img.rgb);
         let transparent_checkerboard = checkerboard_pattern(vec2u(canvas_pos));
         let tile_checkerboard = tile_checkerboard_pattern(vec2u(canvas_pos));
-        color = mix(transparent_checkerboard, img, img.a) * tile_checkerboard;
+        color = mix(transparent_checkerboard, vec4f(calibrated, img.a), img.a) * tile_checkerboard;
     }
 
     write_pixel(pixel_pos, color);

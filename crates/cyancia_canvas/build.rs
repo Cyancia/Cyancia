@@ -6,7 +6,6 @@ fn main() {
         .add_package(&cyancia_image::image::PACKAGE)
         .add_package(&cyancia_render::render::PACKAGE);
 
-    shaders.build_artifact(&"package::canvas_render".parse().unwrap(), "canvas_render");
     shaders.build_artifact(
         &"package::canvas_present".parse().unwrap(),
         "canvas_present",
