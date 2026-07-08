@@ -9,6 +9,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+anyhow.workspace = true
 bevy_math.workspace = true
 bytemuck.workspace = true
 cyancia_render.workspace = true
