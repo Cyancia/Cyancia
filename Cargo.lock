@@ -1815,6 +1815,7 @@ dependencies = [
  "log",
  "parking_lot",
  "parse-display",
+ "raw-window-handle",
  "schemars",
  "serde",
  "tracing",

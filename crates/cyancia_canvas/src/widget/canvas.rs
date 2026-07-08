@@ -9,17 +9,21 @@ use cyancia_image::{
 };
 use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolProxies, ToolProxyId};
+use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, UVec2, Vec2};
 use gpui::{
-    AppContext, BorrowAppContext, Context, Corners, InteractiveElement, IntoElement, MouseButton,
-    MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage, Styled,
-    WeakEntity, Window, canvas, div, px,
+    AppContext, BorrowAppContext, Context, Corners, DisplayId, InteractiveElement, IntoElement,
+    MouseButton, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage,
+    Styled, Subscription, WeakEntity, Window, canvas, div, px,
 };
+use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use wgpu::PollType;
 
 use crate::{
-    CCanvas, CanvasAppExt, CanvasId, control::CanvasTransform, event::CanvasUpdated,
-    render::CanvasRenderer,
+    CCanvas, CanvasAppExt, CanvasId,
+    control::CanvasTransform,
+    event::CanvasUpdated,
+    render::{CanvasRenderer, ICC_TRANSFORM_SHADER_IDENT},
 };
 
 // TODO: So, this is weird.
@@ -37,8 +41,12 @@ use crate::{
 //       Edit: But it works in release build, okay nevermind.
 pub struct CanvasWidget {
     tool_proxy_id: ToolProxyId,
+
     canvas: WeakEntity<CCanvas>,
+    last_display: DisplayId,
+    manage_color: bool,
     renderer: CanvasRenderer,
+
     latest_image: Option<Arc<RenderImage>>,
     output_size: UVec2,
     ongoing_render: bool,
@@ -46,6 +54,8 @@ pub struct CanvasWidget {
     compositor: ImageCompositor,
 
     middle_button_drag_start: Option<(Vec2, CanvasTransform)>,
+
+    _subscriptions: Vec<Subscription>,
 }
 
 impl CanvasWidget {
@@ -64,12 +74,15 @@ impl CanvasWidget {
         let canvas = canvas_entity.read(cx);
         let device = cx.render_device();
 
-        let ident = "calibrate_color";
         let icc_transform = if manage_color {
             let display_profile = cyancia_color::platform::get_window_color_profile(window)?;
-            IccTransformShader::new(ident, canvas.image.profile(), &display_profile)?
+            IccTransformShader::new(
+                ICC_TRANSFORM_SHADER_IDENT,
+                canvas.image.profile(),
+                &display_profile,
+            )?
         } else {
-            IccTransformShader::unmanaged(ident)
+            IccTransformShader::unmanaged(ICC_TRANSFORM_SHADER_IDENT)
         };
 
         let renderer = CanvasRenderer::new(
@@ -87,20 +100,26 @@ impl CanvasWidget {
             max: canvas.image.size().as_ivec2(),
         });
 
-        cx.subscribe_in(
-            &canvas_entity,
-            window,
-            |widget, _, event: &CanvasUpdated, _, cx| {
-                widget.dirty_tiles = widget.dirty_tiles.union(event.dirty_tiles);
-                cx.notify();
-            },
-        )
-        .detach();
+        let subscription = vec![
+            cx.subscribe_in(
+                &canvas_entity,
+                window,
+                |widget, _, event: &CanvasUpdated, _, cx| {
+                    widget.dirty_tiles = widget.dirty_tiles.union(event.dirty_tiles);
+                    cx.notify();
+                },
+            ),
+            cx.observe_window_bounds(window, Self::on_window_bounds_changed),
+        ];
 
         Ok(Self {
             tool_proxy_id,
             canvas: canvas_entity.downgrade(),
+
+            last_display: window.display(cx).unwrap().id(),
+            manage_color,
             renderer,
+
             latest_image: None,
             output_size: UVec2::ZERO,
             ongoing_render: false,
@@ -108,7 +127,55 @@ impl CanvasWidget {
             compositor: ImageCompositor::new(),
 
             middle_button_drag_start: None,
+
+            _subscriptions: subscription,
         })
+    }
+
+    fn on_window_bounds_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.manage_color {
+            return;
+        }
+
+        let Some(display) = window.display(cx).map(|d| d.id()) else {
+            return;
+        };
+
+        if display == self.last_display {
+            return;
+        }
+
+        let Some(canvas) = self.canvas.upgrade().map(|e| e.read(cx)) else {
+            return;
+        };
+
+        let Ok(display_profile) =
+            cyancia_color::platform::get_window_color_profile(window).logged_err()
+        else {
+            return;
+        };
+        let Ok(icc_transform) = IccTransformShader::new(
+            ICC_TRANSFORM_SHADER_IDENT,
+            canvas.image.profile(),
+            &display_profile,
+        )
+        .logged_err() else {
+            return;
+        };
+
+        let renderer = CanvasRenderer::new(
+            cx.render_device(),
+            canvas.image.texel_type(),
+            // TODO probably fetch from selection layer directly?
+            TexelType {
+                format: TexelFormat::Alpha,
+                depth: canvas.image.texel_type().depth,
+            },
+            &icc_transform,
+        );
+
+        self.last_display = display;
+        self.renderer = renderer;
     }
 
     pub fn recomposite(&mut self, cx: &mut Context<Self>) {

@@ -37,6 +37,8 @@ use crate::control::CanvasTransform;
 /// This surface will be used as storage texture and float sampled texture.
 pub const INTERMEDIATE_BUFFER_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
+pub const ICC_TRANSFORM_SHADER_IDENT: &str = "calibrate_color";
+
 #[derive(Debug)]
 pub struct CanvasRenderer {
     buffer: Option<(TextureView, Buffer)>,
