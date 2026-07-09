@@ -30,8 +30,8 @@ impl Rgb {
         Self { r, g, b }
     }
 
-    pub fn from_xyz(xyz: Xyz, rgb_to_xyz: Matrix3f) -> Self {
-        let rgb = moxcms::Xyz::new(xyz.x, xyz.y, xyz.z).to_linear_rgb(rgb_to_xyz.inverse());
+    pub fn from_xyz(xyz: Xyz, xyz_to_rgb: Matrix3f) -> Self {
+        let rgb = moxcms::Xyz::new(xyz.x, xyz.y, xyz.z).to_linear_rgb(xyz_to_rgb);
         Self::new(rgb.r, rgb.g, rgb.b)
     }
 
@@ -51,11 +51,13 @@ mod tests {
     #[test]
     fn roundtrip() {
         let profile = ColorProfile::new_srgb();
+        let rgb_to_xyz = profile.rgb_to_xyz_matrix().to_f32();
+        let xyz_to_rgb = rgb_to_xyz.inverse();
 
         roundtrip_test(
             Rgb::new,
-            |rgb| rgb.to_xyz(profile.rgb_to_xyz_matrix().to_f32()),
-            |xyz| Rgb::from_xyz(xyz, profile.rgb_to_xyz_matrix().to_f32()),
+            |rgb| rgb.to_xyz(rgb_to_xyz),
+            |xyz| Rgb::from_xyz(xyz, xyz_to_rgb),
         );
     }
 }
