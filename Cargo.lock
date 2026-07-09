@@ -1831,6 +1831,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cyancia_utils",
+ "glam",
  "gpui",
  "moxcms",
  "parse-display",

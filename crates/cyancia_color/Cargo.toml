@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 cyancia_utils.workspace = true
+glam.workspace = true
 gpui.workspace = true
 moxcms.workspace = true
 parse-display.workspace = true
