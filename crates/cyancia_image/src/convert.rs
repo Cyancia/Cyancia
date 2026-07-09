@@ -5,7 +5,7 @@ use cyancia_render::{
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     wesl_jit::compile_wesl,
 };
-use moxcms::ColorProfile;
+use moxcms::{ColorProfile, Layout, TransformOptions};
 use wgpu::{
     BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, ComputePassDescriptor,
     ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
@@ -27,7 +27,10 @@ impl ColorProfileConvertPipeline {
         device: &Device,
         texel_type: TexelType,
         src_pr: &ColorProfile,
+        src_layout: Layout,
         dst_pr: &ColorProfile,
+        dst_layout: Layout,
+        options: TransformOptions,
     ) -> Result<Self> {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("color_profile_convert_layout"),
@@ -40,7 +43,14 @@ impl ColorProfileConvertPipeline {
             ),
         });
 
-        let icc_transform = IccTransformShader::new("transform_color", src_pr, dst_pr)?;
+        let icc_transform = IccTransformShader::new(
+            "transform_color",
+            src_pr,
+            src_layout,
+            dst_pr,
+            dst_layout,
+            options,
+        )?;
         let shader = include_str!("color_space_convert.wesl")
             .replace("//CODEGEN_FLAG_TRANSFORM_COLOR", &icc_transform.function);
 

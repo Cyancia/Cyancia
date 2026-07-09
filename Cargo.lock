@@ -1813,6 +1813,7 @@ dependencies = [
  "image",
  "indexmap",
  "log",
+ "moxcms",
  "parking_lot",
  "parse-display",
  "raw-window-handle",

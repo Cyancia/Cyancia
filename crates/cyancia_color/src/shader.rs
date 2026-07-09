@@ -9,7 +9,14 @@ pub struct IccTransformShader {
 }
 
 impl IccTransformShader {
-    pub fn new(ident: &str, src_pr: &ColorProfile, dst_pr: &ColorProfile) -> Result<Self> {
+    pub fn new(
+        ident: &str,
+        src_pr: &ColorProfile,
+        src_layout: Layout,
+        dst_pr: &ColorProfile,
+        dst_layout: Layout,
+        options: TransformOptions,
+    ) -> Result<Self> {
         if !src_pr.is_matrix_shaper() || !dst_pr.is_matrix_shaper() {
             bail!("Only matrix shaper profiles are supported yet.");
         }

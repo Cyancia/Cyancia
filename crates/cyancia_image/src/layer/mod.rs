@@ -127,7 +127,7 @@ impl LayerData {
 
         let layer = Self::from_image(filename, image, tiles, BlendMode::Normal.id());
         let layer_storage = tiles.get_layer(layer.id).unwrap();
-        layer_storage.convert_color_space(&profile, dst_profile)?;
+        layer_storage.convert_color_space(&profile, dst_profile, Default::default())?;
 
         Ok(layer)
     }

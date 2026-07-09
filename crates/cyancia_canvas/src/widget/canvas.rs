@@ -16,6 +16,7 @@ use gpui::{
     MouseButton, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage,
     Styled, Subscription, WeakEntity, Window, canvas, div, px,
 };
+use moxcms::Layout;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use wgpu::PollType;
 
@@ -79,7 +80,10 @@ impl CanvasWidget {
             IccTransformShader::new(
                 ICC_TRANSFORM_SHADER_IDENT,
                 canvas.image.profile(),
+                canvas.image.texel_type().moxcms_layout(),
                 &display_profile,
+                Layout::Rgba,
+                Default::default(),
             )?
         } else {
             IccTransformShader::unmanaged(ICC_TRANSFORM_SHADER_IDENT)
@@ -157,7 +161,10 @@ impl CanvasWidget {
         let Ok(icc_transform) = IccTransformShader::new(
             ICC_TRANSFORM_SHADER_IDENT,
             canvas.image.profile(),
+            canvas.image.texel_type().moxcms_layout(),
             &display_profile,
+            Layout::Rgba,
+            Default::default(),
         )
         .logged_err() else {
             return;

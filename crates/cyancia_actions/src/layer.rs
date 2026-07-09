@@ -349,7 +349,7 @@ impl ActionFunction for PasteIntoNewLayerAction {
 
                 let layer_storage = cx.tile_storage().get_layer(*layer.id()).unwrap();
                 if layer_storage
-                    .convert_color_space(&profile, canvas.image.profile())
+                    .convert_color_space(&profile, canvas.image.profile(), Default::default())
                     .logged_err()
                     .is_err()
                 {

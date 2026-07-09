@@ -1,4 +1,5 @@
 use imagers::DynamicImage;
+use moxcms::Layout;
 use wgpu::{TextureFormat, TextureSampleType};
 
 pub const A8_FORMAT: TextureFormat = TextureFormat::R8Unorm;
@@ -8,6 +9,15 @@ pub const RGBA8_FORMAT: TextureFormat = TextureFormat::R32Uint;
 pub enum TexelFormat {
     Alpha,
     Rgba,
+}
+
+impl TexelFormat {
+    pub fn moxcms_layout(&self) -> Layout {
+        match self {
+            TexelFormat::Alpha => Layout::Gray,
+            TexelFormat::Rgba => Layout::Rgba,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,6 +49,10 @@ impl TexelType {
             (TexelFormat::Rgba, TexelDepth::Bit8) => RGBA8_FORMAT,
             (TexelFormat::Alpha, TexelDepth::Bit8) => A8_FORMAT,
         }
+    }
+
+    pub fn moxcms_layout(&self) -> Layout {
+        self.format.moxcms_layout()
     }
 
     pub fn shader_def(&self) -> &'static str {

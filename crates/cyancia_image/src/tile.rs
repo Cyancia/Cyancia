@@ -14,7 +14,7 @@ use glam::{IVec2, UVec2};
 use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView};
 use indexmap::IndexMap;
-use moxcms::ColorProfile;
+use moxcms::{ColorProfile, Layout, TransformOptions};
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, Texture,
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages, TextureView,
@@ -717,7 +717,12 @@ impl DynamicLayerStorage {
         sibling
     }
 
-    pub fn convert_color_space(&self, src_pr: &ColorProfile, dst_pr: &ColorProfile) -> Result<()> {
+    pub fn convert_color_space(
+        &self,
+        src_pr: &ColorProfile,
+        dst_pr: &ColorProfile,
+        options: TransformOptions,
+    ) -> Result<()> {
         let Some(texture) = &self.texture else {
             return Ok(());
         };
@@ -726,7 +731,10 @@ impl DynamicLayerStorage {
             &self.device,
             self.layer_info.texel_type,
             src_pr,
+            self.layer_info.texel_type.moxcms_layout(),
             dst_pr,
+            self.layer_info.texel_type.moxcms_layout(),
+            options,
         )?;
         converter.convert(&self.device, &self.queue, texture);
 
