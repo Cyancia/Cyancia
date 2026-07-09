@@ -78,12 +78,16 @@ fn lab_f_inv(t: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use glam::FloatExt;
+
     use crate::model::{lab::Lab, tests::roundtrip_test};
 
     #[test]
     fn roundtrip() {
-        roundtrip_test(Lab::new, Lab::into_xyz, Lab::from_xyz, |lab| {
-            vec![lab.l, lab.a, lab.b]
-        });
+        roundtrip_test(
+            |l, a, b| Lab::new(l * 100.0, -30.0.lerp(30.0, a), -30.0.lerp(30.0, b)),
+            Lab::into_xyz,
+            Lab::from_xyz,
+        );
     }
 }

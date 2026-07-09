@@ -1,5 +1,5 @@
 use crate::model::{
-    okcolor::{toe, toe_inv, ChromaValues},
+    okcolor::{ChromaValues, toe, toe_inv},
     oklab::OkLab,
     xyz::Xyz,
 };
@@ -112,8 +112,10 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        roundtrip_test(OkHsl::new, OkHsl::into_xyz, OkHsl::from_xyz, |okhsl| {
-            vec![okhsl.h, okhsl.s, okhsl.l]
-        });
+        roundtrip_test(
+            |h, s, l| OkHsl::new(h * 360.0, s, l),
+            OkHsl::into_xyz,
+            OkHsl::from_xyz,
+        );
     }
 }

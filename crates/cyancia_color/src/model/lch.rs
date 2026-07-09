@@ -52,8 +52,10 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        roundtrip_test(Lch::new, Lch::into_xyz, Lch::from_xyz, |lch| {
-            vec![lch.l, lch.c, lch.h]
-        });
+        roundtrip_test(
+            |l, c, h| Lch::new(l * 100.0, c * 10.0, h * 360.0),
+            Lch::into_xyz,
+            Lch::from_xyz,
+        );
     }
 }

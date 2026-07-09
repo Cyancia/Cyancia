@@ -78,8 +78,10 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        roundtrip_test(OkLab::new, OkLab::into_xyz, OkLab::from_xyz, |oklab| {
-            vec![oklab.l, oklab.a, oklab.b]
-        });
+        roundtrip_test(
+            |l, a, b| OkLab::new(l, a - 0.5, b - 0.5),
+            OkLab::into_xyz,
+            OkLab::from_xyz,
+        );
     }
 }

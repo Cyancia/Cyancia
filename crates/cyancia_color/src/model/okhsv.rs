@@ -1,5 +1,5 @@
 use crate::model::{
-    okcolor::{find_cusp, oklab_to_linear_srgb, toe, toe_inv, ST},
+    okcolor::{ST, find_cusp, oklab_to_linear_srgb, toe, toe_inv},
     oklab::OkLab,
     xyz::Xyz,
 };
@@ -115,8 +115,10 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        roundtrip_test(OkHsv::new, OkHsv::into_xyz, OkHsv::from_xyz, |okhsv| {
-            vec![okhsv.h, okhsv.s, okhsv.v]
-        });
+        roundtrip_test(
+            |h, s, v| OkHsv::new(h * 360.0, s, v),
+            OkHsv::into_xyz,
+            OkHsv::from_xyz,
+        );
     }
 }

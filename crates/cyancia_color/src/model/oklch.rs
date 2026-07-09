@@ -54,8 +54,10 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        roundtrip_test(OkLch::new, OkLch::into_xyz, OkLch::from_xyz, |oklch| {
-            vec![oklch.l, oklch.c, oklch.h]
-        });
+        roundtrip_test(
+            |l, c, h| OkLch::new(l, c, h * 360.0),
+            OkLch::into_xyz,
+            OkLch::from_xyz,
+        );
     }
 }
