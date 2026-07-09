@@ -1,4 +1,5 @@
-use moxcms::Matrix3f;
+use anyhow::{Result, anyhow};
+use moxcms::{ColorProfile, Matrix3f, ToneCurveEvaluator};
 
 use crate::model::xyz::Xyz;
 
@@ -39,6 +40,34 @@ impl Rgb {
         let xyz =
             moxcms::Xyz::from_linear_rgb(moxcms::Rgb::new(self.r, self.g, self.b), rgb_to_xyz);
         Xyz::new(xyz.x, xyz.y, xyz.z)
+    }
+
+    pub fn from_color_with_profile(
+        color: moxcms::Rgb<f32>,
+        profile: &ColorProfile,
+    ) -> Result<Self> {
+        let r_trc = profile
+            .red_trc
+            .as_ref()
+            .ok_or_else(|| anyhow!("No red trc found"))?;
+        let g_trc = profile
+            .green_trc
+            .as_ref()
+            .ok_or_else(|| anyhow!("No green trc found"))?;
+        let b_trc = profile
+            .blue_trc
+            .as_ref()
+            .ok_or_else(|| anyhow!("No blue trc found"))?;
+
+        let r_lin = r_trc.make_linear_evaluator()?;
+        let g_lin = g_trc.make_linear_evaluator()?;
+        let b_lin = b_trc.make_linear_evaluator()?;
+
+        let r = r_lin.evaluate_value(color.r);
+        let g = g_lin.evaluate_value(color.g);
+        let b = b_lin.evaluate_value(color.b);
+
+        Ok(Self::new(r, g, b))
     }
 }
 
