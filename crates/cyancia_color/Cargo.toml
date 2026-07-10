@@ -20,5 +20,8 @@ windows = { workspace = true, features = [
     "Win32_UI_ColorSystem",
 ] }
 
+[build-dependencies]
+wesl.workspace = true
+
 [lints]
 workspace = true

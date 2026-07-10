@@ -1836,6 +1836,7 @@ dependencies = [
  "moxcms",
  "parse-display",
  "raw-window-handle",
+ "wesl",
  "windows 0.62.2",
 ]
 
