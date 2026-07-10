@@ -13,33 +13,26 @@ fn cat(xyz: Xyz, src_white: Xyz, dst_white: Xyz) -> Xyz {
 }
 
 fn cat_matrix(src_white: Xyz, dst_white: Xyz) -> mat3x3f {
-    let bradford = mat3x3f(
-        vec3f(0.8951, -0.7502, 0.0389),
-        vec3f(0.2664, 1.7135, -0.0685),
-        vec3f(-0.1614, 0.0367, 1.0296),
+    let src_lms = BRADFORD * vec3f(src_white.x, src_white.y, src_white.z);
+    let dst_lms = BRADFORD * vec3f(dst_white.x, dst_white.y, dst_white.z);
+
+    let ratio_diag = mat3x3f(
+        vec3f(dst_lms.x / src_lms.x, 0.0, 0.0),
+        vec3f(0.0, dst_lms.y / src_lms.y, 0.0),
+        vec3f(0.0, 0.0, dst_lms.z / src_lms.z),
     );
 
-    let src_lms = bradford * vec3f(src_white.x, src_white.y, src_white.z);
-    let dst_lms = bradford * vec3f(dst_white.x, dst_white.y, dst_white.z);
-
-    let sx = dst_lms.x / src_lms.x;
-    let sy = dst_lms.y / src_lms.y;
-    let sz = dst_lms.z / src_lms.z;
-
-    // scale * bradford (scale is diagonal, so it scales each row of bradford)
-    let scaled = mat3x3f(
-        vec3f(sx * 0.8951, sy * -0.7502, sz * 0.0389),
-        vec3f(sx * 0.2664, sy * 1.7135, sz * -0.0685),
-        vec3f(sx * -0.1614, sy * 0.0367, sz * 1.0296),
-    );
-
-    return inverse_mat3x3(bradford) * scaled;
+    return INV_BRADFORD * ratio_diag * BRADFORD;
 }
 
-fn inverse_mat3x3(matrix: mat3x3f) -> mat3x3f {
-    let tmp0 = cross(matrix[1], matrix[2]);
-    let tmp1 = cross(matrix[2], matrix[0]);
-    let tmp2 = cross(matrix[0], matrix[1]);
-    let inv_det = 1.0 / dot(matrix[2], tmp2);
-    return transpose(mat3x3f(tmp0 * inv_det, tmp1 * inv_det, tmp2 * inv_det));
-}
+const BRADFORD: mat3x3f = mat3x3f(
+    vec3f( 0.8951, -0.7502,  0.0389),
+    vec3f( 0.2664,  1.7135, -0.0685),
+    vec3f(-0.1614,  0.0367,  1.0296),
+);
+
+const INV_BRADFORD: mat3x3f = mat3x3f(
+    vec3f(0.9869929,  0.4323053, -0.0085287),
+    vec3f(-0.1470543, 0.5183603,  0.0400428),
+    vec3f(0.1599627,  0.0492912,  0.9684867),
+);

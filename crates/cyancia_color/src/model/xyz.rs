@@ -39,6 +39,17 @@ impl Xyz {
         let bradford = Mat3::from_cols_array(&[
             0.895_1, -0.750_2, 0.038_9, 0.266_4, 1.713_5, -0.068_5, -0.161_4, 0.036_7, 1.029_6,
         ]);
+        let inv_bradford = Mat3::from_cols_array(&[
+            0.986_992_9,
+            0.432_305_3,
+            -0.008_528_7,
+            -0.147_054_3,
+            0.518_360_3,
+            0.040_042_8,
+            0.159_962_7,
+            0.049_291_2,
+            0.968_486_7,
+        ]);
 
         let src_lms = bradford * Vec3::new(src_white.x, src_white.y, src_white.z);
         let dst_lms = bradford * Vec3::new(dst_white.x, dst_white.y, dst_white.z);
@@ -54,6 +65,6 @@ impl Xyz {
             dst_lms.z / src_lms.z,
         ]);
 
-        bradford.inverse() * scale * bradford
+        inv_bradford * scale * bradford
     }
 }
