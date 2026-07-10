@@ -81,7 +81,7 @@ pub fn finish(cx: &mut App) {
             let function_parser = functions
                 .functions
                 .get(def.action_name.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Action {} not found.", &def.action_name))?;
+                .ok_or_else(|| anyhow::anyhow!("Action {} not found.", def.action_name))?;
             let context = if let Some(context) = &def.context {
                 Some(KeyBindingContextPredicate::parse(context)?.into())
             } else {
