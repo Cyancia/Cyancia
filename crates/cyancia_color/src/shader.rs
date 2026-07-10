@@ -12,10 +12,10 @@ impl IccTransformShader {
     pub fn new(
         ident: &str,
         src_pr: &ColorProfile,
-        src_layout: Layout,
+        _: Layout,
         dst_pr: &ColorProfile,
-        dst_layout: Layout,
-        options: TransformOptions,
+        _: Layout,
+        _: TransformOptions,
     ) -> Result<Self> {
         if !src_pr.is_matrix_shaper() || !dst_pr.is_matrix_shaper() {
             bail!("Only matrix shaper profiles are supported yet.");
@@ -33,9 +33,9 @@ impl IccTransformShader {
         let src_g_trc_inv_fn_ident = format!("_{}_src_g_trc_inv", ident);
         let src_b_trc_inv_fn_ident = format!("_{}_src_b_trc_inv", ident);
 
-        let src_r_trc_inv_fn = linear_function(&src_r_trc_inv_fn_ident, "f32", &src_r_trc)?;
-        let src_g_trc_inv_fn = linear_function(&src_g_trc_inv_fn_ident, "f32", &src_g_trc)?;
-        let src_b_trc_inv_fn = linear_function(&src_b_trc_inv_fn_ident, "f32", &src_b_trc)?;
+        let src_r_trc_inv_fn = linear_function(&src_r_trc_inv_fn_ident, "f32", src_r_trc)?;
+        let src_g_trc_inv_fn = linear_function(&src_g_trc_inv_fn_ident, "f32", src_g_trc)?;
+        let src_b_trc_inv_fn = linear_function(&src_b_trc_inv_fn_ident, "f32", src_b_trc)?;
 
         let dst_r_trc = dst_pr.red_trc.as_ref().unwrap();
         let dst_g_trc = dst_pr.green_trc.as_ref().unwrap();
@@ -45,9 +45,9 @@ impl IccTransformShader {
         let dst_g_trc_fn_ident = format!("_{}_dst_g_trc", ident);
         let dst_b_trc_fn_ident = format!("_{}_dst_b_trc", ident);
 
-        let dst_r_trc_fn = gamma_function(&dst_r_trc_fn_ident, "f32", &dst_r_trc)?;
-        let dst_g_trc_fn = gamma_function(&dst_g_trc_fn_ident, "f32", &dst_g_trc)?;
-        let dst_b_trc_fn = gamma_function(&dst_b_trc_fn_ident, "f32", &dst_b_trc)?;
+        let dst_r_trc_fn = gamma_function(&dst_r_trc_fn_ident, "f32", dst_r_trc)?;
+        let dst_g_trc_fn = gamma_function(&dst_g_trc_fn_ident, "f32", dst_g_trc)?;
+        let dst_b_trc_fn = gamma_function(&dst_b_trc_fn_ident, "f32", dst_b_trc)?;
 
         let combined_matrix = src_pr.transform_matrix(dst_pr);
         let combined_matrix_fn_ident = format!("_{}_combined_matrix", ident);
@@ -97,7 +97,7 @@ fn linear_function(ident: &str, component_ty: &str, trc: &ToneReprCurve) -> Resu
     let body = match trc {
         ToneReprCurve::Lut(lut) => {
             if lut.is_empty() {
-                format!("return x;")
+                "return x;".to_string()
             } else if lut.len() == 1 {
                 let gamma = (lut[0] as i32 as f64 / 256.0) as f32;
                 format!("return pow(x, {gamma});")
@@ -136,7 +136,7 @@ fn gamma_function(ident: &str, component_ty: &str, trc: &ToneReprCurve) -> Resul
     let body = match trc {
         ToneReprCurve::Lut(lut) => {
             if lut.is_empty() {
-                format!("return x;")
+                "return x;".to_string()
             } else if lut.len() == 1 {
                 let gamma = 1.0 / (lut[0] as i32 as f64 / 256.0) as f32;
                 format!("return pow(x, {gamma});")

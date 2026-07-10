@@ -1,3 +1,4 @@
+#![allow(clippy::excessive_precision)]
 use crate::model::xyz::Xyz;
 
 /// OKLab perceptual color space (Björn Ottosson, 2020).

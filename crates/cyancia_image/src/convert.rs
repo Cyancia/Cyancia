@@ -12,10 +12,7 @@ use wgpu::{
     ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureView,
 };
 
-use crate::{
-    texel::TexelType,
-    tile::{GpuTileInfo, GpuTileStorage},
-};
+use crate::{texel::TexelType, tile::GpuTileStorage};
 
 pub struct ColorProfileConvertPipeline {
     layout: BindGroupLayout,

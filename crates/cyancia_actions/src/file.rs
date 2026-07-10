@@ -1,16 +1,12 @@
 use cyancia_canvas::{CCanvas, CanvasManager, event::CanvasActiveLayerChanged};
 use cyancia_image::{
     CImage,
-    blend_modes::BlendMode,
-    composite::BlendFunction,
-    layer::LayerData,
     texel::TexelType,
     tile::{GpuLayerInfo, GpuTileStorage},
 };
 use cyancia_tools::{ToolProxies, ToolProxy};
 use cyancia_undo::{UndoStack, UndoStacks};
 use cyancia_utils::log_err::LogErr;
-use glam::UVec2;
 use gpui::{App, actions};
 use rfd::AsyncFileDialog;
 

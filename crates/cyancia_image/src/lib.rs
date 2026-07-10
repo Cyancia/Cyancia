@@ -12,7 +12,7 @@ use bevy_math::IRect;
 use glam::{IVec2, UVec2};
 use gpui::App;
 use imagers::{ImageDecoder, ImageReader};
-use moxcms::{CicpProfile, ColorProfile};
+use moxcms::ColorProfile;
 // TODO move CImage to another place to avoid this.
 extern crate image as imagers;
 

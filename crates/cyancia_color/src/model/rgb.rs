@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use moxcms::{ColorProfile, Matrix3f, ToneCurveEvaluator};
+use moxcms::{ColorProfile, Matrix3f};
 
 use crate::model::xyz::Xyz;
 

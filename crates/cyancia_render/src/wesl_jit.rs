@@ -19,7 +19,7 @@ pub fn compile_wesl_with_config(
     for pkg in dependencies {
         add_module(
             &mut resolver,
-            &pkg.root,
+            pkg.root,
             ModulePath::new(PathOrigin::Package(pkg.root.name.to_string()), Vec::new()),
         );
     }

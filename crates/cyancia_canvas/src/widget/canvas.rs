@@ -17,7 +17,6 @@ use gpui::{
     Styled, Subscription, WeakEntity, Window, canvas, div, px,
 };
 use moxcms::Layout;
-use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use wgpu::PollType;
 
 use crate::{

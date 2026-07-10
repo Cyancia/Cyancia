@@ -14,7 +14,7 @@ use glam::{IVec2, UVec2};
 use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView};
 use indexmap::IndexMap;
-use moxcms::{ColorProfile, Layout, TransformOptions};
+use moxcms::{ColorProfile, TransformOptions};
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, Texture,
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages, TextureView,

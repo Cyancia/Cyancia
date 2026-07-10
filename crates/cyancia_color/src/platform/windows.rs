@@ -66,7 +66,10 @@ pub fn get_window_color_profile(window: &mut Window) -> Result<ColorProfile> {
         // https://learn.microsoft.com/en-us/windows/win32/api/icm/nf-icm-colorprofilegetdisplaydefault#parameters
         // Receives a pointer to the default color profile name, which must be freed with LocalFree.
         unsafe {
-            windows::Win32::Foundation::LocalFree(Some(std::mem::transmute(profile_path.as_ptr())));
+            windows::Win32::Foundation::LocalFree(Some(std::mem::transmute::<
+                *mut u16,
+                windows::Win32::Foundation::HLOCAL,
+            >(profile_path.as_ptr())));
         }
     }
 

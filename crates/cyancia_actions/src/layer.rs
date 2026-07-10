@@ -1,8 +1,6 @@
 use std::{
     any::TypeId,
-    fs::File,
     io::{BufReader, Cursor},
-    path::PathBuf,
 };
 
 use cyancia_canvas::{
@@ -17,7 +15,7 @@ use cyancia_image::{
     blend_modes::BlendMode,
     composite::BlendFunction,
     layer::{LayerData, LayerId, LayerPosition, pixel_layer::PixelLayer},
-    tile::{GpuTileStorage, TileStorageAppExt},
+    tile::TileStorageAppExt,
 };
 use cyancia_undo::BatchedUndoCommand;
 use cyancia_utils::log_err::LogErr;

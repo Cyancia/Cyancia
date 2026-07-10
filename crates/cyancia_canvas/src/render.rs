@@ -16,12 +16,10 @@ use cyancia_render::{
     buffer::DynamicBuffer,
     wesl_jit::compile_wesl,
 };
-use cyancia_utils::include_shader;
 use encase::ShaderType;
 use glam::{IVec2, Mat3, UVec2, UVec3};
 use gpui::{Global, RenderImage};
 use image::{Frame, RgbaImage};
-use wesl::{CodegenModule, ModulePath, VirtualResolver, Wesl, syntax::PathOrigin};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindingResource,
     Buffer, BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoder,

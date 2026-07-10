@@ -1,3 +1,4 @@
+#![allow(clippy::excessive_precision)]
 use crate::model::oklab::OkLab;
 
 #[derive(Clone, Copy)]
@@ -149,11 +150,7 @@ fn find_gamut_intersection(a: f32, b: f32, l1: f32, c1: f32, l0: f32, cusp: LC) 
 
 fn halley_step(f: f32, f1: f32, f2: f32) -> f32 {
     let u = f1 / (f1 * f1 - 0.5 * f * f2);
-    if u >= 0.0 {
-        -f * u
-    } else {
-        1_000_000.0
-    }
+    if u >= 0.0 { -f * u } else { 1_000_000.0 }
 }
 
 fn max_saturation(a: f32, b: f32) -> f32 {
