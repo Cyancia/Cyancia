@@ -1,0 +1,21 @@
+name: WGSL Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  wgsl-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: latest
+
+      - name: Install wgsl-test
+        run: npm install -g wgsl-test
+
+      - name: Run WGSL tests
+        run: wgsl-test run --projectDir crates/cyancia_color
