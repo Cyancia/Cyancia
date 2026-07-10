@@ -30,7 +30,7 @@ fn okhsv_from_oklab(oklab: OkLab) -> OkHsv {
 
     let a_ = oklab.a / chroma;
     let b_ = oklab.b / chroma;
-    let hue = wrap_hue(degrees(atan2(oklab.b, oklab.a)));
+    let hue = (degrees(atan2(oklab.b, oklab.a)) % 360.0 + 360.0) % 360.0;
     let cusp = find_cusp(a_, b_);
     let st_max = st_from_lc(cusp);
     let s_0 = 0.5;
@@ -84,8 +84,4 @@ fn okhsv_into_oklab(okhsv: OkHsv) -> OkLab {
     chroma = chroma * lightness_scale_factor;
 
     return OkLab(lightness, chroma * a_, chroma * b_);
-}
-
-fn wrap_hue(h: f32) -> f32 {
-    return ((h % 360.0) + 360.0) % 360.0;
 }

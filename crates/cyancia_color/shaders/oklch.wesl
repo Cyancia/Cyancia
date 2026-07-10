@@ -19,15 +19,11 @@ fn oklch_into_xyz(oklch: OkLch) -> Xyz {
 
 fn oklch_from_oklab(oklab: OkLab) -> OkLch {
     let c = length(vec2f(oklab.a, oklab.b));
-    let h = wrap_hue(degrees(atan2(oklab.b, oklab.a)));
+    let h = (degrees(atan2(oklab.b, oklab.a)) % 360.0 + 360.0) % 360.0;
     return OkLch(oklab.l, c, h);
 }
 
 fn oklch_into_oklab(oklch: OkLch) -> OkLab {
     let h = radians(oklch.h);
     return OkLab(oklch.l, oklch.c * cos(h), oklch.c * sin(h));
-}
-
-fn wrap_hue(h: f32) -> f32 {
-    return ((h % 360.0) + 360.0) % 360.0;
 }

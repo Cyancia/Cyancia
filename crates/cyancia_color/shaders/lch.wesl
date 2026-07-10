@@ -16,15 +16,11 @@ fn lch_into_xyz(lch: Lch) -> Xyz {
 
 fn lch_from_lab(lab: Lab) -> Lch {
     let c = length(vec2f(lab.a, lab.b));
-    let h = lch_wrap_hue(degrees(atan2(lab.b, lab.a)));
+    let h = (degrees(atan2(lab.b, lab.a)) % 360.0 + 360.0) % 360.0;
     return Lch(lab.l, c, h);
 }
 
 fn lch_into_lab(lch: Lch) -> Lab {
     let h = radians(lch.h);
     return Lab(lch.l, lch.c * cos(h), lch.c * sin(h));
-}
-
-fn lch_wrap_hue(h: f32) -> f32 {
-    return ((h % 360.0) + 360.0) % 360.0;
 }

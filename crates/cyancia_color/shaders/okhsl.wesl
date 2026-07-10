@@ -26,7 +26,7 @@ fn okhsl_from_oklab(oklab: OkLab) -> OkHsl {
         return OkHsl(0.0, 0.0, lightness);
     }
 
-    let hue = wrap_hue(degrees(atan2(oklab.b, oklab.a)));
+    let hue = (degrees(atan2(oklab.b, oklab.a)) % 360.0 + 360.0) % 360.0;
     let a_ = oklab.a / chroma;
     let b_ = oklab.b / chroma;
     let chroma_vals = chroma_values_from_normalized(oklab.l, a_, b_);
@@ -75,8 +75,4 @@ fn okhsl_into_oklab(okhsl: OkHsl) -> OkLab {
     );
 
     return OkLab(lightness, chroma * a_, chroma * b_);
-}
-
-fn wrap_hue(h: f32) -> f32 {
-    return ((h % 360.0) + 360.0) % 360.0;
 }
