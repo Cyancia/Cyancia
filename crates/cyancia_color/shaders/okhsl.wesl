@@ -1,7 +1,7 @@
 import package::{
     xyz::Xyz,
     oklab::{OkLab, oklab_from_xyz, oklab_into_xyz},
-    okcolor::{ChromaValues, chroma_values_from_normalized, toe, toe_inv},
+    okcolor::{ChromaValues, chroma_values_from_normalized, st_mid, toe, toe_inv},
 };
 
 struct OkHsl {
@@ -34,11 +34,11 @@ fn okhsl_from_oklab(oklab: OkLab) -> OkHsl {
     let mid_inv = 1.25;
 
     let saturation = select(
-        chroma / ((mid * chroma_vals.zero) + (1.0 - (mid * chroma_vals.zero) / chroma_vals.mid) * chroma) * mid,
         mid + (1.0 - mid) * (chroma - chroma_vals.mid)
             / (((1.0 - mid) * (chroma_vals.mid * mid_inv) * (chroma_vals.mid * mid_inv) / chroma_vals.zero)
             + (1.0 - ((1.0 - mid) * (chroma_vals.mid * mid_inv) * (chroma_vals.mid * mid_inv) / chroma_vals.zero) / (chroma_vals.max - chroma_vals.mid))
             * (chroma - chroma_vals.mid)),
+        chroma / ((mid * chroma_vals.zero) + (1.0 - (mid * chroma_vals.zero) / chroma_vals.mid) * chroma) * mid,
         chroma < chroma_vals.mid,
     );
 
@@ -63,14 +63,14 @@ fn okhsl_into_oklab(okhsl: OkHsl) -> OkLab {
     let mid_inv = 1.25;
 
     let chroma = select(
-        (mid_inv * okhsl.s) * (mid * chroma_vals.zero)
-            / (1.0 - (1.0 - (mid * chroma_vals.zero) / chroma_vals.mid) * (mid_inv * okhsl.s)),
         chroma_vals.mid
             + (okhsl.s - mid) / (1.0 - mid)
             * ((1.0 - mid) * chroma_vals.mid * chroma_vals.mid * mid_inv * mid_inv / chroma_vals.zero)
             / (1.0 - (1.0 - ((1.0 - mid) * chroma_vals.mid * chroma_vals.mid * mid_inv * mid_inv / chroma_vals.zero)
             / (chroma_vals.max - chroma_vals.mid))
             * (okhsl.s - mid) / (1.0 - mid)),
+        (mid_inv * okhsl.s) * (mid * chroma_vals.zero)
+            / (1.0 - (1.0 - (mid * chroma_vals.zero) / chroma_vals.mid) * (mid_inv * okhsl.s)),
         okhsl.s < mid,
     );
 

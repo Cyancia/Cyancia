@@ -1,7 +1,7 @@
 import package::{
     xyz::Xyz,
     oklab::{OkLab, oklab_from_xyz, oklab_into_xyz},
-    okcolor::{cbrt, LC, ST, find_cusp, st_from_lc, oklab_to_linear_srgb, toe, toe_inv},
+    okcolor::{cbrt, LC, ST, find_cusp, st_from_lc, st_mid, oklab_to_linear_srgb, toe, toe_inv},
 };
 
 struct OkHsv {

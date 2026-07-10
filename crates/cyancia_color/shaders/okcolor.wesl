@@ -63,10 +63,10 @@ fn chroma_values_from_normalized(lightness: f32, a_: f32, b_: f32) -> ChromaValu
     let max_chroma = find_gamut_intersection(a_, b_, lightness, 1.0, lightness, cusp);
     let st_max = st_from_lc(cusp);
     let k = max_chroma / min(lightness * st_max.s, (1.0 - lightness) * st_max.t);
-    let st_mid = st_mid(a_, b_);
+    let st_mid_val = st_mid(a_, b_);
 
-    let c_a = lightness * st_mid.s;
-    let c_b = (1.0 - lightness) * st_mid.t;
+    let c_a = lightness * st_mid_val.s;
+    let c_b = (1.0 - lightness) * st_mid_val.t;
     let c_mid = 0.9
         * k
         * sqrt(sqrt(1.0 / (1.0 / (c_a * c_a * c_a * c_a) + 1.0 / (c_b * c_b * c_b * c_b))));
