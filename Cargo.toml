@@ -10,6 +10,7 @@ members = [
     "crates/cyancia_canvas",
     "crates/cyancia_color",
     "crates/cyancia_cyan",
+    "crates/cyancia_color_selector",
     "crates/cyancia_image",
     "crates/cyancia_math",
     "crates/cyancia_render",
@@ -53,6 +54,7 @@ cyancia_bucket_tool = { version = "0.1.0", path = "crates/cyancia_bucket_tool" }
 cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
 cyancia_color = { version = "0.1.0", path = "crates/cyancia_color" }
 cyancia_cyan = { version = "0.1.0", path = "crates/cyancia_cyan" }
+cyancia_color_selector = { version = "0.1.0", path = "crates/cyancia_color_selector" }
 cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
 cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
 cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
