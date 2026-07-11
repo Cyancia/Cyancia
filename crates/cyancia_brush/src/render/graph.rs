@@ -462,9 +462,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
 
     fn generate_code(
         &self,
-        _: GraphNodeCodeGenContext<'_, Data>,
+        ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(Default::default())
+        Ok(format!("set_output_pixel_bounds({});", ctx.get_input(0)?))
     }
 
     fn run(&self, _: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {

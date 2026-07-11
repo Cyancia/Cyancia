@@ -7,7 +7,7 @@ use cyancia_render::{
     bind_group_layout_entries::{
         BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
     },
-    buffer::DynamicBuffer,
+    buffer::{BufferVec, DynamicBuffer},
 };
 use glam::UVec4;
 use wgpu::{
@@ -76,7 +76,7 @@ impl BrushInputSamplingPipeline {
         pass: &mut ComputePass,
         pen_input: &DynamicBuffer<PenInput>,
         input_sampler: &DynamicBuffer<InputSampler>,
-        output_samples: &DynamicBuffer<OutputSamples>,
+        output_samples: &BufferVec<ComputedPenInput>,
         bounds_eval_dispatch: &Buffer,
     ) {
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -110,6 +110,7 @@ impl BrushMainPipeline {
     ) -> Self {
         let layout_entries = bind_group_layout_entries(
             &resources.external_var_layouts,
+            false,
             false,
             resources.target_layer_format.wgpu_format(),
             resources.selection_layer_format.wgpu_format(),
@@ -170,7 +171,10 @@ impl BrushMainPipeline {
             intermediate_buffers,
             Some(samples),
             None,
-            dab_infos,
+            None,
+            None,
+            Some(dab_infos),
+            None,
             true,
         );
         let bind_group_even = device.create_bind_group(&BindGroupDescriptor {
@@ -189,7 +193,10 @@ impl BrushMainPipeline {
             intermediate_buffers,
             Some(samples),
             None,
-            dab_infos,
+            None,
+            None,
+            Some(dab_infos),
+            None,
             false,
         );
         let bind_group_odd = device.create_bind_group(&BindGroupDescriptor {
@@ -248,6 +255,7 @@ impl BrushPostProcessPipeline {
         let layout_entries = bind_group_layout_entries(
             &resources.external_var_layouts,
             true,
+            false,
             resources.target_layer_format.wgpu_format(),
             resources.selection_layer_format.wgpu_format(),
         );
@@ -304,8 +312,11 @@ impl BrushPostProcessPipeline {
             selection_layer_tile_info,
             intermediate_buffers,
             None,
+            None,
             Some(stroke_pp_data),
-            dab_infos,
+            None,
+            Some(dab_infos),
+            None,
             (*round).is_multiple_of(2),
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -329,9 +340,204 @@ impl BrushPostProcessPipeline {
     }
 }
 
+pub struct BrushMainBoundsEvalPipeline {
+    layout: BindGroupLayout,
+    pipeline: ComputePipeline,
+}
+
+impl BrushMainBoundsEvalPipeline {
+    pub fn new(
+        device: &Device,
+        resources: &StrokeResources,
+        compiled_shader: Cow<'_, str>,
+    ) -> Self {
+        let layout_entries = bind_group_layout_entries(
+            &resources.external_var_layouts,
+            false,
+            true,
+            resources.target_layer_format.wgpu_format(),
+            resources.selection_layer_format.wgpu_format(),
+        );
+
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("brush main bounds eval layout"),
+            entries: &layout_entries,
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("brush main bounds eval shader"),
+            source: ShaderSource::Wgsl(compiled_shader),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("brush main bounds eval pipeline layout"),
+            bind_group_layouts: &[Some(&layout)],
+            ..Default::default()
+        });
+
+        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("brush main bounds eval pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("main_bounds_eval"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        Self { pipeline, layout }
+    }
+
+    pub fn dispatch(
+        &self,
+        device: &Device,
+        pass: &mut ComputePass,
+        samples: &BufferVec<ComputedPenInput>,
+        dab_infos: &BufferVec<DabInfo>,
+        target_layer_texture: &TextureView,
+        target_layer_tile_info: &Buffer,
+        has_selection: &Buffer,
+        selection_layer_texture: &TextureView,
+        selection_layer_tile_info: &Buffer,
+        resources: &StrokeResources,
+        intermediate_buffers: &[DynamicLayerStorage; 2],
+        round: &mut u32,
+    ) {
+        use crate::render::MAX_DABS_PER_STROKE;
+
+        let bind_group_entries = bind_group_entries(
+            resources,
+            target_layer_texture,
+            target_layer_tile_info,
+            has_selection,
+            selection_layer_texture,
+            selection_layer_tile_info,
+            intermediate_buffers,
+            None,
+            Some(samples),
+            None,
+            None,
+            None,
+            Some(dab_infos),
+            (*round).is_multiple_of(2),
+        );
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush main bounds eval bind group"),
+            layout: &self.layout,
+            entries: &bind_group_entries,
+        });
+
+        pass.push_debug_group("brush preset main bounds eval");
+        {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(1, 1, MAX_DABS_PER_STROKE.div_ceil(16));
+        }
+        pass.pop_debug_group();
+        *round += 1;
+    }
+}
+
+pub struct BrushPostProcessBoundsEvalPipeline {
+    layout: BindGroupLayout,
+    pipeline: ComputePipeline,
+}
+
+impl BrushPostProcessBoundsEvalPipeline {
+    pub fn new(
+        device: &Device,
+        resources: &StrokeResources,
+        compiled_shader: Cow<'_, str>,
+    ) -> Self {
+        let layout_entries = bind_group_layout_entries(
+            &resources.external_var_layouts,
+            true,
+            true,
+            resources.target_layer_format.wgpu_format(),
+            resources.selection_layer_format.wgpu_format(),
+        );
+
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("brush postprocess bounds eval layout"),
+            entries: &layout_entries,
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("brush postprocess bounds eval shader"),
+            source: ShaderSource::Wgsl(compiled_shader),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("brush postprocess bounds eval pipeline layout"),
+            bind_group_layouts: &[Some(&layout)],
+            ..Default::default()
+        });
+
+        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("brush postprocess bounds eval pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("main_bounds_eval"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        Self { pipeline, layout }
+    }
+
+    pub fn dispatch(
+        &self,
+        device: &Device,
+        pass: &mut ComputePass,
+        stroke_pp_data: &BufferVec<StrokePostprocessData>,
+        target_layer_texture: &TextureView,
+        target_layer_tile_info: &Buffer,
+        has_selection: &Buffer,
+        selection_layer_texture: &TextureView,
+        selection_layer_tile_info: &Buffer,
+        dab_infos: &BufferVec<DabInfo>,
+        resources: &StrokeResources,
+        intermediate_buffers: &[DynamicLayerStorage; 2],
+        round: &mut u32,
+    ) {
+        use crate::render::MAX_DABS_PER_STROKE;
+
+        let bind_group_entries = bind_group_entries(
+            resources,
+            target_layer_texture,
+            target_layer_tile_info,
+            has_selection,
+            selection_layer_texture,
+            selection_layer_tile_info,
+            intermediate_buffers,
+            None,
+            None,
+            None,
+            Some(stroke_pp_data),
+            None,
+            Some(dab_infos),
+            (*round).is_multiple_of(2),
+        );
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush postprocess bounds eval bind group"),
+            layout: &self.layout,
+            entries: &bind_group_entries,
+        });
+
+        pass.push_debug_group("brush preset postprocess bounds eval");
+        {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(1, 1, MAX_DABS_PER_STROKE.div_ceil(16));
+        }
+        pass.pop_debug_group();
+        *round += 1;
+    }
+}
+
 fn bind_group_layout_entries(
     external_var: &[BindGroupLayoutEntry],
     is_postprocess: bool,
+    is_bounds_eval: bool,
     target_layer_format: TextureFormat,
     selection_layer_format: TextureFormat,
 ) -> Vec<BindGroupLayoutEntry> {
@@ -341,7 +547,9 @@ fn bind_group_layout_entries(
             if is_postprocess {
                 binding_types::storage_buffer_read_only::<StrokePostprocessData>(false)
             } else {
-                binding_types::storage_buffer_read_only::<ComputedPenInput>(true)
+                binding_types::storage_buffer_read_only::<ComputedPenInput>(
+                    !is_postprocess && !is_bounds_eval,
+                )
             },
             binding_types::texture_2d(TextureSampleType::Float { filterable: false }),
             binding_types::storage_buffer_read_only::<URect>(false),
@@ -359,7 +567,7 @@ fn bind_group_layout_entries(
                 target_layer_format,
                 StorageTextureAccess::WriteOnly,
             ),
-            if is_postprocess {
+            if is_postprocess || is_bounds_eval {
                 binding_types::storage_buffer::<DabInfo>(false)
             } else {
                 binding_types::storage_buffer::<DabInfo>(true)
@@ -386,8 +594,11 @@ fn bind_group_entries<'a>(
     selection_layer_tile_info: &'a Buffer,
     intermediate_buffers: &'a [DynamicLayerStorage],
     samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
+    samples_vec: Option<&'a BufferVec<ComputedPenInput>>,
     stroke_pp_data: Option<&'a DynamicBuffer<StrokePostprocessData>>,
-    dab_infos: &'a DynamicBuffer<DabInfo>,
+    stroke_pp_data_vec: Option<&'a BufferVec<StrokePostprocessData>>,
+    dab_infos: Option<&'a DynamicBuffer<DabInfo>>,
+    dab_infos_vec: Option<&'a BufferVec<DabInfo>>,
     is_even: bool,
 ) -> Vec<BindGroupEntry<'a>> {
     let mut entries = DynamicBindGroupEntries::new_with_indices((
@@ -408,7 +619,16 @@ fn bind_group_entries<'a>(
                 .unwrap()
                 .as_entire_binding(),
         ),
-        (8, dab_infos.binding().unwrap()),
+        (
+            8,
+            if let Some(dab_infos) = dab_infos {
+                dab_infos.binding().unwrap()
+            } else if let Some(dab_infos_vec) = dab_infos_vec {
+                dab_infos_vec.inner_buffer().unwrap().as_entire_binding()
+            } else {
+                unreachable!()
+            },
+        ),
         (9, BindingResource::TextureView(selection_layer_texture)),
         (10, selection_layer_tile_info.as_entire_binding()),
         (11, has_selection.as_entire_binding()),
@@ -420,10 +640,20 @@ fn bind_group_entries<'a>(
             binding: 0,
             resource: samples.binding().unwrap(),
         });
+    } else if let Some(samples_vec) = samples_vec {
+        entries.entries.push(BindGroupEntry {
+            binding: 0,
+            resource: samples_vec.inner_buffer().unwrap().as_entire_binding(),
+        });
     } else if let Some(stroke_pp_data) = stroke_pp_data {
         entries.entries.push(BindGroupEntry {
             binding: 0,
             resource: stroke_pp_data.binding().unwrap(),
+        });
+    } else if let Some(stroke_pp_data_vec) = stroke_pp_data_vec {
+        entries.entries.push(BindGroupEntry {
+            binding: 0,
+            resource: stroke_pp_data_vec.inner_buffer().unwrap().as_entire_binding(),
         });
     }
 

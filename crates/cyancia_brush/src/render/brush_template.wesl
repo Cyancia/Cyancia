@@ -2,7 +2,8 @@ import package::image::image_tiling::{TileInfo, TILE_SIZE};
 import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
 import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
-@group(0) @binding(0) var<storage> sample: GraphInput;
+@if(!BOUNDS_EVAL) @group(0) @binding(0) var<storage> sample: GraphInput;
+@if(BOUNDS_EVAL) @group(0) @binding(0) var<storage> sample: array<GraphInput>;
 @group(0) @binding(1) var textures: texture_2d<f32>;
 @group(0) @binding(2) var<storage> texture_bounds: array<URect>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
@@ -10,7 +11,8 @@ import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSa
 @group(0) @binding(5) var<storage> buffer_tile_info: array<TileInfo>;
 @group(0) @binding(6) var stroke_buffer_src: texture_storage_2d_array<r32uint, read>;
 @group(0) @binding(7) var stroke_buffer_dst: texture_storage_2d_array<r32uint, write>;
-@group(0) @binding(8) var<storage, read_write> dab_info: DabInfo;
+@if(!BOUNDS_EVAL) @group(0) @binding(8) var<storage, read_write> dab_info: DabInfo;
+@if(BOUNDS_EVAL) @group(0) @binding(8) var<storage, read_write> dab_info: array<DabInfo>;
 @group(0) @binding(9) var selection: texture_storage_2d_array<r8unorm, read>;
 @group(0) @binding(10) var<storage> selection_tile_info: array<TileInfo>;
 @group(0) @binding(11) var<storage> has_selection: u32;
@@ -164,6 +166,15 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
     textureStore(stroke_buffer_dst, vec2i(tile_index.xy), tile_index.z, packed);
 }
 
+var<private> dab_index: u32 = 0u;
+
+fn set_output_pixel_bounds(pixel_pos: vec2i, bounds: Rect) {
+    let tile_min = i32(bounds.min) / i32(TILE_SIZE);
+    let tile_max = i32(bounds.max - 1) / i32(TILE_SIZE);
+
+    dab_info[dab_index] = DabInfo(tile_min, tile_max);
+}
+
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -176,4 +187,13 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let pixel_posf = vec2f(pixel_pos);
 
     main_graph(sample, pixel_pos, pixel_posf);
+}
+
+@compute
+@workgroup_size(1, 1, 16)
+fn main_bounds_eval(@builtin(global_invocation_id) id: vec3u) {
+    dab_index = id.z;
+    let pixel_pos = vec2i(id.xy);
+    let pixel_posf = vec2f(pixel_pos);
+    main_bounds_eval_graph(sample[dab_index], vec2i(0), vec2f(0.0));
 }

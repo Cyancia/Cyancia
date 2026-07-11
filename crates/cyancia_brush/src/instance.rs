@@ -37,9 +37,15 @@ use crate::{
     },
 };
 
+pub struct CompiledGraph {
+    pub main: String,
+    pub bounds_eval: String,
+}
+
 pub struct CompiledBrushPreset {
-    pub main_graph: String,
-    pub stroke_postprocess_graphs: Vec<String>,
+    pub input_sampling: String,
+    pub main_graph: CompiledGraph,
+    pub stroke_postprocess_graphs: Vec<CompiledGraph>,
     pub texture_usage: Vec<TextureId>,
     pub external_vars: Arc<GraphExternalVariableStorage>,
 }
@@ -47,17 +53,36 @@ pub struct CompiledBrushPreset {
 impl Display for CompiledBrushPreset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "-------------- Compiled brush preset --------------")?;
+
+        writeln!(
+            f,
+            "-------------- Input sampling shader -------------- \n{}",
+            self.input_sampling
+        )?;
+
         writeln!(
             f,
             "-------------- Main graph shader -------------- \n{}",
-            self.main_graph
+            self.main_graph.main
+        )?;
+
+        writeln!(
+            f,
+            "-------------- Main graph bounds eval shader -------------- \n{}",
+            self.main_graph.bounds_eval
         )?;
 
         for (i, graph) in self.stroke_postprocess_graphs.iter().enumerate() {
             writeln!(
                 f,
                 "-------------- Stroke postprocess graph shader {} -------------- \n{}",
-                i, graph
+                i, graph.main
+            )?;
+
+            writeln!(
+                f,
+                "-------------- Stroke postprocess graph bounds eval shader {} -------------- \n{}",
+                i, graph.bounds_eval
             )?;
         }
 
@@ -236,6 +261,13 @@ impl BrushPresetInstance {
 
         let mut texture_usage = GraphTextureUsageRecorder::default();
 
+        let input_sampling = compile_template_input_sampling(
+            self.main_graph.read(cx),
+            &mut texture_usage,
+            &external_variable_bindings,
+            cx,
+        )?;
+
         let main_graph = compile_template_main(
             self.main_graph.read(cx),
             &mut texture_usage,
@@ -251,6 +283,7 @@ impl BrushPresetInstance {
         )?;
 
         Ok(CompiledBrushPreset {
+            input_sampling,
             main_graph,
             stroke_postprocess_graphs,
             texture_usage: texture_usage.used_textures_ordered(),
@@ -390,6 +423,7 @@ fn compile_template(
     shader: &str,
     external_variable_bindings: &str,
     postprocess: bool,
+    bounds_eval: bool,
 ) -> anyhow::Result<String> {
     let shader = include_str!("render/brush_template.wesl")
         .replace("//CODEGENFLAG_COMPILED_GRAPH", shader)
@@ -406,6 +440,7 @@ fn compile_template(
     compiler.set_mangler(Default::default());
     compiler.set_options(Default::default());
     compiler.set_feature("POSTPROCESS", postprocess);
+    compiler.set_feature("BOUNDS_EVAL", bounds_eval);
     let compiled_shader = compiler
         .compile(&"package::template".parse().unwrap())?
         .to_string();
@@ -416,7 +451,7 @@ fn compile_template(
 // TODO Graph validation. Some functions are not allowed to use during estimation stage. For example
 //      It is not allowed to use a pixel color sampled from previous input to determine the bounds.
 
-fn compile_template_main(
+fn compile_template_input_sampling(
     graph: &Graph<BrushGraphData>,
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
@@ -424,7 +459,21 @@ fn compile_template_main(
 ) -> anyhow::Result<String> {
     let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage, cx)?;
 
-    compile_template(&shader, external_variable_bindings, false)
+    compile_template(&shader, external_variable_bindings, false, false)
+}
+
+fn compile_template_main(
+    graph: &Graph<BrushGraphData>,
+    texture_usage: &mut GraphTextureUsageRecorder,
+    external_variable_bindings: &str,
+    cx: &App,
+) -> anyhow::Result<CompiledGraph> {
+    let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage, cx)?;
+
+    Ok(CompiledGraph {
+        main: compile_template(&shader, external_variable_bindings, false, false)?,
+        bounds_eval: compile_template(&shader, external_variable_bindings, false, true)?,
+    })
 }
 
 fn compile_template_stroke_postprocess<'a>(
@@ -432,7 +481,7 @@ fn compile_template_stroke_postprocess<'a>(
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
     cx: &App,
-) -> anyhow::Result<Vec<String>> {
+) -> anyhow::Result<Vec<CompiledGraph>> {
     let compiled_graphs = graphs
         .into_iter()
         .map(|graph| graph.compile(Default::default(), Default::default(), texture_usage, cx))
@@ -440,8 +489,13 @@ fn compile_template_stroke_postprocess<'a>(
 
     let compiled_brshes = compiled_graphs
         .into_iter()
-        .map(|(_, shader)| compile_template(&shader, external_variable_bindings, true))
-        .collect::<Result<_, _>>()?;
+        .map(|(_, shader)| {
+            Ok(CompiledGraph {
+                main: compile_template(&shader, external_variable_bindings, false, false)?,
+                bounds_eval: compile_template(&shader, external_variable_bindings, false, true)?,
+            })
+        })
+        .collect::<anyhow::Result<Vec<CompiledGraph>>>()?;
     Ok(compiled_brshes)
 }
 

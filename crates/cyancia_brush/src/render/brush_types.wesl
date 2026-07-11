@@ -1,11 +1,8 @@
 import package::image::image_tiling::{TileInfo};
 import package::render::math::{IRect};
 
-const MAX_SAMPLES_BETWEEN_INPUTS: u32 = 256;
-
-const TILE_ALLOCATION_WORKGROUP_SIZE = vec3u(1, 1, 8);
 const MAIN_WORKGROUP_SIZE = vec3u(16, 16, 1);
-const ESTIMATION_WORKGROUP_SIZE = vec3u(1, 1, 8);
+const ESTIMATION_WORKGROUP_SIZE = vec3u(1, 1, 16);
 
 struct StrokeInfo {
     // In tiles
@@ -62,4 +59,16 @@ struct StrokePostprocessData {
 struct Time {
     now: f32,
     stroke_begin: f32,
+}
+
+struct PenInputSampler {
+    last_input: PenInput,
+    last_sample: ComputedPenInput,
+    has_last_sample: u32,
+}
+
+struct PenInput {
+    position: vec2f,
+    bezier_control_prev: vec2f,
+    bezier_control_cur: vec2f,
 }
