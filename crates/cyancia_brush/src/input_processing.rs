@@ -4,7 +4,7 @@ use glam::Vec2;
 use gpui::App;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-use crate::render::{ComputedPenInput, Time, graph::BrushGraphData};
+use crate::render::{ComputedPenInput, PenInput, Time, graph::BrushGraphData};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RawPenInput {
@@ -49,33 +49,26 @@ impl InputProcessor {
         self.stabilizer = stabilizer;
     }
 
-    pub fn push(
-        &mut self,
-        input: RawPenInput,
-        required_spacing: &Graph<BrushGraphData>,
-        cx: &App,
-    ) -> Vec<ComputedPenInput> {
+    pub fn push(&mut self, input: RawPenInput) -> Option<PenInput> {
         self.samples.enqueue(input);
 
-        let Some(stabilized) = self.stabilizer.stabilize(&self.samples) else {
-            return Vec::new();
-        };
+        let stabilized = self.stabilizer.stabilize(&self.samples)?;
 
-        let curve = match (self.older_stable, self.prev_stable) {
+        let cp = match (self.older_stable, self.prev_stable) {
             (Some(older), Some(prev)) => {
                 let new_pos = stabilized.position;
                 let tangent_start = (new_pos - older.position) * 0.5;
                 let tangent_end = new_pos - prev.position;
                 let cp1 = prev.position + tangent_start / 3.0;
                 let cp2 = new_pos - tangent_end / 3.0;
-                Some(CubicBezierCurve::new(prev.position, cp1, cp2, new_pos))
+                Some((cp1, cp2))
             }
             (None, Some(prev)) => {
                 let new_pos = stabilized.position;
                 let d = new_pos - prev.position;
                 let cp1 = prev.position + d / 3.0;
                 let cp2 = prev.position + d * (2.0 / 3.0);
-                Some(CubicBezierCurve::new(prev.position, cp1, cp2, new_pos))
+                Some((cp1, cp2))
             }
             _ => None,
         };
@@ -83,47 +76,14 @@ impl InputProcessor {
         self.older_stable = self.prev_stable;
         self.prev_stable = Some(stabilized);
 
-        let Some(curve) = curve else {
-            return Vec::new();
-        };
+        let (bezier_control_prev, bezier_control_next) = cp?;
 
-        let from = self.older_stable.unwrap();
-        let to = self.prev_stable.unwrap();
-
-        const ARC_SAMPLES: usize = 64;
-        let mut arc_table: Vec<(f32, f32)> = Vec::with_capacity(ARC_SAMPLES + 1);
-        arc_table.push((0.0, 0.0));
-        let mut prev_p = curve.sample(0.0);
-        let mut total_arc = 0.0_f32;
-        for i in 1..=ARC_SAMPLES {
-            let t = i as f32 / ARC_SAMPLES as f32;
-            let p = curve.sample(t);
-            total_arc += p.distance(prev_p);
-            arc_table.push((total_arc, t));
-            prev_p = p;
-        }
-
-        let mid_sample = compute_pen_input(&curve, 0.5, &from, &to);
-        let spacing = compute_required_spacing(mid_sample, required_spacing, cx);
-
-        if total_arc < 0.0001 || spacing <= 0.0 {
-            return Vec::new();
-        }
-
-        let mut output = Vec::new();
-        let mut stamp_arc = self.arc_offset;
-
-        while stamp_arc <= total_arc {
-            let t = arc_length_to_t(&arc_table, stamp_arc);
-            let sample = compute_pen_input(&curve, t, &from, &to);
-            output.push(sample);
-            self.last_sample = Some(sample);
-            stamp_arc += spacing;
-        }
-
-        self.arc_offset = stamp_arc - total_arc;
-
-        output
+        Some(PenInput {
+            position: input.position,
+            time: input.time,
+            bezier_control_prev,
+            bezier_control_next,
+        })
     }
 
     pub fn reset(&mut self) {
@@ -134,16 +94,11 @@ impl InputProcessor {
         self.arc_offset = 0.0;
     }
 
-    pub fn flush(
-        &mut self,
-        final_input: RawPenInput,
-        required_spacing: &Graph<BrushGraphData>,
-        cx: &App,
-    ) -> Vec<ComputedPenInput> {
+    pub fn flush(&mut self, final_input: RawPenInput) -> Vec<PenInput> {
         let steps = self.stabilizer.convergence_steps();
         let mut result = Vec::new();
         for _ in 0..steps {
-            result.extend(self.push(final_input, required_spacing, cx));
+            result.extend(self.push(final_input));
         }
         result
     }

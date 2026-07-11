@@ -17,6 +17,7 @@ struct StrokeInfo {
 
 struct OutputSamples {
     n_samples: u32,
+    is_overflow: u32,
     samples: array<ComputedPenInput>,
 }
 
@@ -36,6 +37,21 @@ struct ComputedPenInput {
     draw_direction_vec: vec2f,
     draw_direction_angle: f32,
     time: Time,
+}
+
+struct PenInputSampler {
+    last_input: PenInput,
+    last_sample: ComputedPenInput,
+    has_last_sample: u32,
+}
+
+struct PenInput {
+    position: vec2f,
+    time: Time,
+    // Inner control points of the cubic Bezier from the previous position to
+    // this one.  Computed on the CPU by BezierInputSampler.
+    bezier_control_prev: vec2f,
+    bezier_control_cur: vec2f,
 }
 
 struct StrokePostprocessData {

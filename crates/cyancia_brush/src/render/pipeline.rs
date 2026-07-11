@@ -3,10 +3,13 @@ use std::borrow::Cow;
 use bevy_math::URect;
 use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage};
 use cyancia_render::{
-    bind_group_entries::DynamicBindGroupEntries,
-    bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
+    bind_group_entries::{BindGroupEntries, DynamicBindGroupEntries},
+    bind_group_layout_entries::{
+        BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
+    },
     buffer::DynamicBuffer,
 };
+use glam::UVec4;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, Buffer, ComputePass, ComputePipeline,
@@ -15,7 +18,84 @@ use wgpu::{
     TextureView,
 };
 
-use crate::render::{ComputedPenInput, DabInfo, StrokePostprocessData, StrokeResources};
+use crate::{
+    input_processing::RawPenInput,
+    render::{
+        ComputedPenInput, DabInfo, InputSampler, OutputSamples, PenInput, StrokePostprocessData,
+        StrokeResources,
+    },
+};
+
+pub struct BrushInputSamplingPipeline {
+    layout: BindGroupLayout,
+    pipeline: ComputePipeline,
+}
+
+impl BrushInputSamplingPipeline {
+    pub fn new(device: &Device, compiled_shader: Cow<'_, str>) -> Self {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("brush input sampling layout"),
+            entries: BindGroupLayoutEntries::sequential(
+                ShaderStages::COMPUTE,
+                (
+                    binding_types::storage_buffer_read_only::<PenInput>(false),
+                    binding_types::storage_buffer::<InputSampler>(false),
+                    binding_types::storage_buffer::<OutputSamples>(false),
+                    binding_types::storage_buffer::<UVec4>(false),
+                ),
+            )
+            .as_ref(),
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("brush input sampling shader"),
+            source: ShaderSource::Wgsl(compiled_shader),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("brush input sampling pipeline layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+
+        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("brush input sampling pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        Self { layout, pipeline }
+    }
+
+    pub fn dispatch(
+        &self,
+        device: &Device,
+        pass: &mut ComputePass,
+        pen_input: &DynamicBuffer<PenInput>,
+        input_sampler: &DynamicBuffer<InputSampler>,
+        output_samples: &DynamicBuffer<OutputSamples>,
+        bounds_eval_dispatch: &Buffer,
+    ) {
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("brush input sampling bind group"),
+            layout: &self.layout,
+            entries: BindGroupEntries::sequential((
+                pen_input.binding().unwrap(),
+                input_sampler.binding().unwrap(),
+                output_samples.binding().unwrap(),
+                bounds_eval_dispatch.as_entire_binding(),
+            ))
+            .as_ref(),
+        });
+
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
+    }
+}
 
 pub struct BrushMainPipeline {
     layout: BindGroupLayout,

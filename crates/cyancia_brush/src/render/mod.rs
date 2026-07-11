@@ -169,19 +169,20 @@ impl BrushPresetOperator {
             .get_layer_binding_or_empty(session.selection_layer_id)
             .unwrap();
 
-        renderer.update(
-            &self.device,
-            &self.queue,
-            self.input_processor
-                .push(input, self.instance.required_spacing_graph().read(cx), cx),
-            self.instance.main_graph().read(cx),
-            &target_layer,
-            &selection_layer,
-            intermediate_buffers,
-            &mut self.round,
-            &mut self.accumulated_pixel_bounds,
-            cx,
-        );
+        if let Some(sample) = self.input_processor.push(input) {
+            renderer.update(
+                &self.device,
+                &self.queue,
+                sample,
+                self.instance.main_graph().read(cx),
+                &target_layer,
+                &selection_layer,
+                intermediate_buffers,
+                &mut self.round,
+                &mut self.accumulated_pixel_bounds,
+                cx,
+            );
+        }
     }
 
     pub fn update_stroke(&mut self, input: RawPenInput, cx: &mut App) {
@@ -205,19 +206,20 @@ impl BrushPresetOperator {
             .get_layer_binding_or_empty(session.selection_layer_id)
             .unwrap();
 
-        renderer.update(
-            &self.device,
-            &self.queue,
-            self.input_processor
-                .push(input, self.instance.required_spacing_graph().read(cx), cx),
-            self.instance.main_graph().read(cx),
-            &target_layer,
-            &selection_layer,
-            intermediate_buffers,
-            &mut self.round,
-            &mut self.accumulated_pixel_bounds,
-            cx,
-        );
+        if let Some(sample) = self.input_processor.push(input) {
+            renderer.update(
+                &self.device,
+                &self.queue,
+                sample,
+                self.instance.main_graph().read(cx),
+                &target_layer,
+                &selection_layer,
+                intermediate_buffers,
+                &mut self.round,
+                &mut self.accumulated_pixel_bounds,
+                cx,
+            );
+        }
     }
 
     // TODO Return dynamic layer storage?
@@ -241,38 +243,36 @@ impl BrushPresetOperator {
             .get_layer_binding_or_empty(session.selection_layer_id)
             .unwrap();
 
-        renderer.update(
-            &self.device,
-            &self.queue,
-            self.input_processor.flush(
-                final_input,
-                self.instance.required_spacing_graph().read(cx),
+        for sample in self.input_processor.flush(final_input) {
+            renderer.update(
+                &self.device,
+                &self.queue,
+                sample,
+                self.instance.main_graph().read(cx),
+                &target_layer,
+                &selection_layer,
+                intermediate_buffers,
+                &mut self.round,
+                &mut self.accumulated_pixel_bounds,
                 cx,
-            ),
-            self.instance.main_graph().read(cx),
-            &target_layer,
-            &selection_layer,
-            intermediate_buffers,
-            &mut self.round,
-            &mut self.accumulated_pixel_bounds,
-            cx,
-        );
+            );
+        }
 
-        renderer.postprocess_stroke(
-            &self.device,
-            &self.queue,
-            self.instance
-                .stroke_postprocess_graphs()
-                .iter()
-                .map(|g| g.read(cx)),
-            &target_layer,
-            &selection_layer,
-            final_input.time,
-            intermediate_buffers,
-            &mut self.round,
-            &mut self.accumulated_pixel_bounds,
-            cx,
-        );
+        // renderer.postprocess_stroke(
+        //     &self.device,
+        //     &self.queue,
+        //     self.instance
+        //         .stroke_postprocess_graphs()
+        //         .iter()
+        //         .map(|g| g.read(cx)),
+        //     &target_layer,
+        //     &selection_layer,
+        //     final_input.time,
+        //     intermediate_buffers,
+        //     &mut self.round,
+        //     &mut self.accumulated_pixel_bounds,
+        //     cx,
+        // );
         renderer.last_surface(intermediate_buffers, self.round)
     }
 
@@ -300,24 +300,24 @@ impl BrushPresetOperator {
             .get_layer_binding_or_empty(session.selection_layer_id)
             .unwrap();
 
-        renderer.postprocess_stroke(
-            &self.device,
-            &self.queue,
-            self.instance
-                .stroke_postprocess_graphs()
-                .iter()
-                .map(|g| g.read(cx)),
-            &target_layer,
-            &selection_layer,
-            Time {
-                now: 0.0,
-                stroke_begin: 0.0,
-            },
-            &mut new_intermediate_buffers,
-            &mut round,
-            &mut accumulated_pixel_bounds,
-            cx,
-        );
+        // renderer.postprocess_stroke(
+        //     &self.device,
+        //     &self.queue,
+        //     self.instance
+        //         .stroke_postprocess_graphs()
+        //         .iter()
+        //         .map(|g| g.read(cx)),
+        //     &target_layer,
+        //     &selection_layer,
+        //     Time {
+        //         now: 0.0,
+        //         stroke_begin: 0.0,
+        //     },
+        //     &mut new_intermediate_buffers,
+        //     &mut round,
+        //     &mut accumulated_pixel_bounds,
+        //     cx,
+        // );
 
         let [result_buffer_a, result_buffer_b] = new_intermediate_buffers;
         if round.is_multiple_of(2) {
@@ -393,7 +393,7 @@ impl BrushPresetRenderer {
         &mut self,
         device: &Device,
         queue: &Queue,
-        pen_input: Vec<ComputedPenInput>,
+        pen_input: PenInput,
         main_graph: &Graph<BrushGraphData>,
         target_layer: &LayerBinding,
         selection_layer: &LayerBinding,
@@ -402,156 +402,152 @@ impl BrushPresetRenderer {
         accumulated_pixel_bounds: &mut IRect,
         cx: &App,
     ) {
-        if pen_input.is_empty() {
-            return;
-        }
+        //     self.samples_buffer.clear();
+        //     self.dab_info_buffer.clear();
+        //     self.samples_offsets.clear();
+        //     self.dab_info_offsets.clear();
 
-        self.samples_buffer.clear();
-        self.dab_info_buffer.clear();
-        self.samples_offsets.clear();
-        self.dab_info_offsets.clear();
+        //     for sample in pen_input {
+        //         let output = main_graph
+        //             .run(&BrushGraphData { pen_input: sample }, Vec::new(), cx)
+        //             .unwrap();
 
-        for sample in pen_input {
-            let output = main_graph
-                .run(&BrushGraphData { pen_input: sample }, Vec::new(), cx)
-                .unwrap();
+        //         assert_eq!(output.len(), 1);
+        //         let bounds = GpuTileStorage::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
+        //         self.dab_info_offsets
+        //             .push(self.dab_info_buffer.push(&DabInfo {
+        //                 bound_min: bounds.min,
+        //                 bound_max: bounds.max,
+        //             }) as u32);
+        //         self.samples_offsets
+        //             .push(self.samples_buffer.push(&sample) as u32);
 
-            assert_eq!(output.len(), 1);
-            let bounds = GpuTileStorage::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
-            self.dab_info_offsets
-                .push(self.dab_info_buffer.push(&DabInfo {
-                    bound_min: bounds.min,
-                    bound_max: bounds.max,
-                }) as u32);
-            self.samples_offsets
-                .push(self.samples_buffer.push(&sample) as u32);
+        //         let _ = bounds.size().as_uvec2();
 
-            let _ = bounds.size().as_uvec2();
+        //         intermediate_buffers[0].allocate_pixels(bounds);
+        //         intermediate_buffers[1].allocate_pixels(bounds);
 
-            intermediate_buffers[0].allocate_pixels(bounds);
-            intermediate_buffers[1].allocate_pixels(bounds);
+        //         *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
+        //     }
 
-            *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
-        }
+        //     self.samples_buffer.write_buffer(device, queue);
+        //     self.dab_info_buffer.write_buffer(device, queue);
 
-        self.samples_buffer.write_buffer(device, queue);
-        self.dab_info_buffer.write_buffer(device, queue);
+        //     let has_selection = self
+        //         .scan_pixels
+        //         .scan_to_binary_buffer(device, queue, selection_layer);
 
-        let has_selection = self
-            .scan_pixels
-            .scan_to_binary_buffer(device, queue, selection_layer);
+        //     let mut ec = device.create_command_encoder(&Default::default());
 
-        let mut ec = device.create_command_encoder(&Default::default());
+        //     ec.push_debug_group("brush preset update stroke");
+        //     {
+        //         let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+        //             label: Some("brush preset update pass"),
+        //             ..Default::default()
+        //         });
+        //         self.main.dispatch(
+        //             device,
+        //             &mut pass,
+        //             &target_layer.texture,
+        //             &target_layer.tile_info_buffer,
+        //             &has_selection,
+        //             &selection_layer.texture,
+        //             &selection_layer.tile_info_buffer,
+        //             &self.samples_buffer,
+        //             &self.samples_offsets,
+        //             &self.dab_info_buffer,
+        //             &self.dab_info_offsets,
+        //             &self.resources,
+        //             intermediate_buffers,
+        //             round,
+        //         );
+        //     }
+        //     ec.pop_debug_group();
 
-        ec.push_debug_group("brush preset update stroke");
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush preset update pass"),
-                ..Default::default()
-            });
-            self.main.dispatch(
-                device,
-                &mut pass,
-                &target_layer.texture,
-                &target_layer.tile_info_buffer,
-                &has_selection,
-                &selection_layer.texture,
-                &selection_layer.tile_info_buffer,
-                &self.samples_buffer,
-                &self.samples_offsets,
-                &self.dab_info_buffer,
-                &self.dab_info_offsets,
-                &self.resources,
-                intermediate_buffers,
-                round,
-            );
-        }
-        ec.pop_debug_group();
+        //     queue.submit([ec.finish()]);
+        // }
 
-        queue.submit([ec.finish()]);
-    }
+        // pub fn postprocess_stroke<'a>(
+        //     &mut self,
+        //     device: &Device,
+        //     queue: &Queue,
+        //     graphs: impl Iterator<Item = &'a Graph<BrushGraphPostprocessData>>,
+        //     target_layer: &LayerBinding,
+        //     selection_layer: &LayerBinding,
+        //     time: Time,
+        //     intermediate_buffers: &mut [DynamicLayerStorage; 2],
+        //     round: &mut u32,
+        //     accumulated_pixel_bounds: &mut IRect,
+        //     cx: &App,
+        // ) {
+        //     if accumulated_pixel_bounds.is_empty() {
+        //         return;
+        //     }
 
-    pub fn postprocess_stroke<'a>(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        graphs: impl Iterator<Item = &'a Graph<BrushGraphPostprocessData>>,
-        target_layer: &LayerBinding,
-        selection_layer: &LayerBinding,
-        time: Time,
-        intermediate_buffers: &mut [DynamicLayerStorage; 2],
-        round: &mut u32,
-        accumulated_pixel_bounds: &mut IRect,
-        cx: &App,
-    ) {
-        if accumulated_pixel_bounds.is_empty() {
-            return;
-        }
+        //     let has_selection = self
+        //         .scan_pixels
+        //         .scan_to_binary_buffer(device, queue, selection_layer);
 
-        let has_selection = self
-            .scan_pixels
-            .scan_to_binary_buffer(device, queue, selection_layer);
+        //     let mut ec = device.create_command_encoder(&Default::default());
 
-        let mut ec = device.create_command_encoder(&Default::default());
+        //     ec.push_debug_group("brush preset stroke postprocess");
+        //     {
+        //         let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+        //             label: Some("brush preset stroke postprocess pass"),
+        //             ..Default::default()
+        //         });
 
-        ec.push_debug_group("brush preset stroke postprocess");
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush preset stroke postprocess pass"),
-                ..Default::default()
-            });
+        //         for (graph, pipeline) in graphs.into_iter().zip(&self.stroke_pp) {
+        //             let output = graph
+        //                 .run(
+        //                     &BrushGraphPostprocessData {
+        //                         accumulated_pixel_bounds: *accumulated_pixel_bounds,
+        //                         time: Time {
+        //                             now: 0.0,          // TODO
+        //                             stroke_begin: 0.0, // TODO
+        //                         },
+        //                     },
+        //                     Vec::new(),
+        //                     cx,
+        //                 )
+        //                 .unwrap();
+        //             assert_eq!(output.len(), 1);
+        //             let bounds =
+        //                 GpuTileStorage::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
+        //             self.dab_info_buffer.clear();
+        //             self.dab_info_buffer.push(&DabInfo {
+        //                 bound_min: bounds.min,
+        //                 bound_max: bounds.max,
+        //             });
+        //             self.dab_info_buffer.write_buffer(device, queue);
 
-            for (graph, pipeline) in graphs.into_iter().zip(&self.stroke_pp) {
-                let output = graph
-                    .run(
-                        &BrushGraphPostprocessData {
-                            accumulated_pixel_bounds: *accumulated_pixel_bounds,
-                            time: Time {
-                                now: 0.0,          // TODO
-                                stroke_begin: 0.0, // TODO
-                            },
-                        },
-                        Vec::new(),
-                        cx,
-                    )
-                    .unwrap();
-                assert_eq!(output.len(), 1);
-                let bounds =
-                    GpuTileStorage::snap_to_tile_grid(output[0].as_ref::<Rect>().as_irect());
-                self.dab_info_buffer.clear();
-                self.dab_info_buffer.push(&DabInfo {
-                    bound_min: bounds.min,
-                    bound_max: bounds.max,
-                });
-                self.dab_info_buffer.write_buffer(device, queue);
+        //             self.stroke_pp_data.clear();
+        //             self.stroke_pp_data.push(&StrokePostprocessData {
+        //                 accumulated_pixel_bounds: *accumulated_pixel_bounds,
+        //                 time,
+        //             });
+        //             self.stroke_pp_data.write_buffer(device, queue);
 
-                self.stroke_pp_data.clear();
-                self.stroke_pp_data.push(&StrokePostprocessData {
-                    accumulated_pixel_bounds: *accumulated_pixel_bounds,
-                    time,
-                });
-                self.stroke_pp_data.write_buffer(device, queue);
+        //             *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
+        //             pipeline.dispatch(
+        //                 device,
+        //                 &mut pass,
+        //                 &self.stroke_pp_data,
+        //                 &target_layer.texture,
+        //                 &target_layer.tile_info_buffer,
+        //                 &has_selection,
+        //                 &selection_layer.texture,
+        //                 &selection_layer.tile_info_buffer,
+        //                 &self.dab_info_buffer,
+        //                 &self.resources,
+        //                 intermediate_buffers,
+        //                 round,
+        //             );
+        //         }
+        //     }
+        //     ec.pop_debug_group();
 
-                *accumulated_pixel_bounds = accumulated_pixel_bounds.union(bounds);
-                pipeline.dispatch(
-                    device,
-                    &mut pass,
-                    &self.stroke_pp_data,
-                    &target_layer.texture,
-                    &target_layer.tile_info_buffer,
-                    &has_selection,
-                    &selection_layer.texture,
-                    &selection_layer.tile_info_buffer,
-                    &self.dab_info_buffer,
-                    &self.resources,
-                    intermediate_buffers,
-                    round,
-                );
-            }
-        }
-        ec.pop_debug_group();
-
-        queue.submit([ec.finish()]);
+        //     queue.submit([ec.finish()]);
     }
 
     pub fn last_surface(
@@ -567,6 +563,39 @@ impl BrushPresetRenderer {
             result_buffer.iter_tiles().map(|(i, _, _)| i).collect(),
         ))
     }
+}
+
+#[derive(ShaderType, Debug, Clone)]
+pub struct OutputSamples {
+    pub n_samples: u32,
+    pub is_overflow: u32,
+    #[shader(size(runtime))]
+    pub samples: Vec<ComputedPenInput>,
+}
+
+impl OutputSamples {
+    pub fn new(max_samples: u32) -> Self {
+        Self {
+            n_samples: 0,
+            is_overflow: 0,
+            samples: vec![ComputedPenInput::default(); max_samples as usize],
+        }
+    }
+}
+
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
+pub struct InputSampler {
+    pub last_input: PenInput,
+    pub last_sample: ComputedPenInput,
+    pub has_last_sample: u32,
+}
+
+#[derive(ShaderType, Debug, Default, Clone, Copy)]
+pub struct PenInput {
+    pub position: Vec2,
+    pub time: Time,
+    pub bezier_control_prev: Vec2,
+    pub bezier_control_next: Vec2,
 }
 
 #[derive(ShaderType, Debug, Default, Clone, Copy)]
