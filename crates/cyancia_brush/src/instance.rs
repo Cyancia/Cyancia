@@ -262,7 +262,7 @@ impl BrushPresetInstance {
         let mut texture_usage = GraphTextureUsageRecorder::default();
 
         let input_sampling = compile_template_input_sampling(
-            self.main_graph.read(cx),
+            self.required_spacing_graph.read(cx),
             &mut texture_usage,
             &external_variable_bindings,
             cx,
@@ -457,9 +457,24 @@ fn compile_template_input_sampling(
     external_variable_bindings: &str,
     cx: &App,
 ) -> anyhow::Result<String> {
+    // TODO Support external variables
     let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage, cx)?;
 
-    compile_template(&shader, external_variable_bindings, false, false)
+    let shader = include_str!("render/brush_sample.wesl")
+        .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &shader);
+
+    let mut resolver = VirtualResolver::new();
+    resolver.add_module("package::template".parse().unwrap(), shader.into());
+    add_modules(&mut resolver);
+
+    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
+    compiler.set_mangler(Default::default());
+    compiler.set_options(Default::default());
+    let compiled_shader = compiler
+        .compile(&"package::template".parse().unwrap())?
+        .to_string();
+
+    Ok(compiled_shader)
 }
 
 fn compile_template_main(
@@ -491,8 +506,8 @@ fn compile_template_stroke_postprocess<'a>(
         .into_iter()
         .map(|(_, shader)| {
             Ok(CompiledGraph {
-                main: compile_template(&shader, external_variable_bindings, false, false)?,
-                bounds_eval: compile_template(&shader, external_variable_bindings, false, true)?,
+                main: compile_template(&shader, external_variable_bindings, true, false)?,
+                bounds_eval: compile_template(&shader, external_variable_bindings, true, true)?,
             })
         })
         .collect::<anyhow::Result<Vec<CompiledGraph>>>()?;

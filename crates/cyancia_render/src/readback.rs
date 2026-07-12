@@ -31,6 +31,10 @@ impl<T> AsyncBufferReadback<T> {
     pub fn block_on(self) -> anyhow::Result<T> {
         futures::executor::block_on(self.rx)?
     }
+
+    pub fn into_inner(self) -> Receiver<anyhow::Result<T>> {
+        self.rx
+    }
 }
 
 pub fn readback_buffer_on_submit_async<T, S>(
@@ -77,8 +81,8 @@ where
 {
     move |r| {
         if let Err(e) = r {
+            buffer.unmap();
             tx.send(Err(e.into())).ok();
-            dbg!();
             return;
         }
 

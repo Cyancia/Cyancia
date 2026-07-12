@@ -62,7 +62,7 @@ impl GraphDataWithTime for BrushGraphPostprocessData {
     }
 
     fn wgsl_variable() -> String {
-        "sample.time".into()
+        "graph_input.time".into()
     }
 }
 
@@ -82,7 +82,7 @@ impl GraphDataWithTime for BrushGraphData {
     }
 
     fn wgsl_variable() -> String {
-        "sample.time".into()
+        "graph_input.time".into()
     }
 }
 
@@ -847,7 +847,7 @@ impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
         mut ctx: GraphNodeCodeGenContext<'_, BrushGraphPostprocessData>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = Rect(vec2f(sample.accumulated_bound.min), vec2f(sample.accumulated_bound.max));",
+            "let {} = Rect(vec2f(graph_input.accumulated_bound.min), vec2f(graph_input.accumulated_bound.max));",
             ctx.get_output(0)?
         ))
     }

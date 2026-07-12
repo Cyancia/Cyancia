@@ -60,15 +60,3 @@ struct Time {
     now: f32,
     stroke_begin: f32,
 }
-
-struct PenInputSampler {
-    last_input: PenInput,
-    last_sample: ComputedPenInput,
-    has_last_sample: u32,
-}
-
-struct PenInput {
-    position: vec2f,
-    bezier_control_prev: vec2f,
-    bezier_control_cur: vec2f,
-}

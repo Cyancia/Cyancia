@@ -8,13 +8,22 @@ use cyancia_image::{
 };
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},
+    readback::{
+        AsyncBufferReadback, create_readback_buffer_and_schedule_copy,
+        readback_buffer_on_submit_async,
+    },
+    render_context::RenderContextAppExt,
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
 };
 use cyancia_shader_graph::graph::{Graph, texture::TextureId};
 use encase::ShaderType;
+use futures::{
+    SinkExt,
+    channel::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender},
+};
 use glam::{IVec2, Vec2};
-use gpui::App;
+use gpui::{App, AppContext, Subscription, Task};
 use wgpu::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
     BufferDescriptor, BufferUsages, ComputePassDescriptor, Device, Extent3d, Queue, ShaderStages,
@@ -29,7 +38,7 @@ use crate::{
         graph::{BrushGraphData, BrushGraphPostprocessData},
         pipeline::{
             BrushInputSamplingPipeline, BrushMainBoundsEvalPipeline, BrushMainPipeline,
-            BrushPostProcessPipeline,
+            BrushPostProcessBoundsEvalPipeline, BrushPostProcessPipeline,
         },
     },
 };
@@ -146,12 +155,10 @@ impl BrushPresetOperator {
             // FIXME target layer is initialize once, so strokes on other layers
             //       with the same texel type will be composited with the wrong layer.
             let renderer = BrushPresetRenderer::new(
-                &self.device,
-                &self.queue,
                 compiled_brush,
                 session.target_layer_format,
                 session.selection_layer_format,
-                cx.assets(),
+                cx,
             );
             log::info!("Brush preset renderer creation: {:?}", now.elapsed());
             renderer
@@ -278,6 +285,10 @@ impl BrushPresetOperator {
     }
 
     pub fn generate_preview(&mut self, cx: &mut App) -> Option<(IRect, DynamicLayerStorage)> {
+        if self.accumulated_pixel_bounds.is_empty() {
+            return None;
+        }
+
         let renderer = self.renderer.as_mut()?;
         let mut accumulated_pixel_bounds = self.accumulated_pixel_bounds;
         let mut round = self.round;
@@ -331,7 +342,12 @@ impl BrushPresetOperator {
 
 struct StrokePostprocessPipelines {
     main: BrushPostProcessPipeline,
-    bounds_eval: BrushPostProcessPipeline,
+    bounds_eval: BrushPostProcessBoundsEvalPipeline,
+}
+
+struct WorkerThreadData {
+    samples: AsyncBufferReadback<Vec<ComputedPenInput>>,
+    dab_infos: AsyncBufferReadback<Vec<DabInfo>>,
 }
 
 pub struct BrushPresetRenderer {
@@ -343,17 +359,21 @@ pub struct BrushPresetRenderer {
     scan_pixels: ScanPixelsPipeline,
 
     input_sampler_buffer: DynamicBuffer<InputSampler>,
+    worker_thread_sender: UnboundedSender<WorkerThreadData>,
+    worker_thread_task: Task<()>,
 }
 
 impl BrushPresetRenderer {
     pub fn new(
-        device: &Device,
-        queue: &Queue,
         brush: &CompiledBrushPreset,
         target_layer_format: TexelType,
         selection_layer_format: TexelType,
-        assets: &AssetRegistry,
+        cx: &mut App,
     ) -> Self {
+        let device = cx.render_device();
+        let queue = cx.render_queue();
+        let assets = cx.assets();
+
         let resources = StrokeResources::new(
             device,
             queue,
@@ -376,8 +396,11 @@ impl BrushPresetRenderer {
         let mut stroke_pp = Vec::new();
         for graph in &brush.stroke_postprocess_graphs {
             let main = BrushPostProcessPipeline::new(device, &resources, graph.main.clone().into());
-            let bounds_eval =
-                BrushPostProcessPipeline::new(device, &resources, graph.bounds_eval.clone().into());
+            let bounds_eval = BrushPostProcessBoundsEvalPipeline::new(
+                device,
+                &resources,
+                graph.bounds_eval.clone().into(),
+            );
             stroke_pp.push(StrokePostprocessPipelines { main, bounds_eval });
         }
 
@@ -385,6 +408,13 @@ impl BrushPresetRenderer {
             DynamicBuffer::new(Some("input sampler buffer".into()), BufferUsages::STORAGE);
         input_sampler_buffer.push(&InputSampler::default());
         input_sampler_buffer.write_buffer(device, queue);
+
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let worker_thread_task = cx.background_spawn({
+            let device = device.clone();
+            let queue = queue.clone();
+            brush_renderer_worker_thread(rx, device, queue)
+        });
 
         Self {
             input_sample,
@@ -395,6 +425,8 @@ impl BrushPresetRenderer {
             scan_pixels: ScanPixelsPipeline::new(device, selection_layer_format),
 
             input_sampler_buffer,
+            worker_thread_sender: tx,
+            worker_thread_task,
         }
     }
 
@@ -436,7 +468,10 @@ impl BrushPresetRenderer {
         }
         output_samples.write_buffer(device, queue);
 
-        let mut dab_infos = BufferVec::new(Some("dab info buffer".into()), BufferUsages::STORAGE);
+        let mut dab_infos = BufferVec::new(
+            Some("dab info buffer".into()),
+            BufferUsages::COPY_SRC | BufferUsages::STORAGE,
+        );
         // TODO Use uninit buffer
         for _ in 0..MAX_DABS_PER_STROKE {
             dab_infos.push(&DabInfo::default());
@@ -471,13 +506,37 @@ impl BrushPresetRenderer {
                 &selection_layer.texture,
                 &selection_layer.tile_info_buffer,
                 &self.resources,
-                intermediate_buffers,
+                &[
+                    intermediate_buffers[0].binding_or_empty(),
+                    intermediate_buffers[1].binding_or_empty(),
+                ],
                 round,
             );
         }
         ec.pop_debug_group();
 
+        let output_samples_readback = create_readback_buffer_and_schedule_copy(
+            device,
+            &mut ec,
+            output_samples.inner_buffer().unwrap(),
+        );
+        let dab_info_readback = create_readback_buffer_and_schedule_copy(
+            device,
+            &mut ec,
+            dab_infos.inner_buffer().unwrap(),
+        );
+        let samples_readback =
+            readback_buffer_on_submit_async(&mut ec, &output_samples_readback, ..);
+        let dab_info_readback = readback_buffer_on_submit_async(&mut ec, &dab_info_readback, ..);
+
         queue.submit([ec.finish()]);
+
+        self.worker_thread_sender
+            .unbounded_send(WorkerThreadData {
+                samples: samples_readback,
+                dab_infos: dab_info_readback,
+            })
+            .unwrap();
     }
 
     pub fn postprocess_stroke<'a>(
@@ -575,6 +634,18 @@ impl BrushPresetRenderer {
             result_texture.texture().clone(),
             result_buffer.iter_tiles().map(|(i, _, _)| i).collect(),
         ))
+    }
+}
+
+async fn brush_renderer_worker_thread(
+    mut data: UnboundedReceiver<WorkerThreadData>,
+    device: Device,
+    queue: Queue,
+) {
+    while let Ok(data) = data.recv().await {
+        let samples = data.samples.into_inner().await;
+        let dab_infos = data.dab_infos.into_inner().await;
+        dbg!(samples, dab_infos);
     }
 }
 

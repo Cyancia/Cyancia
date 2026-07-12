@@ -1,4 +1,4 @@
-import package::brush::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo};
+import package::brush::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, Time};
 import package::render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angles};
 
 @group(0) @binding(0) var<storage> new_input: PenInput;
@@ -35,11 +35,12 @@ fn bezier_t_for_arc_length(table: ptr<function, array<f32, BEZIER_SAMPLES + 1u>>
     return mix(lo_t, hi_t, (arc_goal - lo_arc) / (hi_arc - lo_arc));
 }
 
-fn compute_pen_input(sample: PenInput, p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> ComputedPenInput {
+fn compute_pen_input(last: PenInput, current: PenInput, p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> ComputedPenInput {
     let position = bezier_eval(p0, p1, p2, p3, t);
+    let time = Time(mix(last.time.now, current.time.now, t), last.time.stroke_begin);
     let draw_direction_vec = bezier_tangent_eval(p0, p1, p2, p3, t);
     let draw_direction_angle = atan2(draw_direction_vec.y, draw_direction_vec.x);
-    return ComputedPenInput(position, draw_direction_vec, draw_direction_angle);
+    return ComputedPenInput(position, draw_direction_vec, draw_direction_angle, time);
 }
 
 @compute
@@ -53,7 +54,7 @@ fn main() {
     let p2 = new_input.bezier_control_cur;
     let p3 = new_input.position;
 
-    let new_computed = compute_pen_input(new_input, p0, p1, p2, p3, 1.0);
+    let new_computed = compute_pen_input(new_input, new_input, p0, p1, p2, p3, 1.0);
 
     if input_sampler.has_last_sample == 0 {
         input_sampler.last_input = new_input;
@@ -85,7 +86,7 @@ fn main() {
     while output_samples.n_samples < arrayLength(&output_samples.samples) {
         let target_arc = total_arc - remaining_arc;
         let t = bezier_t_for_arc_length(&arc_table, target_arc);
-        let interpolated = compute_pen_input(new_input, p0, p1, p2, p3, t);
+        let interpolated = compute_pen_input(input_sampler.last_input, new_input, p0, p1, p2, p3, t);
 
         output_samples.samples[output_samples.n_samples] = interpolated;
         output_samples.n_samples += 1u;

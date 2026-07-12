@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use bevy_math::URect;
-use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage};
+use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, LayerBinding};
 use cyancia_render::{
     bind_group_entries::{BindGroupEntries, DynamicBindGroupEntries},
     bind_group_layout_entries::{
@@ -158,7 +158,7 @@ impl BrushMainPipeline {
         dab_infos: &DynamicBuffer<DabInfo>,
         dab_info_offsets: &[u32],
         resources: &StrokeResources,
-        intermediate_buffers: &[DynamicLayerStorage; 2],
+        intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
     ) {
         let bind_group_entries_even = bind_group_entries(
@@ -176,6 +176,7 @@ impl BrushMainPipeline {
             Some(dab_infos),
             None,
             true,
+            false,
         );
         let bind_group_even = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group even"),
@@ -198,6 +199,7 @@ impl BrushMainPipeline {
             Some(dab_infos),
             None,
             false,
+            false,
         );
         let bind_group_odd = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group odd"),
@@ -205,7 +207,10 @@ impl BrushMainPipeline {
             entries: &bind_group_entries_odd,
         });
 
-        let n_tiles = intermediate_buffers[0].len();
+        let n_tiles = intermediate_buffers[0]
+            .texture
+            .texture()
+            .depth_or_array_layers();
 
         pass.push_debug_group("brush preset main");
         {
@@ -300,7 +305,7 @@ impl BrushPostProcessPipeline {
         selection_layer_tile_info: &Buffer,
         dab_infos: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
-        intermediate_buffers: &[DynamicLayerStorage; 2],
+        intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
     ) {
         let bind_group_entries = bind_group_entries(
@@ -318,12 +323,18 @@ impl BrushPostProcessPipeline {
             Some(dab_infos),
             None,
             (*round).is_multiple_of(2),
+            false,
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess bind group"),
             layout: &self.layout,
             entries: &bind_group_entries,
         });
+
+        let n_tiles = intermediate_buffers[0]
+            .texture
+            .texture()
+            .depth_or_array_layers();
 
         pass.push_debug_group("brush preset postprocess");
         {
@@ -332,7 +343,7 @@ impl BrushPostProcessPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorage::TILE_SIZE.div_ceil(16),
                 GpuTileStorage::TILE_SIZE.div_ceil(16),
-                intermediate_buffers[0].len() as u32,
+                n_tiles as u32,
             );
         }
         pass.pop_debug_group();
@@ -399,7 +410,7 @@ impl BrushMainBoundsEvalPipeline {
         selection_layer_texture: &TextureView,
         selection_layer_tile_info: &Buffer,
         resources: &StrokeResources,
-        intermediate_buffers: &[DynamicLayerStorage; 2],
+        intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
     ) {
         use crate::render::MAX_DABS_PER_STROKE;
@@ -419,6 +430,7 @@ impl BrushMainBoundsEvalPipeline {
             None,
             Some(dab_infos),
             (*round).is_multiple_of(2),
+            true,
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bounds eval bind group"),
@@ -496,7 +508,7 @@ impl BrushPostProcessBoundsEvalPipeline {
         selection_layer_tile_info: &Buffer,
         dab_infos: &BufferVec<DabInfo>,
         resources: &StrokeResources,
-        intermediate_buffers: &[DynamicLayerStorage; 2],
+        intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
     ) {
         use crate::render::MAX_DABS_PER_STROKE;
@@ -516,6 +528,7 @@ impl BrushPostProcessBoundsEvalPipeline {
             None,
             Some(dab_infos),
             (*round).is_multiple_of(2),
+            true,
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess bounds eval bind group"),
@@ -592,7 +605,7 @@ fn bind_group_entries<'a>(
     has_selection: &'a Buffer,
     selection_layer_texture: &'a TextureView,
     selection_layer_tile_info: &'a Buffer,
-    intermediate_buffers: &'a [DynamicLayerStorage],
+    intermediate_buffers: &'a [LayerBinding; 2],
     samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
     samples_vec: Option<&'a BufferVec<ComputedPenInput>>,
     stroke_pp_data: Option<&'a DynamicBuffer<StrokePostprocessData>>,
@@ -600,6 +613,7 @@ fn bind_group_entries<'a>(
     dab_infos: Option<&'a DynamicBuffer<DabInfo>>,
     dab_infos_vec: Option<&'a BufferVec<DabInfo>>,
     is_even: bool,
+    is_bounds_eval: bool,
 ) -> Vec<BindGroupEntry<'a>> {
     let mut entries = DynamicBindGroupEntries::new_with_indices((
         (
@@ -612,13 +626,6 @@ fn bind_group_entries<'a>(
         ),
         (3, target_layer_tile_info.as_entire_binding()),
         (4, BindingResource::TextureView(target_layer_texture)),
-        (
-            5,
-            intermediate_buffers[0]
-                .tile_info_buffer()
-                .unwrap()
-                .as_entire_binding(),
-        ),
         (
             8,
             if let Some(dab_infos) = dab_infos {
@@ -653,23 +660,24 @@ fn bind_group_entries<'a>(
     } else if let Some(stroke_pp_data_vec) = stroke_pp_data_vec {
         entries.entries.push(BindGroupEntry {
             binding: 0,
-            resource: stroke_pp_data_vec.inner_buffer().unwrap().as_entire_binding(),
+            resource: stroke_pp_data_vec
+                .inner_buffer()
+                .unwrap()
+                .as_entire_binding(),
         });
     }
 
-    let (read_idx, write_idx) = if is_even { (0, 1) } else { (1, 0) };
-    entries.entries.push(BindGroupEntry {
-        binding: 6,
-        resource: BindingResource::TextureView(
-            intermediate_buffers[read_idx].texture_view().unwrap(),
-        ),
-    });
-    entries.entries.push(BindGroupEntry {
-        binding: 7,
-        resource: BindingResource::TextureView(
-            intermediate_buffers[write_idx].texture_view().unwrap(),
-        ),
-    });
+    if !is_bounds_eval {
+        let (read_idx, write_idx) = if is_even { (0, 1) } else { (1, 0) };
+        entries = entries.extend_with_indices((
+            (
+                5,
+                intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
+            ),
+            (6, &intermediate_buffers[read_idx].texture),
+            (7, &intermediate_buffers[write_idx].texture),
+        ));
+    }
 
     entries.entries
 }
