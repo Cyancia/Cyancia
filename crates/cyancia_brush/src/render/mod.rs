@@ -464,7 +464,10 @@ impl BrushPresetRenderer {
         );
         // TODO Use uninit buffer
         for _ in 0..MAX_DABS_PER_STROKE {
-            output_samples.push(&ComputedPenInput::default());
+            output_samples.push(&ComputedPenInput {
+                position: Vec2::MIN,
+                ..Default::default()
+            });
         }
         output_samples.write_buffer(device, queue);
 
@@ -645,7 +648,30 @@ async fn brush_renderer_worker_thread(
     while let Ok(data) = data.recv().await {
         let samples = data.samples.into_inner().await;
         let dab_infos = data.dab_infos.into_inner().await;
-        dbg!(samples, dab_infos);
+
+        let (Ok(Ok(samples)), Ok(Ok(dab_infos))) = (samples, dab_infos) else {
+            return;
+        };
+
+        let mut samples_buffer =
+            DynamicBuffer::new(Some("output samples buffer".into()), BufferUsages::STORAGE);
+        let mut samples_offsets = Vec::new();
+        let mut dab_infos_buffer = DynamicBuffer::new(
+            Some("output dab infos buffer".into()),
+            BufferUsages::STORAGE,
+        );
+        let mut dab_infos_offsets = Vec::new();
+
+        for (sample, dab_info) in samples.iter().zip(dab_infos.iter()) {
+            if sample.position == Vec2::MIN {
+                break;
+            }
+
+            samples_offsets.push(samples_buffer.push(sample));
+            dab_infos_offsets.push(dab_infos_buffer.push(dab_info));
+        }
+
+        dbg!(samples_offsets.len());
     }
 }
 

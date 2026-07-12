@@ -554,46 +554,82 @@ fn bind_group_layout_entries(
     target_layer_format: TextureFormat,
     selection_layer_format: TextureFormat,
 ) -> Vec<BindGroupLayoutEntry> {
-    let mut entries = DynamicBindGroupLayoutEntries::sequential(
+    let mut entries = DynamicBindGroupLayoutEntries::new_with_indices(
         ShaderStages::COMPUTE,
         (
-            if is_postprocess {
-                binding_types::storage_buffer_read_only::<StrokePostprocessData>(false)
-            } else {
-                binding_types::storage_buffer_read_only::<ComputedPenInput>(
-                    !is_postprocess && !is_bounds_eval,
-                )
-            },
-            binding_types::texture_2d(TextureSampleType::Float { filterable: false }),
-            binding_types::storage_buffer_read_only::<URect>(false),
-            binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-            binding_types::texture_storage_2d_array(
-                target_layer_format,
-                StorageTextureAccess::ReadOnly,
+            (
+                0,
+                if is_postprocess {
+                    binding_types::storage_buffer_read_only::<StrokePostprocessData>(false)
+                } else {
+                    binding_types::storage_buffer_read_only::<ComputedPenInput>(
+                        !is_postprocess && !is_bounds_eval,
+                    )
+                },
             ),
-            binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-            binding_types::texture_storage_2d_array(
-                target_layer_format,
-                StorageTextureAccess::ReadOnly,
+            (
+                1,
+                binding_types::texture_2d(TextureSampleType::Float { filterable: false }),
             ),
-            binding_types::texture_storage_2d_array(
-                target_layer_format,
-                StorageTextureAccess::WriteOnly,
+            (2, binding_types::storage_buffer_read_only::<URect>(false)),
+            (
+                3,
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
             ),
-            if is_postprocess || is_bounds_eval {
-                binding_types::storage_buffer::<DabInfo>(false)
-            } else {
-                binding_types::storage_buffer::<DabInfo>(true)
-            },
-            binding_types::texture_storage_2d_array(
-                selection_layer_format,
-                StorageTextureAccess::ReadOnly,
+            (
+                4,
+                binding_types::texture_storage_2d_array(
+                    target_layer_format,
+                    StorageTextureAccess::ReadOnly,
+                ),
             ),
-            binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-            binding_types::storage_buffer_read_only::<u32>(false),
+            (
+                8,
+                if is_postprocess || is_bounds_eval {
+                    binding_types::storage_buffer::<DabInfo>(false)
+                } else {
+                    binding_types::storage_buffer::<DabInfo>(true)
+                },
+            ),
+            (
+                9,
+                binding_types::texture_storage_2d_array(
+                    selection_layer_format,
+                    StorageTextureAccess::ReadOnly,
+                ),
+            ),
+            (
+                10,
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            ),
+            (11, binding_types::storage_buffer_read_only::<u32>(false)),
         ),
-    )
-    .to_vec();
+    );
+
+    if !is_bounds_eval {
+        entries = entries.extend_with_indices((
+            (
+                5,
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            ),
+            (
+                6,
+                binding_types::texture_storage_2d_array(
+                    target_layer_format,
+                    StorageTextureAccess::ReadOnly,
+                ),
+            ),
+            (
+                7,
+                binding_types::texture_storage_2d_array(
+                    target_layer_format,
+                    StorageTextureAccess::WriteOnly,
+                ),
+            ),
+        ));
+    }
+
+    let mut entries = entries.to_vec();
     entries.extend_from_slice(external_var);
     entries
 }
