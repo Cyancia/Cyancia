@@ -4,7 +4,7 @@ use cyancia_image::{
     layer::LayerId,
     scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuTileStorage, LayerBinding, TileStorageAppExt},
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, LayerBinding, TileStorageAppExt},
 };
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},
@@ -164,6 +164,8 @@ impl BrushPresetOperator {
             renderer
         });
 
+        renderer.reset(&self.device, &self.queue);
+
         let intermediate_buffers = self.intermediate_buffers.insert([
             DynamicLayerStorage::new(self.device.clone(), self.queue.clone(), target_layer_info),
             DynamicLayerStorage::new(self.device.clone(), self.queue.clone(), target_layer_info),
@@ -185,8 +187,8 @@ impl BrushPresetOperator {
                 &self.device,
                 &self.queue,
                 sample,
-                &target_layer,
-                &selection_layer,
+                target_layer,
+                selection_layer,
                 intermediate_buffers,
                 &mut self.round,
                 &mut self.accumulated_pixel_bounds,
@@ -221,8 +223,8 @@ impl BrushPresetOperator {
                 &self.device,
                 &self.queue,
                 sample,
-                &target_layer,
-                &selection_layer,
+                target_layer,
+                selection_layer,
                 intermediate_buffers,
                 &mut self.round,
                 &mut self.accumulated_pixel_bounds,
@@ -257,8 +259,8 @@ impl BrushPresetOperator {
                 &self.device,
                 &self.queue,
                 sample,
-                &target_layer,
-                &selection_layer,
+                target_layer.clone(),
+                selection_layer.clone(),
                 intermediate_buffers,
                 &mut self.round,
                 &mut self.accumulated_pixel_bounds,
@@ -348,11 +350,13 @@ struct StrokePostprocessPipelines {
 struct WorkerThreadData {
     samples: AsyncBufferReadback<Vec<ComputedPenInput>>,
     dab_infos: AsyncBufferReadback<Vec<DabInfo>>,
+    target_layer: LayerBinding,
+    has_selection: Buffer,
+    selection: LayerBinding,
 }
 
 pub struct BrushPresetRenderer {
     input_sample: BrushInputSamplingPipeline,
-    main: BrushMainPipeline,
     main_bounds_eval: BrushMainBoundsEvalPipeline,
     stroke_pp: Vec<StrokePostprocessPipelines>,
     resources: StrokeResources,
@@ -411,14 +415,11 @@ impl BrushPresetRenderer {
 
         let (tx, rx) = futures::channel::mpsc::unbounded();
         let worker_thread_task = cx.background_spawn({
-            let device = device.clone();
-            let queue = queue.clone();
-            brush_renderer_worker_thread(rx, device, queue)
+            brush_renderer_worker_thread(rx, device.clone(), queue.clone(), main, resources.clone())
         });
 
         Self {
             input_sample,
-            main,
             main_bounds_eval,
             stroke_pp,
             resources,
@@ -430,14 +431,20 @@ impl BrushPresetRenderer {
         }
     }
 
+    pub fn reset(&mut self, device: &Device, queue: &Queue) {
+        self.input_sampler_buffer.clear();
+        self.input_sampler_buffer.push(&InputSampler::default());
+        self.input_sampler_buffer.write_buffer(device, queue);
+    }
+
     // TODO: Copy unchanged tiles onto another buffer?
     pub fn update(
         &mut self,
         device: &Device,
         queue: &Queue,
         pen_input: PenInput,
-        target_layer: &LayerBinding,
-        selection_layer: &LayerBinding,
+        target_layer: LayerBinding,
+        selection_layer: LayerBinding,
         intermediate_buffers: &mut [DynamicLayerStorage; 2],
         round: &mut u32,
         accumulated_pixel_bounds: &mut IRect,
@@ -445,7 +452,7 @@ impl BrushPresetRenderer {
     ) {
         let has_selection = self
             .scan_pixels
-            .scan_to_binary_buffer(device, queue, selection_layer);
+            .scan_to_binary_buffer(device, queue, &selection_layer);
 
         let mut pen_input_buffer =
             DynamicBuffer::new(Some("pen input buffer".into()), BufferUsages::STORAGE);
@@ -538,6 +545,9 @@ impl BrushPresetRenderer {
             .unbounded_send(WorkerThreadData {
                 samples: samples_readback,
                 dab_infos: dab_info_readback,
+                has_selection,
+                selection: selection_layer,
+                target_layer: target_layer,
             })
             .unwrap();
     }
@@ -644,10 +654,37 @@ async fn brush_renderer_worker_thread(
     mut data: UnboundedReceiver<WorkerThreadData>,
     device: Device,
     queue: Queue,
+    main: BrushMainPipeline,
+    resources: StrokeResources,
 ) {
-    while let Ok(data) = data.recv().await {
-        let samples = data.samples.into_inner().await;
-        let dab_infos = data.dab_infos.into_inner().await;
+    let intermediate_buffers = [
+        DynamicLayerStorage::new(
+            device.clone(),
+            queue.clone(),
+            GpuLayerInfo {
+                texel_type: resources.target_layer_format,
+            },
+        ),
+        DynamicLayerStorage::new(
+            device.clone(),
+            queue.clone(),
+            GpuLayerInfo {
+                texel_type: resources.target_layer_format,
+            },
+        ),
+    ];
+    let mut round = 0;
+
+    while let Ok(WorkerThreadData {
+        samples,
+        dab_infos,
+        target_layer,
+        has_selection,
+        selection,
+    }) = data.recv().await
+    {
+        let samples = samples.into_inner().await;
+        let dab_infos = dab_infos.into_inner().await;
 
         let (Ok(Ok(samples)), Ok(Ok(dab_infos))) = (samples, dab_infos) else {
             return;
@@ -660,18 +697,45 @@ async fn brush_renderer_worker_thread(
             Some("output dab infos buffer".into()),
             BufferUsages::STORAGE,
         );
-        let mut dab_infos_offsets = Vec::new();
+        let mut dab_info_offsets = Vec::new();
 
         for (sample, dab_info) in samples.iter().zip(dab_infos.iter()) {
             if sample.position == Vec2::MIN {
                 break;
             }
 
-            samples_offsets.push(samples_buffer.push(sample));
-            dab_infos_offsets.push(dab_infos_buffer.push(dab_info));
+            samples_offsets.push(samples_buffer.push(sample) as u32);
+            dab_info_offsets.push(dab_infos_buffer.push(dab_info) as u32);
         }
 
-        dbg!(samples_offsets.len());
+        samples_buffer.write_buffer(&device, &queue);
+        dab_infos_buffer.write_buffer(&device, &queue);
+
+        let mut ec = device.create_command_encoder(&Default::default());
+
+        let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("brush main pass".into()),
+            ..Default::default()
+        });
+        main.dispatch(
+            &device,
+            &mut pass,
+            &target_layer.texture,
+            &target_layer.tile_info_buffer,
+            &has_selection,
+            &selection.texture,
+            &selection.tile_info_buffer,
+            &samples_buffer,
+            &samples_offsets,
+            &dab_infos_buffer,
+            &dab_info_offsets,
+            &resources,
+            &[
+                intermediate_buffers[0].binding_or_empty(),
+                intermediate_buffers[1].binding_or_empty(),
+            ],
+            &mut round,
+        );
     }
 }
 
@@ -734,6 +798,7 @@ pub struct DabInfo {
     pub bound_max: IVec2,
 }
 
+#[derive(Clone)]
 // TODO This should be renamed to RendererResources
 pub struct StrokeResources {
     pub external_var_layouts: Vec<BindGroupLayoutEntry>,

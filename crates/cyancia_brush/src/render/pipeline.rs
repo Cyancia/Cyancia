@@ -701,6 +701,8 @@ fn bind_group_entries<'a>(
                 .unwrap()
                 .as_entire_binding(),
         });
+    } else {
+        unreachable!();
     }
 
     if !is_bounds_eval {

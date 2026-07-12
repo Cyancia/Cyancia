@@ -93,11 +93,12 @@ fn main() {
         remaining_arc -= spacing;
 
         if remaining_arc < spacing {
-            input_sampler.last_input = new_input;
-            input_sampler.last_sample = interpolated;
             break;
         }
     }
+
+    input_sampler.last_input = new_input;
+    input_sampler.last_sample = output_samples.samples[output_samples.n_samples - 1u];
 
     bounds_eval_dispatch = vec3u(1u, 1u, unsigned_div_ceil(output_samples.n_samples, 16u));
 }

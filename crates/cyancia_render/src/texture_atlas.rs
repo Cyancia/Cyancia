@@ -242,6 +242,7 @@ fn skyline_pack(sizes: &[UVec2]) -> (UVec2, Vec<UVec2>) {
     (actual_size, placements)
 }
 
+#[derive(Clone)]
 pub struct TextureAtlas {
     texture: Texture,
     texture_view: TextureView,
