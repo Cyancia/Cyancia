@@ -355,6 +355,12 @@ struct WorkerThreadData {
     selection: LayerBinding,
 }
 
+struct WorkerThreadResult {
+    intermediate_buffers: [DynamicLayerStorage; 2],
+    round: u32,
+    accumulated_tile_bounds: IRect,
+}
+
 pub struct BrushPresetRenderer {
     input_sample: BrushInputSamplingPipeline,
     main_bounds_eval: BrushMainBoundsEvalPipeline,
@@ -364,6 +370,7 @@ pub struct BrushPresetRenderer {
 
     input_sampler_buffer: DynamicBuffer<InputSampler>,
     worker_thread_sender: UnboundedSender<WorkerThreadData>,
+    worker_thread_result: UnboundedReceiver<WorkerThreadResult>,
     worker_thread_task: Task<()>,
 }
 
@@ -413,9 +420,17 @@ impl BrushPresetRenderer {
         input_sampler_buffer.push(&InputSampler::default());
         input_sampler_buffer.write_buffer(device, queue);
 
-        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let (result_tx, result_rx) = futures::channel::mpsc::unbounded();
+        let (data_tx, data_rx) = futures::channel::mpsc::unbounded();
         let worker_thread_task = cx.background_spawn({
-            brush_renderer_worker_thread(rx, device.clone(), queue.clone(), main, resources.clone())
+            brush_renderer_worker_thread(
+                data_rx,
+                result_tx,
+                device.clone(),
+                queue.clone(),
+                main,
+                resources.clone(),
+            )
         });
 
         Self {
@@ -426,7 +441,8 @@ impl BrushPresetRenderer {
             scan_pixels: ScanPixelsPipeline::new(device, selection_layer_format),
 
             input_sampler_buffer,
-            worker_thread_sender: tx,
+            worker_thread_sender: data_tx,
+            worker_thread_result: result_rx,
             worker_thread_task,
         }
     }
@@ -652,12 +668,13 @@ impl BrushPresetRenderer {
 
 async fn brush_renderer_worker_thread(
     mut data: UnboundedReceiver<WorkerThreadData>,
+    result: UnboundedSender<WorkerThreadResult>,
     device: Device,
     queue: Queue,
     main: BrushMainPipeline,
     resources: StrokeResources,
 ) {
-    let intermediate_buffers = [
+    let mut intermediate_buffers = [
         DynamicLayerStorage::new(
             device.clone(),
             queue.clone(),
@@ -674,6 +691,7 @@ async fn brush_renderer_worker_thread(
         ),
     ];
     let mut round = 0;
+    let mut accumulated_tile_bounds = IRect::EMPTY;
 
     while let Ok(WorkerThreadData {
         samples,
@@ -706,6 +724,13 @@ async fn brush_renderer_worker_thread(
 
             samples_offsets.push(samples_buffer.push(sample) as u32);
             dab_info_offsets.push(dab_infos_buffer.push(dab_info) as u32);
+
+            for b in &mut intermediate_buffers {
+                b.allocate_tiles(IRect {
+                    min: dab_info.bound_min,
+                    max: dab_info.bound_max,
+                });
+            }
         }
 
         samples_buffer.write_buffer(&device, &queue);
@@ -736,7 +761,25 @@ async fn brush_renderer_worker_thread(
             ],
             &mut round,
         );
+
+        let _ = result.unbounded_send(WorkerThreadResult {
+            intermediate_buffers: [
+                intermediate_buffers[0].deep_clone(),
+                intermediate_buffers[1].deep_clone(),
+            ],
+            round,
+            accumulated_tile_bounds,
+        });
     }
+
+    let _ = result.unbounded_send(WorkerThreadResult {
+        intermediate_buffers: [
+            intermediate_buffers[0].deep_clone(),
+            intermediate_buffers[1].deep_clone(),
+        ],
+        round,
+        accumulated_tile_bounds,
+    });
 }
 
 #[derive(ShaderType, Debug, Clone)]
