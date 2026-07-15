@@ -547,7 +547,6 @@ async fn brush_renderer_worker_main(
             .take(samples.n_samples as usize)
             .zip(dab_infos)
         {
-            println!("{}", sample.position);
 
             samples_offsets.push(samples_buffer.push(&sample) as u32);
             dab_info_offsets.push(dab_infos_buffer.push(&dab_info) as u32);
