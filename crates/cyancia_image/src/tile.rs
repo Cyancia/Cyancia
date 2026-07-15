@@ -13,7 +13,7 @@ use encase::ShaderType;
 use glam::{IVec2, UVec2};
 use gpui::{App, Global};
 use image::{DynamicImage, GenericImageView};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use moxcms::{ColorProfile, TransformOptions};
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyTextureInfo, Texture,
@@ -446,7 +446,7 @@ impl DynamicLayerStorage {
                     Some(*t.borrow())
                 }
             })
-            .collect::<HashSet<_>>();
+            .collect::<IndexSet<_>>();
         if tile_to_allocate.is_empty() {
             return;
         }
