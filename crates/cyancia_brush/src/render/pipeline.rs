@@ -91,9 +91,13 @@ impl BrushInputSamplingPipeline {
             .as_ref(),
         });
 
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
-        pass.dispatch_workgroups(1, 1, 1);
+        pass.push_debug_group("brush preset input sampling");
+        {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        pass.pop_debug_group();
     }
 }
 
