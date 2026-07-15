@@ -3,7 +3,7 @@ import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_
 import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
 @if(!BOUNDS_EVAL || POSTPROCESS) @group(0) @binding(0) var<storage> sample: GraphInput;
-@if(BOUNDS_EVAL && !POSTPROCESS) @group(0) @binding(0) var<storage> sample: array<GraphInput>;
+@if(BOUNDS_EVAL && !POSTPROCESS) @group(0) @binding(0) var<storage> sample: OutputSamples;
 @group(0) @binding(1) var textures: texture_2d<f32>;
 @group(0) @binding(2) var<storage> texture_bounds: array<URect>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
@@ -215,6 +215,8 @@ fn main_bounds_eval(@builtin(global_invocation_id) id: vec3u) {
         main_graph(sample, vec2i(0), vec2f(0.0));
     }
     @if(!POSTPROCESS) {
-        main_graph(sample[dab_index], vec2i(0), vec2f(0.0));
+        if dab_index < sample.n_samples {
+            main_graph(sample.samples[dab_index], vec2i(0), vec2f(0.0));
+        }
     }
 }

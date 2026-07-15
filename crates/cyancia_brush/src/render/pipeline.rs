@@ -76,7 +76,7 @@ impl BrushInputSamplingPipeline {
         pass: &mut ComputePass,
         pen_input: &DynamicBuffer<PenInput>,
         input_sampler: &DynamicBuffer<InputSampler>,
-        output_samples: &BufferVec<ComputedPenInput>,
+        output_samples: &DynamicBuffer<OutputSamples>,
         bounds_eval_dispatch: &Buffer,
     ) {
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -401,7 +401,7 @@ impl BrushMainBoundsEvalPipeline {
         &self,
         device: &Device,
         pass: &mut ComputePass,
-        samples: &BufferVec<ComputedPenInput>,
+        samples: &DynamicBuffer<OutputSamples>,
         dab_infos: &BufferVec<DabInfo>,
         target_layer_texture: &TextureView,
         target_layer_tile_info: &Buffer,
@@ -551,12 +551,14 @@ fn bind_group_layout_entries(
         (
             (
                 0,
-                if is_postprocess {
-                    binding_types::storage_buffer_read_only::<StrokePostprocessData>(false)
+                if !is_postprocess && is_bounds_eval {
+                    binding_types::storage_buffer_read_only::<OutputSamples>(false)
                 } else {
-                    binding_types::storage_buffer_read_only::<ComputedPenInput>(
-                        !is_postprocess && !is_bounds_eval,
-                    )
+                    if is_postprocess {
+                        binding_types::storage_buffer_read_only::<StrokePostprocessData>(false)
+                    } else {
+                        binding_types::storage_buffer_read_only::<ComputedPenInput>(!is_bounds_eval)
+                    }
                 },
             ),
             (
@@ -635,7 +637,7 @@ fn bind_group_entries<'a>(
     selection_layer_tile_info: &'a Buffer,
     intermediate_buffers: Option<&'a [LayerBinding; 2]>,
     samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
-    samples_vec: Option<&'a BufferVec<ComputedPenInput>>,
+    samples_vec: Option<&'a DynamicBuffer<OutputSamples>>,
     stroke_pp_data: Option<&'a DynamicBuffer<StrokePostprocessData>>,
     stroke_pp_data_vec: Option<&'a BufferVec<StrokePostprocessData>>,
     dab_infos: Option<&'a DynamicBuffer<DabInfo>>,

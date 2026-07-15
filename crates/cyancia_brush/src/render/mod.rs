@@ -220,7 +220,7 @@ struct StrokePostprocessPipelines {
 }
 
 struct WorkerThreadData {
-    samples: AsyncBufferReadback<Vec<ComputedPenInput>>,
+    samples: AsyncBufferReadback<OutputSamples>,
     dab_infos: AsyncBufferReadback<Vec<DabInfo>>,
 }
 
@@ -390,17 +390,12 @@ impl BrushPresetRenderer {
             usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
             mapped_at_creation: false,
         });
-        let mut output_samples = BufferVec::new(
+        let mut output_samples = DynamicBuffer::new(
             Some("output samples buffer".into()),
             BufferUsages::COPY_SRC | BufferUsages::STORAGE,
         );
         // TODO Use uninit buffer
-        for _ in 0..MAX_DABS_PER_STROKE {
-            output_samples.push(&ComputedPenInput {
-                position: Vec2::MIN,
-                ..Default::default()
-            });
-        }
+        output_samples.push(&OutputSamples::new(MAX_DABS_PER_STROKE));
         output_samples.write_buffer(device, queue);
 
         let mut dab_infos = BufferVec::new(
@@ -459,7 +454,13 @@ impl BrushPresetRenderer {
             readback_buffer_on_submit_async(&mut ec, &output_samples_readback, ..);
         let dab_info_readback = readback_buffer_on_submit_async(&mut ec, &dab_info_readback, ..);
 
+        unsafe {
+            device.start_graphics_debugger_capture();
+        }
         queue.submit([ec.finish()]);
+        unsafe {
+            device.stop_graphics_debugger_capture();
+        }
 
         session
             .data_tx
@@ -538,14 +539,18 @@ async fn brush_renderer_worker_main(
         );
         let mut dab_info_offsets = Vec::new();
 
-        for (sample, dab_info) in samples.iter().zip(dab_infos.iter()) {
-            if sample.position == Vec2::MIN {
-                break;
-            }
+        dbg!(samples.n_samples);
 
-            samples_offsets.push(samples_buffer.push(sample) as u32);
-            dab_info_offsets.push(dab_infos_buffer.push(dab_info) as u32);
-            dbg!(dab_info);
+        for (sample, dab_info) in samples
+            .samples
+            .into_iter()
+            .take(samples.n_samples as usize)
+            .zip(dab_infos)
+        {
+            println!("{}", sample.position);
+
+            samples_offsets.push(samples_buffer.push(&sample) as u32);
+            dab_info_offsets.push(dab_infos_buffer.push(&dab_info) as u32);
 
             for b in &mut intermediate_buffers {
                 b.allocate_tiles(IRect {
