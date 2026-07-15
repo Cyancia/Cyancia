@@ -597,53 +597,75 @@ async fn brush_renderer_worker_main(
         }
         queue.submit([ec.finish()]);
 
-        // unsafe {
-        //     device.start_graphics_debugger_capture();
-        // }
-        // TODO move to another task
-        postprocess_stroke(
-            &device,
-            &queue,
-            &target_layer,
-            &selection_layer,
-            Time::default(),
-            &mut intermediate_buffers,
-            &mut round,
-            &mut accumulated_tile_bounds,
-            &scan_pixels,
-            &stroke_pp,
-            &resources,
-        )
-        .await;
-        // unsafe {
-        //     device.stop_graphics_debugger_capture();
-        // }
+        cx.spawn({
+            let device = device.clone();
+            let queue = queue.clone();
+            let target_layer = target_layer.clone();
+            let selection_layer = selection_layer.clone();
+            let canvas = canvas.clone();
+            let scan_pixels = scan_pixels.clone();
+            let stroke_pp = stroke_pp.clone();
+            let resources = resources.clone();
+            let mut intermediate_buffers = [
+                intermediate_buffers[0].deep_clone(),
+                intermediate_buffers[1].deep_clone(),
+            ];
 
-        if accumulated_tile_bounds.is_empty() {
-            continue;
-        }
+            async move |cx| {
+                // unsafe {
+                //     device.start_graphics_debugger_capture();
+                // }
+                // TODO move to another task
+                postprocess_stroke(
+                    &device,
+                    &queue,
+                    &target_layer,
+                    &selection_layer,
+                    Time::default(),
+                    &mut intermediate_buffers,
+                    &mut round,
+                    &mut accumulated_tile_bounds,
+                    &scan_pixels,
+                    &stroke_pp,
+                    &resources,
+                )
+                .await;
+                // unsafe {
+                //     device.stop_graphics_debugger_capture();
+                // }
 
-        let result = &intermediate_buffers[round as usize % 2];
-        // dbg!(result.iter_tile_indices().collect::<Vec<_>>());
+                if accumulated_tile_bounds.is_empty() {
+                    return;
+                }
 
-        cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
-            overriders.insert_overrider(
-                target_layer_id,
-                PixelPreviewOverrider {
-                    texture: result.texture_view().unwrap().clone(),
-                    tile_info_buffer: result.tile_info_buffer().unwrap().clone(),
-                },
-            );
+                let result = &intermediate_buffers[round as usize % 2];
+                // dbg!(result.iter_tile_indices().collect::<Vec<_>>());
 
-            canvas
-                .update(cx, |_canvas, cx| {
-                    cx.emit(CanvasUpdated {
-                        dirty_tiles: accumulated_tile_bounds,
-                    });
-                })
-                .ok();
-        });
+                cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
+                    overriders.insert_overrider(
+                        target_layer_id,
+                        PixelPreviewOverrider {
+                            texture: result.texture_view().unwrap().clone(),
+                            tile_info_buffer: result.tile_info_buffer().unwrap().clone(),
+                        },
+                    );
+
+                    canvas
+                        .update(cx, |_canvas, cx| {
+                            cx.emit(CanvasUpdated {
+                                dirty_tiles: accumulated_tile_bounds,
+                            });
+                        })
+                        .ok();
+                });
+            }
+        })
+        .detach();
     }
+
+    cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
+        overriders.remove_overrider(&target_layer_id);
+    });
 
     let result = BrushPresetRenderer::last_surface(&intermediate_buffers, round);
     dbg!(result.is_some());
