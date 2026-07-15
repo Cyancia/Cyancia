@@ -547,7 +547,6 @@ async fn brush_renderer_worker_main(
             .take(samples.n_samples as usize)
             .zip(dab_infos)
         {
-
             samples_offsets.push(samples_buffer.push(&sample) as u32);
             dab_info_offsets.push(dab_infos_buffer.push(&dab_info) as u32);
 
@@ -722,8 +721,10 @@ async fn postprocess_stroke<'a>(
 
     let has_selection = scan_pixels.scan_to_binary_buffer(device, queue, selection_layer);
 
-    let mut dab_info_buffer =
-        DynamicBuffer::new(Some("pp dab info buffer".into()), BufferUsages::STORAGE);
+    let mut dab_info_buffer = DynamicBuffer::new(
+        Some("pp dab info buffer".into()),
+        BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+    );
     let mut stroke_pp_data =
         DynamicBuffer::new(Some("stroke pp data".into()), BufferUsages::STORAGE);
 

@@ -180,7 +180,7 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
 fn set_output_pixel_bounds(bounds: Rect) {
     @if(BOUNDS_EVAL) {
         let tile_min = vec2i(bounds.min) / i32(TILE_SIZE);
-        let tile_max = (vec2i(bounds.max) - 1) / i32(TILE_SIZE);
+        let tile_max = (vec2i(bounds.max) - 1) / i32(TILE_SIZE) + 1;
 
         @if(POSTPROCESS) {
             dab_info = DabInfo(tile_min, tile_max);
