@@ -197,7 +197,7 @@ fn set_output_pixel_bounds(bounds: Rect) {
 fn main(@builtin(global_invocation_id) id: vec3u) {
     let layer = id.z;
     let pixel_pos = vec2i(id.xy) + buffer_tile_info[layer].origin;
-    if any(pixel_pos < dab_info.bound_min) || any(pixel_pos >= dab_info.bound_max) {
+    if any(pixel_pos < dab_info.bound_min * i32(TILE_SIZE)) || any(pixel_pos >= dab_info.bound_max * i32(TILE_SIZE)) {
         set_output_color(pixel_pos, current_input_color(pixel_pos));
         return;
     }

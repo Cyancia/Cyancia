@@ -597,6 +597,10 @@ async fn brush_renderer_worker_main(
         }
         queue.submit([ec.finish()]);
 
+        // unsafe {
+        //     device.start_graphics_debugger_capture();
+        // }
+        // TODO move to another task
         postprocess_stroke(
             &device,
             &queue,
@@ -611,6 +615,9 @@ async fn brush_renderer_worker_main(
             &resources,
         )
         .await;
+        // unsafe {
+        //     device.stop_graphics_debugger_capture();
+        // }
 
         if accumulated_tile_bounds.is_empty() {
             continue;
@@ -712,13 +719,13 @@ async fn postprocess_stroke<'a>(
             readback_buffer_on_submit_async::<DabInfo, _>(&mut ec, &dab_info_readback_buffer, ..);
 
         ec.pop_debug_group();
-        unsafe {
-            device.start_graphics_debugger_capture();
-        }
+        // unsafe {
+        //     device.start_graphics_debugger_capture();
+        // }
         queue.submit([ec.finish()]);
-        unsafe {
-            device.stop_graphics_debugger_capture();
-        }
+        // unsafe {
+        //     device.stop_graphics_debugger_capture();
+        // }
 
         let new_dab_info = dab_info_readback.into_inner().await.unwrap().unwrap();
         *accumulated_tile_bounds = IRect {
