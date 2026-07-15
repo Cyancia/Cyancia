@@ -102,7 +102,9 @@ impl<T: ShaderType + WriteInto> DynamicBuffer<T> {
         Some(BindingResource::Buffer(BufferBinding {
             buffer: self.buffer.as_ref()?,
             offset: 0,
-            size: Some(NonZeroU64::new(self.last_written?)?),
+            // TODO This can be incorrect if there's a runtime sized array
+            //      Separate DynamicStorageBuffer and DynamicUniformBuffer
+            size: Some(T::min_size()),
         }))
     }
 

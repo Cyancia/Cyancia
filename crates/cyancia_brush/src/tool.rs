@@ -139,7 +139,7 @@ impl ToolFunction for BrushTool {
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(BrushToolState {
             canvas_entity,
-            target_layer,
+            target_layer: _,
             stroke_begin,
         }) = self.state.take()
         else {
@@ -150,7 +150,6 @@ impl ToolFunction for BrushTool {
             return;
         };
         let canvas = canvas_entity.read(cx);
-        let canvas_id = canvas.id();
 
         let Some(position) = canvas
             .transform
@@ -167,33 +166,11 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, _cx| {
             if let Some(brush) = brush.as_mut() {
                 brush.end_stroke(final_input);
             }
         });
-
-        // let overriders = cx.global_mut::<LayerPreviewOverriders>();
-        // overriders.remove_overrider(&target_layer);
-
-        // if let Some((new_tiles, new_tile_indices)) = result {
-        //     let target_layer_storage = cx
-        //         .global::<GpuTileStorage>()
-        //         .get_layer(target_layer)
-        //         .unwrap();
-        //     let cmd = TileReplaceCommand::new(
-        //         "Brush Stroke".into(),
-        //         canvas_id,
-        //         cx.render_device(),
-        //         cx.render_queue(),
-        //         target_layer,
-        //         &target_layer_storage,
-        //         new_tile_indices,
-        //         new_tiles,
-        //     );
-        //     drop(target_layer_storage);
-        //     cx.push_undo_command_to_current(cmd).log_err();
-        // }
     }
 
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {

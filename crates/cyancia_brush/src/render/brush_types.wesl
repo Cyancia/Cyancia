@@ -52,7 +52,7 @@ struct PenInput {
 }
 
 struct StrokePostprocessData {
-    accumulated_bound: IRect,
+    accumulated_pixel_bound: IRect,
     time: Time,
 }
 

@@ -212,7 +212,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 fn main_bounds_eval(@builtin(global_invocation_id) id: vec3u) {
     dab_index = id.z;
     @if(POSTPROCESS) {
-        main_graph(sample, vec2i(0), vec2f(0.0));
+        if dab_index == 0u {
+            main_graph(sample, vec2i(0), vec2f(0.0));
+        }
     }
     @if(!POSTPROCESS) {
         if dab_index < sample.n_samples {

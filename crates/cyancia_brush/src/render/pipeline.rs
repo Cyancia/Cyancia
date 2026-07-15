@@ -85,7 +85,7 @@ impl BrushInputSamplingPipeline {
             entries: BindGroupEntries::sequential((
                 pen_input.binding().unwrap(),
                 input_sampler.binding().unwrap(),
-                output_samples.binding().unwrap(),
+                output_samples.inner_buffer().unwrap().as_entire_binding(),
                 bounds_eval_dispatch.as_entire_binding(),
             ))
             .as_ref(),

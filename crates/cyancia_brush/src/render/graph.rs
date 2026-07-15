@@ -847,7 +847,7 @@ impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
         mut ctx: GraphNodeCodeGenContext<'_, BrushGraphPostprocessData>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = Rect(vec2f(graph_input.accumulated_bound.min), vec2f(graph_input.accumulated_bound.max));",
+            "let {} = Rect(vec2f(graph_input.accumulated_pixel_bound.min), vec2f(graph_input.accumulated_pixel_bound.max));",
             ctx.get_output(0)?
         ))
     }
