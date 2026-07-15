@@ -70,7 +70,7 @@ impl ToolFunction for BrushTool {
 
         let now = Utc::now();
         self.state = Some(BrushToolState {
-            canvas_entity,
+            canvas_entity: canvas_entity.clone(),
             target_layer: active_layer,
             stroke_begin: now,
         });
@@ -92,7 +92,7 @@ impl ToolFunction for BrushTool {
             let Some(brush) = brush.as_mut() else {
                 return;
             };
-            brush.begin_stroke(params, active_layer, selection_layer, cx);
+            brush.begin_stroke(params, active_layer, selection_layer, canvas_entity, cx);
         });
     }
 
@@ -126,31 +126,14 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let maybe_preview = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
-            let brush = brush.as_mut()?;
+        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            let Some(brush) = brush.as_mut() else {
+                return;
+            };
             let now = std::time::Instant::now();
-            brush.update_stroke(params, cx);
-            let preview = brush.generate_preview(cx);
+            brush.update_stroke(params);
             log::debug!("Brush stroke update took {:?}", now.elapsed());
-
-            preview
         });
-
-        if let Some((dirty_pixels, preview)) = maybe_preview {
-            let dirty_tiles = GpuTileStorage::pixel_rect_to_tile(dirty_pixels);
-            let overriders = cx.global_mut::<LayerPreviewOverriders>();
-            overriders.insert_overrider(
-                *target_layer,
-                PixelPreviewOverrider {
-                    texture: preview.texture_view().unwrap().clone(),
-                    tile_info_buffer: preview.tile_info_buffer().unwrap().clone(),
-                },
-            );
-
-            canvas_entity.update(cx, |_, cx| {
-                cx.emit(CanvasUpdated { dirty_tiles });
-            });
-        }
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
@@ -184,32 +167,33 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        let result = cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
-            let brush = brush.as_mut()?;
-            brush.end_stroke(final_input, cx)
+        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+            if let Some(brush) = brush.as_mut() {
+                brush.end_stroke(final_input);
+            }
         });
 
-        let overriders = cx.global_mut::<LayerPreviewOverriders>();
-        overriders.remove_overrider(&target_layer);
+        // let overriders = cx.global_mut::<LayerPreviewOverriders>();
+        // overriders.remove_overrider(&target_layer);
 
-        if let Some((new_tiles, new_tile_indices)) = result {
-            let target_layer_storage = cx
-                .global::<GpuTileStorage>()
-                .get_layer(target_layer)
-                .unwrap();
-            let cmd = TileReplaceCommand::new(
-                "Brush Stroke".into(),
-                canvas_id,
-                cx.render_device(),
-                cx.render_queue(),
-                target_layer,
-                &target_layer_storage,
-                new_tile_indices,
-                new_tiles,
-            );
-            drop(target_layer_storage);
-            cx.push_undo_command_to_current(cmd).log_err();
-        }
+        // if let Some((new_tiles, new_tile_indices)) = result {
+        //     let target_layer_storage = cx
+        //         .global::<GpuTileStorage>()
+        //         .get_layer(target_layer)
+        //         .unwrap();
+        //     let cmd = TileReplaceCommand::new(
+        //         "Brush Stroke".into(),
+        //         canvas_id,
+        //         cx.render_device(),
+        //         cx.render_queue(),
+        //         target_layer,
+        //         &target_layer_storage,
+        //         new_tile_indices,
+        //         new_tiles,
+        //     );
+        //     drop(target_layer_storage);
+        //     cx.push_undo_command_to_current(cmd).log_err();
+        // }
     }
 
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {

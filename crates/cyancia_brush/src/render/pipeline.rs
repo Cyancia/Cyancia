@@ -97,6 +97,7 @@ impl BrushInputSamplingPipeline {
     }
 }
 
+#[derive(Clone)]
 pub struct BrushMainPipeline {
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
@@ -168,15 +169,14 @@ impl BrushMainPipeline {
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            intermediate_buffers,
+            Some(intermediate_buffers),
             Some(samples),
             None,
             None,
             None,
             Some(dab_infos),
             None,
-            true,
-            false,
+            Some(true),
         );
         let bind_group_even = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group even"),
@@ -191,15 +191,14 @@ impl BrushMainPipeline {
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            intermediate_buffers,
+            Some(intermediate_buffers),
             Some(samples),
             None,
             None,
             None,
             Some(dab_infos),
             None,
-            false,
-            false,
+            Some(false),
         );
         let bind_group_odd = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group odd"),
@@ -246,6 +245,7 @@ impl BrushMainPipeline {
     }
 }
 
+#[derive(Clone)]
 pub struct BrushPostProcessPipeline {
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
@@ -303,7 +303,7 @@ impl BrushPostProcessPipeline {
         has_selection: &Buffer,
         selection_layer_texture: &TextureView,
         selection_layer_tile_info: &Buffer,
-        dab_infos: &DynamicBuffer<DabInfo>,
+        dab_info: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
         intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
@@ -315,15 +315,14 @@ impl BrushPostProcessPipeline {
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            intermediate_buffers,
+            Some(intermediate_buffers),
             None,
             None,
             Some(stroke_pp_data),
             None,
-            Some(dab_infos),
+            Some(dab_info),
             None,
-            (*round).is_multiple_of(2),
-            false,
+            Some((*round).is_multiple_of(2)),
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess bind group"),
@@ -410,8 +409,6 @@ impl BrushMainBoundsEvalPipeline {
         selection_layer_texture: &TextureView,
         selection_layer_tile_info: &Buffer,
         resources: &StrokeResources,
-        intermediate_buffers: &[LayerBinding; 2],
-        round: &mut u32,
     ) {
         use crate::render::MAX_DABS_PER_STROKE;
 
@@ -422,15 +419,14 @@ impl BrushMainBoundsEvalPipeline {
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            intermediate_buffers,
+            None,
             None,
             Some(samples),
             None,
             None,
             None,
             Some(dab_infos),
-            (*round).is_multiple_of(2),
-            true,
+            None,
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bounds eval bind group"),
@@ -445,10 +441,10 @@ impl BrushMainBoundsEvalPipeline {
             pass.dispatch_workgroups(1, 1, MAX_DABS_PER_STROKE.div_ceil(16));
         }
         pass.pop_debug_group();
-        *round += 1;
     }
 }
 
+#[derive(Clone)]
 pub struct BrushPostProcessBoundsEvalPipeline {
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
@@ -500,16 +496,14 @@ impl BrushPostProcessBoundsEvalPipeline {
         &self,
         device: &Device,
         pass: &mut ComputePass,
-        stroke_pp_data: &BufferVec<StrokePostprocessData>,
+        stroke_pp_data: &DynamicBuffer<StrokePostprocessData>,
         target_layer_texture: &TextureView,
         target_layer_tile_info: &Buffer,
         has_selection: &Buffer,
         selection_layer_texture: &TextureView,
         selection_layer_tile_info: &Buffer,
-        dab_infos: &BufferVec<DabInfo>,
+        dab_infos: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
-        intermediate_buffers: &[LayerBinding; 2],
-        round: &mut u32,
     ) {
         use crate::render::MAX_DABS_PER_STROKE;
 
@@ -520,15 +514,14 @@ impl BrushPostProcessBoundsEvalPipeline {
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            intermediate_buffers,
             None,
             None,
             None,
             Some(stroke_pp_data),
             None,
             Some(dab_infos),
-            (*round).is_multiple_of(2),
-            true,
+            None,
+            None,
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess bounds eval bind group"),
@@ -543,7 +536,6 @@ impl BrushPostProcessBoundsEvalPipeline {
             pass.dispatch_workgroups(1, 1, MAX_DABS_PER_STROKE.div_ceil(16));
         }
         pass.pop_debug_group();
-        *round += 1;
     }
 }
 
@@ -641,15 +633,14 @@ fn bind_group_entries<'a>(
     has_selection: &'a Buffer,
     selection_layer_texture: &'a TextureView,
     selection_layer_tile_info: &'a Buffer,
-    intermediate_buffers: &'a [LayerBinding; 2],
+    intermediate_buffers: Option<&'a [LayerBinding; 2]>,
     samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
     samples_vec: Option<&'a BufferVec<ComputedPenInput>>,
     stroke_pp_data: Option<&'a DynamicBuffer<StrokePostprocessData>>,
     stroke_pp_data_vec: Option<&'a BufferVec<StrokePostprocessData>>,
     dab_infos: Option<&'a DynamicBuffer<DabInfo>>,
     dab_infos_vec: Option<&'a BufferVec<DabInfo>>,
-    is_even: bool,
-    is_bounds_eval: bool,
+    is_even: Option<bool>,
 ) -> Vec<BindGroupEntry<'a>> {
     let mut entries = DynamicBindGroupEntries::new_with_indices((
         (
@@ -705,8 +696,8 @@ fn bind_group_entries<'a>(
         unreachable!();
     }
 
-    if !is_bounds_eval {
-        let (read_idx, write_idx) = if is_even { (0, 1) } else { (1, 0) };
+    if let Some(intermediate_buffers) = intermediate_buffers {
+        let (read_idx, write_idx) = if is_even.unwrap() { (0, 1) } else { (1, 0) };
         entries = entries.extend_with_indices((
             (
                 5,

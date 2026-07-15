@@ -19,6 +19,7 @@ use crate::{
     tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, LayerBinding},
 };
 
+#[derive(Clone)]
 pub struct ScanPixelsPipeline {
     layout: wgpu::BindGroupLayout,
     pipeline: ComputePipeline,
