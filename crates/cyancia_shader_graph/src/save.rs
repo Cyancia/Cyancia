@@ -162,7 +162,7 @@ impl<Data: GraphData> Graph<Data> {
                     continue 'node_loop;
                 };
 
-                let type_name = default.value.ty().name();
+                let type_name = default.ty.name();
                 let value_type_obj = match type_registry.get_type(type_name) {
                     Some(t) => t,
                     None => {

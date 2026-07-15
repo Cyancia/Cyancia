@@ -21,10 +21,10 @@ use crate::{
         Graph, GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
             GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInlineLiteralRenderContext,
-            GraphInputSlotId, GraphOutputSlotId, GraphSlots, GraphValueType,
+            GraphInputSlotId, GraphOutputSlotId, GraphSlots,
         },
         texture::GraphTextureUsageRecorder,
-        variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
+        variable::{GraphLiteralValue, GraphTypeRegistry, GraphVariable},
     },
     save::GraphSerializable,
 };
@@ -61,13 +61,6 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         state: &Self::State,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn run(
-        &self,
-        _: &Self::State,
-        _: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        Err(GraphNodeRunError::Unavailable)
-    }
     fn serialize_state(&self, state: &Self::State) -> Result<toml::Value, toml::ser::Error> {
         state.to_toml()
     }
@@ -115,11 +108,6 @@ pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn run(
-        &self,
-        state: &Box<dyn Any + Send + Sync>,
-        ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError>;
     fn serialize_state(
         &self,
         state: &Box<dyn Any + Send + Sync>,
@@ -201,17 +189,6 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
         self.generate_code(state, ctx)
     }
 
-    fn run(
-        &self,
-        state: &Box<dyn Any + Send + Sync>,
-        ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        let state = state
-            .downcast_ref::<T::State>()
-            .expect("Failed to downcast node state.");
-        self.run(state, ctx)
-    }
-
     fn serialize_state(
         &self,
         state: &Box<dyn Any + Send + Sync>,
@@ -272,10 +249,6 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         self.data.generate_code(&self.state, ctx)
     }
 
-    pub fn run(&self, ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        self.data.run(&self.state, ctx)
-    }
-
     pub fn serialize_state(&self) -> Result<toml::Value, toml::ser::Error> {
         self.data.serialize_state(&self.state)
     }
@@ -331,9 +304,6 @@ pub trait StatelessCommonGraphNode<Data: GraphData>: Send + Sync + 'static + Dyn
         &self,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn run(&self, _: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        Err(GraphNodeRunError::Unavailable)
-    }
 }
 
 pub struct GraphNodeData<Data: GraphData> {
@@ -550,113 +520,6 @@ impl<Data: GraphData> GraphNodeRenderContext<'_, '_, Data> {
     }
 }
 
-pub struct GraphNodeRunContext<'a, Data: GraphData> {
-    pub data: &'a Data,
-    pub inputs: &'a [GraphInputSlotId],
-    pub outputs: &'a [GraphOutputSlotId],
-    pub graph_slots: &'a GraphSlots,
-    pub output_storage: &'a mut HashMap<GraphOutputSlotId, GraphLiteral>,
-    pub resources: &'a GraphResources<Data>,
-    pub type_registry: &'a GraphTypeRegistry,
-    pub cx: &'a App,
-}
-
-impl<'a, Data: GraphData> GraphNodeRunContext<'a, Data> {
-    pub fn get_input_value<T: GraphValueType>(
-        &self,
-        index: usize,
-    ) -> Result<T::AssociatedLiteralType, GraphNodeRunError> {
-        let slot_id = self
-            .inputs
-            .get(index)
-            .ok_or(GraphNodeRunError::SlotIndexOutOfBounds)?;
-
-        let slot = self
-            .graph_slots
-            .get_input(slot_id)
-            .ok_or(GraphNodeRunError::MissingInputSlot)?;
-
-        if let Some(connected) = slot.connected {
-            let connected_value = self
-                .output_storage
-                .get(&connected)
-                .ok_or(GraphNodeRunError::MissingOutputSlot)?;
-
-            if connected_value.ty().name() != slot.data.ty().name() {
-                let casted = self
-                    .type_registry
-                    .try_cast(
-                        connected_value.ty(),
-                        slot.data.ty(),
-                        connected_value.value(),
-                    )
-                    .ok_or(GraphNodeRunError::FailedToCastVariable)?;
-                casted
-                    .downcast::<T::AssociatedLiteralType>()
-                    .map(|v| *v)
-                    .map_err(|_| GraphNodeRunError::FailedToCastVariable)
-            } else {
-                Ok(connected_value
-                    .clone()
-                    .downcast::<T::AssociatedLiteralType>())
-            }
-        } else {
-            Ok(slot.data.clone().downcast::<T::AssociatedLiteralType>())
-        }
-    }
-
-    pub fn get_input_value_raw(&self, index: usize) -> Result<&GraphLiteral, GraphNodeRunError> {
-        let slot_id = self
-            .inputs
-            .get(index)
-            .ok_or(GraphNodeRunError::SlotIndexOutOfBounds)?;
-
-        let slot = self
-            .graph_slots
-            .get_input(slot_id)
-            .ok_or(GraphNodeRunError::MissingInputSlot)?;
-
-        if let Some(connected) = slot.connected {
-            self.output_storage
-                .get(&connected)
-                .ok_or(GraphNodeRunError::MissingOutputSlot)
-        } else {
-            Ok(&slot.data)
-        }
-    }
-
-    pub fn set_output_value<T: GraphValueType + Default>(
-        &mut self,
-        index: usize,
-        value: T::AssociatedLiteralType,
-    ) -> Result<(), GraphNodeRunError> {
-        let slot_id = self
-            .outputs
-            .get(index)
-            .ok_or(GraphNodeRunError::SlotIndexOutOfBounds)?;
-
-        self.output_storage
-            .insert(*slot_id, GraphLiteral::new::<T>(value));
-        Ok(())
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum GraphNodeRunError {
-    #[error("Node cannot run on CPU")]
-    Unavailable,
-    #[error("Input slot index out of bounds")]
-    SlotIndexOutOfBounds,
-    #[error("Missing input slot")]
-    MissingInputSlot,
-    #[error("Missing output slot")]
-    MissingOutputSlot,
-    #[error("Failed to cast variable")]
-    FailedToCastVariable,
-    #[error(transparent)]
-    Custom(#[from] anyhow::Error),
-}
-
 pub struct GraphNodeCodeGenContext<'a, Data: GraphData> {
     pub inputs: &'a [GraphInputSlotId],
     pub outputs: &'a [GraphOutputSlotId],
@@ -771,23 +634,6 @@ impl std::fmt::Display for ContextualGraphNodeCodeGenError {
             f,
             "Error in node {:?} of type {}: {}\nCode already generated:\n{}",
             self.node_id, self.node_title, self.err, self.code
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct ContextualGraphNodeRunError {
-    pub node_id: GraphNodeId,
-    pub node_title: String,
-    pub err: GraphNodeRunError,
-}
-
-impl std::fmt::Display for ContextualGraphNodeRunError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Error in node {:?} of type {}: {:?}",
-            self.node_id, self.node_title, self.err
         )
     }
 }

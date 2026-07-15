@@ -1,10 +1,8 @@
 use cyancia_math::curve::CubicBezierCurve;
-use cyancia_shader_graph::graph::Graph;
 use glam::Vec2;
-use gpui::App;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-use crate::render::{ComputedPenInput, PenInput, Time, graph::BrushGraphData};
+use crate::render::{ComputedPenInput, PenInput, Time};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RawPenInput {
@@ -193,23 +191,6 @@ fn arc_length_to_t(arc_table: &[(f32, f32)], arc: f32) -> f32 {
         return t0;
     }
     t0 + (t1 - t0) * (arc - a0) / (a1 - a0)
-}
-
-fn compute_required_spacing(
-    sample: ComputedPenInput,
-    graph: &Graph<BrushGraphData>,
-    cx: &App,
-) -> f32 {
-    let output = graph
-        .run(&BrushGraphData { pen_input: sample }, Vec::new(), cx)
-        .unwrap();
-
-    assert!(
-        output.len() == 1,
-        "Multiple outputs from required spacing graph not supported"
-    );
-
-    *output[0].as_ref::<f32>()
 }
 
 fn compute_pen_input(

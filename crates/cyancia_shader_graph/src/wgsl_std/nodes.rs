@@ -24,7 +24,7 @@ use crate::{
         function::GraphFunctionId,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeRenderContext, GraphNodeRunContext, GraphNodeUpdateSignatureContext,
+            GraphNodeRenderContext, GraphNodeUpdateSignatureContext,
             StatelessCommonGraphNode,
         },
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
@@ -33,7 +33,6 @@ use crate::{
     wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
 };
 
-use crate::graph::node::GraphNodeRunError;
 use cyancia_shader_graph_derive::stateless;
 
 const NODE_HEADER_FIELD_GAP: Pixels = px(2.0);
@@ -152,33 +151,33 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
     ) -> Vec<GraphDefaultInputSlot> {
         match state {
             ScalarMathNodeMode::Add | ScalarMathNodeMode::Max | ScalarMathNodeMode::Min => vec![
-                GraphDefaultInputSlot::new::<F32Type>("A".into(), 0.0),
-                GraphDefaultInputSlot::new::<F32Type>("B".into(), 0.0),
+                GraphDefaultInputSlot::new::<F32Type>("A".into()),
+                GraphDefaultInputSlot::new::<F32Type>("B".into()),
             ],
             ScalarMathNodeMode::Subtract => vec![
-                GraphDefaultInputSlot::new::<F32Type>("Minuend".into(), 0.0),
-                GraphDefaultInputSlot::new::<F32Type>("Subtrahend".into(), 0.0),
+                GraphDefaultInputSlot::new::<F32Type>("Minuend".into()),
+                GraphDefaultInputSlot::new::<F32Type>("Subtrahend".into()),
             ],
             ScalarMathNodeMode::Multiply => vec![
-                GraphDefaultInputSlot::new::<F32Type>("A".into(), 1.0),
-                GraphDefaultInputSlot::new::<F32Type>("B".into(), 1.0),
+                GraphDefaultInputSlot::new::<F32Type>("A".into()),
+                GraphDefaultInputSlot::new::<F32Type>("B".into()),
             ],
             ScalarMathNodeMode::Divide => vec![
-                GraphDefaultInputSlot::new::<F32Type>("Dividend".into(), 0.0),
-                GraphDefaultInputSlot::new::<F32Type>("Divisor".into(), 1.0),
+                GraphDefaultInputSlot::new::<F32Type>("Dividend".into()),
+                GraphDefaultInputSlot::new::<F32Type>("Divisor".into()),
             ],
             ScalarMathNodeMode::Pow => vec![
-                GraphDefaultInputSlot::new::<F32Type>("Base".into(), 1.0),
-                GraphDefaultInputSlot::new::<F32Type>("Exponent".into(), 2.0),
+                GraphDefaultInputSlot::new::<F32Type>("Base".into()),
+                GraphDefaultInputSlot::new::<F32Type>("Exponent".into()),
             ],
             ScalarMathNodeMode::Acosh => {
-                vec![GraphDefaultInputSlot::new::<F32Type>("X".into(), 1.0)]
+                vec![GraphDefaultInputSlot::new::<F32Type>("X".into())]
             }
             ScalarMathNodeMode::Ln
             | ScalarMathNodeMode::Log2
             | ScalarMathNodeMode::Sqrt
             | ScalarMathNodeMode::InverseSqrt => {
-                vec![GraphDefaultInputSlot::new::<F32Type>("X".into(), 1.0)]
+                vec![GraphDefaultInputSlot::new::<F32Type>("X".into())]
             }
             ScalarMathNodeMode::Acos
             | ScalarMathNodeMode::Asin
@@ -202,7 +201,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
             | ScalarMathNodeMode::Tan
             | ScalarMathNodeMode::Tanh
             | ScalarMathNodeMode::Trunc => {
-                vec![GraphDefaultInputSlot::new::<F32Type>("X".into(), 0.0)]
+                vec![GraphDefaultInputSlot::new::<F32Type>("X".into())]
             }
         }
     }
@@ -310,57 +309,6 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
                 ScalarMathNodeMode::Trunc => format!("trunc({})", input_a),
             }
         ))
-    }
-
-    fn run(
-        &self,
-        state: &Self::State,
-        mut ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        let a = ctx.get_input_value::<F32Type>(0)?;
-        let b = ctx.get_input_value::<F32Type>(1)?;
-        let _ = ctx.get_input_value::<F32Type>(2)?;
-
-        let result = match state {
-            ScalarMathNodeMode::Add => a + b,
-            ScalarMathNodeMode::Subtract => a - b,
-            ScalarMathNodeMode::Multiply => a * b,
-            ScalarMathNodeMode::Divide => a / b,
-            ScalarMathNodeMode::Acos => a.acos(),
-            ScalarMathNodeMode::Acosh => a.acosh(),
-            ScalarMathNodeMode::Asin => a.asin(),
-            ScalarMathNodeMode::Asinh => a.asinh(),
-            ScalarMathNodeMode::Atan => a.atan(),
-            ScalarMathNodeMode::Atanh => a.atanh(),
-            ScalarMathNodeMode::Ceil => a.ceil(),
-            ScalarMathNodeMode::Cos => a.cos(),
-            ScalarMathNodeMode::Cosh => a.cosh(),
-            ScalarMathNodeMode::Degrees => a.to_degrees(),
-            ScalarMathNodeMode::Exp => a.exp(),
-            ScalarMathNodeMode::Exp2 => a.exp2(),
-            ScalarMathNodeMode::Floor => a.floor(),
-            ScalarMathNodeMode::Fract => a.fract(),
-            ScalarMathNodeMode::InverseSqrt => 1.0 / a.sqrt(),
-            ScalarMathNodeMode::Ln => a.ln(),
-            ScalarMathNodeMode::Log2 => a.log2(),
-            ScalarMathNodeMode::Max => a.max(b),
-            ScalarMathNodeMode::Min => a.min(b),
-            ScalarMathNodeMode::Pow => a.powf(b),
-            ScalarMathNodeMode::Radians => a.to_radians(),
-            ScalarMathNodeMode::Round => a.round(),
-            ScalarMathNodeMode::Saturate => a.clamp(0.0, 1.0),
-            ScalarMathNodeMode::Sign => a.signum(),
-            ScalarMathNodeMode::Sin => a.sin(),
-            ScalarMathNodeMode::Sinh => a.sinh(),
-            ScalarMathNodeMode::Sqrt => a.sqrt(),
-            ScalarMathNodeMode::Tan => a.tan(),
-            ScalarMathNodeMode::Tanh => a.tanh(),
-            ScalarMathNodeMode::Trunc => a.trunc(),
-        };
-
-        ctx.set_output_value::<F32Type>(0, result)?;
-
-        Ok(())
     }
 }
 
@@ -488,58 +436,49 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
     ) -> Vec<GraphDefaultInputSlot> {
         match state {
             VectorMathNodeMode::Add | VectorMathNodeMode::Max | VectorMathNodeMode::Min => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("A".into(), Vec2::ZERO),
-                GraphDefaultInputSlot::new::<Vec2FType>("B".into(), Vec2::ZERO),
+                GraphDefaultInputSlot::new::<Vec2FType>("A".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("B".into()),
             ],
             VectorMathNodeMode::Subtract => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("Minuend".into(), Vec2::ZERO),
-                GraphDefaultInputSlot::new::<Vec2FType>("Subtrahend".into(), Vec2::ZERO),
+                GraphDefaultInputSlot::new::<Vec2FType>("Minuend".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("Subtrahend".into()),
             ],
             VectorMathNodeMode::Multiply => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("A".into(), Vec2::ONE),
-                GraphDefaultInputSlot::new::<Vec2FType>("B".into(), Vec2::ONE),
+                GraphDefaultInputSlot::new::<Vec2FType>("A".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("B".into()),
             ],
             VectorMathNodeMode::Divide => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("Dividend".into(), Vec2::ZERO),
-                GraphDefaultInputSlot::new::<Vec2FType>("Divisor".into(), Vec2::ONE),
+                GraphDefaultInputSlot::new::<Vec2FType>("Dividend".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("Divisor".into()),
             ],
             VectorMathNodeMode::Pow => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("Base".into(), Vec2::ONE),
-                GraphDefaultInputSlot::new::<Vec2FType>("Exponent".into(), Vec2::splat(2.0)),
+                GraphDefaultInputSlot::new::<Vec2FType>("Base".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("Exponent".into()),
             ],
             VectorMathNodeMode::Distance | VectorMathNodeMode::Dot => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("A".into(), Vec2::ZERO),
-                GraphDefaultInputSlot::new::<Vec2FType>("B".into(), Vec2::ZERO),
+                GraphDefaultInputSlot::new::<Vec2FType>("A".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("B".into()),
             ],
             VectorMathNodeMode::Reflect => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("Incident".into(), Vec2::new(1.0, -1.0)),
-                GraphDefaultInputSlot::new::<Vec2FType>("Normal".into(), Vec2::Y),
+                GraphDefaultInputSlot::new::<Vec2FType>("Incident".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("Normal".into()),
             ],
             VectorMathNodeMode::Mix => vec![
-                GraphDefaultInputSlot::new::<Vec2FType>("A".into(), Vec2::ZERO),
-                GraphDefaultInputSlot::new::<Vec2FType>("B".into(), Vec2::ONE),
-                GraphDefaultInputSlot::new::<Vec2FType>("Factor".into(), Vec2::splat(0.5)),
+                GraphDefaultInputSlot::new::<Vec2FType>("A".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("B".into()),
+                GraphDefaultInputSlot::new::<Vec2FType>("Factor".into()),
             ],
             VectorMathNodeMode::Acosh => {
-                vec![GraphDefaultInputSlot::new::<Vec2FType>(
-                    "X".into(),
-                    Vec2::ONE,
-                )]
+                vec![GraphDefaultInputSlot::new::<Vec2FType>("X".into())]
             }
             VectorMathNodeMode::Ln
             | VectorMathNodeMode::Log2
             | VectorMathNodeMode::Sqrt
             | VectorMathNodeMode::InverseSqrt => {
-                vec![GraphDefaultInputSlot::new::<Vec2FType>(
-                    "X".into(),
-                    Vec2::ONE,
-                )]
+                vec![GraphDefaultInputSlot::new::<Vec2FType>("X".into())]
             }
             VectorMathNodeMode::Length => {
-                vec![GraphDefaultInputSlot::new::<Vec2FType>(
-                    "Vector".into(),
-                    Vec2::ZERO,
-                )]
+                vec![GraphDefaultInputSlot::new::<Vec2FType>("Vector".into())]
             }
             VectorMathNodeMode::Acos
             | VectorMathNodeMode::Asin
@@ -563,10 +502,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
             | VectorMathNodeMode::Tan
             | VectorMathNodeMode::Tanh
             | VectorMathNodeMode::Trunc => {
-                vec![GraphDefaultInputSlot::new::<Vec2FType>(
-                    "X".into(),
-                    Vec2::ZERO,
-                )]
+                vec![GraphDefaultInputSlot::new::<Vec2FType>("X".into())]
             }
         }
     }
@@ -723,76 +659,6 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
             }
         ))
     }
-
-    fn run(
-        &self,
-        state: &Self::State,
-        mut ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        let a = ctx.get_input_value::<Vec2FType>(0)?;
-        let b = ctx.get_input_value::<Vec2FType>(1)?;
-        let c = ctx.get_input_value::<Vec2FType>(2)?;
-
-        match state {
-            VectorMathNodeMode::Dot => {
-                ctx.set_output_value::<F32Type>(0, a.dot(b))?;
-            }
-            VectorMathNodeMode::Distance => {
-                ctx.set_output_value::<F32Type>(0, a.distance(b))?;
-            }
-            VectorMathNodeMode::Length => {
-                ctx.set_output_value::<F32Type>(0, a.length())?;
-            }
-            _ => {
-                let result = match state {
-                    VectorMathNodeMode::Add => a + b,
-                    VectorMathNodeMode::Subtract => a - b,
-                    VectorMathNodeMode::Multiply => a * b,
-                    VectorMathNodeMode::Divide => a / b,
-                    VectorMathNodeMode::Acos => Vec2::new(a.x.acos(), a.y.acos()),
-                    VectorMathNodeMode::Acosh => Vec2::new(a.x.acosh(), a.y.acosh()),
-                    VectorMathNodeMode::Asin => Vec2::new(a.x.asin(), a.y.asin()),
-                    VectorMathNodeMode::Asinh => Vec2::new(a.x.asinh(), a.y.asinh()),
-                    VectorMathNodeMode::Atan => Vec2::new(a.x.atan(), a.y.atan()),
-                    VectorMathNodeMode::Atanh => Vec2::new(a.x.atanh(), a.y.atanh()),
-                    VectorMathNodeMode::Ceil => a.ceil(),
-                    VectorMathNodeMode::Cos => Vec2::new(a.x.cos(), a.y.cos()),
-                    VectorMathNodeMode::Cosh => Vec2::new(a.x.cosh(), a.y.cosh()),
-                    VectorMathNodeMode::Degrees => Vec2::new(a.x.to_degrees(), a.y.to_degrees()),
-                    VectorMathNodeMode::Exp => Vec2::new(a.x.exp(), a.y.exp()),
-                    VectorMathNodeMode::Exp2 => Vec2::new(a.x.exp2(), a.y.exp2()),
-                    VectorMathNodeMode::Floor => a.floor(),
-                    VectorMathNodeMode::Fract => a.fract(),
-                    VectorMathNodeMode::InverseSqrt => {
-                        Vec2::new(1.0 / a.x.sqrt(), 1.0 / a.y.sqrt())
-                    }
-                    VectorMathNodeMode::Ln => Vec2::new(a.x.ln(), a.y.ln()),
-                    VectorMathNodeMode::Log2 => Vec2::new(a.x.log2(), a.y.log2()),
-                    VectorMathNodeMode::Max => a.max(b),
-                    VectorMathNodeMode::Min => a.min(b),
-                    VectorMathNodeMode::Mix => a.lerp(b, c.x),
-                    VectorMathNodeMode::Pow => Vec2::new(a.x.powf(b.x), a.y.powf(b.y)),
-                    VectorMathNodeMode::Radians => Vec2::new(a.x.to_radians(), a.y.to_radians()),
-                    VectorMathNodeMode::Reflect => a - b * 2.0 * a.dot(b),
-                    VectorMathNodeMode::Round => a.round(),
-                    VectorMathNodeMode::Saturate => a.clamp(Vec2::ZERO, Vec2::ONE),
-                    VectorMathNodeMode::Sign => Vec2::new(a.x.signum(), a.y.signum()),
-                    VectorMathNodeMode::Sin => Vec2::new(a.x.sin(), a.y.sin()),
-                    VectorMathNodeMode::Sinh => Vec2::new(a.x.sinh(), a.y.sinh()),
-                    VectorMathNodeMode::Sqrt => Vec2::new(a.x.sqrt(), a.y.sqrt()),
-                    VectorMathNodeMode::Tan => Vec2::new(a.x.tan(), a.y.tan()),
-                    VectorMathNodeMode::Tanh => Vec2::new(a.x.tanh(), a.y.tanh()),
-                    VectorMathNodeMode::Trunc => a.trunc(),
-                    VectorMathNodeMode::Dot
-                    | VectorMathNodeMode::Distance
-                    | VectorMathNodeMode::Length => unreachable!(),
-                };
-                ctx.set_output_value::<Vec2FType>(0, result)?;
-            }
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -849,13 +715,13 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
     ) -> Vec<GraphDefaultInputSlot> {
         match state {
             RectMathNodeMode::Union | RectMathNodeMode::Intersection => vec![
-                GraphDefaultInputSlot::new::<RectType>("A".into(), Rect::EMPTY),
-                GraphDefaultInputSlot::new::<RectType>("B".into(), Rect::EMPTY),
+                GraphDefaultInputSlot::new::<RectType>("A".into()),
+                GraphDefaultInputSlot::new::<RectType>("B".into()),
             ],
             RectMathNodeMode::Inflate | RectMathNodeMode::Shrink => {
                 vec![
-                    GraphDefaultInputSlot::new::<RectType>("Rect".into(), Rect::EMPTY),
-                    GraphDefaultInputSlot::new::<Vec2FType>("Amount".into(), Vec2::ZERO),
+                    GraphDefaultInputSlot::new::<RectType>("Rect".into()),
+                    GraphDefaultInputSlot::new::<Vec2FType>("Amount".into()),
                 ]
             }
         }
@@ -965,51 +831,6 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
             }
         ))
     }
-
-    fn run(
-        &self,
-        state: &Self::State,
-        mut ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        let result = match state {
-            RectMathNodeMode::Union => {
-                let a = ctx.get_input_value::<RectType>(0)?;
-                let b = ctx.get_input_value::<RectType>(1)?;
-                a.union(b)
-            }
-            RectMathNodeMode::Intersection => {
-                let a = ctx.get_input_value::<RectType>(0)?;
-                let b = ctx.get_input_value::<RectType>(1)?;
-                a.intersect(b)
-            }
-            RectMathNodeMode::Inflate => {
-                let rect = ctx.get_input_value::<RectType>(0)?;
-                let amount = ctx.get_input_value::<Vec2FType>(1)?;
-                let min = rect.min - amount;
-                let max = rect.max + amount;
-                if min.x > max.x || min.y > max.y {
-                    Rect::EMPTY
-                } else {
-                    Rect { min, max }
-                }
-            }
-            RectMathNodeMode::Shrink => {
-                let rect = ctx.get_input_value::<RectType>(0)?;
-                let amount = ctx.get_input_value::<Vec2FType>(1)?;
-                let min = rect.min + amount;
-                let max = rect.max - amount;
-                if min.x > max.x || min.y > max.y {
-                    Rect::EMPTY
-                } else {
-                    Rect { min, max }
-                }
-            }
-        };
-
-        ctx.set_output_value::<RectType>(0, result)?;
-
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1068,13 +889,6 @@ let {} = {}.stroke_begin;
             now, accessor, stroke_begin, accessor
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let time = ctx.data.time();
-        ctx.set_output_value::<F32Type>(0, time.now)?;
-        ctx.set_output_value::<F32Type>(1, time.stroke_begin)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1095,9 +909,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<F32Type>("Value".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("Min".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("Max".into(), 1.0),
+            GraphDefaultInputSlot::new::<F32Type>("Value".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Min".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Max".into()),
         ]
     }
 
@@ -1122,14 +936,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ClampNode {
             output, input_value, input_min, input_max
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let value = ctx.get_input_value::<F32Type>(0)?;
-        let min = ctx.get_input_value::<F32Type>(1)?;
-        let max = ctx.get_input_value::<F32Type>(2)?;
-        ctx.set_output_value::<F32Type>(0, value.clamp(min, max))?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1150,8 +956,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<F32Type>("Edge".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("X".into(), 0.0),
+            GraphDefaultInputSlot::new::<F32Type>("Edge".into()),
+            GraphDefaultInputSlot::new::<F32Type>("X".into()),
         ]
     }
 
@@ -1175,13 +981,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for StepNode {
             output, input_edge, input_x
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let edge = ctx.get_input_value::<F32Type>(0)?;
-        let x = ctx.get_input_value::<F32Type>(1)?;
-        ctx.set_output_value::<F32Type>(0, if x < edge { 0.0 } else { 1.0 })?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1202,9 +1001,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<F32Type>("Edge0".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("Edge1".into(), 1.0),
-            GraphDefaultInputSlot::new::<F32Type>("X".into(), 0.0),
+            GraphDefaultInputSlot::new::<F32Type>("Edge0".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Edge1".into()),
+            GraphDefaultInputSlot::new::<F32Type>("X".into()),
         ]
     }
 
@@ -1229,15 +1028,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SmoothStepNode {
             output, input_edge0, input_edge1, input_x
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let edge0 = ctx.get_input_value::<F32Type>(0)?;
-        let edge1 = ctx.get_input_value::<F32Type>(1)?;
-        let x = ctx.get_input_value::<F32Type>(2)?;
-        let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-        ctx.set_output_value::<F32Type>(0, t * t * (3.0 - 2.0 * t))?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1257,10 +1047,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<Vec2FType>(
-            "Vector".into(),
-            Vec2::ZERO,
-        )]
+        vec![GraphDefaultInputSlot::new::<Vec2FType>("Vector".into())]
     }
 
     fn create_outputs(
@@ -1286,13 +1073,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitComponentsNode {
             output_x, input_vector, output_y, input_vector
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let v = ctx.get_input_value::<Vec2FType>(0)?;
-        ctx.set_output_value::<F32Type>(0, v.x)?;
-        ctx.set_output_value::<F32Type>(1, v.y)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1313,8 +1093,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<F32Type>("X".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("Y".into(), 0.0),
+            GraphDefaultInputSlot::new::<F32Type>("X".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Y".into()),
         ]
     }
 
@@ -1338,13 +1118,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineComponentsNode {
             output_vector, input_x, input_y
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let x = ctx.get_input_value::<F32Type>(0)?;
-        let y = ctx.get_input_value::<F32Type>(1)?;
-        ctx.set_output_value::<Vec2FType>(0, Vec2::new(x, y))?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1365,10 +1138,10 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<F32Type>("R".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("G".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("B".into(), 0.0),
-            GraphDefaultInputSlot::new::<F32Type>("A".into(), 1.0),
+            GraphDefaultInputSlot::new::<F32Type>("R".into()),
+            GraphDefaultInputSlot::new::<F32Type>("G".into()),
+            GraphDefaultInputSlot::new::<F32Type>("B".into()),
+            GraphDefaultInputSlot::new::<F32Type>("A".into()),
         ]
     }
 
@@ -1394,15 +1167,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CombineColorComponentsN
             output_color, input_r, input_g, input_b, input_a
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let r = ctx.get_input_value::<F32Type>(0)?;
-        let g = ctx.get_input_value::<F32Type>(1)?;
-        let b = ctx.get_input_value::<F32Type>(2)?;
-        let a = ctx.get_input_value::<F32Type>(3)?;
-        ctx.set_output_value::<ColorType>(0, Vec4::new(r, g, b, a))?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1422,10 +1186,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<ColorType>(
-            "Color".into(),
-            Vec4::ZERO,
-        )]
+        vec![GraphDefaultInputSlot::new::<ColorType>("Color".into())]
     }
 
     fn create_outputs(
@@ -1462,15 +1223,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SplitColorComponentsNod
             input_color
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let c = ctx.get_input_value::<ColorType>(0)?;
-        ctx.set_output_value::<F32Type>(0, c.x)?;
-        ctx.set_output_value::<F32Type>(1, c.y)?;
-        ctx.set_output_value::<F32Type>(2, c.z)?;
-        ctx.set_output_value::<F32Type>(3, c.w)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1491,8 +1243,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for GetPixelColorNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<TextureType>("Texture".into(), TextureReference::NULL),
-            GraphDefaultInputSlot::new::<Vec2FType>("Position".into(), Vec2::ZERO),
+            GraphDefaultInputSlot::new::<TextureType>("Texture".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Position".into()),
         ]
     }
 
@@ -1618,21 +1370,6 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         let index = ctx.texture_usage.use_texture(*state);
         Ok(format!("let {} = {}u;\n", ctx.get_output(0)?, index))
     }
-
-    fn run(
-        &self,
-        state: &Self::State,
-        mut ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        ctx.set_output_value::<TextureType>(
-            0,
-            TextureReference {
-                local_index: 0, // We are not using local index on CPU, so this can be 0.
-                external_id: *state,
-            },
-        )?;
-        Ok(())
-    }
 }
 
 // TODO: Mixing in different color spaces.
@@ -1654,9 +1391,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<ColorType>("Color A".into(), Vec4::ZERO),
-            GraphDefaultInputSlot::new::<ColorType>("Color B".into(), Vec4::ZERO),
-            GraphDefaultInputSlot::new::<F32Type>("Factor".into(), 0.0),
+            GraphDefaultInputSlot::new::<ColorType>("Color A".into()),
+            GraphDefaultInputSlot::new::<ColorType>("Color B".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Factor".into()),
         ]
     }
 
@@ -1681,14 +1418,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for ColorMixNode {
             output, input_color_a, input_color_b, input_factor
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let a = ctx.get_input_value::<ColorType>(0)?;
-        let b = ctx.get_input_value::<ColorType>(1)?;
-        let t = ctx.get_input_value::<F32Type>(2)?;
-        ctx.set_output_value::<ColorType>(0, a.lerp(b, t))?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1708,10 +1437,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<TextureType>(
-            "Texture".into(),
-            TextureReference::NULL,
-        )]
+        vec![GraphDefaultInputSlot::new::<TextureType>("Texture".into())]
     }
 
     fn create_outputs(
@@ -1732,21 +1458,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for TextureSizeNode {
             "let {} = vec2f(texture_bounds[{}].max - texture_bounds[{}].min);\n",
             output_size, input_texture, input_texture
         ))
-    }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let reference = ctx.get_input_value::<TextureType>(0)?;
-        let texture_object = ctx
-            .resources
-            .textures
-            .get(&reference.external_id)
-            .expect("Texture not found");
-        let texture = texture_object.handle.get().expect("Unable to load texture");
-        ctx.set_output_value::<Vec2FType>(
-            0,
-            Vec2::new(texture.image.width() as f32, texture.image.height() as f32),
-        )?;
-        Ok(())
     }
 }
 
@@ -1818,7 +1529,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
             .inputs
             .iter()
             .map(|(_, var)| {
-                GraphDefaultInputSlot::new_boxed_default(
+                GraphDefaultInputSlot::new_boxed(
                     var.identifier().to_string(),
                     dyn_clone::clone_box(var.ty()),
                 )
@@ -1945,39 +1656,6 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         }
 
         Ok(code)
-    }
-
-    fn run(
-        &self,
-        state: &Self::State,
-        ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        let Some(id) = state.id.as_ref() else {
-            return Ok(());
-        };
-        let Some(func) = ctx.resources.functions.get(id) else {
-            return Ok(());
-        };
-
-        let input_values = (0..ctx.inputs.len()).try_fold(
-            Vec::with_capacity(ctx.inputs.len()),
-            |mut acc, i| {
-                acc.push(ctx.get_input_value_raw(i)?.clone());
-                Ok::<_, GraphNodeRunError>(acc)
-            },
-        )?;
-
-        let output_values = func
-            .graph
-            .read(ctx.cx)
-            .run(ctx.data, input_values, ctx.cx)
-            .map_err(|e| GraphNodeRunError::Custom(e.into()))?;
-
-        for (slot_id, output_value) in ctx.outputs.iter().zip(output_values) {
-            ctx.output_storage.insert(*slot_id, output_value);
-        }
-
-        Ok(())
     }
 }
 
@@ -2160,7 +1838,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
             return vec![];
         };
 
-        vec![GraphDefaultInputSlot::new_boxed_default(
+        vec![GraphDefaultInputSlot::new_boxed(
             state.name.clone(),
             ty,
         )]
@@ -2423,21 +2101,6 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         });
         ctx.render_all_slots_with_header(Select::new(&select_state).small())
     }
-
-    fn run(
-        &self,
-        state: &Self::State,
-        ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        let id = state
-            .as_ref()
-            .ok_or(anyhow::anyhow!("No external literal selected"))?;
-        let var = ctx.resources.external_vars.get(id).ok_or(anyhow::anyhow!(
-            "Selected external literal not found in storage"
-        ))?;
-        ctx.output_storage.insert(ctx.outputs[0], var.value.clone());
-        Ok(())
-    }
 }
 
 pub const CUBIC_CURVE_MAX_CONTROL_POINTS: usize = 16;
@@ -2484,7 +2147,7 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         _: &Self::State,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<F32Type>("X".into(), 0.0)]
+        vec![GraphDefaultInputSlot::new::<F32Type>("X".into())]
     }
 
     fn create_outputs(
@@ -2623,17 +2286,6 @@ let {} = package::render::math::sample_cubic_curve(
             ctx.get_input(0)?
         ))
     }
-
-    fn run(
-        &self,
-        state: &Self::State,
-        mut ctx: GraphNodeRunContext<'_, Data>,
-    ) -> Result<(), GraphNodeRunError> {
-        let x = ctx.get_input_value::<F32Type>(0)?;
-        let y = CubicCurve::new(state.control_points.clone()).sample(x);
-        ctx.set_output_value::<F32Type>(0, y)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -2653,7 +2305,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<F32Type>("Seed".into(), 0.0)]
+        vec![GraphDefaultInputSlot::new::<F32Type>("Seed".into())]
     }
 
     fn create_outputs(
@@ -2677,13 +2329,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
             ctx.get_output(1)?,
             ctx.get_input(0)?
         ))
-    }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let seed = ctx.get_input_value::<F32Type>(0)?;
-        ctx.set_output_value::<F32Type>(0, Self::hash11(seed))?;
-        ctx.set_output_value::<Vec2FType>(1, Self::hash21(seed))?;
-        Ok(())
     }
 }
 

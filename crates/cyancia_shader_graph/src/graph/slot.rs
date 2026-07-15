@@ -51,33 +51,19 @@ impl GraphSlots {
 
 pub struct GraphDefaultInputSlot {
     pub name: String,
-    pub value: GraphLiteral,
+    pub ty: Box<dyn ErasedGraphValueType>,
 }
 
 impl GraphDefaultInputSlot {
-    pub fn new<T: GraphValueType + Default>(name: String, value: T::AssociatedLiteralType) -> Self {
+    pub fn new<T: GraphValueType + Default>(name: String) -> Self {
         Self {
             name,
-            value: GraphLiteral::new::<T>(value),
+            ty: Box::new(T::default()),
         }
     }
 
-    pub fn new_boxed_default(name: String, ty: Box<dyn ErasedGraphValueType>) -> Self {
-        Self {
-            name,
-            value: GraphLiteral::new_boxed(ty.default_literal(), ty),
-        }
-    }
-
-    pub fn new_non_default<T: GraphValueType>(
-        name: String,
-        value: T::AssociatedLiteralType,
-        ty: T,
-    ) -> Self {
-        Self {
-            name,
-            value: GraphLiteral::new_non_default::<T>(value, ty),
-        }
+    pub fn new_boxed(name: String, ty: Box<dyn ErasedGraphValueType>) -> Self {
+        Self { name, ty }
     }
 }
 

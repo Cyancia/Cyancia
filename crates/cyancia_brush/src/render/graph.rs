@@ -1,25 +1,22 @@
 use std::fmt;
 
-use bevy_math::{IRect, Rect};
+use bevy_math::IRect;
 use cyancia_image::blend_modes::BlendMode;
-use cyancia_math::{mat3::Mat3ScaleRotattionTranslationWithAnchor, rect_transform::RectTransform};
 use cyancia_shader_graph::{
     graph::{
         GraphData,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeRenderContext, GraphNodeRunContext, GraphNodeRunError,
-            GraphNodeUpdateSignatureContext, StatelessCommonGraphNode, stateless,
+            GraphNodeRenderContext, GraphNodeUpdateSignatureContext, StatelessCommonGraphNode, stateless,
         },
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
     wgsl_std::{
         nodes::{GraphDataWithTime, GraphTimes},
-        types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
+        types::{ColorType, F32Type, RectType, TextureType, Vec2FType},
     },
 };
 use cyancia_utils::random_oklch;
-use glam::{Mat3, Vec2, Vec4};
 use gpui::{AnyElement, App, AppContext, Entity, Rgba, SharedString};
 use gpui_component::{
     IndexPath, Sizable,
@@ -130,14 +127,6 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPositionNode {
             ctx.get_output(0)?
         ))
     }
-
-    fn run(
-        &self,
-        mut ctx: GraphNodeRunContext<'_, BrushGraphData>,
-    ) -> Result<(), GraphNodeRunError> {
-        ctx.set_output_value::<Vec2FType>(0, ctx.data.pen_input.position)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -179,15 +168,6 @@ impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))
-    }
-
-    fn run(
-        &self,
-        mut ctx: GraphNodeRunContext<'_, BrushGraphData>,
-    ) -> Result<(), GraphNodeRunError> {
-        ctx.set_output_value::<F32Type>(0, ctx.data.pen_input.draw_direction_angle)?;
-        ctx.set_output_value::<Vec2FType>(1, ctx.data.pen_input.draw_direction_vec)?;
-        Ok(())
     }
 }
 
@@ -244,12 +224,12 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<ColorType>("Color".into(), Vec4::ZERO),
-            GraphDefaultInputSlot::new::<TextureType>("Mask".into(), TextureReference::NULL),
-            GraphDefaultInputSlot::new::<Vec2FType>("Translation".into(), Vec2::ZERO),
-            GraphDefaultInputSlot::new::<F32Type>("Rotation".into(), 0.0),
-            GraphDefaultInputSlot::new::<Vec2FType>("Scale".into(), Vec2::ONE),
-            GraphDefaultInputSlot::new::<Vec2FType>("Anchor".into(), Vec2::splat(0.5)),
+            GraphDefaultInputSlot::new::<ColorType>("Color".into()),
+            GraphDefaultInputSlot::new::<TextureType>("Mask".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Translation".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Rotation".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Scale".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Anchor".into()),
         ]
     }
 
@@ -291,36 +271,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinMaskNode {
             anchor,
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let mask = ctx.get_input_value::<TextureType>(1)?;
-        let translation = ctx.get_input_value::<Vec2FType>(2)?;
-        let rotation = ctx.get_input_value::<F32Type>(3)?;
-        let scale = ctx.get_input_value::<Vec2FType>(4)?;
-        let anchor = ctx.get_input_value::<Vec2FType>(5)?;
-        let texture = ctx
-            .resources
-            .textures
-            .get(&mask.external_id)
-            .expect("Texture not found");
-        let img = &texture.handle.get().unwrap().image;
-        let size = Vec2::new(img.width() as f32, img.height() as f32);
-        let bounds = Rect {
-            min: Vec2::ZERO,
-            max: size,
-        };
-
-        let mat = Mat3::from_scale_angle_translation_with_anchor(
-            scale,
-            rotation,
-            translation,
-            anchor * size,
-        );
-        let bounds = bounds.transformed(&mat);
-
-        ctx.set_output_value::<RectType>(1, bounds)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -341,8 +291,8 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinBoundsNode 
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<ColorType>("Color".into(), Vec4::ZERO),
-            GraphDefaultInputSlot::new::<RectType>("Bounds".into(), Rect::default()),
+            GraphDefaultInputSlot::new::<ColorType>("Color".into()),
+            GraphDefaultInputSlot::new::<RectType>("Bounds".into()),
         ]
     }
 
@@ -372,13 +322,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for FilterWithinBoundsNode 
             bounds
         ))
     }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let bounds = ctx.get_input_value::<RectType>(1)?;
-        ctx.set_output_value::<ColorType>(0, Vec4::ZERO)?;
-        ctx.set_output_value::<RectType>(1, bounds)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -400,7 +343,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputColorNode {
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<ColorType>(
             "Color".into(),
-            Vec4::ZERO,
         )]
     }
 
@@ -419,10 +361,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputColorNode {
             "set_output_color(pixel_pos, {});\n",
             ctx.get_input(0)?
         ))
-    }
-
-    fn run(&self, _: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        Ok(())
     }
 }
 
@@ -445,7 +383,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<RectType>(
             "Bounds".into(),
-            Rect::default(),
         )]
     }
 
@@ -465,10 +402,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("set_output_pixel_bounds({});", ctx.get_input(0)?))
-    }
-
-    fn run(&self, _: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        Ok(())
     }
 }
 
@@ -533,11 +466,11 @@ impl<Data: GraphData> GraphNode<Data> for PasteTextureNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<TextureType>("Texture".into(), TextureReference::NULL),
-            GraphDefaultInputSlot::new::<Vec2FType>("Translation".into(), Vec2::ZERO),
-            GraphDefaultInputSlot::new::<F32Type>("Rotation".into(), 0.0),
-            GraphDefaultInputSlot::new::<Vec2FType>("Scale".into(), Vec2::ONE),
-            GraphDefaultInputSlot::new::<Vec2FType>("Anchor".into(), Vec2::splat(0.5)),
+            GraphDefaultInputSlot::new::<TextureType>("Texture".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Translation".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Rotation".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Scale".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Anchor".into()),
         ]
     }
 
@@ -638,7 +571,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CurrentPixelColorNode {
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(
             "Position".into(),
-            Vec2::ZERO,
         )]
     }
 
@@ -680,7 +612,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for LayerPixelColorNode {
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(
             "Position".into(),
-            Vec2::ZERO,
         )]
     }
 
@@ -734,8 +665,8 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<ColorType>("Src Color".into(), Vec4::ZERO),
-            GraphDefaultInputSlot::new::<ColorType>("Dst Color".into(), Vec4::ZERO),
+            GraphDefaultInputSlot::new::<ColorType>("Src Color".into()),
+            GraphDefaultInputSlot::new::<ColorType>("Dst Color".into()),
         ]
     }
 
@@ -851,20 +782,6 @@ impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
             ctx.get_output(0)?
         ))
     }
-
-    fn run(
-        &self,
-        mut ctx: GraphNodeRunContext<'_, BrushGraphPostprocessData>,
-    ) -> Result<(), GraphNodeRunError> {
-        ctx.set_output_value::<RectType>(
-            0,
-            Rect {
-                min: ctx.data.accumulated_pixel_bounds.min.as_vec2(),
-                max: ctx.data.accumulated_pixel_bounds.max.as_vec2(),
-            },
-        )?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -885,9 +802,9 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<Vec2FType>("Sample Position".into(), Vec2::ZERO),
-            GraphDefaultInputSlot::new::<Vec2FType>("Center".into(), Vec2::ZERO),
-            GraphDefaultInputSlot::new::<Vec2FType>("Radii".into(), Vec2::ZERO),
+            GraphDefaultInputSlot::new::<Vec2FType>("Sample Position".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Center".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("Radii".into()),
         ]
     }
 
@@ -914,21 +831,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))
-    }
-
-    fn run(&self, mut ctx: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        let center = ctx.get_input_value::<Vec2FType>(1)?;
-        let radii = ctx.get_input_value::<Vec2FType>(2)?;
-
-        // Mask value in slot 0 is not evaluated on cpu.
-        ctx.set_output_value::<RectType>(
-            1,
-            Rect {
-                min: center - radii,
-                max: center + radii,
-            },
-        )?;
-        Ok(())
     }
 }
 
@@ -963,8 +865,8 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithInputNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<ColorType>("Color".into(), Vec4::ZERO),
-            GraphDefaultInputSlot::new::<F32Type>("Opacity".into(), 1.0),
+            GraphDefaultInputSlot::new::<ColorType>("Color".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Opacity".into()),
         ]
     }
 
@@ -1071,8 +973,8 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![
-            GraphDefaultInputSlot::new::<ColorType>("Color".into(), Vec4::ZERO),
-            GraphDefaultInputSlot::new::<F32Type>("Opacity".into(), 1.0),
+            GraphDefaultInputSlot::new::<ColorType>("Color".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Opacity".into()),
         ]
     }
 
@@ -1169,7 +1071,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputSpacingNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<F32Type>("Spacing".into(), 0.0)]
+        vec![GraphDefaultInputSlot::new::<F32Type>("Spacing".into())]
     }
 
     fn create_outputs(
@@ -1184,10 +1086,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputSpacingNode {
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("return {};\n", ctx.get_input(0)?))
-    }
-
-    fn run(&self, _: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        Ok(())
     }
 }
 
@@ -1233,15 +1131,6 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for PenPositionsNode {
             ctx.get_output(0)?,
             ctx.get_output(1)?,
         ))
-    }
-
-    fn run(
-        &self,
-        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
-    ) -> Result<(), GraphNodeRunError> {
-        ctx.set_output_value::<Vec2FType>(0, ctx.data.lhs.pen_input.position)?;
-        ctx.set_output_value::<Vec2FType>(1, ctx.data.rhs.pen_input.position)?;
-        Ok(())
     }
 }
 
@@ -1294,17 +1183,6 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for DrawDirectionsNode {
             ctx.get_output(3)?,
         ))
     }
-
-    fn run(
-        &self,
-        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
-    ) -> Result<(), GraphNodeRunError> {
-        ctx.set_output_value::<F32Type>(0, ctx.data.lhs.pen_input.draw_direction_angle)?;
-        ctx.set_output_value::<F32Type>(1, ctx.data.rhs.pen_input.draw_direction_angle)?;
-        ctx.set_output_value::<Vec2FType>(2, ctx.data.lhs.pen_input.draw_direction_vec)?;
-        ctx.set_output_value::<Vec2FType>(3, ctx.data.rhs.pen_input.draw_direction_vec)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1356,17 +1234,6 @@ impl StatelessCommonGraphNode<BrushGraphDataTuple> for TimesNode {
             ctx.get_output(3)?,
         ))
     }
-
-    fn run(
-        &self,
-        mut ctx: GraphNodeRunContext<'_, BrushGraphDataTuple>,
-    ) -> Result<(), GraphNodeRunError> {
-        ctx.set_output_value::<F32Type>(0, ctx.data.lhs.pen_input.time.now)?;
-        ctx.set_output_value::<F32Type>(1, ctx.data.lhs.pen_input.time.stroke_begin)?;
-        ctx.set_output_value::<F32Type>(2, ctx.data.rhs.pen_input.time.now)?;
-        ctx.set_output_value::<F32Type>(3, ctx.data.rhs.pen_input.time.stroke_begin)?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Clone)]
@@ -1392,7 +1259,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputRequiredSpacingNo
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<F32Type>(
             "Required Spacing".into(),
-            0.0,
         )]
     }
 
@@ -1408,10 +1274,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputRequiredSpacingNo
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!("return {};\n", ctx.get_input(0)?))
-    }
-
-    fn run(&self, _: GraphNodeRunContext<'_, Data>) -> Result<(), GraphNodeRunError> {
-        Ok(())
     }
 }
 
@@ -1434,7 +1296,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SelectionMaskNode {
     ) -> Vec<GraphDefaultInputSlot> {
         vec![GraphDefaultInputSlot::new::<Vec2FType>(
             "Position".into(),
-            Vec2::ZERO,
         )]
     }
 

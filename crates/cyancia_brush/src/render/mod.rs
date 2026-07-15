@@ -639,7 +639,12 @@ async fn brush_renderer_worker_main(
                 }
 
                 let result = &intermediate_buffers[round as usize % 2];
-                // dbg!(result.iter_tile_indices().collect::<Vec<_>>());
+                dbg!(
+                    result
+                        .iter_tile_indices()
+                        .map(|i| i.to_string())
+                        .collect::<String>()
+                );
 
                 cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
                     overriders.insert_overrider(
@@ -671,7 +676,7 @@ async fn brush_renderer_worker_main(
     dbg!(result.is_some());
 }
 
-async fn postprocess_stroke<'a>(
+async fn postprocess_stroke(
     device: &Device,
     queue: &Queue,
     target_layer: &LayerBinding,

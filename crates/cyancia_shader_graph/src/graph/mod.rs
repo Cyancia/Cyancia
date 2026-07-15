@@ -12,9 +12,9 @@ use crate::graph::{
     external::GraphExternalVariableStorage,
     function::GraphFunctionStorage,
     node::{
-        ContextualGraphNodeCodeGenError, ContextualGraphNodeRunError, ErasedGraphNode, GraphNode,
+        ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode,
         GraphNodeCodeGenContext, GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId,
-        GraphNodeRunContext, GraphNodeUpdateSignatureContext, StatefulGraphNode,
+        GraphNodeUpdateSignatureContext, StatefulGraphNode,
     },
     slot::{
         GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
@@ -398,7 +398,7 @@ impl<Data: GraphData> Graph<Data> {
                 };
 
                 if old_input_slot.name == new_input_def.name
-                    && old_input_slot.data.ty().name() == new_input_def.value.ty().name()
+                    && old_input_slot.data.ty().name() == new_input_def.ty.name()
                 {
                     new_input_ids.push(old_input_id);
                     old_input_ids.swap_remove(i);
@@ -415,7 +415,10 @@ impl<Data: GraphData> Graph<Data> {
             let new_input_slot = GraphInputSlotData {
                 node_id,
                 name: new_input_def.name,
-                data: new_input_def.value,
+                data: GraphLiteral::new_boxed(
+                    new_input_def.ty.default_literal(),
+                    dyn_clone::clone_box(&*new_input_def.ty),
+                ),
                 connected: None,
             };
             self.slots.inputs.insert(new_input_id, new_input_slot);
@@ -582,90 +585,6 @@ impl<Data: GraphData> Graph<Data> {
         Ok((graph_output_idents, code))
     }
 
-    pub fn run(
-        &self,
-        data: &Data,
-        graph_input_values: Vec<GraphLiteral>,
-        cx: &App,
-    ) -> Result<Vec<GraphLiteral>, GraphRunError> {
-        if self.cached_run_order.read().is_none() {
-            self.update_run_order_cache();
-        }
-        if self.cached_signature.read().is_none() {
-            self.update_signature_cache();
-        }
-
-        let run_order = self.cached_run_order.read();
-        let signature = self.cached_signature.read();
-
-        let run_order = run_order.as_ref().unwrap();
-        let signature = signature.as_ref().unwrap();
-        if signature.inputs.len() != graph_input_values.len() {
-            return Err(GraphRunError::IncorrectInputParams {
-                expected: signature.inputs.len(),
-                found: graph_input_values.len(),
-            });
-        }
-
-        let mut output_storage = HashMap::new();
-        for (slot_id, value) in signature.inputs.keys().zip(graph_input_values) {
-            output_storage.insert(*slot_id, value);
-        }
-
-        for node_id in run_order.iter() {
-            let node = self.nodes.get(node_id).unwrap();
-
-            let context = GraphNodeRunContext {
-                data,
-                inputs: &node.inputs,
-                outputs: &node.outputs,
-                graph_slots: &self.slots,
-                output_storage: &mut output_storage,
-                resources: &self.resources,
-                type_registry: &self.type_registry,
-                cx,
-            };
-
-            match node.data.run(context) {
-                Ok(()) => {}
-                Err(_) => {
-                    // log::error!(
-                    //     "Error running node {:?} ({:?}): {:?}",
-                    //     node_id,
-                    //     node.data.name(),
-                    //     err
-                    // );
-                    // return Err(GraphRunError::NodeRunError(ContextualGraphNodeRunError {
-                    //     node_id: *node_id,
-                    //     node_title: node.data.name().to_string(),
-                    //     err,
-                    // }));
-                    // TODO Some nodes are only ran on GPU and only available on GPU.
-                }
-            }
-        }
-
-        let graph_output_values = signature
-            .outputs
-            .keys()
-            .filter_map(|input_slot_id| {
-                let input_slot = self.slots.inputs.get(input_slot_id)?;
-                if let Some(connected_output_id) = input_slot.connected {
-                    output_storage.get(&connected_output_id).cloned()
-                } else {
-                    Some(input_slot.data.clone())
-                }
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            graph_output_values.len(),
-            signature.outputs.len(),
-            "This should never fail."
-        );
-
-        Ok(graph_output_values)
-    }
-
     pub fn resources(&self) -> &GraphResources<Data> {
         &self.resources
     }
@@ -688,7 +607,10 @@ fn create_input_slots(
             GraphInputSlotData {
                 node_id,
                 name: slot.name,
-                data: slot.value,
+                data: GraphLiteral::new_boxed(
+                    slot.ty.default_literal(),
+                    dyn_clone::clone_box(&*slot.ty),
+                ),
                 connected: None,
             },
         );
@@ -763,16 +685,6 @@ pub enum GraphCompileError {
     #[error("Expected {expected} input(s), but found {found}")]
     IncorrectInputParams { expected: usize, found: usize },
     #[error(transparent)]
-    CustomError(anyhow::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum GraphRunError {
-    #[error("{0}")]
-    NodeRunError(ContextualGraphNodeRunError),
-    #[error("Expected {expected} input(s), but found {found}")]
-    IncorrectInputParams { expected: usize, found: usize },
-    #[error("{0}")]
     CustomError(anyhow::Error),
 }
 
