@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/cyancia_abr",
+    "crates/cyancia_abr_derive",
     "crates/cyancia_actions",
     "crates/cyancia_app",
     "crates/cyancia_assets",
@@ -36,6 +37,7 @@ too_many_arguments = "allow"
 
 [workspace.dependencies]
 cyancia_abr = { version = "0.1.0", path = "crates/cyancia_abr" }
+cyancia_abr_derive = { version = "0.1.0", path = "crates/cyancia_abr_derive" }
 cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
 cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
 cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
@@ -93,6 +95,7 @@ parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 parse-display = "0.11"
 path-clean = "1"
 proc-macro2 = "1"
+proc-macro-crate = "3.5"
 quote = "1"
 raw-window-handle = { version = "0.6", features = ["std"] }
 rayon = "1"

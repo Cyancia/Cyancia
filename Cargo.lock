@@ -1642,7 +1642,18 @@ name = "cyancia_abr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cyancia_abr_derive",
  "uuid",
+]
+
+[[package]]
+name = "cyancia_abr_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

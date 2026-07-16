@@ -1,17 +1,27 @@
 mod cursor;
+mod descriptor;
 mod header;
 mod pattern;
 mod sample;
 
 use anyhow::{Result, bail};
-use cursor::Cursor;
+use descriptor::BrushDescriptorRoot;
 
+pub use cursor::Cursor;
+pub use cyancia_abr_derive::{AbrClass, AbrEnum, AbrIntegerEnum, AbrObject};
+pub use descriptor::{
+    AbrClass, AbrEnum, AbrIntegerEnum, AbrObject, AbrValue, BlendMode, BrushGroup, BrushPreset,
+    BrushTip, ComputedBrushTip, DBrushTip, DescriptorUnit, DualBrush, DynamicsControl,
+    EraserToolOptions, PaintToolOptions, PatternReference, PropertyDynamics, RgbColor,
+    SampledBrushTip, ShToolOptions, SmudgeToolOptions, ToolOptions, UnitFloat,
+};
 pub use header::AbrHeader;
 pub use pattern::{Pattern, PatternChannel};
 pub use sample::Sample;
 
 pub struct Abr {
     pub header: AbrHeader,
+    pub brushes: Vec<BrushPreset>,
     pub samples: Vec<Sample>,
     pub patterns: Vec<Pattern>,
 }
@@ -20,6 +30,7 @@ impl Abr {
     pub fn parse(input: &[u8]) -> Result<Self> {
         let mut cursor = Cursor::new(input);
         let header = AbrHeader::parse(&mut cursor)?;
+        let mut brushes = Vec::new();
         let mut samples = Vec::new();
         let mut patterns = Vec::new();
 
@@ -33,7 +44,9 @@ impl Abr {
             let len = usize::try_from(cursor.read_u32_be()?)?;
             let mut section = cursor.take_cursor(len)?;
 
-            if key == b"samp" {
+            if key == b"desc" {
+                brushes.extend(BrushDescriptorRoot::parse_desc_section(&mut section)?);
+            } else if key == b"samp" {
                 samples.extend(Sample::parse_samp_section(&mut section)?);
             } else if key == b"patt" {
                 patterns.extend(Pattern::parse_patt_section(&mut section)?);
@@ -46,8 +59,14 @@ impl Abr {
 
         Ok(Self {
             header,
+            brushes,
             samples,
             patterns,
         })
     }
+}
+
+#[doc(hidden)]
+pub mod __private {
+    pub use anyhow::{Error, Result};
 }
