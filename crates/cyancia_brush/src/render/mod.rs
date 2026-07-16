@@ -664,8 +664,24 @@ async fn brush_renderer_worker_main(
         overriders.remove_overrider(&target_layer_id);
     });
 
+    postprocess_stroke(
+        &device,
+        &queue,
+        &target_layer,
+        &selection_layer,
+        Time::default(),
+        &mut intermediate_buffers,
+        &mut round,
+        &mut accumulated_tile_bounds,
+        &scan_pixels,
+        &stroke_pp,
+        &resources,
+    )
+    .await;
+
     let [result_a, result_b] = intermediate_buffers;
     let result = if round % 2 == 0 { result_a } else { result_b };
+
     let Some(result_texture) = result.texture() else {
         return;
     };
