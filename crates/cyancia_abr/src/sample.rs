@@ -1,7 +1,22 @@
-use anyhow::Result;
+use anyhow::{Context, Result, bail, ensure};
+use image::{DynamicImage, ImageBuffer, Luma};
 use uuid::Uuid;
 
-use crate::cursor::Cursor;
+use crate::{cursor::Cursor, rle};
+
+pub enum SampleImage {
+    Bit8(ImageBuffer<Luma<u8>, Vec<u8>>),
+    Bit16(ImageBuffer<Luma<u16>, Vec<u16>>),
+}
+
+impl SampleImage {
+    pub fn into_dynamic(self) -> DynamicImage {
+        match self {
+            SampleImage::Bit8(b) => DynamicImage::ImageLuma8(b),
+            SampleImage::Bit16(b) => DynamicImage::ImageLuma16(b),
+        }
+    }
+}
 
 pub struct Sample {
     pub id: Uuid,
@@ -50,5 +65,74 @@ impl Sample {
         }
 
         Ok(samples)
+    }
+
+    pub fn as_image(&self) -> Result<SampleImage> {
+        let width = self
+            .right
+            .checked_sub(self.left)
+            .context("sample width overflows i32")?;
+        let height = self
+            .bottom
+            .checked_sub(self.top)
+            .context("sample height overflows i32")?;
+        ensure!(
+            width > 0 && height > 0,
+            "invalid sample bounds ({}, {}, {}, {})",
+            self.top,
+            self.left,
+            self.bottom,
+            self.right
+        );
+
+        let width = u32::try_from(width)?;
+        let height = u32::try_from(height)?;
+        let width_usize = usize::try_from(width)?;
+        let height_usize = usize::try_from(height)?;
+        let bytes_per_pixel = match self.depth {
+            8 => 1,
+            16 => 2,
+            depth => bail!("unsupported sample depth {depth}"),
+        };
+        let row_bytes = width_usize
+            .checked_mul(bytes_per_pixel)
+            .context("sample row size overflows usize")?;
+        let expected_len = row_bytes
+            .checked_mul(height_usize)
+            .context("sample image size overflows usize")?;
+
+        let decoded = match self.compression {
+            0 => {
+                ensure!(
+                    self.pixel_data.len() >= expected_len,
+                    "raw sample data has {} bytes, expected at least {expected_len}",
+                    self.pixel_data.len()
+                );
+                self.pixel_data[..expected_len].to_vec()
+            }
+            1 => {
+                let mut data = Cursor::new(&self.pixel_data);
+                rle::decode(&mut data, height_usize, row_bytes)?
+            }
+            compression => bail!("unsupported sample compression {compression}"),
+        };
+
+        match self.depth {
+            8 => Ok(SampleImage::Bit8(
+                ImageBuffer::from_raw(width, height, decoded)
+                    .context("failed to construct 8-bit sample image")?,
+            )),
+            16 => {
+                let pixels = decoded
+                    .chunks_exact(2)
+                    .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+                    .collect();
+                Ok(SampleImage::Bit16(
+                    ImageBuffer::from_raw(width, height, pixels)
+                        .context("failed to construct 16-bit sample image")?,
+                ))
+            }
+            _ => unreachable!(),
+        }
     }
 }

@@ -11,4 +11,5 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 cyancia_abr_derive.workspace = true
+image.workspace = true
 uuid.workspace = true
