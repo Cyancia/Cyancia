@@ -1,4 +1,5 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
+use uuid::Uuid;
 
 use crate::Cursor;
 
@@ -171,6 +172,15 @@ impl AbrValue for String {
     fn parse_value(cursor: &mut Cursor<'_>, value_type: [u8; 4], offset: usize) -> Result<Self> {
         Self::expect_type(value_type, *b"TEXT", offset)?;
         cursor.read_utf16_string()
+    }
+}
+
+impl AbrValue for Uuid {
+    fn parse_value(cursor: &mut Cursor<'_>, value_type: [u8; 4], offset: usize) -> Result<Self> {
+        Self::expect_type(value_type, *b"TEXT", offset)?;
+        let value = cursor.read_utf16_string()?;
+        Uuid::parse_str(&value)
+            .with_context(|| format!("invalid ABR descriptor UUID at desc offset {offset}"))
     }
 }
 

@@ -1,6 +1,7 @@
 mod cursor;
 mod descriptor;
 mod header;
+mod hierarchy;
 mod pattern;
 mod sample;
 
@@ -16,12 +17,14 @@ pub use descriptor::{
     SampledBrushTip, ShToolOptions, SmudgeToolOptions, ToolOptions, UnitFloat,
 };
 pub use header::AbrHeader;
+pub use hierarchy::HierarchyNode;
 pub use pattern::{Pattern, PatternChannel};
 pub use sample::Sample;
 
 pub struct Abr {
     pub header: AbrHeader,
     pub brushes: Vec<BrushPreset>,
+    pub hierarchy: HierarchyNode,
     pub samples: Vec<Sample>,
     pub patterns: Vec<Pattern>,
 }
@@ -31,6 +34,7 @@ impl Abr {
         let mut cursor = Cursor::new(input);
         let header = AbrHeader::parse(&mut cursor)?;
         let mut brushes = Vec::new();
+        let mut hierarchy_entries = Vec::new();
         let mut samples = Vec::new();
         let mut patterns = Vec::new();
 
@@ -46,6 +50,8 @@ impl Abr {
 
             if key == b"desc" {
                 brushes.extend(BrushDescriptorRoot::parse_desc_section(&mut section)?);
+            } else if key == b"phry" {
+                hierarchy_entries.extend(hierarchy::parse_phry_section(&mut section)?);
             } else if key == b"samp" {
                 samples.extend(Sample::parse_samp_section(&mut section)?);
             } else if key == b"patt" {
@@ -57,9 +63,12 @@ impl Abr {
             }
         }
 
+        let hierarchy = HierarchyNode::from_entries(hierarchy_entries, brushes.len())?;
+
         Ok(Self {
             header,
             brushes,
+            hierarchy,
             samples,
             patterns,
         })
