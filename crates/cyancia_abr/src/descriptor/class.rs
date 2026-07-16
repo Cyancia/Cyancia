@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use cyancia_abr_derive::{AbrClass, AbrEnum, AbrIntegerEnum, AbrObject};
+use uuid::Uuid;
 
 use crate::{Cursor, UnitFloat};
 
@@ -23,7 +24,7 @@ pub struct SampledBrushTip {
     #[abr(key = "Nm  ")]
     pub name: String,
     #[abr(key = "sampledData")]
-    pub id: String,
+    pub id: Uuid,
     #[abr(key = "Dmtr")]
     pub diameter: UnitFloat,
     #[abr(key = "Angl")]
