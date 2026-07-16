@@ -469,19 +469,6 @@ impl BrushPresetRenderer {
             })
             .unwrap();
     }
-
-    pub fn last_surface(
-        intermediate_buffers: &[DynamicLayerStorage; 2],
-        round: u32,
-    ) -> Option<(Texture, Vec<IVec2>)> {
-        let result_buffer = &intermediate_buffers[round as usize % 2];
-        let result_texture = result_buffer.texture_view()?;
-
-        Some((
-            result_texture.texture().clone(),
-            result_buffer.iter_tiles().map(|(i, _, _)| i).collect(),
-        ))
-    }
 }
 
 async fn brush_renderer_worker_main(
@@ -615,7 +602,6 @@ async fn brush_renderer_worker_main(
                 // unsafe {
                 //     device.start_graphics_debugger_capture();
                 // }
-                // TODO move to another task
                 postprocess_stroke(
                     &device,
                     &queue,
@@ -672,8 +658,36 @@ async fn brush_renderer_worker_main(
         overriders.remove_overrider(&target_layer_id);
     });
 
-    let result = BrushPresetRenderer::last_surface(&intermediate_buffers, round);
-    dbg!(result.is_some());
+    let [result_a, result_b] = intermediate_buffers;
+    let result = if round % 2 == 0 { result_a } else { result_b };
+    let Some(result_texture) = result.texture() else {
+        return;
+    };
+
+    let Ok(canvas_id) = canvas.read_with(cx, |canvas, cx| canvas.id()) else {
+        return;
+    };
+
+    let cmd = cx.read_global::<GpuTileStorage, _>(|tile_storage, cx| {
+        let layer_storage = tile_storage.get_layer(target_layer_id)?;
+
+        let cmd = TileReplaceCommand::new(
+            "Brush stroke".into(),
+            canvas_id,
+            &device,
+            &queue,
+            target_layer_id,
+            &layer_storage,
+            result.iter_tile_indices().collect(),
+            result_texture.clone(),
+        );
+
+        Some(cmd)
+    });
+
+    let Some(cmd) = cmd else {
+        return;
+    };
 }
 
 async fn postprocess_stroke(
