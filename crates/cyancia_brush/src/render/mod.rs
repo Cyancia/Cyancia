@@ -1,8 +1,6 @@
-use bevy_math::{IRect, Rect};
+use bevy_math::IRect;
 use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
-use cyancia_canvas::{
-    CCanvas, CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand, event::CanvasUpdated,
-};
+use cyancia_canvas::{CCanvas, command::TileReplaceCommand, event::CanvasUpdated};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,
@@ -20,34 +18,25 @@ use cyancia_render::{
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
 };
-use cyancia_shader_graph::graph::{Graph, texture::TextureId};
+use cyancia_shader_graph::graph::texture::TextureId;
 use cyancia_undo::QueuedUndoCommand;
 use encase::ShaderType;
-use futures::{
-    SinkExt,
-    channel::{
-        mpsc::{UnboundedReceiver, UnboundedSender},
-        oneshot::{Receiver, Sender},
-    },
-};
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use glam::{IVec2, Vec2};
-use gpui::{App, AppContext, AsyncApp, Subscription, Task, WeakEntity};
+use gpui::{App, AsyncApp, Task, WeakEntity};
 use wgpu::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
     BufferDescriptor, BufferUsages, ComputePassDescriptor, Device, Extent3d, Queue, ShaderStages,
-    Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
     input_processing::{InputProcessor, RawPenInput},
     instance::{BrushPresetInstance, CompiledBrushPreset},
-    render::{
-        graph::{BrushGraphData, BrushGraphPostprocessData},
-        pipeline::{
-            BrushInputSamplingPipeline, BrushMainBoundsEvalPipeline, BrushMainPipeline,
-            BrushPostProcessBoundsEvalPipeline, BrushPostProcessPipeline,
-        },
+    render::pipeline::{
+        BrushInputSamplingPipeline, BrushMainBoundsEvalPipeline, BrushMainPipeline,
+        BrushPostProcessBoundsEvalPipeline, BrushPostProcessPipeline,
     },
 };
 
@@ -389,7 +378,7 @@ impl BrushPresetRenderer {
         pen_input_buffer.write_buffer(device, queue);
 
         let bounds_eval_dispatch = device.create_buffer(&BufferDescriptor {
-            label: Some("bounds eval dispatch".into()),
+            label: Some("bounds eval dispatch"),
             size: 16,
             usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
             mapped_at_creation: false,
@@ -565,7 +554,7 @@ async fn brush_renderer_worker_main(
 
         {
             let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("brush main pass".into()),
+                label: Some("brush main pass"),
                 ..Default::default()
             });
             main.dispatch(
@@ -660,7 +649,7 @@ async fn brush_renderer_worker_main(
         .detach();
     }
 
-    cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
+    cx.update_global::<LayerPreviewOverriders, _>(|overriders, _cx| {
         overriders.remove_overrider(&target_layer_id);
     });
 
@@ -686,11 +675,11 @@ async fn brush_renderer_worker_main(
         return;
     };
 
-    let Ok(canvas_id) = canvas.read_with(cx, |canvas, cx| canvas.id()) else {
+    let Ok(canvas_id) = canvas.read_with(cx, |canvas, _cx| canvas.id()) else {
         return;
     };
 
-    let cmd = cx.read_global::<GpuTileStorage, _>(|tile_storage, cx| {
+    let cmd = cx.read_global::<GpuTileStorage, _>(|tile_storage, _cx| {
         let layer_storage = tile_storage.get_layer(target_layer_id)?;
 
         let cmd = TileReplaceCommand::new(

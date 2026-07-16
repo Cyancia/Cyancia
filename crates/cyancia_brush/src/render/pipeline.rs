@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use bevy_math::URect;
-use cyancia_image::tile::{DynamicLayerStorage, GpuTileInfo, GpuTileStorage, LayerBinding};
+use cyancia_image::tile::{GpuTileInfo, GpuTileStorage, LayerBinding};
 use cyancia_render::{
     bind_group_entries::{BindGroupEntries, DynamicBindGroupEntries},
     bind_group_layout_entries::{
@@ -14,16 +14,12 @@ use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, Buffer, ComputePass, ComputePipeline,
     ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, StorageTextureAccess, TextureFormat, TextureSampleType,
-    TextureView,
+    ShaderSource, ShaderStages, StorageTextureAccess, TextureSampleType, TextureView,
 };
 
-use crate::{
-    input_processing::RawPenInput,
-    render::{
-        ComputedPenInput, DabInfo, InputSampler, OutputSamples, PenInput, StrokePostprocessData,
-        StrokeResources,
-    },
+use crate::render::{
+    ComputedPenInput, DabInfo, InputSampler, OutputSamples, PenInput, StrokePostprocessData,
+    StrokeResources,
 };
 
 pub struct BrushInputSamplingPipeline {
@@ -256,7 +252,7 @@ impl BrushMainPipeline {
                 pass.dispatch_workgroups(
                     GpuTileStorage::TILE_SIZE.div_ceil(16),
                     GpuTileStorage::TILE_SIZE.div_ceil(16),
-                    n_tiles as u32,
+                    n_tiles,
                 );
                 pass.pop_debug_group();
                 *round += 1;
@@ -404,7 +400,7 @@ impl BrushPostProcessPipeline {
             pass.dispatch_workgroups(
                 GpuTileStorage::TILE_SIZE.div_ceil(16),
                 GpuTileStorage::TILE_SIZE.div_ceil(16),
-                n_tiles as u32,
+                n_tiles,
             );
         }
         pass.pop_debug_group();

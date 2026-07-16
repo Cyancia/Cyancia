@@ -12,9 +12,9 @@ use crate::graph::{
     external::GraphExternalVariableStorage,
     function::GraphFunctionStorage,
     node::{
-        ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode,
-        GraphNodeCodeGenContext, GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId,
-        GraphNodeUpdateSignatureContext, StatefulGraphNode,
+        ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
+        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeUpdateSignatureContext,
+        StatefulGraphNode,
     },
     slot::{
         GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,

@@ -1,18 +1,10 @@
 use std::rc::Rc;
 
 use chrono::{DateTime, Utc};
-use cyancia_canvas::{
-    CCanvas, CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand, event::CanvasUpdated,
-};
-use cyancia_image::{
-    composite::{LayerPreviewOverriders, PixelPreviewOverrider},
-    layer::LayerId,
-    tile::GpuTileStorage,
-};
-use cyancia_render::render_context::RenderContextAppExt;
+use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasUndoStackAppExt};
 use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
-use cyancia_utils::{log_err::LogErr, wrapper};
+use cyancia_utils::wrapper;
 use glam::Vec2;
 use gpui::{
     AnyElement, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
@@ -29,7 +21,6 @@ const TIMESTAMP_MOD: i64 = 1_000_000;
 
 struct BrushToolState {
     canvas_entity: WeakEntity<CCanvas>,
-    target_layer: LayerId,
     stroke_begin: DateTime<Utc>,
 }
 
@@ -71,7 +62,6 @@ impl ToolFunction for BrushTool {
         let now = Utc::now();
         self.state = Some(BrushToolState {
             canvas_entity: canvas_entity.clone(),
-            target_layer: active_layer,
             stroke_begin: now,
         });
 
@@ -110,7 +100,6 @@ impl ToolFunction for BrushTool {
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
         let Some(BrushToolState {
             canvas_entity,
-            target_layer,
             stroke_begin,
         }) = &self.state
         else {
@@ -137,7 +126,7 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
+        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, _cx| {
             let Some(brush) = brush.as_mut() else {
                 return;
             };
@@ -150,7 +139,6 @@ impl ToolFunction for BrushTool {
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
         let Some(BrushToolState {
             canvas_entity,
-            target_layer: _,
             stroke_begin,
         }) = self.state.take()
         else {

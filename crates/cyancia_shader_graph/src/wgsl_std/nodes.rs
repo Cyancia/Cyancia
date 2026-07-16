@@ -1,10 +1,9 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use bevy_math::Rect;
 use cyancia_math::curve::CubicCurve;
 use cyancia_utils::random_oklch;
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
-use glam::{Vec2, Vec3, Vec3Swizzles, Vec4};
+use glam::{Vec2, Vec3, Vec3Swizzles};
 use gpui::{
     AnyElement, App, AppContext, Entity, ParentElement, Pixels, Rgba, SharedString, Styled, div, px,
 };
@@ -24,13 +23,12 @@ use crate::{
         function::GraphFunctionId,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeRenderContext, GraphNodeUpdateSignatureContext,
-            StatelessCommonGraphNode,
+            GraphNodeRenderContext, GraphNodeUpdateSignatureContext, StatelessCommonGraphNode,
         },
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
         texture::TextureId,
     },
-    wgsl_std::types::{ColorType, F32Type, RectType, TextureReference, TextureType, Vec2FType},
+    wgsl_std::types::{ColorType, F32Type, RectType, TextureType, Vec2FType},
 };
 
 use cyancia_shader_graph_derive::stateless;
@@ -1838,10 +1836,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
             return vec![];
         };
 
-        vec![GraphDefaultInputSlot::new_boxed(
-            state.name.clone(),
-            ty,
-        )]
+        vec![GraphDefaultInputSlot::new_boxed(state.name.clone(), ty)]
     }
 
     fn create_outputs(

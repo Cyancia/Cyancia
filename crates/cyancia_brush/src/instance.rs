@@ -454,7 +454,7 @@ fn compile_template(
 fn compile_template_input_sampling(
     graph: &Graph<BrushGraphData>,
     texture_usage: &mut GraphTextureUsageRecorder,
-    external_variable_bindings: &str,
+    _external_variable_bindings: &str,
     cx: &App,
 ) -> anyhow::Result<String> {
     // TODO Support external variables

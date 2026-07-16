@@ -7,7 +7,8 @@ use cyancia_shader_graph::{
         GraphData,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeRenderContext, GraphNodeUpdateSignatureContext, StatelessCommonGraphNode, stateless,
+            GraphNodeRenderContext, GraphNodeUpdateSignatureContext, StatelessCommonGraphNode,
+            stateless,
         },
         slot::{GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
@@ -341,9 +342,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputColorNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<ColorType>(
-            "Color".into(),
-        )]
+        vec![GraphDefaultInputSlot::new::<ColorType>("Color".into())]
     }
 
     fn create_outputs(
@@ -381,9 +380,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<RectType>(
-            "Bounds".into(),
-        )]
+        vec![GraphDefaultInputSlot::new::<RectType>("Bounds".into())]
     }
 
     fn create_outputs(
@@ -569,9 +566,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for CurrentPixelColorNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<Vec2FType>(
-            "Position".into(),
-        )]
+        vec![GraphDefaultInputSlot::new::<Vec2FType>("Position".into())]
     }
 
     fn create_outputs(
@@ -610,9 +605,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for LayerPixelColorNode {
         &self,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<Vec2FType>(
-            "Position".into(),
-        )]
+        vec![GraphDefaultInputSlot::new::<Vec2FType>("Position".into())]
     }
 
     fn create_outputs(
@@ -1294,9 +1287,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SelectionMaskNode {
         &self,
         _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        vec![GraphDefaultInputSlot::new::<Vec2FType>(
-            "Position".into(),
-        )]
+        vec![GraphDefaultInputSlot::new::<Vec2FType>("Position".into())]
     }
 
     fn create_outputs(

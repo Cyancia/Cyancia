@@ -7,9 +7,7 @@ use std::{
 use cyancia_utils::{Deref, DerefMut, log_err::LogErr};
 use downcast_rs::Downcast;
 use futures::channel::oneshot::{self, Canceled, Receiver, Sender};
-use gpui::{
-    Action, App, AppContext, BorrowAppContext, Entity, EventEmitter, Global, Subscription, actions,
-};
+use gpui::{App, AppContext, BorrowAppContext, Entity, EventEmitter, Global, Subscription};
 use tracing::info;
 use uuid::Uuid;
 
@@ -133,11 +131,7 @@ impl UndoStack {
     }
 
     fn poll(&mut self, cx: &mut App) -> anyhow::Result<()> {
-        loop {
-            let Some(first) = self.queue.front_mut() else {
-                break;
-            };
-
+        while let Some(first) = self.queue.front_mut() {
             let cmd = match first.try_recv() {
                 Ok(Some(cmd)) => cmd,
                 Ok(None) => {

@@ -1,4 +1,3 @@
-use cyancia_math::curve::CubicBezierCurve;
 use glam::Vec2;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
@@ -173,42 +172,5 @@ impl InputSampleStabilizer for BasicStabilizer {
 
     fn convergence_steps(&self) -> usize {
         1
-    }
-}
-
-fn arc_length_to_t(arc_table: &[(f32, f32)], arc: f32) -> f32 {
-    if arc <= 0.0 {
-        return arc_table[0].1;
-    }
-    let last = arc_table.last().unwrap();
-    if arc >= last.0 {
-        return last.1;
-    }
-    let i = arc_table.partition_point(|&(a, _)| a < arc);
-    let (a0, t0) = arc_table[i - 1];
-    let (a1, t1) = arc_table[i];
-    if (a1 - a0).abs() < f32::EPSILON {
-        return t0;
-    }
-    t0 + (t1 - t0) * (arc - a0) / (a1 - a0)
-}
-
-fn compute_pen_input(
-    curve: &CubicBezierCurve,
-    t: f32,
-    from: &RawPenInput,
-    to: &RawPenInput,
-) -> ComputedPenInput {
-    let position = curve.sample(t);
-    let draw_direction_vec = curve.tangent(t);
-    let draw_direction_angle = draw_direction_vec.y.atan2(draw_direction_vec.x);
-    ComputedPenInput {
-        position,
-        draw_direction_vec,
-        draw_direction_angle,
-        time: Time {
-            now: from.time.now + t * (to.time.now - from.time.now),
-            stroke_begin: from.time.stroke_begin,
-        },
     }
 }
