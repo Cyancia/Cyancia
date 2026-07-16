@@ -36,6 +36,23 @@ impl<'a> Cursor<'a> {
         Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
+    pub(crate) fn read_utf16_string(&mut self) -> Result<String> {
+        let len = usize::try_from(self.read_u32_be()?)?;
+        let bytes = self.take(
+            len.checked_mul(2)
+                .context("ABR UTF-16 string length overflow")?,
+        )?;
+        let mut units = bytes
+            .chunks_exact(2)
+            .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+            .collect::<Vec<_>>();
+        if units.last() == Some(&0) {
+            units.pop();
+        }
+
+        Ok(String::from_utf16(&units)?)
+    }
+
     pub(crate) fn take(&mut self, len: usize) -> Result<&'a [u8]> {
         let end = self
             .position
