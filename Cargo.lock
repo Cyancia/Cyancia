@@ -1638,6 +1638,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_abr"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "cyancia_actions"
 version = "0.1.0"
 dependencies = [
