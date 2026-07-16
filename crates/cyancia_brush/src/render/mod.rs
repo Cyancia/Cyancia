@@ -21,6 +21,7 @@ use cyancia_render::{
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
 };
 use cyancia_shader_graph::graph::{Graph, texture::TextureId};
+use cyancia_undo::QueuedUndoCommand;
 use encase::ShaderType;
 use futures::{
     SinkExt,
@@ -107,6 +108,7 @@ impl BrushPresetOperator {
         target_layer_id: LayerId,
         selection_layer_id: LayerId,
         canvas: WeakEntity<CCanvas>,
+        queued_cmd: QueuedUndoCommand,
         cx: &mut App,
     ) {
         let tiles = cx.tile_storage();
@@ -183,6 +185,7 @@ impl BrushPresetOperator {
             target_layer,
             selection_layer,
             canvas,
+            queued_cmd,
             cx,
         );
 
@@ -318,6 +321,7 @@ impl BrushPresetRenderer {
         target_layer: LayerBinding,
         selection_layer: LayerBinding,
         canvas: WeakEntity<CCanvas>,
+        queued_cmd: QueuedUndoCommand,
         cx: &mut App,
     ) {
         self.input_sampler_buffer.clear();
@@ -355,6 +359,7 @@ impl BrushPresetRenderer {
                     has_selection,
                     selection_layer,
                     canvas,
+                    queued_cmd,
                     cx,
                 )
                 .await;
@@ -486,6 +491,7 @@ async fn brush_renderer_worker_main(
     has_selection: Buffer,
     selection_layer: LayerBinding,
     canvas: WeakEntity<CCanvas>,
+    queued_cmd: QueuedUndoCommand,
 
     cx: &mut AsyncApp,
 ) {
@@ -688,6 +694,8 @@ async fn brush_renderer_worker_main(
     let Some(cmd) = cmd else {
         return;
     };
+
+    queued_cmd.send(Box::new(cmd), cx);
 }
 
 async fn postprocess_stroke(

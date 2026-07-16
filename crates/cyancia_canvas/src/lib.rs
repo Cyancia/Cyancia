@@ -6,7 +6,7 @@ use cyancia_image::{
     layer::{LayerId, LayerStackNode},
 };
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
-use cyancia_undo::{UndoCommand, UndoStack, UndoStacks};
+use cyancia_undo::{QueuedUndoCommand, UndoCommand, UndoStack, UndoStacks};
 use cyancia_utils::wrapper;
 use gpui::{App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, Global, WeakEntity};
 use indexmap::IndexSet;
@@ -388,6 +388,8 @@ pub trait CanvasUndoStackAppExt {
         id: &CanvasId,
         command: Box<dyn UndoCommand>,
     ) -> anyhow::Result<()>;
+    fn queue_undo_command_to_current(&mut self) -> anyhow::Result<QueuedUndoCommand>;
+    fn queue_undo_command(&mut self, id: &CanvasId) -> anyhow::Result<QueuedUndoCommand>;
 }
 
 impl CanvasUndoStackAppExt for App {
@@ -439,6 +441,22 @@ impl CanvasUndoStackAppExt for App {
                 .get_mut(id)
                 .ok_or_else(|| anyhow::anyhow!("Undo stack for canvas {} not found", id))?;
             stack.push_boxed(command, cx)
+        })
+    }
+
+    fn queue_undo_command_to_current(&mut self) -> anyhow::Result<QueuedUndoCommand> {
+        let cur = self
+            .current_canvas_id()
+            .ok_or_else(|| anyhow::anyhow!("No current canvas"))?;
+        self.queue_undo_command(&cur)
+    }
+
+    fn queue_undo_command(&mut self, id: &CanvasId) -> anyhow::Result<QueuedUndoCommand> {
+        self.update_global::<UndoStacks, _>(|stacks, _| {
+            let stack = stacks
+                .get_mut(id)
+                .ok_or_else(|| anyhow::anyhow!("Undo stack for canvas {} not found", id))?;
+            Ok(stack.queue())
         })
     }
 }

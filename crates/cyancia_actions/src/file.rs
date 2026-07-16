@@ -38,8 +38,8 @@ impl ActionFunction for OpenFileAction {
             let canvas = CCanvas::new(image, tool_proxy_id);
             let canvas_id = canvas.id();
 
-            cx.update_global::<UndoStacks, _>(|undo_stacks, _| {
-                undo_stacks.insert(*canvas.id(), UndoStack::new(200))
+            cx.update_global::<UndoStacks, _>(|undo_stacks, cx| {
+                undo_stacks.insert(*canvas.id(), UndoStack::new(*canvas.id(), 200, cx));
             });
 
             // TODO this should not be done here

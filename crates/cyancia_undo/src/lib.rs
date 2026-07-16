@@ -6,12 +6,37 @@ use std::{
 
 use cyancia_utils::{Deref, DerefMut, log_err::LogErr};
 use downcast_rs::Downcast;
-use gpui::{App, Global};
+use futures::channel::oneshot::{self, Canceled, Receiver, Sender};
+use gpui::{
+    Action, App, AppContext, BorrowAppContext, Entity, EventEmitter, Global, Subscription, actions,
+};
 use tracing::info;
 use uuid::Uuid;
 
 pub fn init(cx: &mut App) {
     cx.set_global(UndoStacks::default());
+}
+
+pub struct UndoCommandQueueNotifier {
+    stack_id: Uuid,
+}
+
+impl EventEmitter<UndoCommandQueuePoll> for UndoCommandQueueNotifier {}
+
+pub struct UndoCommandQueuePoll;
+
+pub struct QueuedUndoCommand {
+    tx: Sender<Box<dyn UndoCommand>>,
+    notify: Entity<UndoCommandQueueNotifier>,
+}
+
+impl QueuedUndoCommand {
+    pub fn send<C: AppContext>(self, cmd: Box<dyn UndoCommand>, cx: &mut C) {
+        let _ = self.tx.send(cmd);
+        self.notify.update(cx, |_, cx| {
+            cx.emit(UndoCommandQueuePoll);
+        });
+    }
 }
 
 #[derive(Default, Deref, DerefMut)]
@@ -24,15 +49,45 @@ impl Global for UndoStacks {}
 pub struct UndoStack {
     cursor: usize,
     history: VecDeque<UndoCommandData>,
+    queue: VecDeque<Receiver<Box<dyn UndoCommand>>>,
+    notifier: Entity<UndoCommandQueueNotifier>,
     max_history: usize,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl UndoStack {
-    pub fn new(max_history: usize) -> Self {
+    pub fn new(id: Uuid, max_history: usize, cx: &mut App) -> Self {
+        let notifier = cx.new(|_| UndoCommandQueueNotifier { stack_id: id });
+        let _subscriptions = vec![cx.subscribe(&notifier, Self::on_queue_notify)];
+
         Self {
             cursor: 0,
             history: VecDeque::new(),
+            queue: VecDeque::new(),
+            notifier,
             max_history,
+            _subscriptions,
+        }
+    }
+
+    fn on_queue_notify(
+        entity: Entity<UndoCommandQueueNotifier>,
+        _: &UndoCommandQueuePoll,
+        cx: &mut App,
+    ) {
+        let stack_id = entity.read(cx).stack_id;
+
+        cx.update_global::<UndoStacks, _>(|stacks, cx| {
+            stacks.stacks.get_mut(&stack_id).unwrap().poll(cx).log_err();
+        });
+    }
+
+    pub fn queue(&mut self) -> QueuedUndoCommand {
+        let (tx, rx) = oneshot::channel();
+        self.queue.push_back(rx);
+        QueuedUndoCommand {
+            tx,
+            notify: self.notifier.clone(),
         }
     }
 
@@ -40,25 +95,33 @@ impl UndoStack {
         self.push_boxed(Box::new(cmd), cx)
     }
 
-    pub fn push_boxed(
-        &mut self,
-        mut cmd: Box<dyn UndoCommand>,
-        cx: &mut App,
-    ) -> anyhow::Result<()> {
+    pub fn push_boxed(&mut self, cmd: Box<dyn UndoCommand>, cx: &mut App) -> anyhow::Result<()> {
+        if self.queue.is_empty() {
+            self.push_internal(cmd, cx)?;
+        } else {
+            let (tx, rx) = oneshot::channel();
+            self.queue.push_back(rx);
+            let _ = tx.send(cmd);
+        }
+
+        Ok(())
+    }
+
+    fn push_internal(&mut self, mut cmd: Box<dyn UndoCommand>, cx: &mut App) -> anyhow::Result<()> {
         info!("Push command {}", cmd.label());
         self.history.truncate(self.cursor);
 
         if let Some(rhs) = self.history.back()
             && rhs.command.can_cancel_out(cmd.as_ref())
         {
-            cmd.redo(cx).logged_err()?;
+            cmd.redo(cx)?;
             self.history.pop_back();
         } else {
             if self.history.len() == self.max_history {
                 self.history.pop_front();
             }
 
-            cmd.redo(cx).logged_err()?;
+            cmd.redo(cx)?;
             self.history.push_back(UndoCommandData {
                 _pushed_at: Instant::now(),
                 command: cmd,
@@ -66,6 +129,29 @@ impl UndoStack {
         }
 
         self.cursor = self.len();
+        Ok(())
+    }
+
+    fn poll(&mut self, cx: &mut App) -> anyhow::Result<()> {
+        loop {
+            let Some(first) = self.queue.front_mut() else {
+                break;
+            };
+
+            let cmd = match first.try_recv() {
+                Ok(Some(cmd)) => cmd,
+                Ok(None) => {
+                    break;
+                }
+                Err(Canceled) => {
+                    self.queue.pop_front();
+                    continue;
+                }
+            };
+
+            self.push_internal(cmd, cx)?;
+        }
+
         Ok(())
     }
 

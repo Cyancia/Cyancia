@@ -92,7 +92,18 @@ impl ToolFunction for BrushTool {
             let Some(brush) = brush.as_mut() else {
                 return;
             };
-            brush.begin_stroke(params, active_layer, selection_layer, canvas_entity, cx);
+
+            let Ok(queued_cmd) = cx.queue_undo_command_to_current() else {
+                return;
+            };
+            brush.begin_stroke(
+                params,
+                active_layer,
+                selection_layer,
+                canvas_entity,
+                queued_cmd,
+                cx,
+            );
         });
     }
 
