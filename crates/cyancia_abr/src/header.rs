@@ -15,6 +15,9 @@ impl AbrHeader {
         if major < 6 {
             bail!("unsupported ABR major version {major}");
         }
+        if subversion != 2 {
+            bail!("unsupported ABR subversion {subversion}");
+        }
 
         Ok(Self { major, subversion })
     }
