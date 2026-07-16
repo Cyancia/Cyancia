@@ -19,7 +19,7 @@ pub use descriptor::{
 };
 pub use header::AbrHeader;
 pub use hierarchy::HierarchyNode;
-pub use pattern::{Pattern, PatternChannel};
+pub use pattern::{ColorMode, Pattern, PatternChannel};
 pub use sample::{Sample, SampleImage};
 
 pub struct Abr {
