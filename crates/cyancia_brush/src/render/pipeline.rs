@@ -113,13 +113,39 @@ impl BrushMainPipeline {
         resources: &StrokeResources,
         compiled_shader: Cow<'_, str>,
     ) -> Self {
-        let layout_entries = bind_group_layout_entries(
-            &resources.external_var_layouts,
-            false,
-            false,
-            resources.target_layer_format.wgpu_format(),
-            resources.selection_layer_format.wgpu_format(),
+        let mut layout_entries = common_bind_group_layout_entries(resources);
+        layout_entries.extend(
+            DynamicBindGroupLayoutEntries::new_with_indices(
+                ShaderStages::COMPUTE,
+                (
+                    (
+                        0,
+                        binding_types::storage_buffer_read_only::<ComputedPenInput>(true),
+                    ),
+                    (
+                        5,
+                        binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    ),
+                    (
+                        6,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::ReadOnly,
+                        ),
+                    ),
+                    (
+                        7,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::WriteOnly,
+                        ),
+                    ),
+                    (8, binding_types::storage_buffer::<DabInfo>(true)),
+                ),
+            )
+            .to_vec(),
         );
+        layout_entries.extend_from_slice(&resources.external_var_layouts);
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush main layout"),
@@ -166,44 +192,41 @@ impl BrushMainPipeline {
         intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
     ) {
-        let bind_group_entries_even = bind_group_entries(
-            resources,
-            target_layer_texture,
-            target_layer_tile_info,
-            has_selection,
-            selection_layer_texture,
-            selection_layer_tile_info,
-            Some(intermediate_buffers),
-            Some(samples),
-            None,
-            None,
-            None,
-            Some(dab_infos),
-            None,
-            Some(true),
-        );
+        let main_bind_group_entries = |is_even: bool| {
+            let mut entries = common_bind_group_entries(
+                resources,
+                target_layer_texture,
+                target_layer_tile_info,
+                has_selection,
+                selection_layer_texture,
+                selection_layer_tile_info,
+            );
+            let (read_idx, write_idx) = if is_even { (0, 1) } else { (1, 0) };
+            entries.extend(
+                DynamicBindGroupEntries::new_with_indices((
+                    (0, samples.binding().unwrap()),
+                    (
+                        5,
+                        intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
+                    ),
+                    (6, &intermediate_buffers[read_idx].texture),
+                    (7, &intermediate_buffers[write_idx].texture),
+                    (8, dab_infos.binding().unwrap()),
+                ))
+                .to_vec(),
+            );
+            entries.extend(resources.external_var_bindings());
+            entries
+        };
+
+        let bind_group_entries_even = main_bind_group_entries(true);
         let bind_group_even = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group even"),
             layout: &self.layout,
             entries: &bind_group_entries_even,
         });
 
-        let bind_group_entries_odd = bind_group_entries(
-            resources,
-            target_layer_texture,
-            target_layer_tile_info,
-            has_selection,
-            selection_layer_texture,
-            selection_layer_tile_info,
-            Some(intermediate_buffers),
-            Some(samples),
-            None,
-            None,
-            None,
-            Some(dab_infos),
-            None,
-            Some(false),
-        );
+        let bind_group_entries_odd = main_bind_group_entries(false);
         let bind_group_odd = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group odd"),
             layout: &self.layout,
@@ -261,12 +284,37 @@ impl BrushPostProcessPipeline {
         resources: &StrokeResources,
         compiled_shader: Cow<'_, str>,
     ) -> Self {
-        let layout_entries = bind_group_layout_entries(
-            &resources.external_var_layouts,
-            true,
-            false,
-            resources.target_layer_format.wgpu_format(),
-            resources.selection_layer_format.wgpu_format(),
+        let mut layout_entries = common_bind_group_layout_entries(resources);
+        layout_entries.extend(
+            DynamicBindGroupLayoutEntries::new_with_indices(
+                ShaderStages::COMPUTE,
+                (
+                    (
+                        0,
+                        binding_types::storage_buffer_read_only::<StrokePostprocessData>(false),
+                    ),
+                    (
+                        5,
+                        binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    ),
+                    (
+                        6,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::ReadOnly,
+                        ),
+                    ),
+                    (
+                        7,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::WriteOnly,
+                        ),
+                    ),
+                    (8, binding_types::storage_buffer::<DabInfo>(false)),
+                ),
+            )
+            .to_vec(),
         );
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -312,21 +360,31 @@ impl BrushPostProcessPipeline {
         intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
     ) {
-        let bind_group_entries = bind_group_entries(
+        let mut bind_group_entries = common_bind_group_entries(
             resources,
             target_layer_texture,
             target_layer_tile_info,
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            Some(intermediate_buffers),
-            None,
-            None,
-            Some(stroke_pp_data),
-            None,
-            Some(dab_info),
-            None,
-            Some((*round).is_multiple_of(2)),
+        );
+        let (read_idx, write_idx) = if (*round).is_multiple_of(2) {
+            (0, 1)
+        } else {
+            (1, 0)
+        };
+        bind_group_entries.extend(
+            DynamicBindGroupEntries::new_with_indices((
+                (0, stroke_pp_data.binding().unwrap()),
+                (
+                    5,
+                    intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
+                ),
+                (6, &intermediate_buffers[read_idx].texture),
+                (7, &intermediate_buffers[write_idx].texture),
+                (8, dab_info.binding().unwrap()),
+            ))
+            .to_vec(),
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess bind group"),
@@ -365,12 +423,19 @@ impl BrushMainBoundsEvalPipeline {
         resources: &StrokeResources,
         compiled_shader: Cow<'_, str>,
     ) -> Self {
-        let layout_entries = bind_group_layout_entries(
-            &resources.external_var_layouts,
-            false,
-            true,
-            resources.target_layer_format.wgpu_format(),
-            resources.selection_layer_format.wgpu_format(),
+        let mut layout_entries = common_bind_group_layout_entries(resources);
+        layout_entries.extend(
+            DynamicBindGroupLayoutEntries::new_with_indices(
+                ShaderStages::COMPUTE,
+                (
+                    (
+                        0,
+                        binding_types::storage_buffer_read_only::<OutputSamples>(false),
+                    ),
+                    (8, binding_types::storage_buffer::<DabInfo>(false)),
+                ),
+            )
+            .to_vec(),
         );
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -416,21 +481,20 @@ impl BrushMainBoundsEvalPipeline {
     ) {
         use crate::render::MAX_DABS_PER_STROKE;
 
-        let bind_group_entries = bind_group_entries(
+        let mut bind_group_entries = common_bind_group_entries(
             resources,
             target_layer_texture,
             target_layer_tile_info,
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            None,
-            None,
-            Some(samples),
-            None,
-            None,
-            None,
-            Some(dab_infos),
-            None,
+        );
+        bind_group_entries.extend(
+            DynamicBindGroupEntries::new_with_indices((
+                (0, samples.inner_buffer().unwrap().as_entire_binding()),
+                (8, dab_infos.inner_buffer().unwrap().as_entire_binding()),
+            ))
+            .to_vec(),
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bounds eval bind group"),
@@ -460,12 +524,19 @@ impl BrushPostProcessBoundsEvalPipeline {
         resources: &StrokeResources,
         compiled_shader: Cow<'_, str>,
     ) -> Self {
-        let layout_entries = bind_group_layout_entries(
-            &resources.external_var_layouts,
-            true,
-            true,
-            resources.target_layer_format.wgpu_format(),
-            resources.selection_layer_format.wgpu_format(),
+        let mut layout_entries = common_bind_group_layout_entries(resources);
+        layout_entries.extend(
+            DynamicBindGroupLayoutEntries::new_with_indices(
+                ShaderStages::COMPUTE,
+                (
+                    (
+                        0,
+                        binding_types::storage_buffer_read_only::<StrokePostprocessData>(false),
+                    ),
+                    (8, binding_types::storage_buffer::<DabInfo>(false)),
+                ),
+            )
+            .to_vec(),
         );
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -511,21 +582,20 @@ impl BrushPostProcessBoundsEvalPipeline {
     ) {
         use crate::render::MAX_DABS_PER_STROKE;
 
-        let bind_group_entries = bind_group_entries(
+        let mut bind_group_entries = common_bind_group_entries(
             resources,
             target_layer_texture,
             target_layer_tile_info,
             has_selection,
             selection_layer_texture,
             selection_layer_tile_info,
-            None,
-            None,
-            None,
-            Some(stroke_pp_data),
-            None,
-            Some(dab_infos),
-            None,
-            None,
+        );
+        bind_group_entries.extend(
+            DynamicBindGroupEntries::new_with_indices((
+                (0, stroke_pp_data.binding().unwrap()),
+                (8, dab_infos.binding().unwrap()),
+            ))
+            .to_vec(),
         );
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess bounds eval bind group"),
@@ -543,28 +613,10 @@ impl BrushPostProcessBoundsEvalPipeline {
     }
 }
 
-fn bind_group_layout_entries(
-    external_var: &[BindGroupLayoutEntry],
-    is_postprocess: bool,
-    is_bounds_eval: bool,
-    target_layer_format: TextureFormat,
-    selection_layer_format: TextureFormat,
-) -> Vec<BindGroupLayoutEntry> {
+fn common_bind_group_layout_entries(resources: &StrokeResources) -> Vec<BindGroupLayoutEntry> {
     let mut entries = DynamicBindGroupLayoutEntries::new_with_indices(
         ShaderStages::COMPUTE,
         (
-            (
-                0,
-                if !is_postprocess && is_bounds_eval {
-                    binding_types::storage_buffer_read_only::<OutputSamples>(false)
-                } else {
-                    if is_postprocess {
-                        binding_types::storage_buffer_read_only::<StrokePostprocessData>(false)
-                    } else {
-                        binding_types::storage_buffer_read_only::<ComputedPenInput>(!is_bounds_eval)
-                    }
-                },
-            ),
             (
                 1,
                 binding_types::texture_2d(TextureSampleType::Float { filterable: false }),
@@ -577,22 +629,14 @@ fn bind_group_layout_entries(
             (
                 4,
                 binding_types::texture_storage_2d_array(
-                    target_layer_format,
+                    resources.target_layer_format.wgpu_format(),
                     StorageTextureAccess::ReadOnly,
                 ),
             ),
             (
-                8,
-                if is_postprocess || is_bounds_eval {
-                    binding_types::storage_buffer::<DabInfo>(false)
-                } else {
-                    binding_types::storage_buffer::<DabInfo>(true)
-                },
-            ),
-            (
                 9,
                 binding_types::texture_storage_2d_array(
-                    selection_layer_format,
+                    resources.selection_layer_format.wgpu_format(),
                     StorageTextureAccess::ReadOnly,
                 ),
             ),
@@ -602,51 +646,19 @@ fn bind_group_layout_entries(
             ),
             (11, binding_types::storage_buffer_read_only::<u32>(false)),
         ),
-    );
-
-    if !is_bounds_eval {
-        entries = entries.extend_with_indices((
-            (
-                5,
-                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-            ),
-            (
-                6,
-                binding_types::texture_storage_2d_array(
-                    target_layer_format,
-                    StorageTextureAccess::ReadOnly,
-                ),
-            ),
-            (
-                7,
-                binding_types::texture_storage_2d_array(
-                    target_layer_format,
-                    StorageTextureAccess::WriteOnly,
-                ),
-            ),
-        ));
-    }
-
-    let mut entries = entries.to_vec();
-    entries.extend_from_slice(external_var);
+    )
+    .to_vec();
+    entries.extend_from_slice(&resources.external_var_layouts);
     entries
 }
 
-fn bind_group_entries<'a>(
+fn common_bind_group_entries<'a>(
     resources: &'a StrokeResources,
     target_layer_texture: &'a TextureView,
     target_layer_tile_info: &'a Buffer,
     has_selection: &'a Buffer,
     selection_layer_texture: &'a TextureView,
     selection_layer_tile_info: &'a Buffer,
-    intermediate_buffers: Option<&'a [LayerBinding; 2]>,
-    samples: Option<&'a DynamicBuffer<ComputedPenInput>>,
-    samples_vec: Option<&'a DynamicBuffer<OutputSamples>>,
-    stroke_pp_data: Option<&'a DynamicBuffer<StrokePostprocessData>>,
-    stroke_pp_data_vec: Option<&'a BufferVec<StrokePostprocessData>>,
-    dab_infos: Option<&'a DynamicBuffer<DabInfo>>,
-    dab_infos_vec: Option<&'a BufferVec<DabInfo>>,
-    is_even: Option<bool>,
 ) -> Vec<BindGroupEntry<'a>> {
     let mut entries = DynamicBindGroupEntries::new_with_indices((
         (
@@ -659,60 +671,12 @@ fn bind_group_entries<'a>(
         ),
         (3, target_layer_tile_info.as_entire_binding()),
         (4, BindingResource::TextureView(target_layer_texture)),
-        (
-            8,
-            if let Some(dab_infos) = dab_infos {
-                dab_infos.binding().unwrap()
-            } else if let Some(dab_infos_vec) = dab_infos_vec {
-                dab_infos_vec.inner_buffer().unwrap().as_entire_binding()
-            } else {
-                unreachable!()
-            },
-        ),
         (9, BindingResource::TextureView(selection_layer_texture)),
         (10, selection_layer_tile_info.as_entire_binding()),
         (11, has_selection.as_entire_binding()),
-    ));
-    entries.entries.extend(resources.external_var_bindings());
+    ))
+    .to_vec();
 
-    if let Some(samples) = samples {
-        entries.entries.push(BindGroupEntry {
-            binding: 0,
-            resource: samples.binding().unwrap(),
-        });
-    } else if let Some(samples_vec) = samples_vec {
-        entries.entries.push(BindGroupEntry {
-            binding: 0,
-            resource: samples_vec.inner_buffer().unwrap().as_entire_binding(),
-        });
-    } else if let Some(stroke_pp_data) = stroke_pp_data {
-        entries.entries.push(BindGroupEntry {
-            binding: 0,
-            resource: stroke_pp_data.binding().unwrap(),
-        });
-    } else if let Some(stroke_pp_data_vec) = stroke_pp_data_vec {
-        entries.entries.push(BindGroupEntry {
-            binding: 0,
-            resource: stroke_pp_data_vec
-                .inner_buffer()
-                .unwrap()
-                .as_entire_binding(),
-        });
-    } else {
-        unreachable!();
-    }
-
-    if let Some(intermediate_buffers) = intermediate_buffers {
-        let (read_idx, write_idx) = if is_even.unwrap() { (0, 1) } else { (1, 0) };
-        entries = entries.extend_with_indices((
-            (
-                5,
-                intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
-            ),
-            (6, &intermediate_buffers[read_idx].texture),
-            (7, &intermediate_buffers[write_idx].texture),
-        ));
-    }
-
-    entries.entries
+    entries.extend(resources.external_var_bindings());
+    entries
 }
