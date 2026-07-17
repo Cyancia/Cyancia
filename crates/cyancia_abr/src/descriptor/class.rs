@@ -201,7 +201,7 @@ pub struct PatternReference {
     #[abr(key = "Nm  ")]
     pub name: String,
     #[abr(key = "Idnt")]
-    pub id: String,
+    pub id: Uuid,
 }
 
 #[derive(Debug, AbrClass)]
