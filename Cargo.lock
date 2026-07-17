@@ -1864,6 +1864,11 @@ dependencies = [
 [[package]]
 name = "cyancia_cyan"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "parking_lot",
+ "rusqlite",
+]
 
 [[package]]
 name = "cyancia_image"

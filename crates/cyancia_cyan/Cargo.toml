@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+parking_lot.workspace = true
+rusqlite.workspace = true
 
 [lints]
 workspace = true
