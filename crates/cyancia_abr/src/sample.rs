@@ -20,10 +20,10 @@ impl SampleImage {
 
 pub struct Sample {
     pub id: Uuid,
-    pub top: i32,
-    pub left: i32,
-    pub bottom: i32,
-    pub right: i32,
+    pub top: u32,
+    pub left: u32,
+    pub bottom: u32,
+    pub right: u32,
     pub depth: u16,
     pub compression: u8,
     pub pixel_data: Vec<u8>,
@@ -42,10 +42,10 @@ impl Sample {
             // unknown
             record.skip(264)?;
 
-            let top = record.read_i32_be()?;
-            let left = record.read_i32_be()?;
-            let bottom = record.read_i32_be()?;
-            let right = record.read_i32_be()?;
+            let top = record.read_u32_be()?;
+            let left = record.read_u32_be()?;
+            let bottom = record.read_u32_be()?;
+            let right = record.read_u32_be()?;
             let depth = record.read_u16_be()?;
             let compression = record.read_u8()?;
             let pixel_data = record.take(record.remaining())?.to_vec();
