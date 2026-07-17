@@ -5,7 +5,7 @@ use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Fields, GenericArgument, Lit,
+    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Expr, Fields, GenericArgument, Lit,
     LitInt, LitStr, PathArguments, Type, parse_macro_input,
 };
 
@@ -114,6 +114,7 @@ fn expand_class(
         || attrs.key.is_some()
         || attrs.string_value.is_some()
         || attrs.integer_value.is_some()
+        || attrs.default.is_some()
     {
         return Err(Error::new_spanned(
             &name,
@@ -143,7 +144,7 @@ fn expand_class(
         {
             return Err(Error::new_spanned(
                 &field_name,
-                "descriptor fields only support #[abr(key = \"...\")]",
+                "descriptor fields only support #[abr(key = \"...\")] and #[abr(default = ...)]",
             ));
         }
         let key = field_attrs.key.ok_or_else(|| {
@@ -157,6 +158,7 @@ fn expand_class(
         }
 
         let variable = format_ident!("field_{field_name}");
+        let default = field_attrs.default;
         let option_inner = if let Type::Path(path) = &field.ty
             && let Some(segment) = path.path.segments.last()
             && segment.ident == "Option"
@@ -168,6 +170,14 @@ fn expand_class(
         } else {
             None
         };
+        if option_inner.is_some()
+            && let Some(default) = &default
+        {
+            return Err(Error::new_spanned(
+                default,
+                "a descriptor field with #[abr(default = ...)] must use T instead of Option<T>",
+            ));
+        }
         let (value_type, optional) = option_inner.map_or((&field.ty, false), |inner| (inner, true));
 
         declarations.push(quote! {
@@ -195,7 +205,11 @@ fn expand_class(
             }
         });
 
-        if optional {
+        if let Some(default) = default {
+            initializers.push(quote! {
+                #field_name: #variable.unwrap_or_else(|| #default)
+            });
+        } else if optional {
             initializers.push(quote! { #field_name: #variable });
         } else {
             initializers.push(quote! {
@@ -267,6 +281,7 @@ fn expand_object(
         || attrs.key.is_some()
         || attrs.string_value.is_some()
         || attrs.integer_value.is_some()
+        || attrs.default.is_some()
     {
         return Err(Error::new_spanned(
             &name,
@@ -289,6 +304,7 @@ fn expand_object(
             || variant_attrs.key.is_some()
             || variant_attrs.string_value.is_some()
             || variant_attrs.integer_value.is_some()
+            || variant_attrs.default.is_some()
         {
             return Err(Error::new_spanned(
                 variant,
@@ -371,6 +387,7 @@ fn expand_enum(
         || attrs.key.is_some()
         || attrs.string_value.is_some()
         || attrs.integer_value.is_some()
+        || attrs.default.is_some()
     {
         return Err(Error::new_spanned(
             &name,
@@ -395,6 +412,7 @@ fn expand_enum(
             || variant_attrs.enum_type.is_some()
             || variant_attrs.key.is_some()
             || variant_attrs.integer_value.is_some()
+            || variant_attrs.default.is_some()
         {
             return Err(Error::new_spanned(
                 &variant.ident,
@@ -449,6 +467,7 @@ fn expand_integer_enum(
         || attrs.key.is_some()
         || attrs.string_value.is_some()
         || attrs.integer_value.is_some()
+        || attrs.default.is_some()
     {
         return Err(Error::new_spanned(
             &name,
@@ -470,6 +489,7 @@ fn expand_integer_enum(
             || variant_attrs.enum_type.is_some()
             || variant_attrs.key.is_some()
             || variant_attrs.string_value.is_some()
+            || variant_attrs.default.is_some()
         {
             return Err(Error::new_spanned(
                 &variant.ident,
@@ -519,6 +539,7 @@ struct AbrAttributes {
     key: Option<LitStr>,
     string_value: Option<LitStr>,
     integer_value: Option<LitInt>,
+    default: Option<Expr>,
 }
 
 impl AbrAttributes {
@@ -550,6 +571,10 @@ impl AbrAttributes {
                         _ => {
                             return Err(meta.error("abr value must be a string or integer literal"));
                         }
+                    }
+                } else if meta.path.is_ident("default") {
+                    if result.default.replace(meta.value()?.parse()?).is_some() {
+                        return Err(meta.error("duplicate abr default attribute"));
                     }
                 } else {
                     return Err(meta.error("unsupported abr attribute"));

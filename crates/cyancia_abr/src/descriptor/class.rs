@@ -210,19 +210,23 @@ pub struct DualBrush {
     #[abr(key = "useDualBrush")]
     pub enabled: bool,
     #[abr(key = "Flip")]
-    pub flip: Option<bool>,
+    #[abr(default = false)]
+    pub flip: bool,
     #[abr(key = "Brsh")]
     pub brush: Option<BrushTip>,
     #[abr(key = "BlnM")]
     pub blend_mode: Option<BlendMode>,
     #[abr(key = "useScatter")]
-    pub use_scatter: Option<bool>,
+    #[abr(default = false)]
+    pub use_scatter: bool,
     #[abr(key = "Spcn")]
     pub spacing: Option<UnitFloat>,
     #[abr(key = "Cnt ")]
-    pub scatter_count: Option<f64>,
+    #[abr(default = 1.0)]
+    pub scatter_count: f64,
     #[abr(key = "bothAxes")]
-    pub scatter_both_axes: Option<bool>,
+    #[abr(default = false)]
+    pub scatter_both_axes: bool,
     #[abr(key = "countDynamics")]
     pub count_dynamics: Option<PropertyDynamics>,
     #[abr(key = "scatterDynamics")]
@@ -261,15 +265,19 @@ pub struct PaintToolOptions {
     #[abr(key = "brushPreset")]
     pub brush_preset: bool,
     #[abr(key = "Md  ")]
+    #[abr(default = BlendMode::Normal)]
     pub blend_mode: BlendMode,
     #[abr(key = "Opct")]
+    #[abr(default = 100)]
     pub opacity: i32,
     #[abr(key = "flow")]
+    #[abr(default = 100)]
     pub flow: i32,
     #[abr(key = "FrgC")]
     pub foreground_color: Option<RgbColor>,
     #[abr(key = "Smoo")]
-    pub smoo: Option<i32>,
+    #[abr(default = 0)]
+    pub smoo: i32,
     #[abr(key = "clVr")]
     pub color_dynamics: Option<PropertyDynamics>,
     #[abr(key = "opVr")]
@@ -279,25 +287,35 @@ pub struct PaintToolOptions {
     #[abr(key = "szVr")]
     pub size_dynamics: Option<PropertyDynamics>,
     #[abr(key = "pressureSmoothing")]
-    pub pressure_smoothing: Option<bool>,
+    #[abr(default = false)]
+    pub pressure_smoothing: bool,
     #[abr(key = "smoothing")]
-    pub smoothing: Option<bool>,
+    #[abr(default = false)]
+    pub smoothing: bool,
     #[abr(key = "smoothingCatchup")]
-    pub smoothing_catchup: Option<bool>,
+    #[abr(default = true)]
+    pub smoothing_catchup: bool,
     #[abr(key = "smoothingCatchupAtEnd")]
-    pub smoothing_catchup_at_end: Option<bool>,
+    #[abr(default = false)]
+    pub smoothing_catchup_at_end: bool,
     #[abr(key = "smoothingRadiusMode")]
-    pub smoothing_radius_mode: Option<bool>,
+    #[abr(default = false)]
+    pub smoothing_radius_mode: bool,
     #[abr(key = "smoothingValue")]
-    pub smoothing_value: Option<f64>,
+    #[abr(default = 0.0)]
+    pub smoothing_value: f64,
     #[abr(key = "smoothingZoomCompensation")]
-    pub smoothing_zoom_compensation: Option<bool>,
+    #[abr(default = true)]
+    pub smoothing_zoom_compensation: bool,
     #[abr(key = "useLegacy")]
-    pub use_legacy: Option<bool>,
+    #[abr(default = false)]
+    pub use_legacy: bool,
     #[abr(key = "usePressureOverridesOpacity")]
-    pub use_pressure_overrides_opacity: Option<bool>,
+    #[abr(default = false)]
+    pub use_pressure_overrides_opacity: bool,
     #[abr(key = "usePressureOverridesSize")]
-    pub use_pressure_overrides_size: Option<bool>,
+    #[abr(default = false)]
+    pub use_pressure_overrides_size: bool,
 }
 
 #[derive(Debug, AbrClass)]
@@ -306,6 +324,7 @@ pub struct SmudgeToolOptions {
     #[abr(key = "brushPreset")]
     pub brush_preset: bool,
     #[abr(key = "Md  ")]
+    #[abr(default = BlendMode::Normal)]
     pub blend_mode: BlendMode,
     #[abr(key = "Prs ")]
     pub strength: i32,
@@ -318,25 +337,35 @@ pub struct SmudgeToolOptions {
     #[abr(key = "szVr")]
     pub size_dynamics: Option<PropertyDynamics>,
     #[abr(key = "pressureSmoothing")]
-    pub pressure_smoothing: Option<bool>,
+    #[abr(default = false)]
+    pub pressure_smoothing: bool,
     #[abr(key = "smoothing")]
-    pub smoothing: Option<bool>,
+    #[abr(default = false)]
+    pub smoothing: bool,
     #[abr(key = "smoothingCatchup")]
-    pub smoothing_catchup: Option<bool>,
+    #[abr(default = true)]
+    pub smoothing_catchup: bool,
     #[abr(key = "smoothingCatchupAtEnd")]
-    pub smoothing_catchup_at_end: Option<bool>,
+    #[abr(default = false)]
+    pub smoothing_catchup_at_end: bool,
     #[abr(key = "smoothingRadiusMode")]
-    pub smoothing_radius_mode: Option<bool>,
+    #[abr(default = false)]
+    pub smoothing_radius_mode: bool,
     #[abr(key = "smoothingValue")]
-    pub smoothing_value: Option<f64>,
+    #[abr(default = 0.0)]
+    pub smoothing_value: f64,
     #[abr(key = "smoothingZoomCompensation")]
-    pub smoothing_zoom_compensation: Option<bool>,
+    #[abr(default = true)]
+    pub smoothing_zoom_compensation: bool,
     #[abr(key = "useLegacy")]
-    pub use_legacy: Option<bool>,
+    #[abr(default = false)]
+    pub use_legacy: bool,
     #[abr(key = "usePressureOverridesOpacity")]
-    pub use_pressure_overrides_opacity: Option<bool>,
+    #[abr(default = false)]
+    pub use_pressure_overrides_opacity: bool,
     #[abr(key = "usePressureOverridesSize")]
-    pub use_pressure_overrides_size: Option<bool>,
+    #[abr(default = false)]
+    pub use_pressure_overrides_size: bool,
 }
 
 #[derive(Debug, AbrClass)]
@@ -376,8 +405,10 @@ pub struct EraserToolOptions {
     #[abr(key = "MgcE")]
     pub magic_eraser: bool,
     #[abr(key = "Opct")]
+    #[abr(default = 100)]
     pub opacity: i32,
     #[abr(key = "flow")]
+    #[abr(default = 100)]
     pub flow: i32,
     #[abr(key = "Smoo")]
     pub smoo: i32,
@@ -423,11 +454,14 @@ pub struct BrushPreset {
     #[abr(key = "useTipDynamics")]
     pub use_tip_dynamics: bool,
     #[abr(key = "flipX")]
-    pub flip_x: Option<bool>,
+    #[abr(default = false)]
+    pub flip_x: bool,
     #[abr(key = "flipY")]
-    pub flip_y: Option<bool>,
+    #[abr(default = false)]
+    pub flip_y: bool,
     #[abr(key = "brushProjection")]
-    pub brush_projection: Option<bool>,
+    #[abr(default = false)]
+    pub brush_projection: bool,
     #[abr(key = "minimumDiameter")]
     pub minimum_diameter: Option<UnitFloat>,
     #[abr(key = "minimumRoundness")]
@@ -463,15 +497,18 @@ pub struct BrushPreset {
     #[abr(key = "purity")]
     pub purity_jitter: Option<UnitFloat>,
     #[abr(key = "colorDynamicsPerTip")]
-    pub color_dynamics_per_tip: Option<bool>,
+    #[abr(default = false)]
+    pub color_dynamics_per_tip: bool,
     #[abr(key = "useScatter")]
     pub use_scatter: bool,
     #[abr(key = "Spcn")]
     pub scatter_spacing: Option<UnitFloat>,
     #[abr(key = "Cnt ")]
-    pub scatter_count: Option<f64>,
+    #[abr(default = 1.0)]
+    pub scatter_count: f64,
     #[abr(key = "bothAxes")]
-    pub scatter_both_axes: Option<bool>,
+    #[abr(default = false)]
+    pub scatter_both_axes: bool,
     #[abr(key = "countDynamics")]
     pub count_dynamics: Option<PropertyDynamics>,
     #[abr(key = "scatterDynamics")]
@@ -481,7 +518,8 @@ pub struct BrushPreset {
     #[abr(key = "Txtr")]
     pub texture: Option<PatternReference>,
     #[abr(key = "TxtC")]
-    pub txt_c: Option<bool>,
+    #[abr(default = false)]
+    pub txt_c: bool,
     #[abr(key = "interpretation")]
     pub interpretation: Option<bool>,
     #[abr(key = "textureBlendMode")]
@@ -495,29 +533,40 @@ pub struct BrushPreset {
     #[abr(key = "textureScale")]
     pub texture_scale: Option<UnitFloat>,
     #[abr(key = "InvT")]
-    pub texture_inverted: Option<bool>,
+    #[abr(default = false)]
+    pub texture_inverted: bool,
     #[abr(key = "protectTexture")]
-    pub protect_texture: Option<bool>,
+    #[abr(default = false)]
+    pub protect_texture: bool,
     #[abr(key = "textureBrightness")]
-    pub texture_brightness: Option<i32>,
+    #[abr(default = 0)]
+    pub texture_brightness: i32,
     #[abr(key = "textureContrast")]
-    pub texture_contrast: Option<i32>,
+    #[abr(default = 0)]
+    pub texture_contrast: i32,
     #[abr(key = "brushPoseAngle")]
-    pub brush_pose_angle: Option<i32>,
+    #[abr(default = 0)]
+    pub brush_pose_angle: i32,
     #[abr(key = "brushPosePressure")]
     pub brush_pose_pressure: Option<UnitFloat>,
     #[abr(key = "brushPoseTiltX")]
-    pub brush_pose_tilt_x: Option<i32>,
+    #[abr(default = 0)]
+    pub brush_pose_tilt_x: i32,
     #[abr(key = "brushPoseTiltY")]
-    pub brush_pose_tilt_y: Option<i32>,
+    #[abr(default = 0)]
+    pub brush_pose_tilt_y: i32,
     #[abr(key = "overridePoseAngle")]
-    pub override_pose_angle: Option<bool>,
+    #[abr(default = false)]
+    pub override_pose_angle: bool,
     #[abr(key = "overridePosePressure")]
-    pub override_pose_pressure: Option<bool>,
+    #[abr(default = false)]
+    pub override_pose_pressure: bool,
     #[abr(key = "overridePoseTiltX")]
-    pub override_pose_tilt_x: Option<bool>,
+    #[abr(default = false)]
+    pub override_pose_tilt_x: bool,
     #[abr(key = "overridePoseTiltY")]
-    pub override_pose_tilt_y: Option<bool>,
+    #[abr(default = false)]
+    pub override_pose_tilt_y: bool,
     #[abr(key = "dualBrush")]
     pub dual_brush: DualBrush,
     #[abr(key = "brushGroup")]

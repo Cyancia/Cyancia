@@ -71,11 +71,11 @@ impl Sample {
         let width = self
             .right
             .checked_sub(self.left)
-            .context("sample width overflows i32")?;
+            .context("sample width underflows u32")?;
         let height = self
             .bottom
             .checked_sub(self.top)
-            .context("sample height overflows i32")?;
+            .context("sample height underflows u32")?;
         ensure!(
             width > 0 && height > 0,
             "invalid sample bounds ({}, {}, {}, {})",
@@ -85,8 +85,6 @@ impl Sample {
             self.right
         );
 
-        let width = u32::try_from(width)?;
-        let height = u32::try_from(height)?;
         let width_usize = usize::try_from(width)?;
         let height_usize = usize::try_from(height)?;
         let bytes_per_pixel = match self.depth {
