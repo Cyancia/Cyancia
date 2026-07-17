@@ -37,6 +37,24 @@ impl<T> AsyncBufferReadback<T> {
     }
 }
 
+pub fn readback_buffer_raw_on_submit_async<S>(
+    ec: &mut CommandEncoder,
+    buffer: &Buffer,
+    bounds: S,
+) -> AsyncBufferReadback<Vec<u8>>
+where
+    S: RangeBounds<BufferAddress> + Clone + Send + 'static,
+{
+    let (tx, rx) = futures::channel::oneshot::channel();
+    ec.map_buffer_on_submit(
+        buffer,
+        MapMode::Read,
+        bounds.clone(),
+        on_buffer_mapped_raw(buffer.clone(), bounds, tx),
+    );
+    AsyncBufferReadback { rx }
+}
+
 pub fn readback_buffer_on_submit_async<T, S>(
     ec: &mut CommandEncoder,
     buffer: &Buffer,
@@ -91,5 +109,26 @@ where
         let mut wrapper = encase::DynamicStorageBuffer::new(bytes);
         let data = wrapper.create::<T>();
         tx.send(data.map_err(Into::into)).ok();
+    }
+}
+
+fn on_buffer_mapped_raw<S>(
+    buffer: Buffer,
+    bounds: S,
+    tx: Sender<anyhow::Result<Vec<u8>>>,
+) -> impl FnOnce(Result<(), BufferAsyncError>)
+where
+    S: RangeBounds<BufferAddress> + Send + 'static,
+{
+    move |r| {
+        if let Err(e) = r {
+            buffer.unmap();
+            tx.send(Err(e.into())).ok();
+            return;
+        }
+
+        let bytes = buffer.get_mapped_range(bounds).to_vec();
+        buffer.unmap();
+        tx.send(Ok(bytes)).ok();
     }
 }

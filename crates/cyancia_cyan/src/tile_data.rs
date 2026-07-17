@@ -1,0 +1,127 @@
+use anyhow::Result;
+use rusqlite::{Connection, OptionalExtension, params};
+use uuid::Uuid;
+
+use crate::CyanArchive;
+
+pub(crate) fn initialize_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+CREATE TABLE tile_data (
+    layer_id BLOB NOT NULL CHECK (length(layer_id) = 16),
+    tile_x   INTEGER NOT NULL,
+    tile_y   INTEGER NOT NULL,
+    data     BLOB NOT NULL,
+    PRIMARY KEY (layer_id, tile_x, tile_y)
+) WITHOUT ROWID;
+        "#,
+    )?;
+
+    Ok(())
+}
+
+impl CyanArchive {
+    pub fn write_tile_data(
+        &self,
+        layer_id: Uuid,
+        tile_x: i32,
+        tile_y: i32,
+        data: impl AsRef<[u8]>,
+    ) -> Result<()> {
+        self.conn.lock().execute(
+            r#"
+INSERT INTO tile_data (layer_id, tile_x, tile_y, data)
+VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT (layer_id, tile_x, tile_y) DO UPDATE SET
+    data = excluded.data
+            "#,
+            params![&layer_id.as_bytes()[..], tile_x, tile_y, data.as_ref()],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn read_tile_data(
+        &self,
+        layer_id: Uuid,
+        tile_x: i32,
+        tile_y: i32,
+    ) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .conn
+            .lock()
+            .query_row(
+                r#"
+SELECT data
+FROM tile_data
+WHERE layer_id = ?1 AND tile_x = ?2 AND tile_y = ?3
+                "#,
+                params![&layer_id.as_bytes()[..], tile_x, tile_y],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tile_data_table_has_the_requested_columns() {
+        let archive = CyanArchive::new_in_memory().unwrap();
+        let conn = archive.conn.lock();
+        let mut statement = conn.prepare("PRAGMA table_info(tile_data)").unwrap();
+        let columns = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, bool>(3)?,
+                ))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+
+        assert_eq!(
+            columns,
+            [
+                ("layer_id".into(), "BLOB".into(), true),
+                ("tile_x".into(), "INTEGER".into(), true),
+                ("tile_y".into(), "INTEGER".into(), true),
+                ("data".into(), "BLOB".into(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn compressed_tile_data_round_trips_without_transformation() {
+        let archive = CyanArchive::new_in_memory().unwrap();
+        let layer_id = Uuid::new_v4();
+        let compressed_data = [120, 156, 99, 96, 100, 98, 6, 0, 0, 14, 0, 7];
+
+        archive
+            .write_tile_data(layer_id, -2, 3, compressed_data)
+            .unwrap();
+
+        assert_eq!(
+            archive.read_tile_data(layer_id, -2, 3).unwrap(),
+            Some(compressed_data.to_vec())
+        );
+    }
+
+    #[test]
+    fn writing_the_same_tile_replaces_its_data() {
+        let archive = CyanArchive::new_in_memory().unwrap();
+        let layer_id = Uuid::new_v4();
+
+        archive.write_tile_data(layer_id, 4, 5, [1, 2]).unwrap();
+        archive.write_tile_data(layer_id, 4, 5, [3, 4]).unwrap();
+
+        assert_eq!(
+            archive.read_tile_data(layer_id, 4, 5).unwrap(),
+            Some(vec![3, 4])
+        );
+    }
+}

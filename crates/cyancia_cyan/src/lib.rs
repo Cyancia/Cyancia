@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use rusqlite::{Connection, OpenFlags};
 
 pub mod image_props;
+pub mod tile_data;
 pub use image_props::ImageProperties;
 
 pub struct CyanArchive {
@@ -52,6 +53,8 @@ impl CyanArchive {
 
     fn initialize_tables(&self) -> Result<()> {
         let conn = self.conn.lock();
-        image_props::initialize_table(&conn)
+        image_props::initialize_table(&conn)?;
+        tile_data::initialize_table(&conn)?;
+        Ok(())
     }
 }

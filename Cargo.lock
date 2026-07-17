@@ -1868,6 +1868,7 @@ dependencies = [
  "anyhow",
  "parking_lot",
  "rusqlite",
+ "uuid",
 ]
 
 [[package]]
@@ -1878,6 +1879,7 @@ dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "bytemuck",
  "cyancia_color",
+ "cyancia_cyan",
  "cyancia_render",
  "cyancia_shader_graph",
  "cyancia_utils",
@@ -1886,6 +1888,8 @@ dependencies = [
  "downcast-rs 2.0.2",
  "dyn-clone",
  "encase",
+ "flate2",
+ "futures",
  "glam",
  "gpui",
  "gpui-component",
