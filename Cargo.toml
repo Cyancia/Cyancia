@@ -9,6 +9,7 @@ members = [
     "crates/cyancia_bucket_tool",
     "crates/cyancia_canvas",
     "crates/cyancia_color",
+    "crates/cyancia_cyan",
     "crates/cyancia_image",
     "crates/cyancia_math",
     "crates/cyancia_render",
