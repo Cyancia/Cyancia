@@ -7,7 +7,6 @@ use cyancia_render::{
     buffer::DynamicBuffer,
 };
 use glam::{IVec2, UVec3};
-use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer,
@@ -18,7 +17,6 @@ use wgpu::{
 
 use crate::{
     CImage,
-    blend_modes::BlendMode,
     composite::{
         BlendFunction, BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
         LayerPreviewOverriders,

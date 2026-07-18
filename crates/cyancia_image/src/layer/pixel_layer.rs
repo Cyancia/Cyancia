@@ -11,7 +11,6 @@ use cyancia_render::{
 use glam::UVec3;
 use imagers::DynamicImage;
 use moxcms::ColorProfile;
-use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayoutDescriptor, Buffer, BufferUsages, ComputePass,
@@ -21,7 +20,6 @@ use wgpu::{
 
 use crate::{
     CImage,
-    blend_modes::BlendMode,
     composite::{
         BlendFunction, BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
         LayerPreviewOverriders, PixelPreviewOverrider,

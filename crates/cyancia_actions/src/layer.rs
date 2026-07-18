@@ -12,7 +12,6 @@ use cyancia_canvas::{
 };
 use cyancia_image::{
     CImage,
-    blend_modes::BlendMode,
     composite::BlendFunction,
     layer::{
         LayerId, LayerPosition, LayerStackNode,

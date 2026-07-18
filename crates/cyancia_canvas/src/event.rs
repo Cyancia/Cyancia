@@ -1,5 +1,5 @@
 use bevy_math::IRect;
-use cyancia_image::layer::{Layer, LayerId, properties::LayerProperties};
+use cyancia_image::layer::{LayerId, properties::LayerProperties};
 
 use crate::CanvasId;
 

@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use anyhow::bail;
 use bevy_math::IRect;
 use cyancia_image::{
-    layer::{Layer, LayerId, LayerPosition, LayerStackNode, properties::LayerProperties},
+    layer::{LayerId, LayerPosition, LayerStackNode, properties::LayerProperties},
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };

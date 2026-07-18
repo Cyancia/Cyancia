@@ -1,17 +1,11 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    fs::File,
-    io::BufReader,
-    path::Path,
 };
 
-use anyhow::Result;
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
-use image::DynamicImage;
 use indexmap::IndexSet;
-use moxcms::ColorProfile;
 use parse_display::Display;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -20,9 +14,8 @@ use wgpu::{Buffer, ComputePass, Device, Queue, TextureView};
 
 use crate::{
     CImage,
-    blend_modes::BlendMode,
     composite::{
-        BlendFunction, BlendFunctionId, BlendFunctionRegistry, ImageCompositor,
+        BlendFunction, BlendFunctionRegistry, ImageCompositor,
         LayerPreviewOverriders,
     },
     layer::{
