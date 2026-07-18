@@ -2,7 +2,7 @@
 macro_rules! wrapper {
     ($(#[$attr:meta])* $vis:vis $wrapper:ident $(<$($gen:tt),*>)? : $original: ty $(where $($bounds:tt)*)?) => {
         $(#[$attr])*
-        $vis struct $wrapper $(<$($gen),*>)? ($original) $(where $($bounds)*)?;
+        $vis struct $wrapper $(<$($gen),*>)? (pub $original) $(where $($bounds)*)?;
 
         impl $(<$($gen),*>)? $wrapper $(<$($gen),*>)? $(where $($bounds)*)? {
             pub const fn new(value: $original) -> Self {

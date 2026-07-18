@@ -1,6 +1,13 @@
 use cyancia_image::{
     composite::{BlendFunctionId, BlendFunctionRegistry},
-    layer::{LayerData, LayerId, LayerPosition},
+    layer::{
+        LayerId, LayerPosition,
+        properties::{
+            BlendFunctionPropertyExt, DisabledChannelsPropertyExt, LayerProperties,
+            LockedChannelsPropertyExt, LockedPropertyExt, NamePropertyExt, OpacityPropertyExt,
+            VisiblePropertyExt,
+        },
+    },
     tile::TileStorageAppExt,
 };
 use cyancia_utils::log_err::LogErr;
@@ -117,12 +124,12 @@ impl LayerStackWidget {
         if let SelectEvent::Confirm(Some(value)) = event {
             let cmd = self
                 .canvas
-                .update(cx, |canvas, _| {
-                    let old = canvas.active_layer_node().data().clone();
+                .read_with(cx, |canvas, _| {
+                    let old = canvas.active_layer_node().properties().clone();
                     let new = {
-                        let mut data = old.clone();
-                        data.blend_func = value.clone();
-                        data
+                        let mut props = old.clone();
+                        props.set_blend_function(value.clone());
+                        props
                     };
                     LayerPropertyChangeCommand {
                         canvas: canvas.id(),
@@ -143,7 +150,7 @@ impl LayerStackWidget {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let props = canvas.read(cx).active_layer_node().data().clone();
+        let props = canvas.read(cx).active_layer_node().properties().clone();
         self.sync_layer_properties(props, window, cx);
     }
 
@@ -232,10 +239,13 @@ impl LayerStackWidget {
                             return;
                         };
 
-                        self.recorded_opacity.get_or_insert(layer.data().opacity);
+                        let Some(opacity) = layer.properties().get_opacity() else {
+                            return;
+                        };
+                        self.recorded_opacity.get_or_insert(opacity);
                         // This is only used for preview purpose. The original opacity is recorded and
                         // is going to be restored on release.
-                        layer.data_mut().opacity = val / 100.0;
+                        layer.properties_mut().set_opacity(val / 100.0);
 
                         // TODO use layer bounds
                         cx.emit(CanvasUpdated {
@@ -254,19 +264,19 @@ impl LayerStackWidget {
                             .get_layer(&canvas.active_layer_id())
                             .unwrap();
                         let old = {
-                            let mut data = layer.data().clone();
+                            let mut props = layer.properties().clone();
                             // Get the recorded opacity, if this event is initiated by end dragging.
                             // If the value is typed directly, no opacity is recorded, as well as no
                             // layer opacity is changed before.
                             if let Some(old_opacity) = self.recorded_opacity.take() {
-                                data.opacity = old_opacity;
+                                props.set_opacity(old_opacity);
                             }
-                            data
+                            props
                         };
                         let new = {
-                            let mut data = old.clone();
-                            data.opacity = val / 100.0;
-                            data
+                            let mut props = old.clone();
+                            props.set_opacity(val / 100.0);
+                            props
                         };
                         LayerPropertyChangeCommand {
                             canvas: canvas.id(),
@@ -293,23 +303,26 @@ impl LayerStackWidget {
             return;
         }
 
-        let props = canvas.active_layer_node().data().clone();
+        let props = canvas.active_layer_node().properties().clone();
         self.sync_layer_properties(props, window, cx);
     }
 
     fn sync_layer_properties(
         &mut self,
-        props: LayerData,
+        props: LayerProperties,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        dbg!(props.opacity);
-        self.opacity_state.update(cx, |state, cx| {
-            state.set_value(props.opacity * 100.0, cx);
-        });
-        self.blend_mode_select_state.update(cx, |state, cx| {
-            state.set_selected_value(&props.blend_func, window, cx);
-        });
+        if let Some(opacity) = props.get_opacity() {
+            self.opacity_state.update(cx, |state, cx| {
+                state.set_value(opacity * 100.0, cx);
+            });
+        }
+        if let Some(blend_function) = props.get_blend_function() {
+            self.blend_mode_select_state.update(cx, |state, cx| {
+                state.set_selected_value(blend_function, window, cx);
+            });
+        }
     }
 
     fn resolve_drop_target(
@@ -451,7 +464,7 @@ impl LayerStackWidget {
             .canvas
             .read_with(cx, |canvas, _| {
                 let layer = canvas.image.layer_stack().get_layer(&action.layer_id)?;
-                Some(layer.data().name.clone())
+                Some(layer.properties().get_name()?.to_owned())
             })
             .ok()
             .flatten();
@@ -488,11 +501,11 @@ impl LayerStackWidget {
                     return;
                 };
 
-                let old = layer.data().clone();
+                let old = layer.properties().clone();
                 let new = {
-                    let mut data = old.clone();
-                    data.name = value.into();
-                    data
+                    let mut props = old.clone();
+                    props.set_name(value.to_string());
+                    props
                 };
                 let cmd = LayerPropertyChangeCommand {
                     canvas: canvas.id(),
@@ -524,7 +537,12 @@ impl Render for LayerStackWidget {
             .iter_layers_dfs_display_order_without_root()
             .map(|(node, depth)| {
                 let layer_id = *node.id();
-                let drag_info = LayerDragInfo::new(layer_id, node.data().name.clone().into());
+                let layer_name = node
+                    .properties()
+                    .get_name()
+                    .map(|n| n.to_owned())
+                    .unwrap_or_default();
+                let drag_info = LayerDragInfo::new(layer_id, layer_name.clone().into());
 
                 let inner = h_flex()
                     .size_full()
@@ -532,7 +550,7 @@ impl Render for LayerStackWidget {
                     .when_else(
                         Some(layer_id) == self.renaming_layer,
                         |d| d.child(Input::new(&self.rename_input_state).w_full()),
-                        |d| d.child(node.data().name.clone()),
+                        |d| d.child(layer_name),
                     )
                     .on_prepaint({
                         let widget = widget.clone();
@@ -553,145 +571,163 @@ impl Render for LayerStackWidget {
                         .layer_stack()
                         .get_layer(&a)
                         .unwrap()
-                        .data()
-                        .is_visible
+                        .properties()
+                        .get_visible()
+                        .unwrap_or(true)
                 });
 
-                let visible_checkbox = Checkbox::new("visible-checkbox")
-                    .checked(node.data().is_visible)
-                    .when(!ancestor_visible, |c| c.opacity(0.5))
-                    .block_mouse_except_scroll()
-                    .on_click({
-                        let canvas_entity = canvas_entity.downgrade();
-                        move |checked, _, cx| {
-                            let cmd = canvas_entity
-                                .update(cx, |canvas, cx| {
-                                    let layer = canvas
-                                        .image
-                                        .layer_stack_mut()
-                                        .get_layer_mut(&layer_id)
-                                        .unwrap();
-                                    let old = layer.data().clone();
-                                    let new = {
-                                        let mut data = old.clone();
-                                        data.is_visible = *checked;
-                                        data
-                                    };
-                                    cx.stop_propagation();
-                                    LayerPropertyChangeCommand {
-                                        canvas: canvas.id(),
-                                        layer_id,
-                                        old,
-                                        new,
-                                    }
-                                })
-                                .unwrap();
-                            cx.push_undo_command_to_current(cmd).log_err();
-                        }
-                    });
+                let visible_checkbox = node.properties().get_visible().map(|visible| {
+                    Checkbox::new("visible-checkbox")
+                        .checked(visible)
+                        .when(!ancestor_visible, |c| c.opacity(0.5))
+                        .block_mouse_except_scroll()
+                        .on_click({
+                            let canvas_entity = canvas_entity.downgrade();
+                            move |checked, _, cx| {
+                                cx.stop_propagation();
+                                let cmd = canvas_entity
+                                    .read_with(cx, |canvas, _| {
+                                        let layer = canvas
+                                            .image
+                                            .layer_stack()
+                                            .get_layer(&layer_id)
+                                            .unwrap();
+                                        let old = layer.properties().clone();
+                                        let new = {
+                                            let mut props = old.clone();
+                                            props.set_visible(*checked);
+                                            props
+                                        };
+                                        LayerPropertyChangeCommand {
+                                            canvas: canvas.id(),
+                                            layer_id,
+                                            old,
+                                            new,
+                                        }
+                                    })
+                                    .unwrap();
+                                cx.push_undo_command_to_current(cmd).log_err();
+                            }
+                        })
+                });
 
-                let lock_toggle_button = Button::new("lock-toggle-button")
-                    .aspect_square()
-                    .selected(node.data().is_locked)
-                    .ghost()
-                    // TODO Use icon
-                    .child("L")
-                    .block_mouse_except_scroll()
-                    .on_click({
-                        let canvas_entity = canvas_entity.downgrade();
-                        move |_, _, cx| {
-                            let cmd = canvas_entity
-                                .read_with(cx, |canvas, _| {
-                                    let layer =
-                                        canvas.image.layer_stack().get_layer(&layer_id).unwrap();
-                                    let old = layer.data().clone();
-                                    let new = {
-                                        let mut d = old.clone();
-                                        d.is_locked = !old.is_locked;
-                                        d
-                                    };
-                                    LayerPropertyChangeCommand {
-                                        canvas: canvas.id(),
-                                        layer_id,
-                                        old,
-                                        new,
-                                    }
-                                })
-                                .unwrap();
-                            cx.push_undo_command_to_current(cmd).log_err();
-                        }
-                    });
+                let lock_toggle_button = node.properties().get_locked().map(|locked| {
+                    Button::new("lock-toggle-button")
+                        .aspect_square()
+                        .selected(locked)
+                        .ghost()
+                        // TODO Use icon
+                        .child("L")
+                        .block_mouse_except_scroll()
+                        .on_click({
+                            let canvas_entity = canvas_entity.downgrade();
+                            move |_, _, cx| {
+                                let cmd = canvas_entity
+                                    .read_with(cx, |canvas, _| {
+                                        let layer = canvas
+                                            .image
+                                            .layer_stack()
+                                            .get_layer(&layer_id)
+                                            .unwrap();
+                                        let old = layer.properties().clone();
+                                        let new = {
+                                            let mut props = old.clone();
+                                            props.set_locked(!locked);
+                                            props
+                                        };
+                                        LayerPropertyChangeCommand {
+                                            canvas: canvas.id(),
+                                            layer_id,
+                                            old,
+                                            new,
+                                        }
+                                    })
+                                    .unwrap();
+                                cx.push_undo_command_to_current(cmd).log_err();
+                            }
+                        })
+                });
 
                 let alpha_index = cx
                     .tile_storage()
                     .get_layer_info(layer_id)
                     .map(|info| info.texel_type.alpha_channel_index())
                     .unwrap_or(canvas.image.texel_type().alpha_channel_index());
-                let inherit_alpha_toggle_button = Button::new("inherit-alpha-toggle-button")
-                    .aspect_square()
-                    .selected(node.data().is_channel_disabled(alpha_index))
-                    .ghost()
-                    .child("α")
-                    .block_mouse_except_scroll()
-                    .on_click({
-                        let canvas_entity = canvas_entity.downgrade();
-                        move |_, _, cx| {
-                            let cmd = canvas_entity
-                                .read_with(cx, |canvas, _| {
-                                    let layer =
-                                        canvas.image.layer_stack().get_layer(&layer_id).unwrap();
-                                    let old = layer.data().clone();
-                                    let new = {
-                                        let mut d = old.clone();
-                                        d.set_channel_disabled(
-                                            alpha_index,
-                                            !d.is_channel_disabled(alpha_index),
-                                        );
-                                        d
-                                    };
-                                    LayerPropertyChangeCommand {
-                                        canvas: canvas.id(),
-                                        layer_id,
-                                        old,
-                                        new,
-                                    }
-                                })
-                                .unwrap();
-                            cx.push_undo_command_to_current(cmd).log_err();
-                        }
+                let inherit_alpha_toggle_button =
+                    node.properties().get_disabled_channels().map(|channels| {
+                        Button::new("inherit-alpha-toggle-button")
+                            .aspect_square()
+                            .selected(channels.is_channel_disabled(alpha_index))
+                            .ghost()
+                            .child("α")
+                            .block_mouse_except_scroll()
+                            .on_click({
+                                let canvas_entity = canvas_entity.downgrade();
+                                move |_, _, cx| {
+                                    let cmd = canvas_entity
+                                        .read_with(cx, |canvas, _| {
+                                            let layer = canvas
+                                                .image
+                                                .layer_stack()
+                                                .get_layer(&layer_id)
+                                                .unwrap();
+                                            let old = layer.properties().clone();
+                                            let new = {
+                                                let mut props = old.clone();
+                                                let mut channels = props.disabled_channels();
+                                                channels.toggle_channel_disabled(alpha_index);
+                                                props.set_disabled_channels(channels);
+                                                props
+                                            };
+                                            LayerPropertyChangeCommand {
+                                                canvas: canvas.id(),
+                                                layer_id,
+                                                old,
+                                                new,
+                                            }
+                                        })
+                                        .unwrap();
+                                    cx.push_undo_command_to_current(cmd).log_err();
+                                }
+                            })
                     });
-                let lock_alpha_toggle_button = Button::new("lock-alpha-toggle-button")
-                    .aspect_square()
-                    .selected(node.data().is_channel_locked(alpha_index))
-                    .ghost()
-                    .child("A")
-                    .block_mouse_except_scroll()
-                    .on_click({
-                        let canvas_entity = canvas_entity.downgrade();
-                        move |_, _, cx| {
-                            let cmd = canvas_entity
-                                .read_with(cx, |canvas, _| {
-                                    let layer =
-                                        canvas.image.layer_stack().get_layer(&layer_id).unwrap();
-                                    let old = layer.data().clone();
-                                    let new = {
-                                        let mut d = old.clone();
-                                        d.set_channel_locked(
-                                            alpha_index,
-                                            !d.is_channel_locked(alpha_index),
-                                        );
-                                        d
-                                    };
-                                    LayerPropertyChangeCommand {
-                                        canvas: canvas.id(),
-                                        layer_id,
-                                        old,
-                                        new,
-                                    }
-                                })
-                                .unwrap();
-                            cx.push_undo_command_to_current(cmd).log_err();
-                        }
+                let lock_alpha_toggle_button =
+                    node.properties().get_locked_channels().map(|channels| {
+                        Button::new("lock-alpha-toggle-button")
+                            .aspect_square()
+                            .selected(channels.is_channel_locked(alpha_index))
+                            .ghost()
+                            .child("A")
+                            .block_mouse_except_scroll()
+                            .on_click({
+                                let canvas_entity = canvas_entity.downgrade();
+                                move |_, _, cx| {
+                                    let cmd = canvas_entity
+                                        .read_with(cx, |canvas, _| {
+                                            let layer = canvas
+                                                .image
+                                                .layer_stack()
+                                                .get_layer(&layer_id)
+                                                .unwrap();
+                                            let old = layer.properties().clone();
+                                            let new = {
+                                                let mut props = old.clone();
+                                                let mut channels = props.locked_channels();
+                                                channels.toggle_channel_locked(alpha_index);
+                                                props.set_locked_channels(channels);
+                                                props
+                                            };
+                                            LayerPropertyChangeCommand {
+                                                canvas: canvas.id(),
+                                                layer_id,
+                                                old,
+                                                new,
+                                            }
+                                        })
+                                        .unwrap();
+                                    cx.push_undo_command_to_current(cmd).log_err();
+                                }
+                            })
                     });
 
                 h_flex()
@@ -704,17 +740,13 @@ impl Render for LayerStackWidget {
                         d.bg(cx.theme().accent)
                     })
                     .when(canvas.active_layer == layer_id, |d| d.font_bold())
-                    .child(visible_checkbox)
+                    .when_some(visible_checkbox, |d, checkbox| d.child(checkbox))
                     .child(inner)
                     // TODO These property buttons should be provided by specific layer types.
                     //      For example the preferred api should look like PixelLayer::property_shortcuts
-                    .child(lock_toggle_button)
-                    .when(node.data().can_contain_pixels(), |d| {
-                        d.child(inherit_alpha_toggle_button)
-                    })
-                    .when(node.data().can_contain_pixels(), |d| {
-                        d.child(lock_alpha_toggle_button)
-                    })
+                    .when_some(lock_toggle_button, |d, button| d.child(button))
+                    .when_some(inherit_alpha_toggle_button, |d, button| d.child(button))
+                    .when_some(lock_alpha_toggle_button, |d, button| d.child(button))
                     .on_drag(drag_info, |info, position, _, cx| {
                         cx.new(|_| info.clone().with_position(position))
                     })
@@ -766,15 +798,21 @@ impl Render for LayerStackWidget {
                     })
             });
 
+        let active_layer_properties = canvas.active_layer_node().properties();
         let layer_params = v_flex()
             .p_2()
-            .child(Select::new(&self.blend_mode_select_state))
-            .child(
-                SpinSlider::new(&self.opacity_state)
-                    .small()
-                    .prefix("Opacity: ")
-                    .suffix("%"),
-            );
+            .when(
+                active_layer_properties.get_blend_function().is_some(),
+                |d| d.child(Select::new(&self.blend_mode_select_state)),
+            )
+            .when(active_layer_properties.get_opacity().is_some(), |d| {
+                d.child(
+                    SpinSlider::new(&self.opacity_state)
+                        .small()
+                        .prefix("Opacity: ")
+                        .suffix("%"),
+                )
+            });
 
         v_flex()
             .key_context(LAYER_STACK_CONTEXT)

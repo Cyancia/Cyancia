@@ -18,6 +18,7 @@ cyancia_shader_graph.workspace = true
 cyancia_utils.workspace = true
 cyancia_widgets.workspace = true
 dashmap.workspace = true
+downcast-rs.workspace = true
 dyn-clone.workspace = true
 encase.workspace = true
 glam.workspace = true

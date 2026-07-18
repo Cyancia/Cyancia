@@ -1,5 +1,6 @@
-use std::any::TypeId;
+use std::{any::TypeId, fs::File, io::BufReader, path::Path};
 
+use anyhow::Result;
 use cyancia_render::{
     bind_group_entries::DynamicBindGroupEntries,
     bind_group_layout_entries::{
@@ -8,6 +9,9 @@ use cyancia_render::{
     buffer::DynamicBuffer,
 };
 use glam::UVec3;
+use imagers::DynamicImage;
+use moxcms::ColorProfile;
+use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayoutDescriptor, Buffer, BufferUsages, ComputePass,
@@ -17,11 +21,20 @@ use wgpu::{
 
 use crate::{
     CImage,
+    blend_modes::BlendMode,
     composite::{
-        BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
+        BlendFunction, BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
         LayerPreviewOverriders, PixelPreviewOverrider,
     },
-    layer::{Layer, LayerId},
+    layer::{
+        Layer, LayerId, LayerStackNode,
+        properties::{
+            BlendFunctionProp, BlendFunctionPropertyExt, DisabledChannelsProp,
+            DisabledChannelsPropertyExt, HasLayerProperties, LayerProperties,
+            LayerPropertiesDeclaration, LockedChannelsProp, LockedProp, NameProp, NamePropertyExt,
+            OpacityProp, OpacityPropertyExt, VisibleProp, VisiblePropertyExt,
+        },
+    },
     texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage},
 };
@@ -49,12 +62,13 @@ impl Layer for PixelLayer {
         device: &Device,
         _: &Queue,
     ) {
-        let layer_info = tiles.get_layer_info(layer_id).unwrap();
-
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
+        let props = node.properties();
+        let layer_info = tiles.get_layer_info(layer_id).unwrap();
+        let blend_func_id = props.blend_function();
 
         if let Some(cache) = compositor.get_blend_cache_mut::<PixelBlendCache>(&layer_id)
-            && cache.blend_func_name == node.data().blend_func
+            && cache.blend_func_name == *blend_func_id
             && cache.layer_texel_type == layer_info.texel_type
             && cache.image_texel_type == image.texel_type()
         {
@@ -62,8 +76,8 @@ impl Layer for PixelLayer {
         }
 
         let blend_func = blend_funcs
-            .get(&node.data().blend_func)
-            .unwrap_or_else(|| panic!("Blend function {} not found", node.data().blend_func));
+            .get(blend_func_id)
+            .unwrap_or_else(|| panic!("Blend function {} not found", blend_func_id));
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &blend_func.wgsl_function_call("src", "dst"),
@@ -205,7 +219,7 @@ impl Layer for PixelLayer {
         );
 
         let cache = PixelBlendCache {
-            blend_func_name: node.data().blend_func.clone(),
+            blend_func_name: blend_func_id.clone(),
             layer_texel_type: layer_info.texel_type,
             image_texel_type: image.texel_type(),
             params_buffer,
@@ -230,18 +244,23 @@ impl Layer for PixelLayer {
         device: &Device,
         queue: &Queue,
     ) {
+        let node = image.layer_stack().get_layer(&layer_id).unwrap();
+        let props = node.properties();
+
+        if !props.visible() {
+            return;
+        }
+
         let src = tiles.get_layer_binding_or_empty(layer_id).unwrap();
         let Some(cache) = compositor.get_blend_cache_mut::<PixelBlendCache>(&layer_id) else {
             log::error!("BlendCache is not created for layer {:?}", layer_id);
             return;
         };
-        let node = image.layer_stack().get_layer(&layer_id).unwrap();
 
-        dbg!(node.data().opacity);
         cache.params_buffer.clear();
         cache.params_buffer.push(&BlendLayerParams {
-            src_opacity: node.data().opacity,
-            src_disabled_channels: node.data().disabled_channels,
+            src_opacity: props.opacity(),
+            src_disabled_channels: props.disabled_channels().0,
             _pad: Default::default(),
         });
         cache.params_buffer.write_buffer(device, queue);
@@ -284,10 +303,17 @@ impl Layer for PixelLayer {
         &self,
         compositor: &ImageCompositor,
         pass: &mut ComputePass,
-        _: &CImage,
+        image: &CImage,
         layer_id: LayerId,
         _: &GpuTileStorage,
     ) {
+        let node = image.layer_stack().get_layer(&layer_id).unwrap();
+        let props = node.properties();
+
+        if !props.visible() {
+            return;
+        }
+
         let Some(cache) = compositor.get_blend_cache::<PixelBlendCache>(&layer_id) else {
             log::error!("BlendCache is not created for layer {:?}", layer_id);
             return;
@@ -312,4 +338,47 @@ pub struct PixelBlendCache {
     with_overrider_pipeline: ComputePipeline,
     without_overrider_pipeline: ComputePipeline,
     dispatch: Option<(ComputePipeline, BindGroup, UVec3)>,
+}
+
+impl PixelLayer {
+    pub fn from_path(
+        path: impl AsRef<Path>,
+        tiles: &GpuTileStorage,
+        dst_profile: &ColorProfile,
+    ) -> Result<LayerStackNode> {
+        let path = path.as_ref();
+        let filename = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let (image, profile) = CImage::load_image_with_profile(BufReader::new(File::open(path)?))?;
+
+        let mut layer = Self::from_image(image, tiles);
+        layer.properties_mut().set_name(filename);
+        let layer_storage = tiles.get_layer(layer.id).unwrap();
+        layer_storage.convert_color_space(&profile, dst_profile, Default::default())?;
+
+        Ok(layer)
+    }
+
+    pub fn from_image(img: DynamicImage, tiles: &GpuTileStorage) -> LayerStackNode {
+        let id = LayerId::random();
+        tiles.upload_image(id, img);
+        LayerStackNode::without_parent(id, Box::new(Self), LayerProperties::new::<Self>())
+    }
+}
+
+impl HasLayerProperties for PixelLayer {
+    fn new_properties() -> LayerPropertiesDeclaration {
+        let mut decl = LayerPropertiesDeclaration::default();
+        decl.create_default::<NameProp>();
+        decl.create_default::<VisibleProp>();
+        decl.create_default::<BlendFunctionProp>();
+        decl.create_default::<OpacityProp>();
+        decl.create_default::<LockedProp>();
+        decl.create_default::<LockedChannelsProp>();
+        decl.create_default::<DisabledChannelsProp>();
+        decl
+    }
 }

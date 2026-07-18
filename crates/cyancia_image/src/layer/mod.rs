@@ -25,12 +25,17 @@ use crate::{
         BlendFunction, BlendFunctionId, BlendFunctionRegistry, ImageCompositor,
         LayerPreviewOverriders,
     },
-    layer::{group_layer::GroupLayer, pixel_layer::PixelLayer},
+    layer::{
+        group_layer::GroupLayer,
+        pixel_layer::PixelLayer,
+        properties::{LayerProperties, NameProp},
+    },
     tile::GpuTileStorage,
 };
 
 pub mod group_layer;
 pub mod pixel_layer;
+pub mod properties;
 
 #[derive(Debug, Default)]
 pub struct LayerNameGenerator {
@@ -50,191 +55,9 @@ wrapper! {
     pub LayerId : Uuid
 }
 
-// TODO This should not be a fixed struct.
-//      For example, for vector layers, the locked_channels is not valid.
-//      In the future, this might be a dynamic map provided by the specific layer type?
-#[derive(Clone)]
-pub struct LayerData {
-    id: LayerId,
-    pub name: String,
-    pub blend_func: BlendFunctionId,
-    pub opacity: f32,
-    pub is_visible: bool,
-    pub is_locked: bool,
-    disabled_channels: u32,
-    locked_channels: u32,
-    data: Box<dyn Layer>,
-}
-
-impl std::fmt::Debug for LayerData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Layer")
-            .field("id", &self.id)
-            .field("name", &self.name)
-            .field("blend_func", &self.blend_func)
-            .field("opacity", &self.opacity)
-            .field("visible", &self.is_visible)
-            .field("locked", &self.is_locked)
-            .field("disabled_channels", &self.disabled_channels)
-            .field("locked_channels", &self.locked_channels)
-            .finish()
-    }
-}
-
-impl LayerData {
-    pub fn new(name: String, blend_func: BlendFunctionId, data: Box<dyn Layer>) -> Self {
-        Self {
-            id: LayerId::new(Uuid::new_v4()),
-            name,
-            blend_func,
-            opacity: 1.0,
-            is_visible: true,
-            is_locked: false,
-            disabled_channels: 0,
-            locked_channels: 0,
-            data,
-        }
-    }
-
-    pub fn new_normal_pixel(name: String) -> Self {
-        Self::new(name, BlendMode::Normal.id(), Box::new(PixelLayer))
-    }
-
-    pub fn new_normal_group(name: String) -> Self {
-        Self::new(name, BlendMode::Normal.id(), Box::new(GroupLayer))
-    }
-
-    pub fn id(&self) -> &LayerId {
-        &self.id
-    }
-
-    pub fn ty(&self) -> &dyn Layer {
-        self.data.as_ref()
-    }
-
-    pub fn from_path(
-        path: impl AsRef<Path>,
-        tiles: &GpuTileStorage,
-        dst_profile: &ColorProfile,
-    ) -> Result<Self> {
-        let path = path.as_ref();
-        let filename = path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        let (image, profile) = CImage::load_image_with_profile(BufReader::new(File::open(path)?))?;
-
-        let layer = Self::from_image(filename, image, tiles, BlendMode::Normal.id());
-        let layer_storage = tiles.get_layer(layer.id).unwrap();
-        layer_storage.convert_color_space(&profile, dst_profile, Default::default())?;
-
-        Ok(layer)
-    }
-
-    pub fn from_image(
-        name: String,
-        img: DynamicImage,
-        tiles: &GpuTileStorage,
-        blend_func: BlendFunctionId,
-    ) -> Self {
-        let layer = Self::new(name, blend_func, Box::new(PixelLayer));
-        tiles.upload_image(layer.id, img);
-        layer
-    }
-
-    pub fn set_channel_disabled(&mut self, channel: u32, locked: bool) {
-        if locked {
-            self.disabled_channels |= 1 << channel;
-        } else {
-            self.disabled_channels &= !(1 << channel);
-        }
-    }
-
-    pub fn is_channel_disabled(&self, channel: u32) -> bool {
-        self.disabled_channels & (1 << channel) != 0
-    }
-
-    pub fn set_channel_locked(&mut self, channel: u32, locked: bool) {
-        if locked {
-            self.locked_channels |= 1 << channel;
-        } else {
-            self.locked_channels &= !(1 << channel);
-        }
-    }
-
-    pub fn is_channel_locked(&self, channel: u32) -> bool {
-        self.locked_channels & (1 << channel) != 0
-    }
-
-    pub fn can_have_children_of(&self, maybe_child: &Self) -> bool {
-        self.data
-            .can_have_children_of(maybe_child.data.as_ref().type_id())
-    }
-
-    pub fn can_contain_pixels(&self) -> bool {
-        self.data.can_contain_pixels()
-    }
-
-    pub fn create_blend_cache(
-        &self,
-        compositor: &mut ImageCompositor,
-        overriders: &mut LayerPreviewOverriders,
-        image: &CImage,
-        tiles: &GpuTileStorage,
-        blend_funcs: &BlendFunctionRegistry,
-        device: &Device,
-        queue: &Queue,
-    ) {
-        self.data.create_blend_cache(
-            compositor,
-            overriders,
-            image,
-            self.id,
-            tiles,
-            blend_funcs,
-            device,
-            queue,
-        )
-    }
-
-    pub fn prepare_blend_cache(
-        &self,
-        compositor: &mut ImageCompositor,
-        overriders: &LayerPreviewOverriders,
-        image: &CImage,
-        tiles: &GpuTileStorage,
-        dst_buffer: &TextureView,
-        dst_tile_info: &Buffer,
-        output: &TextureView,
-        output_tile_info: &Buffer,
-        device: &Device,
-        queue: &Queue,
-    ) {
-        self.data.prepare_blend_cache(
-            compositor,
-            overriders,
-            image,
-            self.id,
-            tiles,
-            dst_buffer,
-            dst_tile_info,
-            output,
-            output_tile_info,
-            device,
-            queue,
-        )
-    }
-
-    pub fn dispatch_blend(
-        &self,
-        compositor: &ImageCompositor,
-        pass: &mut ComputePass,
-        image: &CImage,
-        tiles: &GpuTileStorage,
-    ) {
-        self.data
-            .dispatch_blend(compositor, pass, image, self.id, tiles)
+impl LayerId {
+    pub fn random() -> Self {
+        Self::new(Uuid::new_v4())
     }
 }
 
@@ -327,23 +150,30 @@ impl Default for LayerStack {
 
 impl LayerStack {
     pub fn new() -> Self {
-        let background = LayerData::new_normal_pixel("Background".to_string());
-        Self::with_background_layer(background)
+        Self::with_background_layer(LayerStackNode::without_parent(
+            LayerId::random(),
+            Box::new(PixelLayer),
+            {
+                let mut props = LayerProperties::new::<PixelLayer>();
+                props.set(NameProp("Background".into()));
+                props
+            },
+        ))
     }
 
-    pub fn with_background_layer(background: LayerData) -> Self {
-        let root = LayerData::new_normal_group("Root".to_string());
-        let mut root_node = LayerStackNode::without_parent(root);
-        let background_node = LayerStackNode::new(*root_node.id(), background);
+    pub fn with_background_layer(mut background: LayerStackNode) -> Self {
+        let mut root = LayerStackNode::without_parent(LayerId::random(), Box::new(GroupLayer), {
+            let mut props = LayerProperties::new::<GroupLayer>();
+            props.set(NameProp("Root".into()));
+            props
+        });
+        background.parent = Some(*root.id());
 
-        root_node.insert_foreground_child(*background_node.id());
+        root.insert_foreground_child(*background.id());
 
         Self {
-            root: *root_node.id(),
-            layers: HashMap::from([
-                (*root_node.id(), root_node),
-                (*background_node.id(), background_node),
-            ]),
+            root: *root.id(),
+            layers: HashMap::from([(*root.id(), root), (*background.id(), background)]),
         }
     }
 
@@ -636,7 +466,7 @@ impl LayerStack {
     pub fn can_have_children_of(&self, parent_id: &LayerId, child_id: &LayerId) -> Option<bool> {
         let parent_layer = self.get_layer(parent_id)?;
         let child_layer = self.get_layer(child_id)?;
-        Some(parent_layer.data.can_have_children_of(&child_layer.data))
+        Some(parent_layer.can_have_children_of(&child_layer))
     }
 
     /// In order from target to root, excluding the target itself.
@@ -661,44 +491,74 @@ impl LayerStack {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LayerStackNode {
+    id: LayerId,
     parent: Option<LayerId>,
     children: Vec<LayerId>,
-    data: LayerData,
+    instance: Box<dyn Layer>,
+    properties: LayerProperties,
+}
+
+impl std::fmt::Debug for LayerStackNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LayerStackNode")
+            .field("id", &self.id)
+            .field("parent", &self.parent)
+            .field("children", &self.children)
+            .field(
+                "instance",
+                &std::any::type_name_of_val(self.instance.as_ref()),
+            )
+            .field("properties", &self.properties)
+            .finish()
+    }
 }
 
 impl LayerStackNode {
-    pub fn new(parent: LayerId, data: LayerData) -> Self {
+    pub fn new(
+        id: LayerId,
+        parent: LayerId,
+        data: Box<dyn Layer>,
+        properties: LayerProperties,
+    ) -> Self {
         Self {
+            id,
             parent: Some(parent),
             children: Vec::new(),
-            data,
+            instance: data,
+            properties,
         }
     }
 
-    pub fn without_parent(data: LayerData) -> Self {
+    pub fn without_parent(id: LayerId, data: Box<dyn Layer>, properties: LayerProperties) -> Self {
         Self {
+            id,
             parent: None,
             children: Vec::new(),
-            data,
+            instance: data,
+            properties,
         }
     }
 
     pub fn id(&self) -> &LayerId {
-        self.data.id()
+        &self.id
     }
 
     pub fn parent(&self) -> Option<&LayerId> {
         self.parent.as_ref()
     }
 
-    pub fn data(&self) -> &LayerData {
-        &self.data
+    pub fn instance(&self) -> &dyn Layer {
+        self.instance.as_ref()
     }
 
-    pub fn data_mut(&mut self) -> &mut LayerData {
-        &mut self.data
+    pub fn properties(&self) -> &LayerProperties {
+        &self.properties
+    }
+
+    pub fn properties_mut(&mut self) -> &mut LayerProperties {
+        &mut self.properties
     }
 
     pub fn children(&self) -> &[LayerId] {
@@ -803,6 +663,76 @@ impl LayerStackNode {
         if index < self.children.len() {
             self.children.remove(index);
         }
+    }
+
+    pub fn can_have_children_of(&self, maybe_child: &Self) -> bool {
+        self.instance
+            .can_have_children_of(maybe_child.instance.type_id())
+    }
+
+    pub fn can_contain_pixels(&self) -> bool {
+        self.instance.can_contain_pixels()
+    }
+
+    pub fn create_blend_cache(
+        &self,
+        compositor: &mut ImageCompositor,
+        overriders: &mut LayerPreviewOverriders,
+        image: &CImage,
+        tiles: &GpuTileStorage,
+        blend_funcs: &BlendFunctionRegistry,
+        device: &Device,
+        queue: &Queue,
+    ) {
+        self.instance.create_blend_cache(
+            compositor,
+            overriders,
+            image,
+            self.id,
+            tiles,
+            blend_funcs,
+            device,
+            queue,
+        )
+    }
+
+    pub fn prepare_blend_cache(
+        &self,
+        compositor: &mut ImageCompositor,
+        overriders: &LayerPreviewOverriders,
+        image: &CImage,
+        tiles: &GpuTileStorage,
+        dst_buffer: &TextureView,
+        dst_tile_info: &Buffer,
+        output: &TextureView,
+        output_tile_info: &Buffer,
+        device: &Device,
+        queue: &Queue,
+    ) {
+        self.instance.prepare_blend_cache(
+            compositor,
+            overriders,
+            image,
+            self.id,
+            tiles,
+            dst_buffer,
+            dst_tile_info,
+            output,
+            output_tile_info,
+            device,
+            queue,
+        )
+    }
+
+    pub fn dispatch_blend(
+        &self,
+        compositor: &ImageCompositor,
+        pass: &mut ComputePass,
+        image: &CImage,
+        tiles: &GpuTileStorage,
+    ) {
+        self.instance
+            .dispatch_blend(compositor, pass, image, self.id, tiles)
     }
 }
 

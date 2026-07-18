@@ -7,6 +7,7 @@ use cyancia_render::{
     buffer::DynamicBuffer,
 };
 use glam::{IVec2, UVec3};
+use serde::{Deserialize, Serialize};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer,
@@ -17,12 +18,20 @@ use wgpu::{
 
 use crate::{
     CImage,
+    blend_modes::BlendMode,
     composite::{
-        BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
+        BlendFunction, BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
         LayerPreviewOverriders,
     },
     dynamic_intermediate_buffer::IntermediateBuffer,
-    layer::{Layer, LayerId},
+    layer::{
+        Layer, LayerId,
+        properties::{
+            BlendFunctionProp, BlendFunctionPropertyExt, DisabledChannelsProp,
+            DisabledChannelsPropertyExt, HasLayerProperties, LayerPropertiesDeclaration,
+            LockedProp, NameProp, OpacityProp, OpacityPropertyExt, VisibleProp, VisiblePropertyExt,
+        },
+    },
     tile::{GpuTileInfo, GpuTileStorage},
 };
 
@@ -52,7 +61,7 @@ impl Layer for GroupLayer {
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
         for child_id in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(child_id).unwrap();
-            child_layer.data().create_blend_cache(
+            child_layer.create_blend_cache(
                 compositor,
                 overriders,
                 image,
@@ -63,13 +72,16 @@ impl Layer for GroupLayer {
             );
         }
 
+        let props = node.properties();
+        let blend_func_id = props.blend_function();
+
         let tile_rect = GpuTileStorage::pixel_rect_to_tile(IRect {
             min: IVec2::ZERO,
             max: image.size().as_ivec2(),
         });
 
         if let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer_id)
-            && cache.blend_func_name == node.data().blend_func
+            && cache.blend_func_name == *blend_func_id
             && cache.intermediate.texel_type() == image.texel_type()
             && cache.intermediate.tile_rect() == tile_rect
         {
@@ -77,8 +89,8 @@ impl Layer for GroupLayer {
         }
 
         let blend_func = blend_funcs
-            .get(&node.data().blend_func)
-            .unwrap_or_else(|| panic!("Blend function '{}' not found", node.data().blend_func));
+            .get(blend_func_id)
+            .unwrap_or_else(|| panic!("Blend function '{}' not found", blend_func_id));
         let shader = include_str!("../blend_layers.wesl").replace(
             "//CODEGEN_BLEND_FUNC",
             &blend_func.wgsl_function_call("src", "dst"),
@@ -161,7 +173,7 @@ impl Layer for GroupLayer {
         );
 
         let cache = GroupBlendCache {
-            blend_func_name: node.data().blend_func.clone(),
+            blend_func_name: blend_func_id.clone(),
             intermediate: IntermediateBuffer::new(device, queue, tile_rect, image.texel_type()),
             params_buffer,
             layout,
@@ -185,16 +197,22 @@ impl Layer for GroupLayer {
         device: &Device,
         queue: &Queue,
     ) {
+        let node = image.layer_stack().get_layer(&layer_id).unwrap();
+        let props = node.properties();
+
+        if !props.visible() {
+            return;
+        }
+
         let Some(cache) = compositor.get_blend_cache_mut::<GroupBlendCache>(&layer_id) else {
             log::error!("BlendCache is not created for layer {}", layer_id);
             return;
         };
-        let node = image.layer_stack().get_layer(&layer_id).unwrap();
 
         cache.params_buffer.clear();
         cache.params_buffer.push(&BlendLayerParams {
-            src_opacity: node.data().opacity,
-            src_disabled_channels: node.data().disabled_channels,
+            src_opacity: props.opacity(),
+            src_disabled_channels: props.disabled_channels().0,
             _pad: Default::default(),
         });
         cache.params_buffer.write_buffer(device, queue);
@@ -208,11 +226,8 @@ impl Layer for GroupLayer {
 
         for child_node in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(child_node).unwrap();
-            if !child_layer.data().is_visible {
-                continue;
-            }
 
-            child_layer.data().prepare_blend_cache(
+            child_layer.prepare_blend_cache(
                 compositor,
                 overriders,
                 image,
@@ -261,15 +276,15 @@ impl Layer for GroupLayer {
         tiles: &GpuTileStorage,
     ) {
         let node = image.layer_stack().get_layer(&layer_id).unwrap();
+        let props = node.properties();
+
+        if !props.visible() {
+            return;
+        }
+
         for child_node in node.iter_children_composite_order() {
             let child_layer = image.layer_stack().get_layer(child_node).unwrap();
-            if !child_layer.data().is_visible {
-                continue;
-            }
-
-            child_layer
-                .data()
-                .dispatch_blend(compositor, pass, image, tiles);
+            child_layer.dispatch_blend(compositor, pass, image, tiles);
         }
 
         let Some(cache) = compositor.get_blend_cache::<GroupBlendCache>(&layer_id) else {
@@ -295,4 +310,17 @@ pub struct GroupBlendCache {
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
     dispatch: Option<(BindGroup, UVec3)>,
+}
+
+impl HasLayerProperties for GroupLayer {
+    fn new_properties() -> LayerPropertiesDeclaration {
+        let mut decl = LayerPropertiesDeclaration::default();
+        decl.create_default::<NameProp>();
+        decl.create_default::<VisibleProp>();
+        decl.create_default::<BlendFunctionProp>();
+        decl.create_default::<OpacityProp>();
+        decl.create_default::<LockedProp>();
+        decl.create_default::<DisabledChannelsProp>();
+        decl
+    }
 }

@@ -54,7 +54,7 @@ impl ToolFunction for BrushTool {
         };
         let active_layer = canvas.active_layer_id();
         let selection_layer = canvas.image.selection_layer();
-        if !canvas.active_layer_node().data().can_contain_pixels() {
+        if !canvas.active_layer_node().instance().can_contain_pixels() {
             log::warn!("Unable to paint to the active layer which cannot contain pixels.");
             return;
         }

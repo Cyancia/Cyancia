@@ -14,7 +14,12 @@ use cyancia_image::{
     CImage,
     blend_modes::BlendMode,
     composite::BlendFunction,
-    layer::{LayerData, LayerId, LayerPosition, pixel_layer::PixelLayer},
+    layer::{
+        LayerId, LayerPosition, LayerStackNode,
+        group_layer::GroupLayer,
+        pixel_layer::PixelLayer,
+        properties::{LayerProperties, NameProp},
+    },
     tile::TileStorageAppExt,
 };
 use cyancia_undo::BatchedUndoCommand;
@@ -38,8 +43,7 @@ fn find_proper_parent_position(canvas: &CCanvas) -> Option<(LayerId, LayerPositi
     let mut cur_parent = canvas.active_layer_node();
     let mut cur_position = LayerPosition::foreground();
     while !cur_parent
-        .data()
-        .ty()
+        .instance()
         .can_have_children_of(TypeId::of::<PixelLayer>())
     {
         let parent_id = canvas.image.layer_stack().get_layer(cur_parent.parent()?)?;
@@ -59,9 +63,14 @@ impl ActionFunction for CreateNewLayerAction {
         let cmd = cx
             .update_current_canvas(|canvas, _| {
                 let (parent, position) = find_proper_parent_position(canvas)?;
+                let name = canvas.image.next_name_of_layer("Layer".into());
 
                 let new_layer =
-                    LayerData::new_normal_pixel(canvas.image.next_name_of_layer("Layer".into()));
+                    LayerStackNode::without_parent(LayerId::random(), Box::new(PixelLayer), {
+                        let mut props = LayerProperties::new::<PixelLayer>();
+                        props.set(NameProp(name));
+                        props
+                    });
                 Some(InsertLayerCommand::new(canvas, new_layer, parent, position))
             })
             .unwrap()
@@ -104,7 +113,12 @@ impl ActionFunction for GroupSelectedLayersAction {
                     .get_position_of(&canvas.active_layer_id())
                     .unwrap();
 
-                let group_layer = LayerData::new_normal_group(group_name);
+                let group_layer =
+                    LayerStackNode::without_parent(LayerId::random(), Box::new(GroupLayer), {
+                        let mut props = LayerProperties::new::<GroupLayer>();
+                        props.set(NameProp(group_name));
+                        props
+                    });
 
                 GroupLayerCommand {
                     canvas: canvas.id(),
@@ -338,12 +352,8 @@ impl ActionFunction for PasteIntoNewLayerAction {
                     return;
                 };
 
-                let layer = LayerData::from_image(
-                    "Pasted Image".into(),
-                    image,
-                    cx.tile_storage(),
-                    BlendMode::Normal.id(),
-                );
+                let mut layer = PixelLayer::from_image(image, cx.tile_storage());
+                layer.properties_mut().set(NameProp("Pasted Image".into()));
 
                 let layer_storage = cx.tile_storage().get_layer(*layer.id()).unwrap();
                 if layer_storage
@@ -364,7 +374,7 @@ impl ActionFunction for PasteIntoNewLayerAction {
 
                 for path in external_paths.paths() {
                     let Ok(layer) =
-                        LayerData::from_path(path, cx.tile_storage(), canvas.image.profile())
+                        PixelLayer::from_path(path, cx.tile_storage(), canvas.image.profile())
                             .logged_err()
                     else {
                         continue;

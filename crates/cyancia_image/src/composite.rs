@@ -14,6 +14,7 @@ use gpui::{App, Global, SharedString};
 use gpui_component::searchable_list::SearchableListItem;
 use log::error;
 use parse_display::Display;
+use serde::{Deserialize, Serialize};
 use wgpu::{Buffer, ComputePassDescriptor, Device, Queue, TextureView};
 
 use crate::{CImage, layer::LayerId, tile::GpuTileStorage};
@@ -25,7 +26,7 @@ pub trait BlendFunction: Send + Sync + DynClone + 'static {
 dyn_clone::clone_trait_object!(BlendFunction);
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, Serialize, Deserialize)]
     #[display("{0}")]
     pub BlendFunctionId : Arc<str>
 }
@@ -115,15 +116,7 @@ impl ImageCompositor {
             .layer_stack()
             .get_layer(image.layer_stack().root_id())
             .unwrap();
-        root_node.data().create_blend_cache(
-            self,
-            overriders,
-            image,
-            tiles,
-            blend_funcs,
-            device,
-            queue,
-        );
+        root_node.create_blend_cache(self, overriders, image, tiles, blend_funcs, device, queue);
         log::debug!("Blend cache created in {:?}", now.elapsed());
     }
 
@@ -155,7 +148,7 @@ impl ImageCompositor {
             .get_layer(image.layer_stack().root_id())
             .unwrap();
         let now = std::time::Instant::now();
-        root_node.data().prepare_blend_cache(
+        root_node.prepare_blend_cache(
             self,
             overriders,
             image,
@@ -173,9 +166,7 @@ impl ImageCompositor {
         // unsafe {
         //     device.start_graphics_debugger_capture();
         // }
-        root_node
-            .data()
-            .dispatch_blend(self, &mut pass, image, tiles);
+        root_node.dispatch_blend(self, &mut pass, image, tiles);
         log::debug!("Blend dispatched in {:?}", now.elapsed());
 
         drop(pass);

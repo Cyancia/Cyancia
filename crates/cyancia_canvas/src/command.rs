@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use anyhow::bail;
 use bevy_math::IRect;
 use cyancia_image::{
-    layer::{LayerData, LayerId, LayerPosition, LayerStackNode},
+    layer::{Layer, LayerId, LayerPosition, LayerStackNode, properties::LayerProperties},
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };
@@ -300,7 +300,7 @@ impl UndoCommand for TileReplaceCommand {
 
 pub struct InsertLayerCommand {
     canvas: CanvasId,
-    layer: LayerData,
+    layer: LayerStackNode,
     parent_id: LayerId,
     position: LayerPosition,
     previous_active_layer: LayerId,
@@ -310,7 +310,7 @@ pub struct InsertLayerCommand {
 impl InsertLayerCommand {
     pub fn new(
         canvas: &CCanvas,
-        layer: LayerData,
+        layer: LayerStackNode,
         parent: LayerId,
         position: impl Into<LayerPosition>,
     ) -> Self {
@@ -338,7 +338,7 @@ impl UndoCommand for InsertLayerCommand {
             canvas.image.layer_stack_mut().add_layer(
                 self.parent_id,
                 self.position,
-                LayerStackNode::without_parent(self.layer.clone()),
+                self.layer.clone(),
             );
             canvas.set_active_layer_and_clear_select(*self.layer.id(), cx);
         })
@@ -378,7 +378,7 @@ impl UndoCommand for InsertLayerCommand {
 
 pub struct GroupLayerCommand {
     pub canvas: CanvasId,
-    pub group: LayerData,
+    pub group: LayerStackNode,
     pub children: Vec<LayerWithPosition>,
     pub parent_id: LayerId,
     pub index: usize,
@@ -400,7 +400,7 @@ impl UndoCommand for GroupLayerCommand {
             canvas.image.layer_stack_mut().add_layer(
                 self.parent_id,
                 self.index,
-                LayerStackNode::without_parent(self.group.clone()),
+                self.group.clone(),
             );
             for (i, child) in self.children.iter().enumerate() {
                 canvas
@@ -706,8 +706,8 @@ impl UndoCommand for DeleteLayersCommand {
 pub struct LayerPropertyChangeCommand {
     pub canvas: CanvasId,
     pub layer_id: LayerId,
-    pub old: LayerData,
-    pub new: LayerData,
+    pub old: LayerProperties,
+    pub new: LayerProperties,
 }
 
 impl UndoCommand for LayerPropertyChangeCommand {
@@ -722,7 +722,7 @@ impl UndoCommand for LayerPropertyChangeCommand {
                 .layer_stack_mut()
                 .get_layer_mut(&self.layer_id)
                 .unwrap();
-            *layer.data_mut() = self.new.clone();
+            *layer.properties_mut() = self.new.clone();
             // TODO use layer bounds
             cx.emit(CanvasUpdated {
                 dirty_tiles: canvas.image.image_tile_rect(),
@@ -744,7 +744,7 @@ impl UndoCommand for LayerPropertyChangeCommand {
                 .layer_stack_mut()
                 .get_layer_mut(&self.layer_id)
                 .unwrap();
-            *layer.data_mut() = self.old.clone();
+            *layer.properties_mut() = self.old.clone();
             // TODO use layer bounds
             cx.emit(CanvasUpdated {
                 dirty_tiles: canvas.image.image_tile_rect(),
