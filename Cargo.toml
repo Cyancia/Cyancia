@@ -103,6 +103,8 @@ quote = "1"
 raw-window-handle = { version = "0.6", features = ["std"] }
 rayon = "1"
 rfd = "0.17"
+rmp = "0.8"
+rmp-serde = "1"
 ringbuffer = "0.16"
 rusqlite = { version = "0.40", features = ["bundled-full"] }
 rustc-hash = "1"

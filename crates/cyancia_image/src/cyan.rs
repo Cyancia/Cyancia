@@ -1,13 +1,17 @@
-use std::io::Write;
+use std::{collections::HashMap, io::Write};
 
 use anyhow::{Result, anyhow};
 use cyancia_cyan::CyanArchive;
 use flate2::{Compression, write::DeflateEncoder};
 use glam::IVec2;
+use serde::Serialize;
 use wgpu::{Device, Queue};
 
 use crate::{
-    layer::{LayerId, LayerStack},
+    layer::{
+        Layer, LayerId, LayerStack,
+        properties::{EncodedLayerProperties, HasLayerProperties, LayerProperties},
+    },
     tile::{DynamicLayerStorage, GpuTileStorage},
 };
 
@@ -33,5 +37,32 @@ impl GpuTileStorage {
         }
 
         Ok(())
+    }
+}
+
+impl Serialize for LayerProperties {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let encoded = self
+            .iter()
+            .map(|(k, v)| Ok((k, v.encode()?)))
+            .collect::<Result<HashMap<_, _>>>()
+            .map_err(|e| <S::Error as serde::ser::Error>::custom(e))?;
+        encoded.serialize(serializer)
+    }
+}
+
+impl LayerProperties {
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(self)?)
+    }
+
+    pub fn decode<T: HasLayerProperties>(&mut self, data: &[u8]) -> Result<Self> {
+        let map = EncodedLayerProperties::new(rmp_serde::from_slice::<
+            HashMap<String, Vec<u8>>,
+        >(data)?);
+        Self::new_decoded::<T>(map)
     }
 }

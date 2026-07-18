@@ -28,9 +28,9 @@ use crate::{
         Layer, LayerId, LayerStackNode,
         properties::{
             BlendFunctionProp, BlendFunctionPropertyExt, DisabledChannelsProp,
-            DisabledChannelsPropertyExt, HasLayerProperties, LayerProperties,
-            LayerPropertiesDeclaration, LockedChannelsProp, LockedProp, NameProp, NamePropertyExt,
-            OpacityProp, OpacityPropertyExt, VisibleProp, VisiblePropertyExt,
+            DisabledChannelsPropertyExt, EncodedLayerProperties, HasLayerProperties,
+            LayerProperties, LayerPropertiesDeclaration, LockedChannelsProp, LockedProp, NameProp,
+            NamePropertyExt, OpacityProp, OpacityPropertyExt, VisibleProp, VisiblePropertyExt,
         },
     },
     texel::TexelType,
@@ -378,5 +378,17 @@ impl HasLayerProperties for PixelLayer {
         decl.create_default::<LockedChannelsProp>();
         decl.create_default::<DisabledChannelsProp>();
         decl
+    }
+
+    fn decode_properties(mut data: EncodedLayerProperties) -> Result<LayerPropertiesDeclaration> {
+        let mut decl = LayerPropertiesDeclaration::default();
+        data.decode::<NameProp>(&mut decl)?;
+        data.decode::<VisibleProp>(&mut decl)?;
+        data.decode::<BlendFunctionProp>(&mut decl)?;
+        data.decode::<OpacityProp>(&mut decl)?;
+        data.decode::<LockedProp>(&mut decl)?;
+        data.decode::<LockedChannelsProp>(&mut decl)?;
+        data.decode::<DisabledChannelsProp>(&mut decl)?;
+        Ok(decl)
     }
 }

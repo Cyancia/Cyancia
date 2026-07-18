@@ -1,4 +1,6 @@
+use anyhow::Result;
 use cyancia_utils::wrapper;
+use gpui::App;
 
 use crate::{
     blend_modes::BlendMode,
@@ -10,7 +12,21 @@ wrapper! {
     #[derive(Debug, Clone, Copy)]
     pub VisibleProp : bool
 }
-impl LayerProperty for VisibleProp {}
+impl LayerProperty for VisibleProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "visible"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(&mut self, data: &[u8]) -> Result<()> {
+        self.0 = rmp_serde::from_slice(data)?;
+        Ok(())
+    }
+}
 impl Default for VisibleProp {
     fn default() -> Self {
         Self(true)
@@ -37,7 +53,21 @@ wrapper! {
     #[derive(Debug, Clone)]
     pub BlendFunctionProp : BlendFunctionId
 }
-impl LayerProperty for BlendFunctionProp {}
+impl LayerProperty for BlendFunctionProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "blend_function"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(&mut self, data: &[u8]) -> Result<()> {
+        self.0 = rmp_serde::from_slice(data)?;
+        Ok(())
+    }
+}
 impl Default for BlendFunctionProp {
     fn default() -> Self {
         Self(BlendMode::Normal.id())
@@ -64,7 +94,21 @@ wrapper! {
     #[derive(Debug, Clone, Copy)]
     pub OpacityProp : f32
 }
-impl LayerProperty for OpacityProp {}
+impl LayerProperty for OpacityProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "opacity"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(&mut self, data: &[u8]) -> Result<()> {
+        self.0 = rmp_serde::from_slice(data)?;
+        Ok(())
+    }
+}
 impl Default for OpacityProp {
     fn default() -> Self {
         Self(1.0)
@@ -91,7 +135,21 @@ wrapper! {
     #[derive(Debug, Clone, Default)]
     pub NameProp : String
 }
-impl LayerProperty for NameProp {}
+impl LayerProperty for NameProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "name"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(&mut self, data: &[u8]) -> Result<()> {
+        self.0 = rmp_serde::from_slice(data)?;
+        Ok(())
+    }
+}
 pub trait NamePropertyExt {
     fn name(&self) -> &str {
         self.get_name().unwrap()
@@ -113,7 +171,21 @@ wrapper! {
     #[derive(Debug, Clone, Copy, Default)]
     pub LockedProp : bool
 }
-impl LayerProperty for LockedProp {}
+impl LayerProperty for LockedProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "locked"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(&mut self, data: &[u8]) -> Result<()> {
+        self.0 = rmp_serde::from_slice(data)?;
+        Ok(())
+    }
+}
 pub trait LockedPropertyExt {
     fn locked(&self) -> bool {
         self.get_locked().unwrap()
@@ -125,7 +197,6 @@ impl LockedPropertyExt for LayerProperties {
     fn get_locked(&self) -> Option<bool> {
         Some(self.get::<LockedProp>()?.0)
     }
-
     fn set_locked(&mut self, locked: bool) {
         self.set::<LockedProp>(LockedProp(locked));
     }
@@ -135,7 +206,21 @@ wrapper! {
     #[derive(Debug, Clone, Copy, Default)]
     pub DisabledChannelsProp : u32
 }
-impl LayerProperty for DisabledChannelsProp {}
+impl LayerProperty for DisabledChannelsProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "disabled_channels"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(&mut self, data: &[u8]) -> Result<()> {
+        self.0 = rmp_serde::from_slice(data)?;
+        Ok(())
+    }
+}
 pub trait DisabledChannelsPropertyExt {
     fn disabled_channels(&self) -> DisabledChannelsProp {
         self.get_disabled_channels().unwrap()
@@ -174,7 +259,21 @@ wrapper! {
     #[derive(Debug, Clone, Copy, Default)]
     pub LockedChannelsProp : u32
 }
-impl LayerProperty for LockedChannelsProp {}
+impl LayerProperty for LockedChannelsProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "locked_channels"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(&mut self, data: &[u8]) -> Result<()> {
+        self.0 = rmp_serde::from_slice(data)?;
+        Ok(())
+    }
+}
 pub trait LockedChannelsPropertyExt {
     fn locked_channels(&self) -> LockedChannelsProp {
         self.get_locked_channels().unwrap()
