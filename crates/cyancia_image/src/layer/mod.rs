@@ -14,10 +14,7 @@ use wgpu::{Buffer, ComputePass, Device, Queue, TextureView};
 
 use crate::{
     CImage,
-    composite::{
-        BlendFunction, BlendFunctionRegistry, ImageCompositor,
-        LayerPreviewOverriders,
-    },
+    composite::{BlendFunctionRegistry, ImageCompositor, LayerPreviewOverriders},
     layer::{
         group_layer::GroupLayer,
         pixel_layer::PixelLayer,
@@ -459,7 +456,7 @@ impl LayerStack {
     pub fn can_have_children_of(&self, parent_id: &LayerId, child_id: &LayerId) -> Option<bool> {
         let parent_layer = self.get_layer(parent_id)?;
         let child_layer = self.get_layer(child_id)?;
-        Some(parent_layer.can_have_children_of(&child_layer))
+        Some(parent_layer.can_have_children_of(child_layer))
     }
 
     /// In order from target to root, excluding the target itself.
@@ -660,7 +657,7 @@ impl LayerStackNode {
 
     pub fn can_have_children_of(&self, maybe_child: &Self) -> bool {
         self.instance
-            .can_have_children_of(maybe_child.instance.type_id())
+            .can_have_children_of(maybe_child.instance.as_ref().type_id())
     }
 
     pub fn can_contain_pixels(&self) -> bool {

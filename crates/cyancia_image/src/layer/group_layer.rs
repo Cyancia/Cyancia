@@ -18,7 +18,7 @@ use wgpu::{
 use crate::{
     CImage,
     composite::{
-        BlendFunction, BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
+        BlendFunctionId, BlendFunctionRegistry, BlendLayerParams, ImageCompositor,
         LayerPreviewOverriders,
     },
     dynamic_intermediate_buffer::IntermediateBuffer,

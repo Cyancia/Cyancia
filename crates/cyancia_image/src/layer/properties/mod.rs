@@ -1,7 +1,4 @@
-use std::{
-    any::TypeId,
-    collections::HashMap,
-};
+use std::{any::TypeId, collections::HashMap};
 
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;

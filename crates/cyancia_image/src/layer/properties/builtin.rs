@@ -88,15 +88,10 @@ impl OpacityPropertyExt for LayerProperties {
 }
 
 wrapper! {
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub NameProp : String
 }
 impl LayerProperty for NameProp {}
-impl Default for NameProp {
-    fn default() -> Self {
-        Self(String::new())
-    }
-}
 pub trait NamePropertyExt {
     fn name(&self) -> &str {
         self.get_name().unwrap()
@@ -115,15 +110,10 @@ impl NamePropertyExt for LayerProperties {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, Default)]
     pub LockedProp : bool
 }
 impl LayerProperty for LockedProp {}
-impl Default for LockedProp {
-    fn default() -> Self {
-        Self(false)
-    }
-}
 pub trait LockedPropertyExt {
     fn locked(&self) -> bool {
         self.get_locked().unwrap()
@@ -142,15 +132,10 @@ impl LockedPropertyExt for LayerProperties {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, Default)]
     pub DisabledChannelsProp : u32
 }
 impl LayerProperty for DisabledChannelsProp {}
-impl Default for DisabledChannelsProp {
-    fn default() -> Self {
-        Self(0)
-    }
-}
 pub trait DisabledChannelsPropertyExt {
     fn disabled_channels(&self) -> DisabledChannelsProp {
         self.get_disabled_channels().unwrap()
@@ -186,15 +171,10 @@ impl DisabledChannelsProp {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, Default)]
     pub LockedChannelsProp : u32
 }
 impl LayerProperty for LockedChannelsProp {}
-impl Default for LockedChannelsProp {
-    fn default() -> Self {
-        Self(0)
-    }
-}
 pub trait LockedChannelsPropertyExt {
     fn locked_channels(&self) -> LockedChannelsProp {
         self.get_locked_channels().unwrap()

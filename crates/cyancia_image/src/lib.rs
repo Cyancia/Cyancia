@@ -18,9 +18,7 @@ extern crate image as imagers;
 
 use crate::{
     blend_modes::BlendMode,
-    composite::{
-        BlendFunctionAppExt, BlendFunctionRegistry, LayerPreviewOverriders,
-    },
+    composite::{BlendFunctionAppExt, BlendFunctionRegistry, LayerPreviewOverriders},
     layer::{
         LayerId, LayerNameGenerator, LayerStack, LayerStackNode, SpecialLayers,
         pixel_layer::PixelLayer, properties::NamePropertyExt,
