@@ -5,8 +5,10 @@ use parking_lot::Mutex;
 use rusqlite::{Connection, OpenFlags};
 
 pub mod image_props;
+pub mod layer_tree;
 pub mod tile_data;
 pub use image_props::ImageProperties;
+pub use layer_tree::LayerNode;
 
 pub struct CyanArchive {
     conn: Arc<Mutex<Connection>>,
@@ -54,6 +56,7 @@ impl CyanArchive {
     fn initialize_tables(&self) -> Result<()> {
         let conn = self.conn.lock();
         image_props::initialize_table(&conn)?;
+        layer_tree::initialize_table(&conn)?;
         tile_data::initialize_table(&conn)?;
         Ok(())
     }
