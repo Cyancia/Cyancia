@@ -7,7 +7,7 @@ use glam::IVec2;
 use wgpu::{Device, Queue};
 
 use crate::{
-    layer::LayerId,
+    layer::{LayerId, LayerStack},
     tile::{DynamicLayerStorage, GpuTileStorage},
 };
 

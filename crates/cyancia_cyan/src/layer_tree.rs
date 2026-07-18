@@ -37,7 +37,7 @@ CREATE INDEX layer_tree_parent ON layer_tree (parent_id, sort_order);
 }
 
 impl CyanArchive {
-    pub fn read_layer_properties(&self, layer_id: Uuid) -> Result<LayerNode> {
+    pub fn read_layer_node(&self, layer_id: Uuid) -> Result<LayerNode> {
         let (id, parent_id, sort_order, layer_type, properties): (
             Vec<u8>,
             Option<Vec<u8>>,
@@ -73,7 +73,7 @@ WHERE id = ?1
         })
     }
 
-    pub fn write_layer_properties(&self, layer: &LayerNode) -> Result<()> {
+    pub fn write_layer_node(&self, layer: &LayerNode) -> Result<()> {
         let parent_id = layer
             .parent_id
             .as_ref()
@@ -113,10 +113,7 @@ mod tests {
         let mut statement = conn.prepare("PRAGMA table_info(layer_tree)").unwrap();
         let columns = statement
             .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
+                Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
             })
             .unwrap()
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -141,7 +138,7 @@ mod tests {
         let pixel_id = Uuid::new_v4();
 
         archive
-            .write_layer_properties(&LayerNode {
+            .write_layer_node(&LayerNode {
                 id: root_id,
                 parent_id: None,
                 sort_order: None,
@@ -150,7 +147,7 @@ mod tests {
             })
             .unwrap();
         archive
-            .write_layer_properties(&LayerNode {
+            .write_layer_node(&LayerNode {
                 id: pixel_id,
                 parent_id: Some(root_id),
                 sort_order: Some(0),
@@ -160,7 +157,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            archive.read_layer_properties(root_id).unwrap(),
+            archive.read_layer_node(root_id).unwrap(),
             LayerNode {
                 id: root_id,
                 parent_id: None,
@@ -170,7 +167,7 @@ mod tests {
             }
         );
         assert_eq!(
-            archive.read_layer_properties(pixel_id).unwrap(),
+            archive.read_layer_node(pixel_id).unwrap(),
             LayerNode {
                 id: pixel_id,
                 parent_id: Some(root_id),
@@ -187,7 +184,7 @@ mod tests {
 
         assert!(
             archive
-                .write_layer_properties(&LayerNode {
+                .write_layer_node(&LayerNode {
                     id: Uuid::new_v4(),
                     parent_id: Some(Uuid::new_v4()),
                     sort_order: None,
@@ -198,7 +195,7 @@ mod tests {
         );
         assert!(
             archive
-                .write_layer_properties(&LayerNode {
+                .write_layer_node(&LayerNode {
                     id: Uuid::new_v4(),
                     parent_id: None,
                     sort_order: Some(0),
@@ -215,7 +212,7 @@ mod tests {
         let id = Uuid::new_v4();
 
         archive
-            .write_layer_properties(&LayerNode {
+            .write_layer_node(&LayerNode {
                 id,
                 parent_id: None,
                 sort_order: None,
@@ -224,7 +221,7 @@ mod tests {
             })
             .unwrap();
         archive
-            .write_layer_properties(&LayerNode {
+            .write_layer_node(&LayerNode {
                 id,
                 parent_id: None,
                 sort_order: None,
@@ -233,9 +230,6 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(
-            archive.read_layer_properties(id).unwrap().properties,
-            [2, 3]
-        );
+        assert_eq!(archive.read_layer_node(id).unwrap().properties, [2, 3]);
     }
 }
