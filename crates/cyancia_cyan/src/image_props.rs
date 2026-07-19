@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow, bail};
 use rusqlite::{Connection, params};
+use uuid::Uuid;
 
 use crate::CyanArchive;
 
@@ -9,6 +10,7 @@ pub struct ImageProperties {
     pub height: u32,
     pub tile_size: u32,
     pub color_profile: Vec<u8>,
+    pub root_layer: Uuid,
 }
 
 pub(crate) fn initialize_table(conn: &Connection) -> Result<()> {
@@ -18,7 +20,8 @@ CREATE TABLE image (
     width         INTEGER NOT NULL,
     height        INTEGER NOT NULL,
     tile_size     INTEGER NOT NULL,
-    color_profile BLOB NOT NULL
+    color_profile BLOB NOT NULL,
+    root_layer    BLOB NOT NULL CHECK (length(root_layer) = 16)
 );
 
 CREATE UNIQUE INDEX image_singleton ON image ((1));
@@ -32,8 +35,8 @@ impl CyanArchive {
     pub fn read_image_properties(&self) -> Result<ImageProperties> {
         let conn = self.conn.lock();
 
-        let mut statement =
-            conn.prepare("SELECT width, height, tile_size, color_profile FROM image")?;
+        let mut statement = conn
+            .prepare("SELECT width, height, tile_size, color_profile, root_layer FROM image")?;
         let mut rows = statement.query([])?;
         let row = rows
             .next()?
@@ -43,6 +46,7 @@ impl CyanArchive {
         let height = u32::try_from(row.get::<_, i64>(1)?)?;
         let tile_size = u32::try_from(row.get::<_, i64>(2)?)?;
         let color_profile = row.get(3)?;
+        let root_layer = Uuid::from_slice(&row.get::<_, Vec<u8>>(4)?)?;
 
         if rows.next()?.is_some() {
             bail!("archive contains more than one image properties row");
@@ -53,6 +57,7 @@ impl CyanArchive {
             height,
             tile_size,
             color_profile,
+            root_layer,
         })
     }
 
@@ -63,14 +68,15 @@ impl CyanArchive {
         transaction.execute("DELETE FROM image", [])?;
         transaction.execute(
             r#"
-INSERT INTO image (width, height, tile_size, color_profile)
-VALUES (?1, ?2, ?3, ?4)
+INSERT INTO image (width, height, tile_size, color_profile, root_layer)
+VALUES (?1, ?2, ?3, ?4, ?5)
             "#,
             params![
                 properties.width,
                 properties.height,
                 properties.tile_size,
                 properties.color_profile,
+                &properties.root_layer.as_bytes()[..],
             ],
         )?;
         transaction.commit()?;
@@ -107,6 +113,7 @@ mod tests {
                 ("height".into(), "INTEGER".into(), true),
                 ("tile_size".into(), "INTEGER".into(), true),
                 ("color_profile".into(), "BLOB".into(), true),
+                ("root_layer".into(), "BLOB".into(), true),
             ]
         );
     }
@@ -119,6 +126,7 @@ mod tests {
             height: 1080,
             tile_size: 256,
             color_profile: vec![0, 1, 2, 3],
+            root_layer: Uuid::new_v4(),
         };
 
         archive.write_image_properties(&properties).unwrap();
@@ -135,6 +143,7 @@ mod tests {
         assert_eq!(restored.height, properties.height);
         assert_eq!(restored.tile_size, properties.tile_size);
         assert_eq!(restored.color_profile, properties.color_profile);
+        assert_eq!(restored.root_layer, properties.root_layer);
     }
 
     #[test]
@@ -147,6 +156,7 @@ mod tests {
                     height: 256,
                     tile_size: 256,
                     color_profile: vec![0, 1, 2, 3],
+                    root_layer: Uuid::new_v4(),
                 })
                 .unwrap();
         }
@@ -163,15 +173,16 @@ mod tests {
     #[test]
     fn arbitrary_color_profile_bytes_are_accepted() {
         let archive = CyanArchive::new_in_memory().unwrap();
+        let root_layer = Uuid::new_v4();
         archive
             .conn
             .lock()
             .execute(
                 r#"
-INSERT INTO image (width, height, tile_size, color_profile)
-VALUES (1, 1, 256, X'00010203')
+INSERT INTO image (width, height, tile_size, color_profile, root_layer)
+VALUES (1, 1, 256, X'00010203', ?1)
                 "#,
-                [],
+                params![&root_layer.as_bytes()[..]],
             )
             .unwrap();
 
