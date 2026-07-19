@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use parking_lot::{Mutex, MutexGuard, RawMutex, lock_api::MappedMutexGuard};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, MAIN_DB, OpenFlags};
 
 pub mod image_props;
 pub mod layer_tree;
@@ -71,8 +71,7 @@ impl CyanArchive {
 
         Ok(Self {
             inner: Arc::new(Mutex::new(Inner {
-                // TODO: Handle non .cyan files in other place.
-                path: Some(path.with_extension("cyan")),
+                path: Some(path.to_path_buf()),
                 conn,
             })),
         })
@@ -82,8 +81,25 @@ impl CyanArchive {
         self.inner.lock().path.clone()
     }
 
-    pub fn set_path(&mut self, path: PathBuf) {
-        self.inner.lock().path = Some(path);
+    pub fn set_path(&mut self, path: PathBuf) -> Result<()> {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut inner = self.inner.lock();
+        if inner.path.as_deref() == Some(path.as_path()) {
+            return Ok(());
+        }
+
+        inner.conn.backup(MAIN_DB, &path, None)?;
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        inner.conn = conn;
+        inner.path = Some(path);
+
+        Ok(())
     }
 
     pub(crate) fn conn(&'_ self) -> MappedMutexGuard<'_, RawMutex, Connection> {
@@ -97,5 +113,57 @@ impl CyanArchive {
         layer_tree::initialize_table(&conn)?;
         tile_data::initialize_table(&conn)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn set_path_saves_an_in_memory_archive_and_switches_to_the_disk_database() {
+        let directory =
+            std::env::temp_dir().join(format!("cyancia_cyan_set_path_{}", Uuid::new_v4()));
+        let path = directory.join("archive.cyan");
+        let mut archive = CyanArchive::new_in_memory().unwrap();
+        let root_layer = Uuid::new_v4();
+
+        archive
+            .write_image_properties(&ImageProperties {
+                width: 128,
+                height: 256,
+                tile_size: 256,
+                color_profile: vec![0, 1, 2, 3],
+                root_layer,
+            })
+            .unwrap();
+        archive.set_path(path.clone()).unwrap();
+
+        assert_eq!(archive.path(), Some(path.clone()));
+        assert!(path.is_file());
+
+        archive
+            .write_image_properties(&ImageProperties {
+                width: 512,
+                height: 256,
+                tile_size: 256,
+                color_profile: vec![4, 5, 6, 7],
+                root_layer,
+            })
+            .unwrap();
+        drop(archive);
+
+        let archive = CyanArchive::open(&path).unwrap();
+        let properties = archive.read_image_properties().unwrap();
+        assert_eq!(properties.width, 512);
+        assert_eq!(properties.height, 256);
+        assert_eq!(properties.tile_size, 256);
+        assert_eq!(properties.color_profile, [4, 5, 6, 7]);
+        assert_eq!(properties.root_layer, root_layer);
+        drop(archive);
+
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 }
