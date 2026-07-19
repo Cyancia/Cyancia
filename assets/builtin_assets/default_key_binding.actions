@@ -64,6 +64,11 @@
       "shortcut": "ctrl-v",
       "action_name": "PasteIntoNewLayerAction",
       "context": "main_view"
+    },
+    {
+      "shortcut": "ctrl-s",
+      "action_name": "SaveFileAction",
+      "context": "main_view"
     }
   ]
 }

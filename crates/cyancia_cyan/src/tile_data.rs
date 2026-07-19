@@ -28,7 +28,7 @@ impl CyanArchive {
         tile_y: i32,
         data: impl AsRef<[u8]>,
     ) -> Result<()> {
-        self.conn.lock().execute(
+        self.conn().execute(
             r#"
 INSERT INTO tile_data (layer_id, tile_x, tile_y, data)
 VALUES (?1, ?2, ?3, ?4)
@@ -48,8 +48,7 @@ ON CONFLICT (layer_id, tile_x, tile_y) DO UPDATE SET
         tile_y: i32,
     ) -> Result<Option<Vec<u8>>> {
         Ok(self
-            .conn
-            .lock()
+            .conn()
             .query_row(
                 r#"
 SELECT data
@@ -70,7 +69,7 @@ mod tests {
     #[test]
     fn tile_data_table_has_the_requested_columns() {
         let archive = CyanArchive::new_in_memory().unwrap();
-        let conn = archive.conn.lock();
+        let conn = archive.conn();
         let mut statement = conn.prepare("PRAGMA table_info(tile_data)").unwrap();
         let columns = statement
             .query_map([], |row| {

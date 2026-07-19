@@ -44,7 +44,7 @@ impl CyanArchive {
             Option<i64>,
             i64,
             Vec<u8>,
-        ) = self.conn.lock().query_row(
+        ) = self.conn().query_row(
             r#"
 SELECT id, parent_id, sort_order, layer_type, properties
 FROM layer_tree
@@ -74,7 +74,7 @@ WHERE id = ?1
     }
 
     pub fn read_all_layer_nodes(&self) -> Result<Vec<LayerNode>> {
-        let conn = self.conn.lock();
+        let conn = self.conn();
         let mut statement = conn.prepare(
             r#"
 SELECT id, parent_id, sort_order, layer_type, properties
@@ -115,7 +115,7 @@ ORDER BY parent_id, sort_order, id
             .as_ref()
             .map(|parent_id| &parent_id.as_bytes()[..]);
 
-        self.conn.lock().execute(
+        self.conn().execute(
             r#"
 INSERT INTO layer_tree (id, parent_id, sort_order, layer_type, properties)
 VALUES (?1, ?2, ?3, ?4, ?5)
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn layer_tree_has_the_requested_columns() {
         let archive = CyanArchive::new_in_memory().unwrap();
-        let conn = archive.conn.lock();
+        let conn = archive.conn();
         let mut statement = conn.prepare("PRAGMA table_info(layer_tree)").unwrap();
         let columns = statement
             .query_map([], |row| {

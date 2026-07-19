@@ -1,4 +1,4 @@
-use cyancia_canvas::{CCanvas, CanvasManager, event::CanvasActiveLayerChanged};
+use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasManager, event::CanvasActiveLayerChanged};
 use cyancia_image::{
     CImage,
     texel::TexelType,
@@ -12,7 +12,7 @@ use rfd::AsyncFileDialog;
 
 use crate::ActionFunction;
 
-actions!([OpenFileAction]);
+actions!([OpenFileAction, SaveFileAction]);
 
 impl ActionFunction for OpenFileAction {
     fn trigger(&self, cx: &mut App) {
@@ -75,5 +75,19 @@ impl ActionFunction for OpenFileAction {
             });
         })
         .detach();
+    }
+}
+
+impl ActionFunction for SaveFileAction {
+    fn trigger(&self, cx: &mut App) {
+        let Some(canvas) = cx.read_current_canvas() else {
+            return;
+        };
+
+        canvas
+            .image
+            .layer_stack()
+            .write_entire_tree(&canvas.archive)
+            .unwrap();
     }
 }

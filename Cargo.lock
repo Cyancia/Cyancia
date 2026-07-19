@@ -1819,6 +1819,7 @@ dependencies = [
  "bytemuck",
  "cyancia_assets",
  "cyancia_color",
+ "cyancia_cyan",
  "cyancia_image",
  "cyancia_math",
  "cyancia_render",

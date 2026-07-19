@@ -33,10 +33,10 @@ CREATE UNIQUE INDEX image_singleton ON image ((1));
 
 impl CyanArchive {
     pub fn read_image_properties(&self) -> Result<ImageProperties> {
-        let conn = self.conn.lock();
+        let conn = self.conn();
 
-        let mut statement = conn
-            .prepare("SELECT width, height, tile_size, color_profile, root_layer FROM image")?;
+        let mut statement =
+            conn.prepare("SELECT width, height, tile_size, color_profile, root_layer FROM image")?;
         let mut rows = statement.query([])?;
         let row = rows
             .next()?
@@ -62,7 +62,7 @@ impl CyanArchive {
     }
 
     pub fn write_image_properties(&mut self, properties: &ImageProperties) -> Result<()> {
-        let mut conn = self.conn.lock();
+        let mut conn = self.conn();
 
         let transaction = conn.transaction()?;
         transaction.execute("DELETE FROM image", [])?;
@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn image_table_has_exactly_the_requested_columns() {
         let archive = CyanArchive::new_in_memory().unwrap();
-        let conn = archive.conn.lock();
+        let conn = archive.conn();
         let mut statement = conn.prepare("PRAGMA table_info(image)").unwrap();
         let columns = statement
             .query_map([], |row| {
@@ -132,8 +132,7 @@ mod tests {
         archive.write_image_properties(&properties).unwrap();
 
         let stored_profile: Vec<u8> = archive
-            .conn
-            .lock()
+            .conn()
             .query_row("SELECT color_profile FROM image", [], |row| row.get(0))
             .unwrap();
         assert_eq!(stored_profile, properties.color_profile);
@@ -162,8 +161,7 @@ mod tests {
         }
 
         let row_count: u32 = archive
-            .conn
-            .lock()
+            .conn()
             .query_row("SELECT COUNT(*) FROM image", [], |row| row.get(0))
             .unwrap();
         assert_eq!(row_count, 1);
@@ -175,8 +173,7 @@ mod tests {
         let archive = CyanArchive::new_in_memory().unwrap();
         let root_layer = Uuid::new_v4();
         archive
-            .conn
-            .lock()
+            .conn()
             .execute(
                 r#"
 INSERT INTO image (width, height, tile_size, color_profile, root_layer)

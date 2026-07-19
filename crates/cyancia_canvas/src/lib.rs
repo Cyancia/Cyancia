@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bevy_math::IRect;
+use cyancia_cyan::CyanArchive;
 use cyancia_image::{
     CImage,
     layer::{LayerId, LayerStackNode},
@@ -42,6 +43,7 @@ pub struct CCanvas {
     id: CanvasId,
     tool_proxy_id: ToolProxyId,
     pub image: CImage,
+    pub archive: CyanArchive,
     pub transform: CanvasTransform,
     active_layer: LayerId,
     // Also contains active_layer
@@ -62,6 +64,8 @@ impl CCanvas {
             id: CanvasId(Uuid::new_v4()),
             tool_proxy_id,
             image,
+            // TODO
+            archive: CyanArchive::new_in_memory().unwrap(),
             transform: CanvasTransform::default(),
             active_layer: background_layer,
             selected_layers: IndexSet::from([background_layer]),
