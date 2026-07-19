@@ -35,7 +35,7 @@ use crate::{
     tile::{GpuTileInfo, GpuTileStorage},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct GroupLayer;
 
 impl Layer for GroupLayer {
@@ -45,6 +45,10 @@ impl Layer for GroupLayer {
 
     fn can_contain_pixels(&self) -> bool {
         false
+    }
+
+    fn layer_type(&self) -> u32 {
+        1
     }
 
     fn create_blend_cache(

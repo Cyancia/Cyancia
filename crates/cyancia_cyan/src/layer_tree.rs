@@ -73,6 +73,42 @@ WHERE id = ?1
         })
     }
 
+    pub fn read_all_layer_nodes(&self) -> Result<Vec<LayerNode>> {
+        let conn = self.conn.lock();
+        let mut statement = conn.prepare(
+            r#"
+SELECT id, parent_id, sort_order, layer_type, properties
+FROM layer_tree
+ORDER BY parent_id, sort_order, id
+            "#,
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, Option<Vec<u8>>>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Vec<u8>>(4)?,
+            ))
+        })?;
+        let mut layers = Vec::new();
+
+        for row in rows {
+            let (id, parent_id, sort_order, layer_type, properties) = row?;
+            layers.push(LayerNode {
+                id: Uuid::from_slice(&id)?,
+                parent_id: parent_id
+                    .map(|parent_id| Uuid::from_slice(&parent_id))
+                    .transpose()?,
+                sort_order: sort_order.map(u32::try_from).transpose()?,
+                layer_type: u32::try_from(layer_type)?,
+                properties,
+            });
+        }
+
+        Ok(layers)
+    }
+
     pub fn write_layer_node(&self, layer: &LayerNode) -> Result<()> {
         let parent_id = layer
             .parent_id
@@ -231,5 +267,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(archive.read_layer_node(id).unwrap().properties, [2, 3]);
+    }
+
+    #[test]
+    fn reads_all_layer_nodes() {
+        let archive = CyanArchive::new_in_memory().unwrap();
+        let root_id = Uuid::new_v4();
+        let first_child_id = Uuid::new_v4();
+        let second_child_id = Uuid::new_v4();
+        let nodes = [
+            LayerNode {
+                id: root_id,
+                parent_id: None,
+                sort_order: None,
+                layer_type: 1,
+                properties: vec![0],
+            },
+            LayerNode {
+                id: first_child_id,
+                parent_id: Some(root_id),
+                sort_order: Some(0),
+                layer_type: 0,
+                properties: vec![1],
+            },
+            LayerNode {
+                id: second_child_id,
+                parent_id: Some(root_id),
+                sort_order: Some(1),
+                layer_type: 0,
+                properties: vec![2],
+            },
+        ];
+
+        archive.write_layer_node(&nodes[2]).unwrap();
+        archive.write_layer_node(&nodes[0]).unwrap();
+        archive.write_layer_node(&nodes[1]).unwrap();
+
+        assert_eq!(archive.read_all_layer_nodes().unwrap(), nodes);
     }
 }

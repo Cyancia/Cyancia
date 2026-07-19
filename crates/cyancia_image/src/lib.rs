@@ -47,6 +47,7 @@ pub fn init(cx: &mut App) {
     }
 
     tile::init(cx);
+    layer::init(cx);
 }
 
 #[derive(Debug)]
@@ -61,7 +62,7 @@ pub struct CImage {
 
 impl CImage {
     pub fn new(size: UVec2, profile: ColorProfile) -> Self {
-        let layers = LayerStack::new();
+        let layers = LayerStack::with_empty_background();
 
         Self {
             size,

@@ -3,8 +3,10 @@ use std::{
     collections::HashMap,
 };
 
+use anyhow::Result;
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
+use gpui::{App, Global};
 use indexmap::IndexSet;
 use parse_display::Display;
 use schemars::JsonSchema;
@@ -18,7 +20,10 @@ use crate::{
     layer::{
         group_layer::GroupLayer,
         pixel_layer::PixelLayer,
-        properties::{LayerProperties, NameProp},
+        properties::{
+            EncodedLayerProperties, HasLayerProperties, HasLayerPropertiesDyn, LayerProperties,
+            NameProp,
+        },
     },
     tile::GpuTileStorage,
 };
@@ -26,6 +31,31 @@ use crate::{
 pub mod group_layer;
 pub mod pixel_layer;
 pub mod properties;
+
+pub(crate) fn init(cx: &mut App) {
+    let mut reg = LayerTypeRegistry::default();
+    reg.register::<PixelLayer>();
+    reg.register::<GroupLayer>();
+    cx.set_global(reg);
+}
+
+#[derive(Default)]
+pub struct LayerTypeRegistry {
+    tys: HashMap<u32, Box<dyn Layer>>,
+}
+
+impl Global for LayerTypeRegistry {}
+
+impl LayerTypeRegistry {
+    pub fn register<T: Layer + HasLayerPropertiesDyn + Default>(&mut self) {
+        let instance = T::default();
+        self.tys.insert(instance.layer_type(), Box::new(instance));
+    }
+
+    pub fn get_cloned(&self, ty: u32) -> Option<Box<dyn Layer>> {
+        self.tys.get(&ty).cloned()
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct LayerNameGenerator {
@@ -51,9 +81,11 @@ impl LayerId {
     }
 }
 
-pub trait Layer: Send + Sync + DynClone + 'static {
+pub trait Layer: Send + Sync + DynClone + 'static + HasLayerPropertiesDyn {
     fn can_have_children_of(&self, ty: TypeId) -> bool;
     fn can_contain_pixels(&self) -> bool;
+
+    fn layer_type(&self) -> u32;
 
     fn create_blend_cache(
         &self,
@@ -134,12 +166,20 @@ pub struct LayerStack {
 
 impl Default for LayerStack {
     fn default() -> Self {
-        Self::new()
+        Self::with_empty_background()
     }
 }
 
 impl LayerStack {
-    pub fn new() -> Self {
+    pub fn new(root: LayerStackNode) -> Self {
+        assert!(root.parent.is_none());
+        Self {
+            root: root.id,
+            layers: HashMap::from([(root.id, root)]),
+        }
+    }
+
+    pub fn with_empty_background() -> Self {
         Self::with_background_layer(LayerStackNode::without_parent(
             LayerId::random(),
             Box::new(PixelLayer),
@@ -407,6 +447,10 @@ impl LayerStack {
             current = self.layers.get(parent)?;
         }
         Some(depth)
+    }
+
+    pub fn contains_layer(&self, layer_id: &LayerId) -> bool {
+        self.layers.contains_key(layer_id)
     }
 
     pub fn get_layer(&self, layer_id: &LayerId) -> Option<&LayerStackNode> {

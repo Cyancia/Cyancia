@@ -8,6 +8,8 @@ mod builtin;
 
 pub use builtin::*;
 
+use crate::layer::Layer;
+
 #[derive(Clone)]
 pub struct LayerProperties {
     props: HashMap<&'static str, Box<dyn LayerProperty>>,
@@ -27,8 +29,8 @@ impl LayerProperties {
         Self { props: props.props }
     }
 
-    pub fn new_decoded<T: HasLayerProperties>(data: EncodedLayerProperties) -> Result<Self> {
-        let props = T::decode_properties(data)?;
+    pub fn new_decoded(data: EncodedLayerProperties, layer: &dyn Layer) -> Result<Self> {
+        let props = layer.decode_properties(data)?;
         Ok(Self { props: props.props })
     }
 
@@ -57,8 +59,10 @@ pub struct EncodedLayerProperties {
 }
 
 impl EncodedLayerProperties {
-    pub fn new(props: HashMap<String, Vec<u8>>) -> Self {
-        Self { props }
+    pub fn new(props: &[u8]) -> Result<Self> {
+        Ok(Self {
+            props: rmp_serde::from_slice(props)?,
+        })
     }
 
     pub fn decode<T: LayerProperty + Default>(
@@ -79,6 +83,25 @@ impl EncodedLayerProperties {
 pub trait HasLayerProperties {
     fn new_properties() -> LayerPropertiesDeclaration;
     fn decode_properties(data: EncodedLayerProperties) -> Result<LayerPropertiesDeclaration>;
+}
+
+pub trait HasLayerPropertiesDyn {
+    fn new_properties(&self) -> LayerPropertiesDeclaration;
+    fn decode_properties(&self, data: EncodedLayerProperties)
+    -> Result<LayerPropertiesDeclaration>;
+}
+
+impl<T: HasLayerProperties> HasLayerPropertiesDyn for T {
+    fn new_properties(&self) -> LayerPropertiesDeclaration {
+        T::new_properties()
+    }
+
+    fn decode_properties(
+        &self,
+        data: EncodedLayerProperties,
+    ) -> Result<LayerPropertiesDeclaration> {
+        T::decode_properties(data)
+    }
 }
 
 #[derive(Default)]

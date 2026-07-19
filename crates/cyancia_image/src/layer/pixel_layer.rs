@@ -37,7 +37,7 @@ use crate::{
     tile::{GpuTileInfo, GpuTileStorage},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct PixelLayer;
 
 impl Layer for PixelLayer {
@@ -47,6 +47,10 @@ impl Layer for PixelLayer {
 
     fn can_contain_pixels(&self) -> bool {
         true
+    }
+
+    fn layer_type(&self) -> u32 {
+        0
     }
 
     fn create_blend_cache(
