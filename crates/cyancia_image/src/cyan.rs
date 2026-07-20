@@ -45,7 +45,10 @@ impl CImage {
             layer.allocate_tiles_batch(tile_data.keys());
 
             for (index, data) in tile_data {
-                layer.write_raw(queue, index, &data);
+                let mut d = DeflateDecoder::new(&data[..]);
+                let mut buf = Vec::new();
+                d.read_to_end(&mut buf)?;
+                layer.write_raw(queue, index, &buf);
             }
         }
 
