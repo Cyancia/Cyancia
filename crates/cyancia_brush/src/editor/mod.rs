@@ -95,7 +95,6 @@ struct DeleteExternalVariable {
     id: ExternalVariableId,
 }
 
-// FIXME: Connection won't disconnect if I drag at a connected input slot.
 // FIXME: Modifying preset won't take effect immediately.
 // TODO: Don't share the same brush with brush tool.
 // TODO: Tag filtering.

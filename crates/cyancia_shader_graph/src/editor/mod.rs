@@ -58,7 +58,6 @@ pub struct GraphEditor<Data: GraphData> {
     editor_bounds: Bounds<Pixels>,
     selected_nodes: HashSet<GraphNodeId>,
     node_bounds: HashMap<GraphNodeId, Bounds<Pixels>>,
-    input_slot_connections: HashMap<GraphInputSlotId, Option<GraphOutputSlotId>>,
     input_slot_pos: HashMap<GraphInputSlotId, Point<Pixels>>,
     output_slot_pos: HashMap<GraphOutputSlotId, Point<Pixels>>,
 
@@ -83,7 +82,6 @@ impl<Data: GraphData> GraphEditor<Data> {
             editor_bounds: Bounds::default(),
             selected_nodes: HashSet::new(),
             node_bounds: HashMap::new(),
-            input_slot_connections: HashMap::new(),
             input_slot_pos: HashMap::new(),
             output_slot_pos: HashMap::new(),
 
@@ -359,16 +357,15 @@ impl<Data: GraphData> GraphEditor<Data> {
 
         match start_slot {
             GraphSlotId::Input(slot_id) => {
-                if let Some(connected) =
-                    self.input_slot_connections.get(&slot_id).copied().flatten()
-                {
+                let graph = self.graph.read(cx);
+                if let Some(connected) = graph.slots.get_input(&slot_id).and_then(|n| n.connected) {
                     self.graph.update(cx, |graph, _| {
                         graph.disconnect_slot(slot_id);
                     });
                     start_slot = GraphSlotId::Output(connected);
                 }
             }
-            GraphSlotId::Output(__id) => {}
+            GraphSlotId::Output(_) => {}
         }
 
         self.slot_connect_state = Some(SlotConnectState { start_slot });
