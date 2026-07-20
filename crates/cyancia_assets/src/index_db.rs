@@ -359,18 +359,28 @@ ORDER BY l.relative_path ASC;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    // TODO Don't add new revision if the asset is already in memory
     pub fn update_asset(&self, id: &UntypedAssetId) -> AssetResult<u32> {
-        let conn = self.conn.lock();
-        let revision = conn.query_one(
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let (revision, in_memory) = tx.query_row(
             r#"
-WITH latest AS (
-    SELECT asset_id, revision
-    FROM asset_revisions
-    WHERE asset_id = ?1
-    ORDER BY revision DESC
-    LIMIT 1
-)
+SELECT revision, in_memory
+FROM asset_revisions
+WHERE asset_id = ?1
+ORDER BY revision DESC
+LIMIT 1;
+            "#,
+            params![id],
+            |row| Ok((row.get::<_, u32>(0)?, row.get::<_, i64>(1)? == 1)),
+        )?;
+
+        if in_memory {
+            tx.commit()?;
+            return Ok(revision);
+        }
+
+        let revision = tx.query_one(
+            r#"
 INSERT INTO asset_revisions (
     asset_id,
     relative_path,
@@ -378,19 +388,14 @@ INSERT INTO asset_revisions (
     last_modified,
     in_memory
 )
-SELECT
-    asset_id,
-    NULL AS relative_path,
-    revision + 1 AS revision,
-    ?2 AS last_modified,
-    1 AS in_memory
-FROM latest
+VALUES (?1, NULL, ?2, ?3, 1)
 RETURNING revision;
             "#,
-            params![id, Utc::now()],
+            params![id, revision + 1, Utc::now()],
             |row| row.get::<_, u32>(0),
         )?;
 
+        tx.commit()?;
         Ok(revision)
     }
 
