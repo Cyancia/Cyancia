@@ -320,8 +320,8 @@ fn test() {
     assert_eq!(tag_handles.len(), 1);
 
     let my_tag = tag_handles[0].get().unwrap();
-    assert_eq!(my_tag.name(), "My Tag");
-    assert_eq!(my_tag.asset_ty(), Some(TestAsset::TYPE_NAME));
+    assert_eq!(my_tag.name, "My Tag");
+    assert_eq!(my_tag.asset_ty.as_deref(), Some(TestAsset::TYPE_NAME));
 
     let new_asset_id = registry
         .add_asset::<TestAsset>(
@@ -408,8 +408,11 @@ fn test() {
     let restarted_tag_handles = restarted_registry.all_handles_of::<Tag>().unwrap();
     assert_eq!(restarted_tag_handles.len(), 1);
     let restarted_tag = restarted_tag_handles[0].get().unwrap();
-    assert_eq!(restarted_tag.name(), "My Tag");
-    assert_eq!(restarted_tag.asset_ty(), Some(TestAsset::TYPE_NAME));
+    assert_eq!(restarted_tag.name, "My Tag");
+    assert_eq!(
+        restarted_tag.asset_ty.as_deref(),
+        Some(TestAsset::TYPE_NAME)
+    );
 
     let restarted_new_asset_handle = restarted_registry
         .handle::<TestAsset>(new_asset_id)

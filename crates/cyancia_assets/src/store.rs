@@ -15,7 +15,7 @@ use crate::{
         scan_bundle_assets,
     },
     error::{AssetError, AssetResult},
-    index_db::{AssetFilter, AssetIndexDb, ItemStatus, UntypedAssetFilter},
+    index_db::{AssetFilter, AssetIndexDb, ItemStatus, TagFilter, UntypedAssetFilter},
     loader::AssetSerializerRegistry,
     tag::Tag,
 };
@@ -178,6 +178,21 @@ impl AssetRegistry {
         filter: AssetFilter<T>,
     ) -> AssetResult<Vec<AssetHandle<T>>> {
         Ok(self.metadata_to_handles(self.index_db.get_assets(filter.into_untyped())?))
+    }
+
+    pub fn all_tags(&self) -> AssetResult<Vec<Tag>> {
+        self.index_db.get_tags(TagFilter::default())
+    }
+
+    pub fn all_tags_of<T: Asset>(&self) -> AssetResult<Vec<Tag>> {
+        self.index_db.get_tags(TagFilter {
+            asset_ty: Some(Some(T::TYPE_NAME.to_string())),
+            ..Default::default()
+        })
+    }
+
+    pub fn all_tags_filtered(&self, filter: TagFilter) -> AssetResult<Vec<Tag>> {
+        self.index_db.get_tags(filter)
     }
 
     pub fn serializers(&self) -> &AssetSerializerRegistry {

@@ -65,6 +65,11 @@ pub struct UntypedAssetFilter {
     pub bundle: Option<BundleId>,
 }
 
+#[derive(Default)]
+pub struct TagFilter {
+    pub asset_ty: Option<Option<String>>,
+}
+
 pub struct AssetIndexDb {
     conn: Mutex<Connection>,
 }
@@ -129,7 +134,7 @@ CREATE TABLE IF NOT EXISTS asset_revisions (
 );
 
 CREATE TABLE IF NOT EXISTS tags (
-    tag_id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     asset_ty TEXT,
     last_modified TEXT NOT NULL
@@ -140,7 +145,7 @@ CREATE TABLE IF NOT EXISTS asset_tags (
     tag_id TEXT NOT NULL,
     PRIMARY KEY (asset_id, tag_id),
     FOREIGN KEY (asset_id) REFERENCES assets(asset_id) ON DELETE CASCADE,
-    FOREIGN KEY (tag_id) REFERENCES tags(tag_id) ON DELETE CASCADE
+    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
             "#,
         )?;
@@ -211,8 +216,8 @@ VALUES (?1, ?2, ?3, ?4, ?5);
 
         let stored_tag = tx
             .query_row(
-                "SELECT asset_ty, last_modified FROM tags WHERE tag_id = ?1",
-                params![tag.id()],
+                "SELECT asset_ty, last_modified FROM tags WHERE id = ?1",
+                params![tag.id],
                 |row| {
                     Ok((
                         row.get::<_, Option<String>>(0)?,
@@ -226,18 +231,18 @@ VALUES (?1, ?2, ?3, ?4, ?5);
             None => {
                 tx.execute(
                     r#"
-INSERT INTO tags (tag_id, name, asset_ty, last_modified)
+INSERT INTO tags (id, name, asset_ty, last_modified)
 VALUES (?1, ?2, ?3, ?4);
                     "#,
-                    params![tag.id(), tag.name(), tag.asset_ty(), last_modified],
+                    params![tag.id, tag.name, tag.asset_ty, last_modified],
                 )?;
             }
             Some((stored_asset_ty, stored_last_modified)) => {
-                if stored_asset_ty.as_deref() != tag.asset_ty() {
+                if stored_asset_ty != tag.asset_ty {
                     return Err(AssetError::TagAssetTypeChanged {
-                        tag_id: tag.id().clone(),
+                        tag_id: tag.id.clone(),
                         current_asset_ty: stored_asset_ty,
-                        new_asset_ty: tag.asset_ty().map(str::to_string),
+                        new_asset_ty: tag.asset_ty.clone(),
                     }
                     .into());
                 }
@@ -251,15 +256,60 @@ VALUES (?1, ?2, ?3, ?4);
                     r#"
 UPDATE tags
 SET name = ?2, last_modified = ?3
-WHERE tag_id = ?1;
+WHERE id = ?1;
                     "#,
-                    params![tag.id(), tag.name(), last_modified],
+                    params![tag.id, tag.name, last_modified],
                 )?;
             }
         }
 
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn get_tag(&self, tag_id: TagId) -> AssetResult<Tag> {
+        let conn = self.conn.lock();
+        let tag = conn.query_row(
+            "SELECT id, name, asset_ty FROM tags WHERE id = ?1",
+            params![tag_id],
+            |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    asset_ty: row.get(2)?,
+                })
+            },
+        )?;
+        Ok(tag)
+    }
+
+    pub fn get_tags(&self, filter: TagFilter) -> AssetResult<Vec<Tag>> {
+        let (filter_kind, asset_ty) = match filter.asset_ty {
+            None => (0, None),
+            Some(None) => (1, None),
+            Some(Some(asset_ty)) => (2, Some(asset_ty)),
+        };
+
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            r#"
+SELECT id, name, asset_ty
+FROM tags
+WHERE ?1 = 0
+    OR (?1 = 1 AND asset_ty IS NULL)
+    OR (?1 = 2 AND asset_ty = ?2)
+ORDER BY name ASC, id ASC;
+            "#,
+        )?;
+        let rows = stmt.query_map(params![filter_kind, asset_ty], |row| {
+            Ok(Tag {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                asset_ty: row.get(2)?,
+            })
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn add_asset(&self, asset: &AssetMetadata) -> AssetResult<UntypedAssetId> {
@@ -744,8 +794,8 @@ mod tests {
         db.upsert_tag(&tag, last_modified)?;
 
         let stored = db.conn.lock().query_row(
-            "SELECT name, asset_ty, last_modified FROM tags WHERE tag_id = ?1",
-            params![tag.id()],
+            "SELECT name, asset_ty, last_modified FROM tags WHERE id = ?1",
+            params![tag.id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -758,11 +808,11 @@ mod tests {
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, last_modified);
 
-        tag.set_name("Ignored".to_string());
+        tag.name = "Ignored".to_string();
         db.upsert_tag(&tag, last_modified)?;
         let stored_name = db.conn.lock().query_row(
-            "SELECT name FROM tags WHERE tag_id = ?1",
-            params![tag.id()],
+            "SELECT name FROM tags WHERE id = ?1",
+            params![tag.id],
             |row| row.get::<_, String>(0),
         )?;
         assert_eq!(stored_name, "Original");
@@ -770,8 +820,8 @@ mod tests {
         let updated_at = Utc.with_ymd_and_hms(2026, 4, 2, 0, 0, 0).unwrap();
         db.upsert_tag(&tag, updated_at)?;
         let stored = db.conn.lock().query_row(
-            "SELECT name, asset_ty, last_modified FROM tags WHERE tag_id = ?1",
-            params![tag.id()],
+            "SELECT name, asset_ty, last_modified FROM tags WHERE id = ?1",
+            params![tag.id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -786,11 +836,11 @@ mod tests {
 
         let changed_asset_ty_tag: Tag = toml::from_str(&format!(
             r#"
-tag_id = "{}"
+id = "{}"
 name = "Changed type"
 asset_ty = "{}"
             "#,
-            tag.id(),
+            tag.id,
             OtherAsset::TYPE_NAME,
         ))?;
         assert!(
@@ -802,8 +852,8 @@ asset_ty = "{}"
         );
 
         let stored = db.conn.lock().query_row(
-            "SELECT name, asset_ty, last_modified FROM tags WHERE tag_id = ?1",
-            params![tag.id()],
+            "SELECT name, asset_ty, last_modified FROM tags WHERE id = ?1",
+            params![tag.id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -815,6 +865,60 @@ asset_ty = "{}"
         assert_eq!(stored.0, "Ignored");
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, updated_at);
+
+        Ok(())
+    }
+
+    #[test]
+    fn tags_are_queried_by_id_and_asset_type() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let last_modified = Utc.with_ymd_and_hms(2026, 4, 4, 0, 0, 0).unwrap();
+        let untyped_tag = Tag::new("All assets".to_string(), None);
+        let test_asset_tag = Tag::new(
+            "Test assets".to_string(),
+            Some(TestAsset::TYPE_NAME.to_string()),
+        );
+        let other_asset_tag = Tag::new(
+            "Other assets".to_string(),
+            Some(OtherAsset::TYPE_NAME.to_string()),
+        );
+
+        for tag in [&untyped_tag, &test_asset_tag, &other_asset_tag] {
+            db.upsert_tag(tag, last_modified)?;
+        }
+
+        let stored = db.get_tag(test_asset_tag.id.clone())?;
+        assert_eq!(stored.id, test_asset_tag.id);
+        assert_eq!(stored.name, "Test assets");
+        assert_eq!(stored.asset_ty.as_deref(), Some(TestAsset::TYPE_NAME));
+
+        let all = db.get_tags(TagFilter::default())?;
+        assert_eq!(
+            all.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            vec!["All assets", "Other assets", "Test assets"]
+        );
+
+        let untyped = db.get_tags(TagFilter {
+            asset_ty: Some(None),
+        })?;
+        assert_eq!(untyped.len(), 1);
+        assert_eq!(untyped[0].id, untyped_tag.id);
+        assert_eq!(untyped[0].asset_ty, None);
+
+        let test_asset_tags = db.get_tags(TagFilter {
+            asset_ty: Some(Some(TestAsset::TYPE_NAME.to_string())),
+        })?;
+        assert_eq!(test_asset_tags.len(), 1);
+        assert_eq!(test_asset_tags[0].id, test_asset_tag.id);
+        assert_eq!(
+            test_asset_tags[0].asset_ty.as_deref(),
+            Some(TestAsset::TYPE_NAME)
+        );
+
+        let missing = db.get_tags(TagFilter {
+            asset_ty: Some(Some("missing_asset".to_string())),
+        })?;
+        assert!(missing.is_empty());
 
         Ok(())
     }

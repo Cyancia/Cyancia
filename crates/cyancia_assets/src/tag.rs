@@ -27,9 +27,9 @@ impl rusqlite::types::ToSql for TagId {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tag {
-    tag_id: TagId,
-    name: String,
-    asset_ty: Option<String>,
+    pub id: TagId,
+    pub name: String,
+    pub asset_ty: Option<String>,
 }
 
 impl Asset for Tag {
@@ -39,26 +39,10 @@ impl Asset for Tag {
 impl Tag {
     pub fn new(name: String, asset_ty: Option<String>) -> Self {
         Self {
-            tag_id: TagId::new(Uuid::new_v4()),
+            id: TagId::new(Uuid::new_v4()),
             name,
             asset_ty,
         }
-    }
-
-    pub fn id(&self) -> &TagId {
-        &self.tag_id
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
-    }
-
-    pub fn asset_ty(&self) -> Option<&str> {
-        self.asset_ty.as_deref()
     }
 }
 
