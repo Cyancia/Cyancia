@@ -4,24 +4,23 @@ use cyancia_assets::AssetAppExt;
 use gpui::{Action, App, Global, KeyBinding, KeyBindingContextPredicate};
 
 use crate::{
-    brush::OpenBrushEditorAction,
+    edit::{PasteIntoNewLayerAction, RedoAction, UndoAction},
     file::{OpenFileAction, SaveFileAction},
     layer::{
         CreateNewLayerAction, DeleteSelectedLayersAction, GroupSelectedLayersAction,
-        MoveLayerDownAction, MoveLayerUpAction, PasteIntoNewLayerAction, SelectNextLayerAction,
-        SelectPreviousLayerAction,
+        MoveLayerDownAction, MoveLayerUpAction, SelectNextLayerAction, SelectPreviousLayerAction,
     },
     manifest::{KeyBindingDefManifest, KeyBindingDefManifestLoader},
     selection::DeleteSelectionAction,
-    undo::{RedoAction, UndoAction},
+    window::OpenBrushEditorAction,
 };
 
-pub mod brush;
+pub mod edit;
 pub mod file;
 pub mod layer;
 pub mod manifest;
 pub mod selection;
-pub mod undo;
+pub mod window;
 
 // pub struct ActionPlugin;
 
