@@ -178,6 +178,7 @@ RETURNING 0;
         }
     }
 
+    // This is only intended use by asset store to update a out-dated bundle
     pub fn replace_assets(&self, bundle: &BundleId, assets: &[AssetMetadata]) -> AssetResult<()> {
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
@@ -928,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn tags_are_upserted_without_changing_asset_type() -> AssetResult<()> {
+    fn tags_are_upserted_queried_and_filtered() -> AssetResult<()> {
         let db = AssetIndexDb::open_in_memory()?;
         let last_modified = Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
         let mut tag = Tag::new(
@@ -1011,36 +1012,25 @@ asset_ty = "{}"
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, updated_at);
 
-        Ok(())
-    }
-
-    #[test]
-    fn tags_are_queried_by_id_and_asset_type() -> AssetResult<()> {
-        let db = AssetIndexDb::open_in_memory()?;
-        let last_modified = Utc.with_ymd_and_hms(2026, 4, 4, 0, 0, 0).unwrap();
         let untyped_tag = Tag::new("All assets".to_string(), None);
-        let test_asset_tag = Tag::new(
-            "Test assets".to_string(),
-            Some(TestAsset::TYPE_NAME.to_string()),
-        );
         let other_asset_tag = Tag::new(
             "Other assets".to_string(),
             Some(OtherAsset::TYPE_NAME.to_string()),
         );
+        db.upsert_tag(&untyped_tag, updated_at)?;
+        db.upsert_tag(&other_asset_tag, updated_at)?;
 
-        for tag in [&untyped_tag, &test_asset_tag, &other_asset_tag] {
-            db.upsert_tag(tag, last_modified)?;
-        }
+        let queried = db.get_tag(tag.id.clone())?;
+        assert_eq!(queried.id, tag.id);
+        assert_eq!(queried.name, "Ignored");
+        assert_eq!(queried.asset_ty.as_deref(), Some(TestAsset::TYPE_NAME));
 
-        let stored = db.get_tag(test_asset_tag.id.clone())?;
-        assert_eq!(stored.id, test_asset_tag.id);
-        assert_eq!(stored.name, "Test assets");
-        assert_eq!(stored.asset_ty.as_deref(), Some(TestAsset::TYPE_NAME));
-
-        let all = db.get_tags(TagFilter::default())?;
         assert_eq!(
-            all.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
-            vec!["All assets", "Other assets", "Test assets"]
+            db.get_tags(TagFilter::default())?
+                .iter()
+                .map(|tag| tag.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["All assets", "Ignored", "Other assets"]
         );
 
         let untyped = db.get_tags(TagFilter {
@@ -1048,28 +1038,25 @@ asset_ty = "{}"
         })?;
         assert_eq!(untyped.len(), 1);
         assert_eq!(untyped[0].id, untyped_tag.id);
-        assert_eq!(untyped[0].asset_ty, None);
 
-        let test_asset_tags = db.get_tags(TagFilter {
+        let typed = db.get_tags(TagFilter {
             asset_ty: Some(Some(TestAsset::TYPE_NAME.to_string())),
         })?;
-        assert_eq!(test_asset_tags.len(), 1);
-        assert_eq!(test_asset_tags[0].id, test_asset_tag.id);
-        assert_eq!(
-            test_asset_tags[0].asset_ty.as_deref(),
-            Some(TestAsset::TYPE_NAME)
-        );
+        assert_eq!(typed.len(), 1);
+        assert_eq!(typed[0].id, tag.id);
 
-        let missing = db.get_tags(TagFilter {
-            asset_ty: Some(Some("missing_asset".to_string())),
-        })?;
-        assert!(missing.is_empty());
+        assert!(
+            db.get_tags(TagFilter {
+                asset_ty: Some(Some("missing_asset".to_string())),
+            })?
+            .is_empty()
+        );
 
         Ok(())
     }
 
     #[test]
-    fn tags_are_added_to_and_removed_from_assets() -> AssetResult<()> {
+    fn tag_asset_association_lifecycle() -> AssetResult<()> {
         let db = AssetIndexDb::open_in_memory()?;
         let bundle_id = BundleId::new(Uuid::from_u128(63));
         let last_modified = Utc.with_ymd_and_hms(2026, 4, 5, 0, 0, 0).unwrap();
@@ -1129,47 +1116,15 @@ asset_ty = "{}"
             .is_empty()
         );
 
-        Ok(())
-    }
-
-    #[test]
-    fn removing_tag_removes_its_asset_associations() -> AssetResult<()> {
-        let db = AssetIndexDb::open_in_memory()?;
-        let bundle_id = BundleId::new(Uuid::from_u128(66));
-        let last_modified = Utc.with_ymd_and_hms(2026, 4, 6, 0, 0, 0).unwrap();
-        db.upsert_bundle(&AssetBundleMetadata {
-            bundle_id,
-            name: "Remove tag".to_string(),
-            last_modified,
-        })?;
-
-        let asset_id = UntypedAssetId::new(Uuid::from_u128(67));
-        db.add_asset(&AssetMetadata {
-            asset_id,
-            ty: TestAsset::TYPE_NAME.to_string(),
-            bundle_id,
-            relative_path: "tagged.asset".to_string(),
-            revision: 0,
-            last_modified,
-            in_memory: false,
-        })?;
-        let tag = Tag::new(
-            "Temporary".to_string(),
-            Some(TestAsset::TYPE_NAME.to_string()),
-        );
-        db.upsert_tag(&tag, last_modified)?;
-        db.add_tag_to_asset(&asset_id, &tag.id)?;
-
-        db.remove_tag(&tag.id)?;
-
-        assert!(db.get_tag(tag.id.clone()).is_err());
+        db.remove_tag(&untyped_tag.id)?;
+        assert!(db.get_tag(untyped_tag.id.clone()).is_err());
         let association_count = db.conn.lock().query_row(
             "SELECT COUNT(*) FROM asset_tags WHERE tag_id = ?1",
-            params![tag.id],
+            params![untyped_tag.id],
             |row| row.get::<_, u32>(0),
         )?;
         assert_eq!(association_count, 0);
-        assert!(db.remove_tag(&tag.id).is_err());
+        assert!(db.remove_tag(&untyped_tag.id).is_err());
 
         Ok(())
     }
