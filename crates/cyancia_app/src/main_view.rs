@@ -145,7 +145,7 @@ fn update_menu_bar(menu_bar: &Entity<AppMenuBar>, cx: &mut App) {
 }
 
 fn build_menu_bar(cx: &App) -> Vec<Menu> {
-    use cyancia_actions::{window::*, file::*, layer::*, selection::*, edit::*};
+    use cyancia_actions::{edit::*, file::*, layer::*, selection::*, window::*};
 
     let current_theme = cx.theme().theme_name();
     let themes = ThemeRegistry::global(cx)

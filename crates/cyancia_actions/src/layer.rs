@@ -1,28 +1,20 @@
-use std::{
-    any::TypeId,
-    io::{BufReader, Cursor},
-};
+use std::any::TypeId;
 
 use cyancia_canvas::{
-    CCanvas, CanvasAppExt, CanvasUndoStackAppExt,
+    CanvasAppExt, CanvasUndoStackAppExt,
     command::{
         DeleteLayersCommand, GroupLayerCommand, InsertLayerCommand, LayerWithPosition,
         MoveLayersCommand,
     },
 };
-use cyancia_image::{
-    CImage,
-    layer::{
-        LayerId, LayerPosition, LayerStackNode,
-        group_layer::GroupLayer,
-        pixel_layer::PixelLayer,
-        properties::{LayerProperties, NameProp},
-    },
-    tile::TileStorageAppExt,
+use cyancia_image::layer::{
+    LayerId, LayerPosition, LayerStackNode,
+    group_layer::GroupLayer,
+    pixel_layer::PixelLayer,
+    properties::{LayerProperties, NameProp},
 };
-use cyancia_undo::BatchedUndoCommand;
 use cyancia_utils::log_err::LogErr;
-use gpui::{App, ClipboardEntry, actions};
+use gpui::{App, actions};
 
 use crate::ActionFunction;
 
