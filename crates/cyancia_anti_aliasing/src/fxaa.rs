@@ -5,10 +5,9 @@ use cyancia_render::{
     buffer::DynamicBuffer,
 };
 use encase::ShaderType;
-use glam::UVec2;
 use wesl::include_wesl;
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,
+    BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, TextureFormat,
@@ -67,7 +66,6 @@ impl FxaaParams {
 
 pub struct FxaaPipeline {
     layout: BindGroupLayout,
-    bind_group: Option<BindGroup>,
     pipeline: ComputePipeline,
 }
 
@@ -113,7 +111,6 @@ impl FxaaPipeline {
 
         Self {
             layout: fxaa_layout,
-            bind_group: None,
             pipeline: fxaa_pipeline,
         }
     }
@@ -154,7 +151,7 @@ impl FxaaPipeline {
             pass.dispatch_workgroups(
                 dst.texture.texture().width().div_ceil(16),
                 dst.texture.texture().height().div_ceil(16),
-                dst.texture.texture().depth_or_array_layers() as u32,
+                dst.texture.texture().depth_or_array_layers(),
             );
         }
         queue.submit([ec.finish()]);

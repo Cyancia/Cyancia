@@ -9,7 +9,6 @@ rust-version.workspace = true
 cyancia_image.workspace = true
 cyancia_render.workspace = true
 encase.workspace = true
-glam.workspace = true
 wesl.workspace = true
 wgpu.workspace = true
 

@@ -1694,7 +1694,6 @@ dependencies = [
  "cyancia_image",
  "cyancia_render",
  "encase",
- "glam",
  "wesl",
  "wgpu 29.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
