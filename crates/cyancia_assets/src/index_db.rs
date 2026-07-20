@@ -112,8 +112,10 @@ CREATE TABLE IF NOT EXISTS assets (
     asset_id TEXT PRIMARY KEY,
     ty TEXT NOT NULL,
     bundle_id TEXT NOT NULL,
+    is_deleted INTEGER NOT NULL,
 
-    FOREIGN KEY (bundle_id) REFERENCES bundles(bundle_id) ON DELETE CASCADE
+    FOREIGN KEY (bundle_id) REFERENCES bundles(bundle_id) ON DELETE CASCADE,
+    CHECK (is_deleted IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS asset_revisions (
@@ -180,21 +182,42 @@ RETURNING 0;
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
 
-        tx.execute("DELETE FROM assets WHERE bundle_id = ?1", params![bundle])?;
+        tx.execute(
+            "UPDATE assets SET is_deleted = 1 WHERE bundle_id = ?1",
+            params![bundle],
+        )?;
 
         for asset in assets {
             tx.execute(
                 r#"
-INSERT INTO assets (asset_id, ty, bundle_id)
-VALUES (?1, ?2, ?3)
-ON CONFLICT DO NOTHING;
+DELETE FROM asset_revisions
+WHERE asset_id = ?1
+  AND EXISTS (
+      SELECT 1 FROM assets
+      WHERE asset_id = ?1 AND is_deleted = 1
+  );
+                "#,
+                params![asset.asset_id],
+            )?;
+            tx.execute(
+                r#"
+INSERT INTO assets (asset_id, ty, bundle_id, is_deleted)
+VALUES (?1, ?2, ?3, 0)
+ON CONFLICT(asset_id) DO UPDATE SET
+    ty = excluded.ty,
+    bundle_id = excluded.bundle_id,
+    is_deleted = 0;
                 "#,
                 params![asset.asset_id, asset.ty, asset.bundle_id,],
             )?;
             tx.execute(
                 r#"
 INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
-VALUES (?1, ?2, ?3, ?4, ?5);
+VALUES (?1, ?2, ?3, ?4, ?5)
+ON CONFLICT(asset_id, revision) DO UPDATE SET
+    relative_path = excluded.relative_path,
+    last_modified = excluded.last_modified,
+    in_memory = excluded.in_memory;
                 "#,
                 params![
                     asset.asset_id,
@@ -329,9 +352,24 @@ ORDER BY name ASC, id ASC;
 
         tx.execute(
             r#"
-INSERT INTO assets (asset_id, ty, bundle_id)
-VALUES (?1, ?2, ?3)
-ON CONFLICT DO NOTHING;
+DELETE FROM asset_revisions
+WHERE asset_id = ?1
+  AND EXISTS (
+      SELECT 1 FROM assets
+      WHERE asset_id = ?1 AND is_deleted = 1
+  );
+            "#,
+            params![asset.asset_id],
+        )?;
+
+        tx.execute(
+            r#"
+INSERT INTO assets (asset_id, ty, bundle_id, is_deleted)
+VALUES (?1, ?2, ?3, 0)
+ON CONFLICT(asset_id) DO UPDATE SET
+    ty = excluded.ty,
+    bundle_id = excluded.bundle_id,
+    is_deleted = 0;
             "#,
             params![asset.asset_id, asset.ty, asset.bundle_id,],
         )?;
@@ -339,7 +377,11 @@ ON CONFLICT DO NOTHING;
         tx.execute(
             r#"
 INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
-VALUES (?1, ?2, ?3, ?4, ?5);
+VALUES (?1, ?2, ?3, ?4, ?5)
+ON CONFLICT(asset_id, revision) DO UPDATE SET
+    relative_path = excluded.relative_path,
+    last_modified = excluded.last_modified,
+    in_memory = excluded.in_memory;
             "#,
             params![
                 asset.asset_id,
@@ -369,6 +411,7 @@ SELECT
 FROM asset_revisions r
 JOIN assets a USING (asset_id)
 WHERE r.asset_id = ?1
+    AND a.is_deleted = 0
 ORDER BY r.revision DESC
 LIMIT 1;
             "#,
@@ -414,6 +457,7 @@ SELECT
 FROM latest l
 JOIN assets a ON a.asset_id = l.asset_id
 WHERE l.ord = 1
+    AND a.is_deleted = 0
     AND (?1 IS NULL OR a.ty = ?1)
     AND (?2 IS NULL OR a.asset_id IN (SELECT asset_id FROM asset_tags WHERE tag_id = ?2))
     AND (?3 IS NULL OR a.bundle_id = ?3)
@@ -444,10 +488,12 @@ ORDER BY l.relative_path ASC;
         let tx = conn.transaction()?;
         let (revision, in_memory) = tx.query_row(
             r#"
-SELECT revision, in_memory
-FROM asset_revisions
-WHERE asset_id = ?1
-ORDER BY revision DESC
+SELECT r.revision, r.in_memory
+FROM asset_revisions r
+JOIN assets a USING (asset_id)
+WHERE r.asset_id = ?1
+    AND a.is_deleted = 0
+ORDER BY r.revision DESC
 LIMIT 1;
             "#,
             params![id],
@@ -489,10 +535,12 @@ RETURNING revision;
         let revision = conn.query_row(
             r#"
 WITH latest AS (
-    SELECT revision, in_memory
-    FROM asset_revisions
-    WHERE asset_id = ?1
-    ORDER BY revision DESC
+    SELECT r.revision, r.in_memory
+    FROM asset_revisions r
+    JOIN assets a USING (asset_id)
+    WHERE r.asset_id = ?1
+      AND a.is_deleted = 0
+    ORDER BY r.revision DESC
     LIMIT 1
 )
 UPDATE asset_revisions
@@ -509,13 +557,26 @@ RETURNING revision;
         Ok(revision)
     }
 
+    pub fn delete_asset(&self, asset_id: &UntypedAssetId) -> AssetResult<()> {
+        let conn = self.conn.lock();
+        let deleted = conn.execute(
+            "UPDATE assets SET is_deleted = 1 WHERE asset_id = ?1 AND is_deleted = 0",
+            params![asset_id],
+        )?;
+        if deleted == 0 {
+            return Err(AssetError::AssetNotFound(*asset_id).into());
+        }
+
+        Ok(())
+    }
+
     pub fn add_tag_to_asset(&self, asset_id: &UntypedAssetId, tag_id: &TagId) -> AssetResult<()> {
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
 
         let asset_ty = tx
             .query_row(
-                "SELECT ty FROM assets WHERE asset_id = ?1",
+                "SELECT ty FROM assets WHERE asset_id = ?1 AND is_deleted = 0",
                 params![asset_id],
                 |row| row.get::<_, String>(0),
             )
@@ -1109,6 +1170,83 @@ asset_ty = "{}"
         )?;
         assert_eq!(association_count, 0);
         assert!(db.remove_tag(&tag.id).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn deleted_assets_are_hidden_and_can_be_restored() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let bundle_id = BundleId::new(Uuid::from_u128(68));
+        let last_modified = Utc.with_ymd_and_hms(2026, 4, 7, 0, 0, 0).unwrap();
+        db.upsert_bundle(&AssetBundleMetadata {
+            bundle_id,
+            name: "Deleted assets".to_string(),
+            last_modified,
+        })?;
+
+        let asset_id = UntypedAssetId::new(Uuid::from_u128(69));
+        let asset = AssetMetadata {
+            asset_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id,
+            relative_path: "original.asset".to_string(),
+            revision: 5,
+            last_modified,
+            in_memory: false,
+        };
+        db.add_asset(&asset)?;
+        let tag = Tag::new(
+            "Restored tag".to_string(),
+            Some(TestAsset::TYPE_NAME.to_string()),
+        );
+        db.upsert_tag(&tag, last_modified)?;
+        db.add_tag_to_asset(&asset_id, &tag.id)?;
+
+        db.delete_asset(&asset_id)?;
+
+        assert!(db.get_asset(&asset_id).is_err());
+        assert!(db.get_assets(UntypedAssetFilter::default())?.is_empty());
+        assert!(
+            db.get_assets(UntypedAssetFilter {
+                tag: Some(tag.id.clone()),
+                ..Default::default()
+            })?
+            .is_empty()
+        );
+        assert!(db.update_asset(&asset_id).is_err());
+        assert!(db.add_tag_to_asset(&asset_id, &tag.id).is_err());
+        assert!(db.delete_asset(&asset_id).is_err());
+        let association_count = db.conn.lock().query_row(
+            "SELECT COUNT(*) FROM asset_tags WHERE asset_id = ?1 AND tag_id = ?2",
+            params![asset_id, tag.id],
+            |row| row.get::<_, u32>(0),
+        )?;
+        assert_eq!(association_count, 1);
+
+        let restored = AssetMetadata {
+            relative_path: "restored.asset".to_string(),
+            revision: 0,
+            ..asset
+        };
+        db.add_asset(&restored)?;
+
+        let stored = db.get_asset(&asset_id)?;
+        assert_eq!(stored.revision, 0);
+        assert_eq!(stored.relative_path, "restored.asset");
+        let tagged = db.get_assets(UntypedAssetFilter {
+            tag: Some(tag.id.clone()),
+            ..Default::default()
+        })?;
+        assert_eq!(tagged.len(), 1);
+        assert_eq!(tagged[0].asset_id, asset_id);
+
+        db.delete_asset(&asset_id)?;
+        db.replace_assets(&bundle_id, std::slice::from_ref(&restored))?;
+        assert_eq!(db.get_asset(&asset_id)?.revision, 0);
+
+        db.replace_assets(&bundle_id, &[])?;
+        assert!(db.get_asset(&asset_id).is_err());
 
         Ok(())
     }

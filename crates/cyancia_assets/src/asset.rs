@@ -129,7 +129,6 @@ impl<T: Asset> ErasedAsset for T {
 #[derive(Debug, Clone)]
 pub struct AssetMetadata {
     pub asset_id: UntypedAssetId,
-    // TODO: Replace with Arc<str> when sqlx supports.
     pub ty: String,
     pub bundle_id: BundleId,
     pub relative_path: String,
@@ -224,6 +223,11 @@ impl<T: Asset> AssetHandle<T> {
             new_path.to_str().unwrap(),
             last_modified.into(),
         )?;
+        Ok(())
+    }
+
+    pub fn delete(&self) -> AssetResult<()> {
+        self.index_db.delete_asset(&self.untyped_id())?;
         Ok(())
     }
 
