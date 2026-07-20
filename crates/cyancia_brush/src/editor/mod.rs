@@ -97,6 +97,8 @@ struct DeleteExternalVariable {
 
 // FIXME: Connection won't disconnect if I drag at a connected input slot.
 // FIXME: Modifying preset won't take effect immediately.
+// TODO: Don't share the same brush with brush tool.
+// TODO: Tag filtering.
 pub struct BrushEditor {
     texture_storage: Arc<GraphTextureStorage>,
     main_function_storage: Arc<GraphFunctionStorage<BrushGraphData>>,

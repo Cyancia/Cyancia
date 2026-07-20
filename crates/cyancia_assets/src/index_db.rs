@@ -408,7 +408,6 @@ RETURNING revision;
         Ok(revision)
     }
 
-    // TODO Don't add new record, just modify in place.
     pub fn write_asset(
         &self,
         id: &UntypedAssetId,
@@ -419,7 +418,7 @@ RETURNING revision;
         let revision = conn.query_row(
             r#"
 WITH latest AS (
-    SELECT revision
+    SELECT revision, in_memory
     FROM asset_revisions
     WHERE asset_id = ?1
     ORDER BY revision DESC
@@ -429,7 +428,7 @@ UPDATE asset_revisions
 SET in_memory = 0, relative_path = ?2, last_modified = ?3
 WHERE asset_id = ?1
   AND revision = (SELECT revision FROM latest)
-  AND in_memory = 1
+  AND (SELECT in_memory FROM latest) = 1
 RETURNING revision;
             "#,
             params![id, new_path, last_modified],
@@ -903,6 +902,14 @@ mod tests {
         assert_eq!(written.relative_path, "first.rev8.asset");
         assert_eq!(written.last_modified, written_at);
         assert!(!written.in_memory);
+        assert_eq!(
+            db.conn.lock().query_row(
+                "SELECT COUNT(*) FROM asset_revisions WHERE asset_id = ?1",
+                params![first_id],
+                |row| row.get::<_, u32>(0),
+            )?,
+            2
+        );
 
         assert_eq!(db.update_asset(&first_id)?, 9);
         db.revert_asset(&first_id)?;
@@ -921,6 +928,29 @@ mod tests {
         assert!(!first.in_memory);
         assert_eq!(second.revision, 0);
         assert!(!second.in_memory);
+
+        assert_eq!(db.update_asset(&second_id)?, 1);
+        db.conn.lock().execute(
+            r#"
+INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
+VALUES (?1, 2, ?2, ?3, 0);
+            "#,
+            params![second_id, "second.rev2.asset", written_at],
+        )?;
+        assert!(
+            db.write_asset(&second_id, "second.rev1.asset", written_at)
+                .is_err()
+        );
+        let latest = db.get_asset(&second_id)?;
+        assert_eq!(latest.revision, 2);
+        assert_eq!(latest.relative_path, "second.rev2.asset");
+        assert!(!latest.in_memory);
+        let older_in_memory = db.conn.lock().query_row(
+            "SELECT in_memory FROM asset_revisions WHERE asset_id = ?1 AND revision = 1",
+            params![second_id],
+            |row| row.get::<_, i64>(0),
+        )?;
+        assert_eq!(older_in_memory, 1);
 
         Ok(())
     }
