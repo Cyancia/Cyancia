@@ -11,7 +11,7 @@ pub struct ImageProperties {
     pub tile_size: u32,
     pub color_profile: Vec<u8>,
     pub root_layer: Uuid,
-    pub texel_type: Vec<u8>,
+    pub texel_type: u8,
 }
 
 pub(crate) fn initialize_table(conn: &Connection) -> Result<()> {
@@ -23,7 +23,7 @@ CREATE TABLE image (
     tile_size     INTEGER NOT NULL,
     color_profile BLOB NOT NULL,
     root_layer    BLOB NOT NULL CHECK (length(root_layer) = 16),
-    texel_type    BLOB NOT NULL
+    texel_type    INTEGER NOT NULL
 );
 
 CREATE UNIQUE INDEX image_singleton ON image ((1));
@@ -50,7 +50,7 @@ impl CyanArchive {
         let tile_size = u32::try_from(row.get::<_, i64>(2)?)?;
         let color_profile = row.get(3)?;
         let root_layer = Uuid::from_slice(&row.get::<_, Vec<u8>>(4)?)?;
-        let texel_type = row.get(5)?;
+        let texel_type = u8::try_from(row.get::<_, i64>(5)?)?;
 
         if rows.next()?.is_some() {
             bail!("archive contains more than one image properties row");
@@ -120,7 +120,7 @@ mod tests {
                 ("tile_size".into(), "INTEGER".into(), true),
                 ("color_profile".into(), "BLOB".into(), true),
                 ("root_layer".into(), "BLOB".into(), true),
-                ("texel_type".into(), "BLOB".into(), true),
+                ("texel_type".into(), "INTEGER".into(), true),
             ]
         );
     }
@@ -134,7 +134,7 @@ mod tests {
             tile_size: 256,
             color_profile: vec![0, 1, 2, 3],
             root_layer: Uuid::new_v4(),
-            texel_type: vec![4, 5, 6, 7],
+            texel_type: 4,
         };
 
         archive.write_image_properties(&properties).unwrap();
@@ -165,7 +165,7 @@ mod tests {
                     tile_size: 256,
                     color_profile: vec![0, 1, 2, 3],
                     root_layer: Uuid::new_v4(),
-                    texel_type: vec![4, 5, 6, 7],
+                    texel_type: 4,
                 })
                 .unwrap();
         }
@@ -187,7 +187,7 @@ mod tests {
             .execute(
                 r#"
 INSERT INTO image (width, height, tile_size, color_profile, root_layer, texel_type)
-VALUES (1, 1, 256, X'00010203', ?1, X'04050607')
+VALUES (1, 1, 256, X'00010203', ?1, 4)
                 "#,
                 params![&root_layer.as_bytes()[..]],
             )

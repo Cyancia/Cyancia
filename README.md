@@ -1,7 +1,7 @@
 # Cyancia
 
 > [!WARNING]
-> This project is still at pre-pre-pre-pre-alpha stage, and is absolutely not intended for production use. It's even unable to undo/redo or save your images and has tons of bugs and incomplete code!
+> This project is still at pre-pre-pre-alpha stage, and is absolutely not intended for production use. It has tons of bugs and incomplete code!
 
 ![](./docs/readme/main.png)
 

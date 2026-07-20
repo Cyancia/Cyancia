@@ -152,7 +152,7 @@ mod tests {
                 tile_size: 256,
                 color_profile: vec![0, 1, 2, 3],
                 root_layer,
-                texel_type: vec![8, 9],
+                texel_type: 8,
             })
             .unwrap();
         archive.set_path(path.clone()).unwrap();
@@ -167,7 +167,7 @@ mod tests {
                 tile_size: 256,
                 color_profile: vec![4, 5, 6, 7],
                 root_layer,
-                texel_type: vec![10, 11],
+                texel_type: 10,
             })
             .unwrap();
         drop(archive);
@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(properties.tile_size, 256);
         assert_eq!(properties.color_profile, [4, 5, 6, 7]);
         assert_eq!(properties.root_layer, root_layer);
-        assert_eq!(properties.texel_type, [10, 11]);
+        assert_eq!(properties.texel_type, 10);
         drop(archive);
 
         std::fs::remove_file(path).unwrap();

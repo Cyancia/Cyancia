@@ -1,15 +1,18 @@
+use anyhow::Result;
 use imagers::DynamicImage;
 use moxcms::Layout;
+use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
 use wgpu::{TextureFormat, TextureSampleType};
 
 pub const A8_FORMAT: TextureFormat = TextureFormat::R8Unorm;
 pub const RGBA8_FORMAT: TextureFormat = TextureFormat::R32Uint;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, TryFromPrimitive)]
+#[repr(u8)]
 pub enum TexelFormat {
-    Alpha,
-    Rgba,
+    Alpha = 0,
+    Rgba = 1,
 }
 
 impl TexelFormat {
@@ -21,12 +24,13 @@ impl TexelFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, TryFromPrimitive)]
+#[repr(u8)]
 pub enum TexelDepth {
-    Bit8,
+    Bit8 = 0,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TexelType {
     pub format: TexelFormat,
     pub depth: TexelDepth,
@@ -88,5 +92,37 @@ impl TexelType {
                 alpha8.into_raw()
             }
         }
+    }
+
+    pub fn encode(&self) -> u8 {
+        let format = self.format as u8;
+        let depth = self.depth as u8;
+        (format << 4) | depth
+    }
+
+    pub fn decode(value: u8) -> Result<Self> {
+        let format = TexelFormat::try_from(value >> 4)?;
+        let depth = TexelDepth::try_from(value & 0x0F)?;
+        Ok(Self { format, depth })
+    }
+}
+
+impl Serialize for TexelType {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let value = self.encode();
+        serializer.serialize_u8(value)
+    }
+}
+
+impl<'de> Deserialize<'de> for TexelType {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        Self::decode(value).map_err(|e| <D::Error as serde::de::Error>::custom(e.to_string()))
     }
 }
