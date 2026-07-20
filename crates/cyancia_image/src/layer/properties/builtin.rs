@@ -6,6 +6,7 @@ use crate::{
     blend_modes::BlendMode,
     composite::{BlendFunction, BlendFunctionId},
     layer::properties::{LayerProperties, LayerProperty},
+    texel::TexelType,
 };
 
 wrapper! {
@@ -22,9 +23,11 @@ impl LayerProperty for VisibleProp {
     fn encode(&self) -> Result<Vec<u8>> {
         Ok(rmp_serde::to_vec(&self.0)?)
     }
-    fn decode(&mut self, data: &[u8]) -> Result<()> {
-        self.0 = rmp_serde::from_slice(data)?;
-        Ok(())
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
     }
 }
 impl Default for VisibleProp {
@@ -63,9 +66,11 @@ impl LayerProperty for BlendFunctionProp {
     fn encode(&self) -> Result<Vec<u8>> {
         Ok(rmp_serde::to_vec(&self.0)?)
     }
-    fn decode(&mut self, data: &[u8]) -> Result<()> {
-        self.0 = rmp_serde::from_slice(data)?;
-        Ok(())
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
     }
 }
 impl Default for BlendFunctionProp {
@@ -104,9 +109,11 @@ impl LayerProperty for OpacityProp {
     fn encode(&self) -> Result<Vec<u8>> {
         Ok(rmp_serde::to_vec(&self.0)?)
     }
-    fn decode(&mut self, data: &[u8]) -> Result<()> {
-        self.0 = rmp_serde::from_slice(data)?;
-        Ok(())
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
     }
 }
 impl Default for OpacityProp {
@@ -145,9 +152,11 @@ impl LayerProperty for NameProp {
     fn encode(&self) -> Result<Vec<u8>> {
         Ok(rmp_serde::to_vec(&self.0)?)
     }
-    fn decode(&mut self, data: &[u8]) -> Result<()> {
-        self.0 = rmp_serde::from_slice(data)?;
-        Ok(())
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
     }
 }
 pub trait NamePropertyExt {
@@ -181,9 +190,11 @@ impl LayerProperty for LockedProp {
     fn encode(&self) -> Result<Vec<u8>> {
         Ok(rmp_serde::to_vec(&self.0)?)
     }
-    fn decode(&mut self, data: &[u8]) -> Result<()> {
-        self.0 = rmp_serde::from_slice(data)?;
-        Ok(())
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
     }
 }
 pub trait LockedPropertyExt {
@@ -216,9 +227,11 @@ impl LayerProperty for DisabledChannelsProp {
     fn encode(&self) -> Result<Vec<u8>> {
         Ok(rmp_serde::to_vec(&self.0)?)
     }
-    fn decode(&mut self, data: &[u8]) -> Result<()> {
-        self.0 = rmp_serde::from_slice(data)?;
-        Ok(())
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
     }
 }
 pub trait DisabledChannelsPropertyExt {
@@ -269,9 +282,11 @@ impl LayerProperty for LockedChannelsProp {
     fn encode(&self) -> Result<Vec<u8>> {
         Ok(rmp_serde::to_vec(&self.0)?)
     }
-    fn decode(&mut self, data: &[u8]) -> Result<()> {
-        self.0 = rmp_serde::from_slice(data)?;
-        Ok(())
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
     }
 }
 pub trait LockedChannelsPropertyExt {
@@ -305,5 +320,35 @@ impl LockedChannelsProp {
 
     pub fn toggle_channel_locked(&mut self, channel: u32) {
         self.set_channel_locked(channel, !self.is_channel_locked(channel));
+    }
+}
+
+wrapper! {
+    #[derive(Debug, Clone, Copy)]
+    pub LayerTexelTypeProp : TexelType
+}
+impl LayerProperty for LayerTexelTypeProp {
+    fn ident() -> &'static str
+    where
+        Self: Sized,
+    {
+        "texel_type"
+    }
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(rmp_serde::to_vec(&self.0)?)
+    }
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self(rmp_serde::from_slice(data)?))
+    }
+}
+pub trait LayerTexelTypePropertyExt {
+    fn get_texel_type(&self) -> Option<TexelType>;
+}
+impl LayerTexelTypePropertyExt for LayerProperties {
+    fn get_texel_type(&self) -> Option<TexelType> {
+        self.get::<LayerTexelTypeProp>().map(|prop| prop.0)
     }
 }

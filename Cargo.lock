@@ -1867,6 +1867,7 @@ name = "cyancia_cyan"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "glam",
  "parking_lot",
  "rusqlite",
  "uuid",

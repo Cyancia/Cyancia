@@ -65,7 +65,7 @@ impl EncodedLayerProperties {
         })
     }
 
-    pub fn decode<T: LayerProperty + Default>(
+    pub fn decode<T: LayerProperty>(
         &mut self,
         decl: &mut LayerPropertiesDeclaration,
     ) -> Result<()> {
@@ -73,9 +73,7 @@ impl EncodedLayerProperties {
             .props
             .remove(T::ident())
             .ok_or_else(|| anyhow!("Missing property: {}", T::ident()))?;
-        let mut prop = T::default();
-        prop.decode(&data)?;
-        decl.create(prop);
+        decl.create(T::decode(&data)?);
         Ok(())
     }
 }
@@ -111,7 +109,7 @@ pub struct LayerPropertiesDeclaration {
 
 impl LayerPropertiesDeclaration {
     pub fn create<T: LayerProperty>(&mut self, value: T) {
-        self.props.insert(T::ident(), Box::new(value) as _);
+        self.props.insert(T::ident(), Box::new(value));
     }
 
     pub fn create_default<T: LayerProperty + Default>(&mut self) {
@@ -124,7 +122,9 @@ pub trait LayerProperty: DynClone + Downcast + 'static {
     where
         Self: Sized;
     fn encode(&self) -> Result<Vec<u8>>;
-    fn decode(&mut self, data: &[u8]) -> Result<()>;
+    fn decode(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized;
 }
 downcast_rs::impl_downcast!(LayerProperty);
 dyn_clone::clone_trait_object!(LayerProperty);

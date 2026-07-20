@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
+use glam::IVec2;
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
@@ -21,6 +24,32 @@ CREATE TABLE tile_data (
 }
 
 impl CyanArchive {
+    pub fn read_layer_data(&self, layer_id: Uuid) -> Result<HashMap<IVec2, Vec<u8>>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            r#"
+SELECT tile_x, tile_y, data
+FROM tile_data
+WHERE layer_id = ?1
+            "#,
+        )?;
+        let rows = statement.query_map(params![&layer_id.as_bytes()[..]], |row| {
+            Ok((
+                row.get::<_, i32>(0)?,
+                row.get::<_, i32>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+            ))
+        })?;
+        let mut tiles = HashMap::new();
+
+        for row in rows {
+            let (tile_x, tile_y, data) = row?;
+            tiles.insert(IVec2::new(tile_x, tile_y), data);
+        }
+
+        Ok(tiles)
+    }
+
     pub fn write_tile_data(
         &self,
         layer_id: Uuid,
@@ -121,6 +150,27 @@ mod tests {
         assert_eq!(
             archive.read_tile_data(layer_id, 4, 5).unwrap(),
             Some(vec![3, 4])
+        );
+    }
+
+    #[test]
+    fn reads_all_tiles_from_one_layer() {
+        let archive = CyanArchive::new_in_memory().unwrap();
+        let layer_id = Uuid::new_v4();
+        let other_layer_id = Uuid::new_v4();
+
+        archive.write_tile_data(layer_id, -1, 2, [1, 2]).unwrap();
+        archive.write_tile_data(layer_id, 3, 4, [3, 4]).unwrap();
+        archive
+            .write_tile_data(other_layer_id, 5, 6, [5, 6])
+            .unwrap();
+
+        assert_eq!(
+            archive.read_layer_data(layer_id).unwrap(),
+            HashMap::from([
+                (IVec2::new(-1, 2), vec![1, 2]),
+                (IVec2::new(3, 4), vec![3, 4]),
+            ])
         );
     }
 }

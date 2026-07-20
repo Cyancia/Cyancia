@@ -61,7 +61,7 @@ impl CyanArchive {
         })
     }
 
-    pub fn write_image_properties(&mut self, properties: &ImageProperties) -> Result<()> {
+    pub fn write_image_properties(&self, properties: &ImageProperties) -> Result<()> {
         let mut conn = self.conn();
 
         let transaction = conn.transaction()?;

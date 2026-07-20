@@ -10,6 +10,7 @@ use cyancia_render::{
     buffer::BufferVec,
     readback::{readback_buffer_on_submit_async, readback_buffer_raw_on_submit_async},
     render_context::RenderContextAppExt,
+    util::DevicePollExt,
 };
 use cyancia_utils::Deref;
 use dashmap::{DashMap, Entry};
@@ -21,10 +22,10 @@ use image::{DynamicImage, GenericImageView};
 use indexmap::{IndexMap, IndexSet};
 use moxcms::{ColorProfile, TransformOptions};
 use wgpu::{
-    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyBufferInfo,
-    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
-    TextureDimension, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
-    util::DeviceExt,
+    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, Origin3d, PollType, Queue,
+    TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect,
+    TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,
+    TextureViewDimension, util::DeviceExt,
 };
 
 use crate::{
@@ -799,7 +800,7 @@ impl DynamicLayerStorage {
                     buffer: &buffer,
                     layout: TexelCopyBufferLayout {
                         offset: 0,
-                        bytes_per_row: Some(tile_size as u32),
+                        bytes_per_row: Some(pixel_size * GpuTileStorage::TILE_SIZE),
                         rows_per_image: Some(GpuTileStorage::TILE_SIZE),
                     },
                 },
@@ -811,7 +812,9 @@ impl DynamicLayerStorage {
             readbacks.insert(index, readback);
         }
 
-        queue.submit([ec.finish()]);
+        let si = queue.submit([ec.finish()]);
+        // TODO Don't block!!!
+        device.poll_indefinitely_for(si)?;
 
         let buffers = join_all(
             readbacks
@@ -826,5 +829,35 @@ impl DynamicLayerStorage {
         }
 
         Ok(result)
+    }
+
+    pub fn write_raw(&mut self, queue: &Queue, tile: IVec2, data: &[u8]) {
+        self.get_tile_or_allocate(tile);
+        let layer = self.tiles.get_index_of(&tile).unwrap();
+        let pixel_size = self
+            .layer_info
+            .texel_type
+            .wgpu_format()
+            .block_copy_size(None)
+            .unwrap();
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: self.texture().unwrap(),
+                mip_level: 0,
+                origin: Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer as u32,
+                },
+                aspect: TextureAspect::All,
+            },
+            data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(pixel_size * GpuTileStorage::TILE_SIZE),
+                rows_per_image: Some(GpuTileStorage::TILE_SIZE),
+            },
+            GpuTileStorage::TILE_COPY_SIZE,
+        );
     }
 }

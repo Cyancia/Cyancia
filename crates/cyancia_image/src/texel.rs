@@ -1,11 +1,12 @@
 use imagers::DynamicImage;
 use moxcms::Layout;
+use serde::{Deserialize, Serialize};
 use wgpu::{TextureFormat, TextureSampleType};
 
 pub const A8_FORMAT: TextureFormat = TextureFormat::R8Unorm;
 pub const RGBA8_FORMAT: TextureFormat = TextureFormat::R32Uint;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TexelFormat {
     Alpha,
     Rgba,
@@ -20,12 +21,12 @@ impl TexelFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TexelDepth {
     Bit8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TexelType {
     pub format: TexelFormat,
     pub depth: TexelDepth,

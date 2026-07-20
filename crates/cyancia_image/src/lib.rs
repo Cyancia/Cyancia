@@ -1,6 +1,7 @@
 wesl::wesl_pkg!(pub image);
 
 use std::{
+    ffi::OsStr,
     fs::File,
     io::{BufRead, BufReader, Seek},
     path::Path,
@@ -9,6 +10,7 @@ use std::{
 
 use anyhow::Result;
 use bevy_math::IRect;
+use cyancia_cyan::CyanArchive;
 use glam::{IVec2, UVec2};
 use gpui::App;
 use imagers::{ImageDecoder, ImageReader};
@@ -24,7 +26,7 @@ use crate::{
         pixel_layer::PixelLayer, properties::NamePropertyExt,
     },
     texel::TexelType,
-    tile::GpuTileStorage,
+    tile::{GpuTileStorage, TileStorageAppExt},
 };
 
 pub mod blend_modes;
@@ -87,10 +89,18 @@ impl CImage {
         }
     }
 
-    pub fn from_file(path: impl AsRef<Path>, tiles: &GpuTileStorage) -> Result<Self> {
+    pub fn from_file(path: impl AsRef<Path>, cx: &App) -> Result<(CImage, CyanArchive)> {
         let path = path.as_ref();
-        let (img, profile) = Self::load_image_with_profile(BufReader::new(File::open(path)?))?;
-        Ok(Self::from_image(img, profile, tiles))
+        if path.extension() == Some(OsStr::new("cyan")) {
+            let archive = CyanArchive::open(path)?;
+            let img = CImage::read_archive(&archive, cx)?;
+            Ok((img, archive))
+        } else {
+            let (img, profile) = Self::load_image_with_profile(BufReader::new(File::open(path)?))?;
+            let img = Self::from_image(img, profile, cx.tile_storage());
+
+            Ok((img, CyanArchive::new_in_memory()?))
+        }
     }
 
     pub fn load_image_with_profile<R: BufRead + Seek>(

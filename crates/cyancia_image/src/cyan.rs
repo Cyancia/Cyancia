@@ -1,23 +1,128 @@
-use std::{collections::HashMap, io::Write};
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+};
 
 use anyhow::{Result, anyhow};
-use cyancia_cyan::{CyanArchive, LayerNode};
-use flate2::{Compression, write::DeflateEncoder};
-use glam::IVec2;
+use cyancia_cyan::{CyanArchive, ImageProperties, LayerNode};
+use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
+use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
+use glam::{IVec2, UVec2};
+use gpui::{App, AsyncApp};
 use indexmap::IndexMap;
+use moxcms::ColorProfile;
 use serde::Serialize;
 use uuid::Uuid;
 use wgpu::{Device, Queue};
 
 use crate::{
+    CImage,
     layer::{
-        Layer, LayerId, LayerStack, LayerStackNode, LayerTypeRegistry,
-        properties::{EncodedLayerProperties, HasLayerProperties, LayerProperties},
+        Layer, LayerId, LayerStack, LayerStackNode, LayerTypeRegistry, SpecialLayers,
+        properties::{
+            EncodedLayerProperties, HasLayerProperties, LayerProperties, LayerTexelTypePropertyExt,
+        },
     },
-    tile::{DynamicLayerStorage, GpuTileStorage},
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };
 
+impl CImage {
+    pub fn read_archive(archive: &CyanArchive, cx: &App) -> Result<Self> {
+        let image_props = archive.read_image_properties()?;
+        let layer_stack =
+            LayerStack::read_entire_tree(image_props.root_layer, archive, cx.global())?;
+
+        let queue = cx.render_queue();
+        let tile_storage = cx.tile_storage();
+        for layer in layer_stack.iter_layers() {
+            let Some(texel_type) = layer.properties().get_texel_type() else {
+                continue;
+            };
+
+            let tile_data = archive.read_layer_data(**layer.id())?;
+            tile_storage.declare_layer(*layer.id(), GpuLayerInfo { texel_type });
+            let mut layer = tile_storage.get_layer_mut(*layer.id()).unwrap();
+            layer.allocate_tiles_batch(tile_data.keys());
+
+            for (index, data) in tile_data {
+                layer.write_raw(queue, index, &data);
+            }
+        }
+
+        let image_texel_type = layer_stack
+            .root_node()
+            .properties()
+            .get_texel_type()
+            .unwrap();
+
+        Ok(Self {
+            size: UVec2::new(image_props.width, image_props.height),
+            profile: ColorProfile::new_from_slice(&image_props.color_profile)?,
+            texel_type: image_texel_type,
+            layers: layer_stack,
+            name_generator: Default::default(),
+            special_layers: SpecialLayers::new(),
+        })
+    }
+
+    pub async fn write_archive(&self, archive: &CyanArchive, cx: &App) -> Result<()> {
+        archive.write_image_properties(&ImageProperties {
+            width: self.size.x,
+            height: self.size.y,
+            tile_size: GpuTileStorage::TILE_SIZE,
+            color_profile: self.profile.encode()?,
+            root_layer: **self.layers.root_node().id(),
+        })?;
+
+        self.layers.write_entire_tree(archive)?;
+        let render_context = cx.render_context();
+        let tile_storage = cx.tile_storage();
+
+        let result = futures::future::join_all(
+            self.layers
+                .iter_layers()
+                .filter(|layer| layer.can_contain_pixels())
+                .map(|layer| {
+                    tile_storage.write_layer(
+                        &render_context.device,
+                        &render_context.queue,
+                        archive,
+                        *layer.id(),
+                    )
+                }),
+        )
+        .await;
+        for r in result {
+            r?;
+        }
+
+        Ok(())
+    }
+}
+
 impl GpuTileStorage {
+    pub async fn write_layer(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        archive: &CyanArchive,
+        layer_id: LayerId,
+    ) -> Result<()> {
+        let layer = self
+            .get_layer(layer_id)
+            .ok_or_else(|| anyhow!("layer {} doesn't exists", layer_id))?;
+
+        let tile_data = layer
+            .readback(device, queue, layer.iter_tile_indices())
+            .await?;
+
+        for (tile, data) in tile_data {
+            Self::write_tile_data(archive, layer_id, tile, &data)?;
+        }
+
+        Ok(())
+    }
+
     pub async fn write_tiles(
         &self,
         device: &Device,
@@ -32,10 +137,46 @@ impl GpuTileStorage {
         let tile_data = layer.readback(device, queue, tiles).await?;
 
         for (tile, data) in tile_data {
-            let mut e = DeflateEncoder::new(Vec::new(), Compression::default());
-            e.write_all(&data)?;
-            let buf = e.finish()?;
-            archive.write_tile_data(layer_id.into_inner(), tile.x, tile.y, buf)?;
+            Self::write_tile_data(archive, layer_id, tile, &data)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_tile_data(
+        archive: &CyanArchive,
+        layer_id: LayerId,
+        tile: IVec2,
+        data: &[u8],
+    ) -> Result<()> {
+        let mut e = DeflateEncoder::new(Vec::new(), Compression::default());
+        e.write_all(&data)?;
+        let buf = e.finish()?;
+        archive.write_tile_data(layer_id.into_inner(), tile.x, tile.y, buf)?;
+        Ok(())
+    }
+
+    pub fn read_tiles(
+        &self,
+        queue: &Queue,
+        archive: &CyanArchive,
+        layer_id: Uuid,
+        tiles: Vec<IVec2>,
+    ) -> Result<()> {
+        let mut layer = self
+            .get_layer_mut(LayerId(layer_id))
+            .ok_or_else(|| anyhow!("layer {} doesn't exists", layer_id))?;
+
+        layer.allocate_tiles_batch(tiles.iter().copied());
+
+        for index in tiles {
+            let tile = archive
+                .read_tile_data(layer_id, index.x, index.y)?
+                .ok_or_else(|| anyhow!("tile ({}, {}) not found", index.x, index.y))?;
+            let mut d = DeflateDecoder::new(&tile[..]);
+            let mut buf = Vec::new();
+            d.read_to_end(&mut buf)?;
+            layer.write_raw(queue, index, &buf);
         }
 
         Ok(())
