@@ -44,10 +44,6 @@ impl Layer for GroupLayer {
         true
     }
 
-    fn can_contain_pixels(&self) -> bool {
-        false
-    }
-
     fn layer_type(&self) -> u32 {
         1
     }

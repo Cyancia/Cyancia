@@ -19,7 +19,8 @@ use crate::{
     layer::{
         Layer, LayerId, LayerStack, LayerStackNode, LayerTypeRegistry, SpecialLayers,
         properties::{
-            EncodedLayerProperties, HasLayerProperties, LayerProperties, LayerTexelTypePropertyExt,
+            EncodedLayerProperties, HasLayerProperties, LayerProperties, LayerTexelTypeProp,
+            LayerTexelTypePropertyExt,
         },
     },
     texel::TexelType,
@@ -81,7 +82,7 @@ impl CImage {
         let result = futures::future::join_all(
             self.layers
                 .iter_layers()
-                .filter(|layer| layer.can_contain_pixels())
+                .filter(|layer| layer.properties().contains::<LayerTexelTypeProp>())
                 .map(|layer| {
                     tile_storage.write_layer(
                         &render_context.device,

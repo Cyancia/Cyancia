@@ -82,8 +82,9 @@ impl LayerId {
 }
 
 pub trait Layer: Send + Sync + DynClone + 'static + HasLayerPropertiesDyn {
+    // TODO This doesn't allow us to extend existing layers.
+    //      Probably use a dynamic registry?
     fn can_have_children_of(&self, ty: TypeId) -> bool;
-    fn can_contain_pixels(&self) -> bool;
 
     fn layer_type(&self) -> u32;
 
@@ -697,10 +698,6 @@ impl LayerStackNode {
     pub fn can_have_children_of(&self, maybe_child: &Self) -> bool {
         self.instance
             .can_have_children_of(maybe_child.instance.as_ref().type_id())
-    }
-
-    pub fn can_contain_pixels(&self) -> bool {
-        self.instance.can_contain_pixels()
     }
 
     pub fn create_blend_cache(

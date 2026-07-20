@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use chrono::{DateTime, Utc};
 use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasUndoStackAppExt};
+use cyancia_image::layer::properties::LayerTexelTypeProp;
 use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
@@ -54,7 +55,11 @@ impl ToolFunction for BrushTool {
         };
         let active_layer = canvas.active_layer_id();
         let selection_layer = canvas.image.selection_layer();
-        if !canvas.active_layer_node().instance().can_contain_pixels() {
+        if !canvas
+            .active_layer_node()
+            .properties()
+            .contains::<LayerTexelTypeProp>()
+        {
             log::warn!("Unable to paint to the active layer which cannot contain pixels.");
             return;
         }

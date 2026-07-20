@@ -46,10 +46,6 @@ impl Layer for PixelLayer {
         false
     }
 
-    fn can_contain_pixels(&self) -> bool {
-        true
-    }
-
     fn layer_type(&self) -> u32 {
         0
     }
