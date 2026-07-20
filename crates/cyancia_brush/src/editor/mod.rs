@@ -6,7 +6,7 @@ use std::{
 };
 
 use cyancia_assets::{AssetAppExt, asset::AssetId, bundle::BundleId};
-use cyancia_render::{render_context::RenderContextAppExt, texture::Image};
+use cyancia_render::texture::Image;
 use cyancia_shader_graph::{
     editor::GraphEditor,
     graph::{
@@ -25,9 +25,8 @@ use cyancia_shader_graph::{
     },
 };
 use gpui::{
-    Action, App, AppContext, Axis, BorrowAppContext, ClickEvent, Context, Entity,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, Styled, Window, actions,
-    div, px,
+    Action, App, AppContext, Axis, ClickEvent, Context, Entity, InteractiveElement, IntoElement,
+    KeyBinding, ParentElement, Render, Styled, Window, actions, div, px,
 };
 use gpui_component::{
     IconName, Selectable,
@@ -45,16 +44,11 @@ use uuid::Uuid;
 
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
-    input_processing::InputProcessor,
     instance::{
         BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES,
         REQUIRED_SPACING_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
-    render::{
-        BrushPresetOperator,
-        graph::{BrushGraphData, BrushGraphPostprocessData},
-    },
-    tool::CurrentBrushPresetOperator,
+    render::graph::{BrushGraphData, BrushGraphPostprocessData},
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
 
@@ -192,9 +186,6 @@ impl BrushEditor {
                         st.set_value(instance.metadata().name.clone(), window, cx);
                     });
 
-                    editor.selected = Some(Selected::Brush(SelectedBrush {
-                        viewing_graph: BrushPresetGraph::Main,
-                    }));
                     editor.editor_state = Some(EditorState::Main(cx.new(|cx| {
                         GraphEditor::new(
                             instance.main_graph().clone(),
@@ -202,15 +193,11 @@ impl BrushEditor {
                             cx,
                         )
                     })));
-
-                    cx.set_global(CurrentBrushPresetOperator::new(Some(
-                        BrushPresetOperator::new(
-                            instance,
-                            cx.render_device().clone(),
-                            cx.render_queue().clone(),
-                            InputProcessor::default(),
-                        ),
-                    )));
+                    editor.selected = Some(Selected::Brush(SelectedBrush {
+                        asset_id: Some(brush.id()),
+                        instance,
+                        viewing_graph: BrushPresetGraph::Main,
+                    }));
                 }
                 ListEvent::Cancel => {}
             },
@@ -285,12 +272,8 @@ impl BrushEditor {
                     if let Some(selected) = &mut editor.selected {
                         let name = input_state.read(cx).value();
                         match selected {
-                            Selected::Brush(_) => {
-                                if let Some(op) =
-                                    cx.global_mut::<CurrentBrushPresetOperator>().as_mut()
-                                {
-                                    op.instance_mut().metadata_mut().name = name.into();
-                                }
+                            Selected::Brush(brush) => {
+                                brush.instance.metadata_mut().name = name.into();
                             }
                             Selected::Function(func) => {
                                 func.instance.graph_function_mut().name = name.into()
@@ -301,11 +284,7 @@ impl BrushEditor {
                 InputEvent::Blur => {
                     if let Some(selected) = &editor.selected {
                         let name = match selected {
-                            Selected::Brush(_) => cx
-                                .global::<CurrentBrushPresetOperator>()
-                                .as_ref()
-                                .map(|op| op.instance().metadata().name.clone())
-                                .unwrap_or_default(),
+                            Selected::Brush(brush) => brush.instance.metadata().name.clone(),
                             Selected::Function(func) => func.instance.graph_function().name.clone(),
                         };
                         input_state.update(cx, |state, cx| state.set_value(name, window, cx));
@@ -371,14 +350,10 @@ impl BrushEditor {
             return;
         }
 
-        let Some(Selected::Brush(_)) = self.selected.as_ref() else {
+        let Some(Selected::Brush(brush)) = &mut self.selected else {
             return;
         };
-
-        let Some(brush) = cx.global_mut::<CurrentBrushPresetOperator>().as_mut() else {
-            return;
-        };
-        brush.instance_mut().rename_external_var(&id, name.into());
+        brush.instance.rename_external_var(&id, name.into());
         cx.notify();
     }
 
@@ -393,17 +368,15 @@ impl BrushEditor {
         };
 
         match selected {
-            Selected::Brush(_) => {
-                let brush = cx.global::<CurrentBrushPresetOperator>();
-                let Some(brush) = brush.as_ref() else {
+            Selected::Brush(brush) => {
+                let Some(asset_id) = brush.asset_id else {
                     return;
                 };
-                let brush = brush.instance();
-                self.saved_runtime_revision = brush.runtime_revision();
-                let preset = brush.as_asset(cx).unwrap();
+                self.saved_runtime_revision = brush.instance.runtime_revision();
+                let preset = brush.instance.as_asset(cx).unwrap();
                 let assets = cx.assets();
 
-                let handle = assets.handle(brush.asset_id()).unwrap();
+                let handle = assets.handle(asset_id).unwrap();
                 handle.update(preset).unwrap();
                 handle.write().unwrap();
             }
@@ -473,14 +446,9 @@ impl BrushEditor {
                     return;
                 };
 
-                let op = BrushPresetOperator::new(
-                    instance,
-                    cx.render_device().clone(),
-                    cx.render_queue().clone(),
-                    Default::default(),
-                );
-                cx.set_global(CurrentBrushPresetOperator::new(Some(op)));
                 self.selected = Some(Selected::Brush(SelectedBrush {
+                    asset_id: Some(id),
+                    instance,
                     viewing_graph: BrushPresetGraph::Main,
                 }));
                 self.saved_runtime_revision = 0;
@@ -516,50 +484,44 @@ impl BrushEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Selected::Brush(_)) = self.selected.as_ref() else {
+        let Some(Selected::Brush(brush)) = &mut self.selected else {
             return;
         };
 
-        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-            let Some(brush) = op.as_mut() else {
-                return;
-            };
+        let Some(ty) = self
+            .new_ext_var_type_select_state
+            .read(cx)
+            .selected_value()
+            .and_then(|ty_name| {
+                brush
+                    .instance
+                    .main_graph()
+                    .read(cx)
+                    .type_registry()
+                    .get_type(ty_name)
+            })
+        else {
+            return;
+        };
 
-            let Some(ty) = self
-                .new_ext_var_type_select_state
-                .read(cx)
-                .selected_value()
-                .and_then(|ty_name| {
-                    brush
-                        .instance()
-                        .main_graph()
-                        .read(cx)
-                        .type_registry()
-                        .get_type(ty_name)
-                })
-            else {
-                return;
-            };
+        let id = ExternalVariableId::new(Uuid::new_v4());
+        let value = GraphLiteral::new_boxed(ty.default_literal(), dyn_clone::clone_box(ty));
 
-            let id = ExternalVariableId::new(Uuid::new_v4());
-            let value = GraphLiteral::new_boxed(ty.default_literal(), dyn_clone::clone_box(ty));
+        let Some(name) = self.new_ext_var_name_input_state.update(cx, |state, cx| {
+            let name = state.value();
+            if name.is_empty() {
+                return None;
+            }
+            state.set_value("", window, cx);
+            Some(name)
+        }) else {
+            return;
+        };
 
-            let Some(name) = self.new_ext_var_name_input_state.update(cx, |state, cx| {
-                let name = state.value();
-                if name.is_empty() {
-                    return None;
-                }
-                state.set_value("", window, cx);
-                Some(name)
-            }) else {
-                return;
-            };
-
-            brush.instance_mut().insert_external_var(ExternalVariable {
-                id,
-                name: name.into(),
-                value,
-            });
+        brush.instance.insert_external_var(ExternalVariable {
+            id,
+            name: name.into(),
+            value,
         });
     }
 
@@ -569,6 +531,7 @@ impl BrushEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let editor = cx.entity().downgrade();
         let ext_vars = instance.iter_external_vars().map(|(id, var)| {
             let is_renaming = self.renaming_ext_var == Some(id);
             let name = var.name.clone();
@@ -614,17 +577,12 @@ impl BrushEditor {
                             move |_, _, cx| {
                                 editor
                                     .update(cx, |editor, cx| {
-                                        let Some(Selected::Brush(_)) = editor.selected.as_ref()
+                                        let Some(Selected::Brush(brush)) = &mut editor.selected
                                         else {
                                             return;
                                         };
-                                        let Some(brush) =
-                                            cx.global_mut::<CurrentBrushPresetOperator>().as_mut()
-                                        else {
-                                            return;
-                                        };
-
-                                        brush.instance_mut().remove_external_var(&id);
+                                        brush.instance.remove_external_var(&id);
+                                        cx.notify();
                                     })
                                     .ok();
                             }
@@ -660,12 +618,17 @@ impl BrushEditor {
                         slot_id: (*id).into(),
                         window,
                         cx,
-                        on_update: Rc::new(move |value, cx| {
-                            let Some(op) = cx.global_mut::<CurrentBrushPresetOperator>().as_mut()
-                            else {
-                                return;
-                            };
-                            op.instance_mut().update_external_var(&id, value);
+                        on_update: Rc::new({
+                            let editor = editor.clone();
+                            move |value, cx| {
+                                let _ = editor.update(cx, |editor, cx| {
+                                    let Some(Selected::Brush(brush)) = &mut editor.selected else {
+                                        return;
+                                    };
+                                    brush.instance.update_external_var(&id, value);
+                                    cx.notify();
+                                });
+                            }
                         }),
                     },
                 ))
@@ -734,34 +697,22 @@ impl BrushEditor {
                                             return;
                                         };
 
-                                        cx.update_global::<CurrentBrushPresetOperator, _>(
-                                            |op, _| {
-                                                let Some(op) = op.as_mut() else {
-                                                    return;
-                                                };
-                                                op.instance_mut()
-                                                    .remove_stroke_postprocess_graph(index);
-                                                if brush.viewing_graph
-                                                    == (BrushPresetGraph::StrokePostprocess {
-                                                        index,
-                                                    })
-                                                {
-                                                    let n_pp = op
-                                                        .instance()
-                                                        .stroke_postprocess_graphs()
-                                                        .len();
-                                                    if n_pp == 0 {
-                                                        brush.viewing_graph =
-                                                            BrushPresetGraph::Main;
-                                                    } else {
-                                                        brush.viewing_graph =
-                                                            BrushPresetGraph::StrokePostprocess {
-                                                                index: n_pp - 1,
-                                                            };
-                                                    }
-                                                }
-                                            },
-                                        );
+                                        brush.instance.remove_stroke_postprocess_graph(index);
+                                        if brush.viewing_graph
+                                            == (BrushPresetGraph::StrokePostprocess { index })
+                                        {
+                                            let n_pp =
+                                                brush.instance.stroke_postprocess_graphs().len();
+                                            if n_pp == 0 {
+                                                brush.viewing_graph = BrushPresetGraph::Main;
+                                            } else {
+                                                brush.viewing_graph =
+                                                    BrushPresetGraph::StrokePostprocess {
+                                                        index: n_pp - 1,
+                                                    };
+                                            }
+                                        }
+                                        cx.notify();
                                     });
                                 }
                             }))
@@ -784,15 +735,9 @@ impl BrushEditor {
                             return;
                         };
 
-                        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-                            let Some(op) = op.as_mut() else {
-                                return;
-                            };
-
-                            brush.viewing_graph = BrushPresetGraph::StrokePostprocess {
-                                index: op.instance_mut().new_stroke_postprocess_graph(cx),
-                            };
-                        });
+                        brush.viewing_graph = BrushPresetGraph::StrokePostprocess {
+                            index: brush.instance.new_stroke_postprocess_graph(cx),
+                        };
                     })),
             );
 
@@ -809,43 +754,33 @@ impl BrushEditor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-            let Some(op) = op.as_ref() else {
-                return;
-            };
-
-            if let Some(Selected::Brush(brush)) = &mut self.selected {
-                brush.viewing_graph = BrushPresetGraph::RequiredSpacing;
-                let st = cx.new(|cx| {
-                    GraphEditor::new(
-                        op.instance().required_spacing_graph().clone(),
-                        REQUIRED_SPACING_GRAPH_NODES.clone(),
-                        cx,
-                    )
-                });
-                self.editor_state = Some(EditorState::Main(st));
-            }
+        let Some(Selected::Brush(brush)) = &mut self.selected else {
+            return;
+        };
+        brush.viewing_graph = BrushPresetGraph::RequiredSpacing;
+        let st = cx.new(|cx| {
+            GraphEditor::new(
+                brush.instance.required_spacing_graph().clone(),
+                REQUIRED_SPACING_GRAPH_NODES.clone(),
+                cx,
+            )
         });
+        self.editor_state = Some(EditorState::Main(st));
     }
 
     fn on_select_main_graph(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-            let Some(op) = op.as_ref() else {
-                return;
-            };
-
-            if let Some(Selected::Brush(brush)) = &mut self.selected {
-                brush.viewing_graph = BrushPresetGraph::Main;
-                let st = cx.new(|cx| {
-                    GraphEditor::new(
-                        op.instance().main_graph().clone(),
-                        MAIN_GRAPH_NODES.clone(),
-                        cx,
-                    )
-                });
-                self.editor_state = Some(EditorState::Main(st));
-            }
+        let Some(Selected::Brush(brush)) = &mut self.selected else {
+            return;
+        };
+        brush.viewing_graph = BrushPresetGraph::Main;
+        let st = cx.new(|cx| {
+            GraphEditor::new(
+                brush.instance.main_graph().clone(),
+                MAIN_GRAPH_NODES.clone(),
+                cx,
+            )
         });
+        self.editor_state = Some(EditorState::Main(st));
     }
 
     fn on_select_stroke_pp_graph(
@@ -855,21 +790,16 @@ impl BrushEditor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-            let Some(op) = op.as_ref() else {
-                return;
-            };
-            let Some(graph) = op.instance().stroke_postprocess_graph(index) else {
-                return;
-            };
-            if let Some(Selected::Brush(brush)) = &mut self.selected {
-                brush.viewing_graph = BrushPresetGraph::StrokePostprocess { index };
-                let st = cx.new(|cx| {
-                    GraphEditor::new(graph.clone(), STROKE_POSTPROCESS_GRAPH_NODES.clone(), cx)
-                });
-                self.editor_state = Some(EditorState::Postprocess(st));
-            }
-        });
+        let Some(Selected::Brush(brush)) = &mut self.selected else {
+            return;
+        };
+        let Some(graph) = brush.instance.stroke_postprocess_graph(index) else {
+            return;
+        };
+        brush.viewing_graph = BrushPresetGraph::StrokePostprocess { index };
+        let st = cx
+            .new(|cx| GraphEditor::new(graph.clone(), STROKE_POSTPROCESS_GRAPH_NODES.clone(), cx));
+        self.editor_state = Some(EditorState::Postprocess(st));
     }
 }
 
@@ -950,22 +880,12 @@ impl Render for BrushEditor {
                 );
 
             match selected {
-                Selected::Brush(_) => {
-                    cx.update_global::<CurrentBrushPresetOperator, _>(|op, cx| {
-                        let Some(op) = op.as_mut() else {
-                            return div().into_any_element();
-                        };
-
-                        let instance = op.instance();
-                        let brush_extra = self.render_brush_extra_panes(instance, window, cx);
-                        h_flex()
-                            .gap_2()
-                            .size_full()
-                            .child(common_editor)
-                            .child(brush_extra)
-                            .into_any_element()
-                    })
-                }
+                Selected::Brush(brush) => h_flex()
+                    .gap_2()
+                    .size_full()
+                    .child(common_editor)
+                    .child(self.render_brush_extra_panes(&brush.instance, window, cx))
+                    .into_any_element(),
                 Selected::Function(_) => common_editor.into_any_element(),
             }
         } else {
@@ -1008,6 +928,8 @@ pub enum BrushPresetGraph {
 }
 
 pub struct SelectedBrush {
+    pub asset_id: Option<AssetId<BrushPreset>>,
+    pub instance: BrushPresetInstance,
     pub viewing_graph: BrushPresetGraph,
 }
 
