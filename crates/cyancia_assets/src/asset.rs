@@ -11,6 +11,7 @@ use crate::{
     bundle::{AssetBundleCache, BundleId},
     error::{AssetError, AssetResult},
     index_db::AssetIndexDb,
+    tag::TagId,
 };
 
 wrapper! {
@@ -223,6 +224,17 @@ impl<T: Asset> AssetHandle<T> {
             new_path.to_str().unwrap(),
             last_modified.into(),
         )?;
+        Ok(())
+    }
+
+    pub fn add_tag(&self, tag_id: &TagId) -> AssetResult<()> {
+        self.index_db.add_tag_to_asset(&self.untyped_id(), tag_id)?;
+        Ok(())
+    }
+
+    pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
+        self.index_db
+            .remove_tag_from_asset(&self.untyped_id(), tag_id)?;
         Ok(())
     }
 

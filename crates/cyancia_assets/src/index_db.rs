@@ -499,6 +499,80 @@ RETURNING revision;
         Ok(revision)
     }
 
+    pub fn add_tag_to_asset(&self, asset_id: &UntypedAssetId, tag_id: &TagId) -> AssetResult<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+
+        let asset_ty = tx
+            .query_row(
+                "SELECT ty FROM assets WHERE asset_id = ?1",
+                params![asset_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| AssetError::AssetNotFound(*asset_id))?;
+        let tag_asset_ty = tx
+            .query_row(
+                "SELECT asset_ty FROM tags WHERE id = ?1",
+                params![tag_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .ok_or_else(|| AssetError::TagNotFound(tag_id.clone()))?;
+
+        if let Some(expected_ty) = tag_asset_ty
+            && asset_ty != expected_ty
+        {
+            return Err(AssetError::InvalidTagAssetType {
+                tag_id: tag_id.clone(),
+                asset_id: *asset_id,
+                asset_ty,
+                expected_ty,
+            }
+            .into());
+        }
+
+        let inserted = tx.execute(
+            r#"
+INSERT INTO asset_tags (asset_id, tag_id)
+VALUES (?1, ?2)
+ON CONFLICT DO NOTHING;
+            "#,
+            params![asset_id, tag_id],
+        )?;
+        if inserted == 0 {
+            return Err(AssetError::TagAlreadyAssigned {
+                asset_id: *asset_id,
+                tag_id: tag_id.clone(),
+            }
+            .into());
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn remove_tag_from_asset(
+        &self,
+        asset_id: &UntypedAssetId,
+        tag_id: &TagId,
+    ) -> AssetResult<()> {
+        let conn = self.conn.lock();
+        let deleted = conn.execute(
+            "DELETE FROM asset_tags WHERE asset_id = ?1 AND tag_id = ?2",
+            params![asset_id, tag_id],
+        )?;
+        if deleted == 0 {
+            return Err(AssetError::TagNotAssigned {
+                asset_id: *asset_id,
+                tag_id: tag_id.clone(),
+            }
+            .into());
+        }
+
+        Ok(())
+    }
+
     pub fn revert_asset(&self, id: &Uuid) -> AssetResult<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -919,6 +993,70 @@ asset_ty = "{}"
             asset_ty: Some(Some("missing_asset".to_string())),
         })?;
         assert!(missing.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tags_are_added_to_and_removed_from_assets() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let bundle_id = BundleId::new(Uuid::from_u128(63));
+        let last_modified = Utc.with_ymd_and_hms(2026, 4, 5, 0, 0, 0).unwrap();
+        db.upsert_bundle(&AssetBundleMetadata {
+            bundle_id,
+            name: "Tagged assets".to_string(),
+            last_modified,
+        })?;
+
+        let test_asset_id = UntypedAssetId::new(Uuid::from_u128(64));
+        let other_asset_id = UntypedAssetId::new(Uuid::from_u128(65));
+        for (asset_id, ty) in [
+            (test_asset_id, TestAsset::TYPE_NAME),
+            (other_asset_id, OtherAsset::TYPE_NAME),
+        ] {
+            db.add_asset(&AssetMetadata {
+                asset_id,
+                ty: ty.to_string(),
+                bundle_id,
+                relative_path: format!("{asset_id}.asset"),
+                revision: 0,
+                last_modified,
+                in_memory: false,
+            })?;
+        }
+
+        let typed_tag = Tag::new(
+            "Test assets".to_string(),
+            Some(TestAsset::TYPE_NAME.to_string()),
+        );
+        let untyped_tag = Tag::new("Any assets".to_string(), None);
+        db.upsert_tag(&typed_tag, last_modified)?;
+        db.upsert_tag(&untyped_tag, last_modified)?;
+
+        db.add_tag_to_asset(&test_asset_id, &typed_tag.id)?;
+        assert!(db.add_tag_to_asset(&test_asset_id, &typed_tag.id).is_err());
+        assert!(db.add_tag_to_asset(&other_asset_id, &typed_tag.id).is_err());
+        db.add_tag_to_asset(&other_asset_id, &untyped_tag.id)?;
+
+        let tagged = db.get_assets(UntypedAssetFilter {
+            tag: Some(typed_tag.id.clone()),
+            ..Default::default()
+        })?;
+        assert_eq!(tagged.len(), 1);
+        assert_eq!(tagged[0].asset_id, test_asset_id);
+
+        db.remove_tag_from_asset(&test_asset_id, &typed_tag.id)?;
+        assert!(
+            db.remove_tag_from_asset(&test_asset_id, &typed_tag.id)
+                .is_err()
+        );
+        assert!(
+            db.get_assets(UntypedAssetFilter {
+                tag: Some(typed_tag.id.clone()),
+                ..Default::default()
+            })?
+            .is_empty()
+        );
 
         Ok(())
     }

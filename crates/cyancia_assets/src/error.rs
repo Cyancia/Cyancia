@@ -17,6 +17,27 @@ pub enum AssetError {
     BundleNotFound(BundleId),
     #[error("No serializer found for asset extension: {0}")]
     SerializerNotFound(String),
+    #[error("Tag not found for tag ID: {0}")]
+    TagNotFound(TagId),
+    #[error(
+        "Tag {tag_id} cannot be added to asset {asset_id} of type {asset_ty}; expected {expected_ty}"
+    )]
+    InvalidTagAssetType {
+        tag_id: TagId,
+        asset_id: UntypedAssetId,
+        asset_ty: String,
+        expected_ty: String,
+    },
+    #[error("Tag {tag_id} is already assigned to asset {asset_id}")]
+    TagAlreadyAssigned {
+        asset_id: UntypedAssetId,
+        tag_id: TagId,
+    },
+    #[error("Tag {tag_id} is not assigned to asset {asset_id}")]
+    TagNotAssigned {
+        asset_id: UntypedAssetId,
+        tag_id: TagId,
+    },
     #[error(
         "Asset type restriction for tag {tag_id} cannot be changed from {current_asset_ty:?} to {new_asset_ty:?}"
     )]
