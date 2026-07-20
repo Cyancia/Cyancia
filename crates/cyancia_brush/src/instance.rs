@@ -95,7 +95,7 @@ impl Display for CompiledBrushPreset {
 }
 
 pub struct BrushPresetInstance {
-    brush_id: AssetId<BrushPreset>,
+    brush_id: Option<AssetId<BrushPreset>>,
     metadata: BrushPresetMetadata,
 
     required_spacing_graph: Entity<Graph<BrushGraphData>>,
@@ -109,15 +109,13 @@ pub struct BrushPresetInstance {
 }
 
 impl BrushPresetInstance {
-    pub fn from_asset(
-        handle: &AssetHandle<BrushPreset>,
+    pub fn new(
+        preset: &BrushPreset,
         textures: Arc<GraphTextureStorage>,
         main_functions: Arc<GraphFunctionStorage<BrushGraphData>>,
         stroke_pp_functions: Arc<GraphFunctionStorage<BrushGraphPostprocessData>>,
         cx: &mut App,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
-        let preset = handle.get().unwrap();
-
         let external_vars = preset
             .external_vars
             .iter()
@@ -205,7 +203,7 @@ impl BrushPresetInstance {
 
         (
             Some(Self {
-                brush_id: handle.id(),
+                brush_id: None,
                 metadata: preset.metadata.clone(),
                 required_spacing_graph,
                 main_graph,
@@ -218,6 +216,22 @@ impl BrushPresetInstance {
             }),
             errors,
         )
+    }
+
+    pub fn from_asset(
+        handle: &AssetHandle<BrushPreset>,
+        textures: Arc<GraphTextureStorage>,
+        main_functions: Arc<GraphFunctionStorage<BrushGraphData>>,
+        stroke_pp_functions: Arc<GraphFunctionStorage<BrushGraphPostprocessData>>,
+        cx: &mut App,
+    ) -> (Option<Self>, Vec<GraphDeserializeError>) {
+        let preset = handle.get().unwrap();
+        let (mut instance, errors) =
+            Self::new(&preset, textures, main_functions, stroke_pp_functions, cx);
+        if let Some(instance) = instance.as_mut() {
+            instance.brush_id = Some(handle.id());
+        }
+        (instance, errors)
     }
 
     pub fn as_asset(&self, cx: &App) -> anyhow::Result<BrushPreset> {
@@ -330,7 +344,7 @@ impl BrushPresetInstance {
         self.stroke_postprocess_graphs.get(index)
     }
 
-    pub fn asset_id(&self) -> AssetId<BrushPreset> {
+    pub fn asset_id(&self) -> Option<AssetId<BrushPreset>> {
         self.brush_id
     }
 
