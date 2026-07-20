@@ -145,7 +145,7 @@ fn update_menu_bar(menu_bar: &Entity<AppMenuBar>, cx: &mut App) {
 }
 
 fn build_menu_bar(cx: &App) -> Vec<Menu> {
-    use cyancia_actions::{file::*, layer::*, selection::*, undo::*};
+    use cyancia_actions::{brush::*, file::*, layer::*, selection::*, undo::*};
 
     let current_theme = cx.theme().theme_name();
     let themes = ThemeRegistry::global(cx)
@@ -201,11 +201,15 @@ fn build_menu_bar(cx: &App) -> Vec<Menu> {
         },
         Menu {
             name: "Window".into(),
-            items: vec![MenuItem::Submenu(Menu {
-                name: "Themes".into(),
-                items: themes,
-                disabled: false,
-            })],
+            items: vec![
+                MenuItem::action("Open Brush Editor", OpenBrushEditorAction),
+                MenuItem::separator(),
+                MenuItem::Submenu(Menu {
+                    name: "Themes".into(),
+                    items: themes,
+                    disabled: false,
+                }),
+            ],
             disabled: false,
         },
     ]
