@@ -145,6 +145,8 @@ fn update_menu_bar(menu_bar: &Entity<AppMenuBar>, cx: &mut App) {
 }
 
 fn build_menu_bar(cx: &App) -> Vec<Menu> {
+    use cyancia_actions::{file::*, layer::*, selection::*, undo::*};
+
     let current_theme = cx.theme().theme_name();
     let themes = ThemeRegistry::global(cx)
         .sorted_themes()
@@ -160,15 +162,53 @@ fn build_menu_bar(cx: &App) -> Vec<Menu> {
         })
         .collect::<Vec<_>>();
 
-    vec![Menu {
-        name: "Window".into(),
-        items: vec![MenuItem::Submenu(Menu {
-            name: "Themes".into(),
-            items: themes,
+    vec![
+        Menu {
+            name: "File".into(),
+            items: vec![
+                MenuItem::action("Open", OpenFileAction),
+                MenuItem::action("Save", SaveFileAction),
+            ],
             disabled: false,
-        })],
-        disabled: false,
-    }]
+        },
+        Menu {
+            name: "Edit".into(),
+            items: vec![
+                MenuItem::action("Undo", UndoAction),
+                MenuItem::action("Redo", RedoAction),
+                MenuItem::separator(),
+                MenuItem::action("Paste Into New Layer", PasteIntoNewLayerAction),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: "Layer".into(),
+            items: vec![
+                MenuItem::action("Create New Layer", CreateNewLayerAction),
+                MenuItem::action("Delete Selected Layer", DeleteSelectionAction),
+                MenuItem::action("Group Selected Layers", GroupSelectedLayersAction),
+                MenuItem::action("Move Selected Layer Up", MoveLayerUpAction),
+                MenuItem::action("Move Selected Layer Down", MoveLayerDownAction),
+                MenuItem::action("Select Previous Layer", SelectPreviousLayerAction),
+                MenuItem::action("Select Next Layer", SelectNextLayerAction),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: "Selection".into(),
+            items: vec![MenuItem::action("Delete Selection", DeleteSelectionAction)],
+            disabled: false,
+        },
+        Menu {
+            name: "Window".into(),
+            items: vec![MenuItem::Submenu(Menu {
+                name: "Themes".into(),
+                items: themes,
+                disabled: false,
+            })],
+            disabled: false,
+        },
+    ]
 }
 
 impl Render for MainView {
