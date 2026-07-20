@@ -3,13 +3,12 @@ use std::{
     io::{Read, Write},
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use cyancia_cyan::{CyanArchive, ImageProperties, LayerNode};
 use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use glam::{IVec2, UVec2};
 use gpui::{App, AsyncApp};
-use indexmap::IndexMap;
 use moxcms::ColorProfile;
 use serde::Serialize;
 use uuid::Uuid;
@@ -239,62 +238,88 @@ impl LayerStack {
         layer_types: &LayerTypeRegistry,
     ) -> Result<Self> {
         let mut nodes = archive.read_all_layer_nodes()?;
-        nodes.sort_by_key(|n| n.sort_order);
-
-        let mut root_node = None;
-        let mut nodes_map = IndexMap::with_capacity(nodes.len() - 1);
-        for node in nodes.into_iter().rev() {
-            if node.id == root_layer {
-                root_node = Some(node);
-            } else {
-                nodes_map.insert(node.id, node);
-            }
+        let root_index = nodes
+            .iter()
+            .position(|node| node.id == root_layer)
+            .ok_or_else(|| anyhow!("root layer {} not found", root_layer))?;
+        let root_node = nodes.swap_remove(root_index);
+        if root_node.parent_id.is_some() || root_node.sort_order.is_some() {
+            bail!(
+                "root layer {} must not have a parent or sort order",
+                root_layer
+            );
         }
 
-        let root_node = root_node.ok_or(anyhow::anyhow!("root layer not found"))?;
+        let mut children_by_parent = HashMap::<Uuid, Vec<LayerNode>>::new();
+        for node in nodes {
+            let parent_id = node.parent_id.ok_or_else(|| {
+                anyhow!(
+                    "layer {} has no parent but is not the image root {}",
+                    node.id,
+                    root_layer
+                )
+            })?;
+            children_by_parent.entry(parent_id).or_default().push(node);
+        }
 
-        fn read_node(
-            id: &Uuid,
-            nodes: &mut IndexMap<Uuid, LayerNode>,
+        fn read_children(
+            parent_id: Uuid,
+            children_by_parent: &mut HashMap<Uuid, Vec<LayerNode>>,
             output: &mut LayerStack,
             layer_types: &LayerTypeRegistry,
         ) -> Result<()> {
-            let node = nodes.shift_remove(id).unwrap();
-            if let Some(parent_id) = &node.parent_id
-                && !output.contains_layer(&LayerId(*parent_id))
-            {
-                read_node(parent_id, nodes, output, layer_types)?;
-            }
+            let Some(mut children) = children_by_parent.remove(&parent_id) else {
+                return Ok(());
+            };
+            children.sort_by_key(|node| node.sort_order);
 
-            let instance = layer_types
-                .get_cloned(node.layer_type)
-                .ok_or(anyhow::anyhow!("Unknown layer type: {}", node.layer_type))?;
-            let props = LayerProperties::decode(&node.properties, instance.as_ref())?;
+            for (expected_order, node) in children.into_iter().enumerate() {
+                let sort_order = node
+                    .sort_order
+                    .ok_or_else(|| anyhow!("layer {} has no sort order", node.id))?;
+                if sort_order as usize != expected_order {
+                    bail!(
+                        "layer {} has sort order {}, expected {} under parent {}",
+                        node.id,
+                        sort_order,
+                        expected_order,
+                        parent_id
+                    );
+                }
 
-            if let Some(parent_id) = &node.parent_id {
-                let parent_id = LayerId(*parent_id);
-                output.add_layer(
-                    parent_id,
-                    node.sort_order.unwrap() as usize,
-                    LayerStackNode::without_parent(LayerId(*id), instance, props),
-                );
+                let layer = read_node(&node, layer_types)?;
+                output.add_layer(LayerId(parent_id), expected_order, layer);
+                read_children(node.id, children_by_parent, output, layer_types)?;
             }
 
             Ok(())
         }
 
-        let instance = layer_types
-            .get_cloned(root_node.layer_type)
-            .ok_or(anyhow::anyhow!(
-                "Unknown layer type: {}",
-                root_node.layer_type
-            ))?;
-        let props = LayerProperties::decode(&root_node.properties, instance.as_ref())?;
-        let root_node = LayerStackNode::without_parent(LayerId(root_layer), instance, props);
+        fn read_node(node: &LayerNode, layer_types: &LayerTypeRegistry) -> Result<LayerStackNode> {
+            let instance = layer_types
+                .get_cloned(node.layer_type)
+                .ok_or(anyhow::anyhow!("Unknown layer type: {}", node.layer_type))?;
+            let props = LayerProperties::decode(&node.properties, instance.as_ref())?;
+            let root_node = LayerStackNode::without_parent(LayerId(node.id), instance, props);
+            Ok(root_node)
+        }
+
+        let root_node = read_node(&root_node, &layer_types)?;
         let mut output = LayerStack::new(root_node);
 
-        while let Some(id) = nodes_map.keys().last().copied() {
-            read_node(&id, &mut nodes_map, &mut output, layer_types)?;
+        read_children(
+            root_layer,
+            &mut children_by_parent,
+            &mut output,
+            layer_types,
+        )?;
+        if let Some((parent_id, children)) = children_by_parent.iter().next() {
+            bail!(
+                "layer {} references parent {}, which is not reachable from root {}",
+                children[0].id,
+                parent_id,
+                root_layer
+            );
         }
 
         Ok(output)

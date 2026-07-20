@@ -254,11 +254,6 @@ impl LayerStack {
         self.layers.extend(layers);
     }
 
-    pub fn insert_isolated_layer(&mut self, mut layer: LayerStackNode) {
-        layer.parent = None;
-        self.layers.insert(*layer.id(), layer);
-    }
-
     pub fn sort_by_depth_and_index(
         &self,
         layers: impl IntoIterator<Item = LayerId>,
