@@ -84,6 +84,15 @@ impl AssetIndexDb {
         Ok(db)
     }
 
+    pub fn open_in_memory() -> AssetResult<Self> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        let db = Self { conn: conn.into() };
+        db.initialize_tables()?;
+        db.revert_all_assets()?;
+        Ok(db)
+    }
+
     fn initialize_tables(&self) -> AssetResult<()> {
         let conn = self.conn.lock();
         conn.execute_batch(
@@ -464,5 +473,455 @@ WHERE bundle_id = ?1;
         )?;
 
         Ok(bundle)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::*;
+
+    struct TestAsset;
+
+    impl Asset for TestAsset {
+        const TYPE_NAME: &'static str = "test_asset";
+    }
+
+    struct OtherAsset;
+
+    impl Asset for OtherAsset {
+        const TYPE_NAME: &'static str = "other_asset";
+    }
+
+    #[test]
+    fn bundle_upsert_and_get() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let bundle_id = BundleId::new(Uuid::from_u128(1));
+        let mut bundle = AssetBundleMetadata {
+            bundle_id,
+            name: "Original".to_string(),
+            last_modified: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+        };
+
+        assert_eq!(db.upsert_bundle(&bundle)?, ItemStatus::Outdated);
+
+        let stored = db.get_bundle(&bundle_id)?;
+        assert_eq!(stored.bundle_id, bundle_id);
+        assert_eq!(stored.name, "Original");
+        assert_eq!(stored.last_modified, bundle.last_modified);
+
+        bundle.name = "Ignored".to_string();
+        assert_eq!(db.upsert_bundle(&bundle)?, ItemStatus::UpToDate);
+        assert_eq!(db.get_bundle(&bundle_id)?.name, "Original");
+
+        bundle.name = "Updated".to_string();
+        bundle.last_modified = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        assert_eq!(db.upsert_bundle(&bundle)?, ItemStatus::Outdated);
+
+        let stored = db.get_bundle(&bundle_id)?;
+        assert_eq!(stored.name, "Updated");
+        assert_eq!(stored.last_modified, bundle.last_modified);
+
+        Ok(())
+    }
+
+    #[test]
+    fn add_get_and_filter_assets() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let first_bundle_id = BundleId::new(Uuid::from_u128(10));
+        let second_bundle_id = BundleId::new(Uuid::from_u128(11));
+        let last_modified = Utc.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).unwrap();
+
+        for bundle in [
+            AssetBundleMetadata {
+                bundle_id: first_bundle_id,
+                name: "First".to_string(),
+                last_modified,
+            },
+            AssetBundleMetadata {
+                bundle_id: second_bundle_id,
+                name: "Second".to_string(),
+                last_modified,
+            },
+        ] {
+            db.upsert_bundle(&bundle)?;
+        }
+
+        let first_id = UntypedAssetId::new(Uuid::from_u128(20));
+        let second_id = UntypedAssetId::new(Uuid::from_u128(21));
+        let third_id = UntypedAssetId::new(Uuid::from_u128(22));
+        let first = AssetMetadata {
+            asset_id: first_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id: first_bundle_id,
+            relative_path: "zeta.asset".to_string(),
+            revision: 0,
+            last_modified,
+            in_memory: false,
+        };
+        let second = AssetMetadata {
+            asset_id: second_id,
+            ty: OtherAsset::TYPE_NAME.to_string(),
+            bundle_id: first_bundle_id,
+            relative_path: "alpha.asset".to_string(),
+            revision: 0,
+            last_modified,
+            in_memory: false,
+        };
+        let third = AssetMetadata {
+            asset_id: third_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id: second_bundle_id,
+            relative_path: "middle.asset".to_string(),
+            revision: 4,
+            last_modified,
+            in_memory: false,
+        };
+
+        assert_eq!(db.add_asset(&first)?, first_id);
+        assert_eq!(db.add_asset(&second)?, second_id);
+        assert_eq!(db.add_asset(&third)?, third_id);
+
+        let stored = db.get_asset(&third_id)?;
+        assert_eq!(stored.asset_id, third_id);
+        assert_eq!(stored.ty, TestAsset::TYPE_NAME);
+        assert_eq!(stored.bundle_id, second_bundle_id);
+        assert_eq!(stored.relative_path, "middle.asset");
+        assert_eq!(stored.revision, 4);
+        assert_eq!(stored.last_modified, last_modified);
+        assert!(!stored.in_memory);
+
+        let all = db.get_assets(UntypedAssetFilter::default())?;
+        assert_eq!(
+            all.iter().map(|asset| asset.asset_id).collect::<Vec<_>>(),
+            vec![second_id, third_id, first_id]
+        );
+
+        let typed = db.get_assets(AssetFilter::<TestAsset>::new().into_untyped())?;
+        assert_eq!(
+            typed.iter().map(|asset| asset.asset_id).collect::<Vec<_>>(),
+            vec![third_id, first_id]
+        );
+
+        let in_first_bundle = db.get_assets(
+            AssetFilter::<TestAsset>::new()
+                .with_bundle(first_bundle_id)
+                .into_untyped(),
+        )?;
+        assert_eq!(in_first_bundle.len(), 1);
+        assert_eq!(in_first_bundle[0].asset_id, first_id);
+
+        let untyped_in_first_bundle = db.get_assets(UntypedAssetFilter {
+            bundle: Some(first_bundle_id),
+            ..Default::default()
+        })?;
+        assert_eq!(
+            untyped_in_first_bundle
+                .iter()
+                .map(|asset| asset.asset_id)
+                .collect::<Vec<_>>(),
+            vec![second_id, first_id]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn replace_assets_replaces_one_bundle_and_keeps_latest_revisions() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let replaced_bundle_id = BundleId::new(Uuid::from_u128(30));
+        let retained_bundle_id = BundleId::new(Uuid::from_u128(31));
+        let last_modified = Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap();
+
+        for bundle in [
+            AssetBundleMetadata {
+                bundle_id: replaced_bundle_id,
+                name: "Replaced".to_string(),
+                last_modified,
+            },
+            AssetBundleMetadata {
+                bundle_id: retained_bundle_id,
+                name: "Retained".to_string(),
+                last_modified,
+            },
+        ] {
+            db.upsert_bundle(&bundle)?;
+        }
+
+        let removed_id = UntypedAssetId::new(Uuid::from_u128(40));
+        let retained_id = UntypedAssetId::new(Uuid::from_u128(41));
+        db.add_asset(&AssetMetadata {
+            asset_id: removed_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id: replaced_bundle_id,
+            relative_path: "removed.asset".to_string(),
+            revision: 0,
+            last_modified,
+            in_memory: false,
+        })?;
+        db.add_asset(&AssetMetadata {
+            asset_id: retained_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id: retained_bundle_id,
+            relative_path: "retained.asset".to_string(),
+            revision: 0,
+            last_modified,
+            in_memory: false,
+        })?;
+
+        let replacement_id = UntypedAssetId::new(Uuid::from_u128(42));
+        db.replace_assets(
+            &replaced_bundle_id,
+            &[
+                AssetMetadata {
+                    asset_id: replacement_id,
+                    ty: TestAsset::TYPE_NAME.to_string(),
+                    bundle_id: replaced_bundle_id,
+                    relative_path: "replacement.asset".to_string(),
+                    revision: 0,
+                    last_modified,
+                    in_memory: false,
+                },
+                AssetMetadata {
+                    asset_id: replacement_id,
+                    ty: TestAsset::TYPE_NAME.to_string(),
+                    bundle_id: replaced_bundle_id,
+                    relative_path: "replacement.rev3.asset".to_string(),
+                    revision: 3,
+                    last_modified: Utc.with_ymd_and_hms(2026, 3, 2, 0, 0, 0).unwrap(),
+                    in_memory: false,
+                },
+            ],
+        )?;
+
+        assert!(db.get_asset(&removed_id).is_err());
+        assert_eq!(db.get_asset(&retained_id)?.asset_id, retained_id);
+
+        let replacement = db.get_asset(&replacement_id)?;
+        assert_eq!(replacement.revision, 3);
+        assert_eq!(replacement.relative_path, "replacement.rev3.asset");
+
+        let replaced_bundle_assets = db.get_assets(UntypedAssetFilter {
+            bundle: Some(replaced_bundle_id),
+            ..Default::default()
+        })?;
+        assert_eq!(replaced_bundle_assets.len(), 1);
+        assert_eq!(replaced_bundle_assets[0].asset_id, replacement_id);
+
+        db.replace_assets(&replaced_bundle_id, &[])?;
+        assert!(
+            db.get_assets(UntypedAssetFilter {
+                bundle: Some(replaced_bundle_id),
+                ..Default::default()
+            })?
+            .is_empty()
+        );
+        assert_eq!(db.get_asset(&retained_id)?.asset_id, retained_id);
+
+        Ok(())
+    }
+
+    #[test]
+    fn tags_are_upserted_and_filter_assets() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let first_bundle_id = BundleId::new(Uuid::from_u128(50));
+        let second_bundle_id = BundleId::new(Uuid::from_u128(51));
+        let last_modified = Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+
+        for bundle in [
+            AssetBundleMetadata {
+                bundle_id: first_bundle_id,
+                name: "First".to_string(),
+                last_modified,
+            },
+            AssetBundleMetadata {
+                bundle_id: second_bundle_id,
+                name: "Second".to_string(),
+                last_modified,
+            },
+        ] {
+            db.upsert_bundle(&bundle)?;
+        }
+
+        let first_id = UntypedAssetId::new(Uuid::from_u128(60));
+        let second_id = UntypedAssetId::new(Uuid::from_u128(61));
+        let third_id = UntypedAssetId::new(Uuid::from_u128(62));
+        for asset in [
+            AssetMetadata {
+                asset_id: first_id,
+                ty: TestAsset::TYPE_NAME.to_string(),
+                bundle_id: first_bundle_id,
+                relative_path: "a.asset".to_string(),
+                revision: 0,
+                last_modified,
+                in_memory: false,
+            },
+            AssetMetadata {
+                asset_id: second_id,
+                ty: OtherAsset::TYPE_NAME.to_string(),
+                bundle_id: first_bundle_id,
+                relative_path: "b.asset".to_string(),
+                revision: 0,
+                last_modified,
+                in_memory: false,
+            },
+            AssetMetadata {
+                asset_id: third_id,
+                ty: TestAsset::TYPE_NAME.to_string(),
+                bundle_id: second_bundle_id,
+                relative_path: "c.asset".to_string(),
+                revision: 0,
+                last_modified,
+                in_memory: false,
+            },
+        ] {
+            db.add_asset(&asset)?;
+        }
+
+        let mut tag = Tag::new("Selected".to_string());
+        tag.add_asset(first_id);
+        tag.add_asset(second_id);
+        db.upsert_tag(&tag, last_modified)?;
+
+        let tagged = db.get_assets(UntypedAssetFilter {
+            tag: Some(tag.id().clone()),
+            ..Default::default()
+        })?;
+        assert_eq!(
+            tagged
+                .iter()
+                .map(|asset| asset.asset_id)
+                .collect::<Vec<_>>(),
+            vec![first_id, second_id]
+        );
+
+        let typed = db.get_assets(
+            AssetFilter::<TestAsset>::new()
+                .with_tag(tag.id().clone())
+                .into_untyped(),
+        )?;
+        assert_eq!(typed.len(), 1);
+        assert_eq!(typed[0].asset_id, first_id);
+
+        tag.remove_asset(&first_id);
+        tag.add_asset(third_id);
+        tag.set_name("Changed".to_string());
+        db.upsert_tag(&tag, last_modified)?;
+
+        let unchanged = db.get_assets(UntypedAssetFilter {
+            tag: Some(tag.id().clone()),
+            ..Default::default()
+        })?;
+        assert_eq!(
+            unchanged
+                .iter()
+                .map(|asset| asset.asset_id)
+                .collect::<Vec<_>>(),
+            vec![first_id, second_id]
+        );
+
+        db.upsert_tag(&tag, Utc.with_ymd_and_hms(2026, 4, 2, 0, 0, 0).unwrap())?;
+
+        let changed = db.get_assets(UntypedAssetFilter {
+            tag: Some(tag.id().clone()),
+            ..Default::default()
+        })?;
+        assert_eq!(
+            changed
+                .iter()
+                .map(|asset| asset.asset_id)
+                .collect::<Vec<_>>(),
+            vec![second_id, third_id]
+        );
+
+        let typed_in_second_bundle = db.get_assets(
+            AssetFilter::<TestAsset>::new()
+                .with_tag(tag.id().clone())
+                .with_bundle(second_bundle_id)
+                .into_untyped(),
+        )?;
+        assert_eq!(typed_in_second_bundle.len(), 1);
+        assert_eq!(typed_in_second_bundle[0].asset_id, third_id);
+
+        Ok(())
+    }
+
+    #[test]
+    fn asset_revision_lifecycle() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let bundle_id = BundleId::new(Uuid::from_u128(70));
+        let initial_last_modified = Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).unwrap();
+        db.upsert_bundle(&AssetBundleMetadata {
+            bundle_id,
+            name: "Revisions".to_string(),
+            last_modified: initial_last_modified,
+        })?;
+
+        let first_id = UntypedAssetId::new(Uuid::from_u128(80));
+        let second_id = UntypedAssetId::new(Uuid::from_u128(81));
+        db.add_asset(&AssetMetadata {
+            asset_id: first_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id,
+            relative_path: "first.asset".to_string(),
+            revision: 7,
+            last_modified: initial_last_modified,
+            in_memory: false,
+        })?;
+        db.add_asset(&AssetMetadata {
+            asset_id: second_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id,
+            relative_path: "second.asset".to_string(),
+            revision: 0,
+            last_modified: initial_last_modified,
+            in_memory: false,
+        })?;
+
+        assert_eq!(db.update_asset(&first_id)?, 8);
+        assert_eq!(db.update_asset(&first_id)?, 8);
+        let first = db.get_asset(&first_id)?;
+        assert_eq!(first.revision, 8);
+        assert!(first.in_memory);
+        assert_eq!(first.relative_path, "");
+
+        let revision_count = db.conn.lock().query_row(
+            "SELECT COUNT(*) FROM asset_revisions WHERE asset_id = ?1",
+            params![first_id],
+            |row| row.get::<_, u32>(0),
+        )?;
+        assert_eq!(revision_count, 2);
+
+        let written_at = Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap();
+        assert_eq!(
+            db.write_asset(&first_id, "first.rev8.asset", written_at)?,
+            8
+        );
+        let written = db.get_asset(&first_id)?;
+        assert_eq!(written.revision, 8);
+        assert_eq!(written.relative_path, "first.rev8.asset");
+        assert_eq!(written.last_modified, written_at);
+        assert!(!written.in_memory);
+
+        assert_eq!(db.update_asset(&first_id)?, 9);
+        db.revert_asset(&first_id)?;
+        let reverted = db.get_asset(&first_id)?;
+        assert_eq!(reverted.revision, 8);
+        assert_eq!(reverted.relative_path, "first.rev8.asset");
+        assert!(!reverted.in_memory);
+
+        assert_eq!(db.update_asset(&first_id)?, 9);
+        assert_eq!(db.update_asset(&second_id)?, 1);
+        db.revert_all_assets()?;
+
+        let first = db.get_asset(&first_id)?;
+        let second = db.get_asset(&second_id)?;
+        assert_eq!(first.revision, 8);
+        assert!(!first.in_memory);
+        assert_eq!(second.revision, 0);
+        assert!(!second.in_memory);
+
+        Ok(())
     }
 }

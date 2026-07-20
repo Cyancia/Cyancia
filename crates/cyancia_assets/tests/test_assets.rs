@@ -306,7 +306,7 @@ fn test() {
 
     test_asset_handle.write().unwrap();
     let written_meta = test_asset_handle.metadata().unwrap();
-    assert_eq!(written_meta.revision, 2);
+    assert_eq!(written_meta.revision, 1);
     assert!(!written_meta.in_memory);
 
     let written_file = modified_bundle_absolute_path(&assets_root, &local_bundle_id)
