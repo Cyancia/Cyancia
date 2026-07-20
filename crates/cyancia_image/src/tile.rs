@@ -1,16 +1,14 @@
 use std::{
     borrow::{Borrow, Cow},
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, OnceLock},
 };
 
 use anyhow::Result;
 use bevy_math::IRect;
 use cyancia_render::{
-    buffer::BufferVec,
-    readback::{readback_buffer_on_submit_async, readback_buffer_raw_on_submit_async},
-    render_context::RenderContextAppExt,
-    util::DevicePollExt,
+    buffer::BufferVec, readback::readback_buffer_raw_on_submit_async,
+    render_context::RenderContextAppExt, util::DevicePollExt,
 };
 use cyancia_utils::Deref;
 use dashmap::{DashMap, Entry};
@@ -22,10 +20,10 @@ use image::{DynamicImage, GenericImageView};
 use indexmap::{IndexMap, IndexSet};
 use moxcms::{ColorProfile, TransformOptions};
 use wgpu::{
-    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, Origin3d, PollType, Queue,
-    TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect,
-    TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,
-    TextureViewDimension, util::DeviceExt,
+    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyBufferInfo,
+    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
+    util::DeviceExt,
 };
 
 use crate::{
@@ -787,7 +785,7 @@ impl DynamicLayerStorage {
 
             ec.copy_texture_to_buffer(
                 TexelCopyTextureInfo {
-                    texture: texture,
+                    texture,
                     mip_level: 0,
                     origin: Origin3d {
                         x: 0,

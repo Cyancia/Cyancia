@@ -7,7 +7,6 @@ use cyancia_image::{
         LayerId, LayerPosition, LayerStackNode,
         properties::{LayerProperties, LayerTexelTypePropertyExt},
     },
-    texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };
 use cyancia_render::render_context::RenderContextAppExt;

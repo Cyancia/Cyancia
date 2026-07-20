@@ -3,8 +3,6 @@ use std::{
     collections::HashMap,
 };
 
-use anyhow::Result;
-use cyancia_cyan::{CyanArchive, LayerNode};
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use gpui::{App, Global};
@@ -21,10 +19,7 @@ use crate::{
     layer::{
         group_layer::GroupLayer,
         pixel_layer::PixelLayer,
-        properties::{
-            EncodedLayerProperties, HasLayerProperties, HasLayerPropertiesDyn, LayerProperties,
-            NameProp,
-        },
+        properties::{HasLayerPropertiesDyn, LayerProperties, NameProp},
     },
     tile::GpuTileStorage,
 };

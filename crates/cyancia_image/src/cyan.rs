@@ -5,10 +5,10 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use cyancia_cyan::{CyanArchive, ImageProperties, LayerNode};
-use cyancia_render::render_context::{RenderContext, RenderContextAppExt};
+use cyancia_render::render_context::RenderContextAppExt;
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use glam::{IVec2, UVec2};
-use gpui::{App, AsyncApp};
+use gpui::App;
 use moxcms::ColorProfile;
 use serde::Serialize;
 use uuid::Uuid;
@@ -19,12 +19,11 @@ use crate::{
     layer::{
         Layer, LayerId, LayerStack, LayerStackNode, LayerTypeRegistry, SpecialLayers,
         properties::{
-            EncodedLayerProperties, HasLayerProperties, LayerProperties, LayerTexelTypeProp,
-            LayerTexelTypePropertyExt,
+            EncodedLayerProperties, LayerProperties, LayerTexelTypeProp, LayerTexelTypePropertyExt,
         },
     },
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
+    tile::{GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };
 
 impl CImage {
@@ -151,7 +150,7 @@ impl GpuTileStorage {
         data: &[u8],
     ) -> Result<()> {
         let mut e = DeflateEncoder::new(Vec::new(), Compression::default());
-        e.write_all(&data)?;
+        e.write_all(data)?;
         let buf = e.finish()?;
         archive.write_tile_data(layer_id.into_inner(), tile.x, tile.y, buf)?;
         Ok(())
@@ -193,7 +192,7 @@ impl Serialize for LayerProperties {
             .iter()
             .map(|(k, v)| Ok((k, v.encode()?)))
             .collect::<Result<HashMap<_, _>>>()
-            .map_err(|e| <S::Error as serde::ser::Error>::custom(e))?;
+            .map_err(<S::Error as serde::ser::Error>::custom)?;
         encoded.serialize(serializer)
     }
 }
@@ -303,7 +302,7 @@ impl LayerStack {
             Ok(root_node)
         }
 
-        let root_node = read_node(&root_node, &layer_types)?;
+        let root_node = read_node(&root_node, layer_types)?;
         let mut output = LayerStack::new(root_node);
 
         read_children(

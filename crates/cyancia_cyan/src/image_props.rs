@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn image_properties_round_trip_with_embedded_icc_profile() {
-        let mut archive = CyanArchive::new_in_memory().unwrap();
+        let archive = CyanArchive::new_in_memory().unwrap();
         let properties = ImageProperties {
             width: 1920,
             height: 1080,
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn writing_image_properties_replaces_the_single_row() {
-        let mut archive = CyanArchive::new_in_memory().unwrap();
+        let archive = CyanArchive::new_in_memory().unwrap();
         for width in [128, 512] {
             archive
                 .write_image_properties(&ImageProperties {

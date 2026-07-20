@@ -28,11 +28,10 @@ use crate::{
         properties::{
             BlendFunctionProp, BlendFunctionPropertyExt, DisabledChannelsProp,
             DisabledChannelsPropertyExt, EncodedLayerProperties, HasLayerProperties,
-            LayerPropertiesDeclaration, LayerTexelTypeProp, LockedProp, NameProp, OpacityProp,
-            OpacityPropertyExt, VisibleProp, VisiblePropertyExt,
+            LayerPropertiesDeclaration, LockedProp, NameProp, OpacityProp, OpacityPropertyExt,
+            VisibleProp, VisiblePropertyExt,
         },
     },
-    texel::TexelType,
     tile::{GpuTileInfo, GpuTileStorage},
 };
 

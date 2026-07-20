@@ -79,14 +79,13 @@ impl ActionFunction for OpenFileAction {
 impl ActionFunction for SaveFileAction {
     fn trigger(&self, cx: &mut App) {
         cx.update_current_canvas(|canvas, cx| {
-            if canvas.archive.path().is_none() {
-                if canvas
+            if canvas.archive.path().is_none()
+                && canvas
                     .set_file_path(canvas.file_path().with_extension("cyan"))
                     .logged_err()
                     .is_err()
-                {
-                    return;
-                }
+            {
+                return;
             }
 
             // TODO nonononono use async

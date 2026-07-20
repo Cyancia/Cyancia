@@ -1,6 +1,5 @@
 use anyhow::Result;
 use cyancia_utils::wrapper;
-use gpui::App;
 
 use crate::{
     blend_modes::BlendMode,
