@@ -2,7 +2,7 @@
 members = [
     "crates/cyancia_abr",
     "crates/cyancia_abr_derive",
-    "crates/cyancia_actions",
+    "crates/cyancia_actions", "crates/cyancia_anti_aliasing",
     "crates/cyancia_app",
     "crates/cyancia_assets",
     "crates/cyancia_brush",
@@ -40,6 +40,7 @@ too_many_arguments = "allow"
 cyancia_abr = { version = "0.1.0", path = "crates/cyancia_abr" }
 cyancia_abr_derive = { version = "0.1.0", path = "crates/cyancia_abr_derive" }
 cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
+cyancia_anti_aliasing = { version = "0.1.0", path = "crates/cyancia_anti_aliasing" }
 cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
 cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
 cyancia_bucket_tool = { version = "0.1.0", path = "crates/cyancia_bucket_tool" }

@@ -1,59 +1,40 @@
 import image::image_tiling::{TileInfo, TILE_SIZE};
 
-const MASK_OFF = 0.0;
-const MASK_ON = 1.0;
-const MIN_MASK_VALUE = 0.0;
-const MAX_MASK_VALUE = 1.0;
-const NO_TILE = -1;
-const HORIZONTAL_EDGE = vec2i(1, 0);
-const VERTICAL_EDGE = vec2i(0, 1);
-const DIAGONAL_UP_EDGE = vec2i(1, -1);
-const DIAGONAL_DOWN_EDGE = vec2i(1, 1);
-
 struct FxaaParams {
     edge_threshold_min: f32,
     edge_threshold_max: f32,
     iterations: u32,
     subpixel_quality: f32,
-    image_size: vec2u,
 };
 
 @group(0) @binding(0) var input: texture_storage_2d_array<r8unorm, read>;
-@group(0) @binding(1) var output: texture_storage_2d_array<r8unorm, write>;
-@group(0) @binding(2) var<storage> tile_info: array<TileInfo>;
-@group(0) @binding(3) var<uniform> params: FxaaParams;
+@group(0) @binding(1) var<storage> input_tile_info: array<TileInfo>;
+@group(0) @binding(2) var output: texture_storage_2d_array<r8unorm, write>;
+@group(0) @binding(3) var<storage> output_tile_info: array<TileInfo>;
+@group(0) @binding(4) var<uniform> params: FxaaParams;
 
-fn find_tile_for_coord(coord: vec2i) -> i32 {
-    for (var i = 0u; i < arrayLength(&tile_info); i = i + 1u) {
-        let info = tile_info[i];
+fn load_input(coord: vec2i) -> f32 {
+    for (var i = 0u; i < arrayLength(&input_tile_info); i = i + 1u) {
+        let info = input_tile_info[i];
         if coord.x >= info.origin.x && coord.x < info.origin.x + i32(TILE_SIZE) &&
            coord.y >= info.origin.y && coord.y < info.origin.y + i32(TILE_SIZE) {
-            return i32(i);
+               let local_coord = vec2u(coord - info.origin);
+               return textureLoad(input, local_coord, i).r;
         }
     }
-    return NO_TILE;
+
+    return 0.0;
 }
 
-fn load_mask_global(coord: vec2i) -> f32 {
-    let tile_index = find_tile_for_coord(coord);
-    if tile_index == NO_TILE {
-        return 0.0;
-    }
-
-    let info = tile_info[u32(tile_index)];
-    let local_coord = vec2u(coord - info.origin);
-    return textureLoad(input, local_coord, tile_index).r;
-}
-
-fn sample_mask_global_linear(coord: vec2f) -> f32 {
+fn sample_input_linear(coord: vec2f) -> f32 {
     let base = floor(coord);
     let base_coord = vec2i(base);
     let fract = coord - base;
 
-    let left_top = load_mask_global(base_coord);
-    let right_top = load_mask_global(base_coord + vec2i(1, 0));
-    let left_bottom = load_mask_global(base_coord + vec2i(0, 1));
-    let right_bottom = load_mask_global(base_coord + vec2i(1, 1));
+    let left_top = load_input(base_coord);
+    let right_top = load_input(base_coord + vec2i(1, 0));
+    let left_bottom = load_input(base_coord + vec2i(0, 1));
+    let right_bottom = load_input(base_coord + vec2i(1, 1));
     let top = mix(left_top, right_top, fract.x);
     let bottom = mix(left_bottom, right_bottom, fract.x);
     return mix(top, bottom, fract.y);
@@ -76,21 +57,21 @@ fn QUALITY(q: i32) -> f32 {
 fn main(@builtin(global_invocation_id) global_id: vec3u) {
     let tile_index = global_id.z;
     let local_coord = global_id.xy;
-    let global_coord = vec2i(local_coord) + tile_info[tile_index].origin;
+    let global_coord = vec2i(local_coord) + output_tile_info[tile_index].origin;
 
     let pixelCoord = vec2f(global_coord);
 
-    let centerSample = sample_mask_global_linear(pixelCoord);
+    let centerSample = sample_input_linear(pixelCoord);
     let colorCenter = centerSample;
 
     // Luma at the current fragment
     let lumaCenter = colorCenter;
 
     // Luma at the four direct neighbors of the current fragment.
-    let lumaDown = sample_mask_global_linear(pixelCoord + vec2f(0.0, -1.0));
-    let lumaUp = sample_mask_global_linear(pixelCoord + vec2f(0.0, 1.0));
-    let lumaLeft = sample_mask_global_linear(pixelCoord + vec2f(-1.0, 0.0));
-    let lumaRight = sample_mask_global_linear(pixelCoord + vec2f(1.0, 0.0));
+    let lumaDown = sample_input_linear(pixelCoord + vec2f(0.0, -1.0));
+    let lumaUp = sample_input_linear(pixelCoord + vec2f(0.0, 1.0));
+    let lumaLeft = sample_input_linear(pixelCoord + vec2f(-1.0, 0.0));
+    let lumaRight = sample_input_linear(pixelCoord + vec2f(1.0, 0.0));
 
     // Find the maximum and minimum luma around the current fragment.
     let lumaMin = min(lumaCenter, min(min(lumaDown, lumaUp), min(lumaLeft, lumaRight)));
@@ -106,10 +87,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     }
 
     // Query the 4 remaining corners lumas.
-    let lumaDownLeft  = sample_mask_global_linear(pixelCoord + vec2f(-1.0, -1.0));
-    let lumaUpRight   = sample_mask_global_linear(pixelCoord + vec2f(1.0, 1.0));
-    let lumaUpLeft    = sample_mask_global_linear(pixelCoord + vec2f(-1.0, 1.0));
-    let lumaDownRight = sample_mask_global_linear(pixelCoord + vec2f(1.0, -1.0));
+    let lumaDownLeft  = sample_input_linear(pixelCoord + vec2f(-1.0, -1.0));
+    let lumaUpRight   = sample_input_linear(pixelCoord + vec2f(1.0, 1.0));
+    let lumaUpLeft    = sample_input_linear(pixelCoord + vec2f(-1.0, 1.0));
+    let lumaDownRight = sample_input_linear(pixelCoord + vec2f(1.0, -1.0));
 
     // Combine the four edges lumas (using intermediary variables for future computations with the same values).
     let lumaDownUp = lumaDown + lumaUp;
@@ -177,8 +158,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     var coord2 = currentCoord + offset; // * QUALITY(0); // (quality 0 is 1.0)
 
     // Read the lumas at both current extremities of the exploration segment, and compute the delta wrt to the local average luma.
-    var lumaEnd1 = sample_mask_global_linear(coord1);
-    var lumaEnd2 = sample_mask_global_linear(coord2);
+    var lumaEnd1 = sample_input_linear(coord1);
+    var lumaEnd2 = sample_input_linear(coord2);
     lumaEnd1 = lumaEnd1 - lumaLocalAverage;
     lumaEnd2 = lumaEnd2 - lumaLocalAverage;
 
@@ -196,12 +177,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
         for (var i: i32 = 2; i < i32(params.iterations); i = i + 1) {
             // If needed, read luma in 1st direction, compute delta.
             if (!reached1) {
-                lumaEnd1 = sample_mask_global_linear(coord1);
+                lumaEnd1 = sample_input_linear(coord1);
                 lumaEnd1 = lumaEnd1 - lumaLocalAverage;
             }
             // If needed, read luma in opposite direction, compute delta.
             if (!reached2) {
-                lumaEnd2 = sample_mask_global_linear(coord2);
+                lumaEnd2 = sample_input_linear(coord2);
                 lumaEnd2 = lumaEnd2 - lumaLocalAverage;
             }
             // If the luma deltas at the current extremities is larger than the local gradient, we have reached the side of the edge.
@@ -272,6 +253,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     }
 
     // Read the color at the new coordinates, and use it.
-    var finalColor = sample_mask_global_linear(finalCoord);
-    textureStore(output, local_coord, tile_index, vec4f(finalColor, 0.0, 0.0, 1.0));
+    var finalColor = sample_input_linear(finalCoord);
+    textureStore(output, local_coord, tile_index, vec4f(finalColor, 0.0, 0.0, 0.0));
 }

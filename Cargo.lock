@@ -1688,6 +1688,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cyancia_anti_aliasing"
+version = "0.1.0"
+dependencies = [
+ "cyancia_image",
+ "cyancia_render",
+ "encase",
+ "glam",
+ "wesl",
+ "wgpu 29.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "cyancia_app"
 version = "0.1.0"
 dependencies = [
@@ -1795,6 +1807,7 @@ version = "0.1.0"
 dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "bytemuck",
+ "cyancia_anti_aliasing",
  "cyancia_canvas",
  "cyancia_image",
  "cyancia_render",
