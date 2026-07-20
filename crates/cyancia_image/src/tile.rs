@@ -814,6 +814,7 @@ impl DynamicLayerStorage {
 
         let si = queue.submit([ec.finish()]);
         // TODO Don't block!!!
+        //      We should use a background task that infinitely polls.
         device.poll_indefinitely_for(si)?;
 
         let buffers = join_all(

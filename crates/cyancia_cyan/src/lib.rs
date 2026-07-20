@@ -4,15 +4,19 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use parking_lot::{Mutex, MutexGuard, RawMutex, lock_api::MappedMutexGuard};
 use rusqlite::{Connection, MAIN_DB, OpenFlags};
 
 pub mod image_props;
 pub mod layer_tree;
+pub mod metadata;
 pub mod tile_data;
 pub use image_props::ImageProperties;
 pub use layer_tree::LayerNode;
+pub use metadata::Metadata;
+
+pub const VERSION: u32 = 0;
 
 struct Inner {
     path: Option<PathBuf>,
@@ -49,6 +53,7 @@ impl CyanArchive {
             })),
         };
         archive.initialize_tables()?;
+        archive.write_metadata(Metadata { version: VERSION })?;
 
         Ok(archive)
     }
@@ -61,6 +66,7 @@ impl CyanArchive {
             })),
         };
         archive.initialize_tables()?;
+        archive.write_metadata(Metadata { version: VERSION })?;
 
         Ok(archive)
     }
@@ -68,13 +74,18 @@ impl CyanArchive {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-
-        Ok(Self {
+        let archive = Self {
             inner: Arc::new(Mutex::new(Inner {
                 path: Some(path.to_path_buf()),
                 conn,
             })),
-        })
+        };
+        let metadata = archive.read_metadata()?;
+        if metadata.version != VERSION {
+            bail!("unsupported cyan archive version: {}", metadata.version);
+        }
+
+        Ok(archive)
     }
 
     pub fn path(&self) -> Option<PathBuf> {
@@ -108,10 +119,15 @@ impl CyanArchive {
     }
 
     fn initialize_tables(&self) -> Result<()> {
-        let conn = self.conn();
-        image_props::initialize_table(&conn)?;
-        layer_tree::initialize_table(&conn)?;
-        tile_data::initialize_table(&conn)?;
+        {
+            let conn = self.conn();
+            metadata::initialize_table(&conn)?;
+            image_props::initialize_table(&conn)?;
+            layer_tree::initialize_table(&conn)?;
+            tile_data::initialize_table(&conn)?;
+        }
+        self.write_metadata(Metadata { version: VERSION })?;
+
         Ok(())
     }
 }

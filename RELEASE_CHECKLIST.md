@@ -1,0 +1,1 @@
+- [ ] Is the `.cyan` format updated? If so, update the `VERSION` constant.

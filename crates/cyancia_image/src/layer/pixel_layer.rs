@@ -314,6 +314,8 @@ impl Layer for PixelLayer {
         let props = node.properties();
 
         if !props.visible() {
+            // FIXME This is incorrect. If the layer is not visible, we still needs to copy the content
+            //       from src to output. Or the previous blending result will lost.
             return;
         }
 
