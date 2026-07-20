@@ -1966,6 +1966,7 @@ version = "0.1.0"
 dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "bytemuck",
+ "cyancia_anti_aliasing",
  "cyancia_bucket_tool",
  "cyancia_canvas",
  "cyancia_image",

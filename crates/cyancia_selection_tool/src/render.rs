@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::OnceLock, time::Instant};
 
 use bevy_math::IRect;
+use cyancia_anti_aliasing::fxaa::{FxaaParams, FxaaPipeline};
 use cyancia_canvas::{CanvasAppExt, command::TileReplaceCommand, control::CanvasTransform};
 use cyancia_image::{
     texel::TexelType,
@@ -156,6 +157,7 @@ struct SelectionParams {
 pub struct SelectionPipeline {
     render_layout: BindGroupLayout,
     render_pipeline: RenderPipeline,
+    fxaa_pipeline: FxaaPipeline,
     composite_layout: BindGroupLayout,
     composite_pipeline: ComputePipeline,
     layer_format: TexelType,
@@ -219,6 +221,8 @@ impl SelectionPipeline {
             cache: Default::default(),
         });
 
+        let fxaa_pipeline = FxaaPipeline::new(device, layer_format.wgpu_format());
+
         let composite_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("selection_composite_layout"),
             entries: &BindGroupLayoutEntries::sequential(
@@ -262,6 +266,7 @@ impl SelectionPipeline {
         Self {
             render_layout,
             render_pipeline,
+            fxaa_pipeline,
             composite_layout,
             composite_pipeline,
             layer_format,
@@ -334,7 +339,6 @@ impl SelectionPipeline {
         )
     }
 
-    // TODO antialiasing
     fn render_internal(
         &mut self,
         device: &Device,
@@ -436,7 +440,17 @@ impl SelectionPipeline {
 
         queue.submit([ec.finish()]);
 
-        Some(selection)
+        let smoothed_selection = selection.create_allocated_empty_sibling();
+
+        self.fxaa_pipeline.dispatch(
+            device,
+            queue,
+            &FxaaParams::default(),
+            selection.binding().unwrap(),
+            smoothed_selection.binding().unwrap(),
+        );
+
+        Some(smoothed_selection)
     }
 
     /// Composite the input selection with the target selection. The input selection is allowed to unable
