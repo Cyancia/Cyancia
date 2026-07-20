@@ -17,7 +17,7 @@ use crate::{
     error::{AssetError, AssetResult},
     index_db::{AssetFilter, AssetIndexDb, ItemStatus, TagFilter, UntypedAssetFilter},
     loader::AssetSerializerRegistry,
-    tag::Tag,
+    tag::{Tag, TagId},
 };
 
 pub struct AssetRegistry {
@@ -193,6 +193,10 @@ impl AssetRegistry {
 
     pub fn all_tags_filtered(&self, filter: TagFilter) -> AssetResult<Vec<Tag>> {
         self.index_db.get_tags(filter)
+    }
+
+    pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
+        self.index_db.remove_tag(tag_id)
     }
 
     pub fn serializers(&self) -> &AssetSerializerRegistry {

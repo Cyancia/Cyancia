@@ -312,6 +312,16 @@ ORDER BY name ASC, id ASC;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
+        let conn = self.conn.lock();
+        let deleted = conn.execute("DELETE FROM tags WHERE id = ?1", params![tag_id])?;
+        if deleted == 0 {
+            return Err(AssetError::TagNotFound(tag_id.clone()).into());
+        }
+
+        Ok(())
+    }
+
     pub fn add_asset(&self, asset: &AssetMetadata) -> AssetResult<UntypedAssetId> {
         let asset_id = asset.asset_id;
         let mut conn = self.conn.lock();
@@ -1057,6 +1067,48 @@ asset_ty = "{}"
             })?
             .is_empty()
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn removing_tag_removes_its_asset_associations() -> AssetResult<()> {
+        let db = AssetIndexDb::open_in_memory()?;
+        let bundle_id = BundleId::new(Uuid::from_u128(66));
+        let last_modified = Utc.with_ymd_and_hms(2026, 4, 6, 0, 0, 0).unwrap();
+        db.upsert_bundle(&AssetBundleMetadata {
+            bundle_id,
+            name: "Remove tag".to_string(),
+            last_modified,
+        })?;
+
+        let asset_id = UntypedAssetId::new(Uuid::from_u128(67));
+        db.add_asset(&AssetMetadata {
+            asset_id,
+            ty: TestAsset::TYPE_NAME.to_string(),
+            bundle_id,
+            relative_path: "tagged.asset".to_string(),
+            revision: 0,
+            last_modified,
+            in_memory: false,
+        })?;
+        let tag = Tag::new(
+            "Temporary".to_string(),
+            Some(TestAsset::TYPE_NAME.to_string()),
+        );
+        db.upsert_tag(&tag, last_modified)?;
+        db.add_tag_to_asset(&asset_id, &tag.id)?;
+
+        db.remove_tag(&tag.id)?;
+
+        assert!(db.get_tag(tag.id.clone()).is_err());
+        let association_count = db.conn.lock().query_row(
+            "SELECT COUNT(*) FROM asset_tags WHERE tag_id = ?1",
+            params![tag.id],
+            |row| row.get::<_, u32>(0),
+        )?;
+        assert_eq!(association_count, 0);
+        assert!(db.remove_tag(&tag.id).is_err());
 
         Ok(())
     }
