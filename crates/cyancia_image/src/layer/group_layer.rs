@@ -326,7 +326,6 @@ impl HasLayerProperties for GroupLayer {
         decl.create_default::<OpacityProp>();
         decl.create_default::<LockedProp>();
         decl.create_default::<DisabledChannelsProp>();
-        decl.create(LayerTexelTypeProp(TexelType::RGBA8));
         decl
     }
 
@@ -338,7 +337,6 @@ impl HasLayerProperties for GroupLayer {
         data.decode::<OpacityProp>(&mut decl)?;
         data.decode::<LockedProp>(&mut decl)?;
         data.decode::<DisabledChannelsProp>(&mut decl)?;
-        data.decode::<LayerTexelTypeProp>(&mut decl)?;
         Ok(decl)
     }
 }

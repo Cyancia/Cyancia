@@ -22,6 +22,7 @@ use crate::{
             EncodedLayerProperties, HasLayerProperties, LayerProperties, LayerTexelTypePropertyExt,
         },
     },
+    texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, TileStorageAppExt},
 };
 
@@ -51,11 +52,7 @@ impl CImage {
             }
         }
 
-        let image_texel_type = layer_stack
-            .root_node()
-            .properties()
-            .get_texel_type()
-            .unwrap();
+        let image_texel_type = rmp_serde::from_slice::<TexelType>(&image_props.texel_type)?;
 
         Ok(Self {
             size: UVec2::new(image_props.width, image_props.height),
@@ -74,6 +71,7 @@ impl CImage {
             tile_size: GpuTileStorage::TILE_SIZE,
             color_profile: self.profile.encode()?,
             root_layer: **self.layers.root_node().id(),
+            texel_type: rmp_serde::to_vec(&self.texel_type)?,
         })?;
 
         self.layers.write_entire_tree(archive)?;
