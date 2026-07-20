@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
+use cyancia_cyan::{CyanArchive, LayerNode};
 use cyancia_utils::wrapper;
 use dyn_clone::DynClone;
 use gpui::{App, Global};
@@ -121,6 +122,10 @@ pub trait Layer: Send + Sync + DynClone + 'static + HasLayerPropertiesDyn {
         layer_id: LayerId,
         tiles: &GpuTileStorage,
     );
+    // TODO In the future, when layers like vector layer and filter layer are added, layers actually contains data.
+    //      For vector layers, the data is shapes, and for filter layers, it is filter parameters.
+    //      So layer would have a `Data` type that is related to this trait. And during archive opening/writing,
+    //      The data should be deserialized somehow.
 }
 dyn_clone::clone_trait_object!(Layer);
 
