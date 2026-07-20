@@ -215,6 +215,9 @@ impl<T: Asset> AssetHandle<T> {
 
     pub fn write(&self) -> AssetResult<()> {
         let metadata = self.metadata()?;
+        if !metadata.in_memory {
+            return Ok(());
+        }
         let new_path = self.bundle.write(&self.untyped_id(), metadata.revision)?;
         let last_modified =
             std::fs::metadata(self.bundle.absolute_modified_path(&new_path))?.modified()?;

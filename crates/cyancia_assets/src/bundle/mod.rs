@@ -104,14 +104,21 @@ impl AssetBundleCache {
             .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
         let serializer = self.serializers.get_for_path(path)?;
 
-        write_modified_asset(
-            &self.assets_root,
-            path,
-            &self.metadata.bundle_id,
-            asset.as_ref(),
-            revision,
-            serializer.as_ref(),
-        )
+        if !self.bundle.is_readonly() && revision == 0 {
+            self.bundle
+                .add(path, asset.as_ref(), serializer.as_ref())
+                .map_err(AssetError::BundleError)?;
+            Ok(path.clone())
+        } else {
+            write_modified_asset(
+                &self.assets_root,
+                path,
+                &self.metadata.bundle_id,
+                asset.as_ref(),
+                revision,
+                serializer.as_ref(),
+            )
+        }
     }
 
     pub fn is_readonly(&self) -> bool {
