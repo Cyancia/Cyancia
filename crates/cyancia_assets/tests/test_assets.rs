@@ -3,22 +3,19 @@ use std::{
     fs,
     io::read_to_string,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::{Arc, Once},
 };
 
 use cyancia_assets::{
-    asset::{Asset, UntypedAssetId},
+    asset::Asset,
     bundle::{
         AssetBundle, directory::AssetDirectory, modified_bundle_absolute_path,
         standard::StandardAssetBundle,
     },
-    index_db::AssetFilter,
     loader::{AssetRegistryBuilder, AssetSerializer},
     tag::{Tag, TagSerializer},
 };
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct TestAsset {
@@ -201,10 +198,6 @@ fn remove_path_if_exists(path: &Path) -> std::io::Result<()> {
     }
 }
 
-fn parse_id(id: &str) -> UntypedAssetId {
-    UntypedAssetId::new(Uuid::from_str(id).unwrap())
-}
-
 fn parse_test_asset(path: impl AsRef<Path>) -> TestAsset {
     toml::from_str::<TestAsset>(&fs::read_to_string(path).unwrap()).unwrap()
 }
@@ -217,6 +210,7 @@ fn test() {
     let _ = CwdGuard::enter(&crate_root).unwrap();
 
     let assets_root = crate_root.join("assets");
+    let index_path = assets_root.join("index.sqlite3");
     let local_assets_root = assets_root.join("local_assets");
     let local_manifest_path = local_assets_root.join("manifest.toml");
     let local_tag_path = local_assets_root.join("my_tag.ctag");
@@ -229,6 +223,7 @@ fn test() {
     let local_modified_dir = modified_bundle_absolute_path(&assets_root, &local_bundle_id);
 
     let mut restore_guard = FsRestoreGuard::default();
+    restore_guard.snapshot_file(&index_path).unwrap();
     restore_guard.snapshot_file(&local_manifest_path).unwrap();
     restore_guard.snapshot_file(&local_tag_path).unwrap();
     restore_guard.snapshot_file(&local_test1_path).unwrap();
@@ -238,6 +233,7 @@ fn test() {
         .snapshot_file(local_assets_root.join("added_asset.toml"))
         .unwrap();
 
+    remove_path_if_exists(&index_path).unwrap();
     if local_manifest_path.exists() {
         fs::remove_file(&local_manifest_path).unwrap();
     }
@@ -325,13 +321,7 @@ fn test() {
 
     let my_tag = tag_handles[0].get().unwrap();
     assert_eq!(my_tag.name(), "My Tag");
-    assert_eq!(my_tag.assets().len(), 1);
-
-    let tagged_assets = registry
-        .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(my_tag.id().clone()))
-        .unwrap();
-    assert_eq!(tagged_assets.len(), 1);
-    assert_eq!(tagged_assets[0].get().unwrap().name, "Test Asset");
+    assert_eq!(my_tag.asset_ty(), Some(TestAsset::TYPE_NAME));
 
     let new_asset_id = registry
         .add_asset::<TestAsset>(
@@ -387,15 +377,6 @@ fn test() {
     fs::remove_file(&local_test_hello_path).unwrap();
     remove_path_if_exists(&local_modified_dir).unwrap();
 
-    let mut offline_tag: Tag =
-        toml::from_str(&fs::read_to_string(&local_tag_path).unwrap()).unwrap();
-    let test_bundle_asset_id = parse_id("5a4d778c-08fa-445b-af22-a13afca8e492");
-    offline_tag.add_asset(test_bundle_asset_id);
-
-    let mut tag_content = Vec::new();
-    TagSerializer.write(&offline_tag, &mut tag_content).unwrap();
-    fs::write(&local_tag_path, tag_content).unwrap();
-
     let mut builder = AssetRegistryBuilder::default();
     builder.add_serializer::<TestAssetSerializer>();
     builder.add_serializer::<TagSerializer>();
@@ -428,30 +409,7 @@ fn test() {
     assert_eq!(restarted_tag_handles.len(), 1);
     let restarted_tag = restarted_tag_handles[0].get().unwrap();
     assert_eq!(restarted_tag.name(), "My Tag");
-    assert_eq!(restarted_tag.assets().len(), 2);
-    assert!(
-        restarted_tag
-            .assets()
-            .contains(&parse_id("0d0b1f51-0b37-3fc3-8f74-7408e8d80790"))
-    );
-    assert!(restarted_tag.assets().contains(&test_bundle_asset_id));
-
-    let restarted_tagged_assets = restarted_registry
-        .all_handles_of_filtered::<TestAsset>(
-            AssetFilter::new().with_tag(restarted_tag.id().clone()),
-        )
-        .unwrap();
-    assert_eq!(restarted_tagged_assets.len(), 2);
-
-    let mut names = restarted_tagged_assets
-        .iter()
-        .map(|h| h.get().unwrap().name.clone())
-        .collect::<Vec<_>>();
-    names.sort();
-    assert_eq!(
-        names,
-        vec!["Test Asset".to_string(), "Test Asset 2".to_string()]
-    );
+    assert_eq!(restarted_tag.asset_ty(), Some(TestAsset::TYPE_NAME));
 
     let restarted_new_asset_handle = restarted_registry
         .handle::<TestAsset>(new_asset_id)

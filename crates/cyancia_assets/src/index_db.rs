@@ -2,13 +2,13 @@ use std::{fs::File, marker::PhantomData, path::Path};
 
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
 use crate::{
     asset::{Asset, AssetMetadata, UntypedAssetId},
     bundle::{AssetBundleMetadata, BundleId},
-    error::AssetResult,
+    error::{AssetError, AssetResult},
     tag::{Tag, TagId},
 };
 
@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS asset_revisions (
 CREATE TABLE IF NOT EXISTS tags (
     tag_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    asset_ty TEXT,
     last_modified TEXT NOT NULL
 );
 
@@ -206,45 +207,55 @@ VALUES (?1, ?2, ?3, ?4, ?5);
 
     pub fn upsert_tag(&self, tag: &Tag, last_modified: DateTime<Utc>) -> AssetResult<()> {
         let mut conn = self.conn.lock();
-
-        let needs_update = {
-            let result = conn.query_row(
-                r#"
-INSERT INTO tags (tag_id, name, last_modified)
-VALUES (?1, ?2, ?3)
-ON CONFLICT(tag_id) DO UPDATE SET
-    name = excluded.name,
-    last_modified = excluded.last_modified
-WHERE tags.last_modified IS NOT excluded.last_modified
-RETURNING 0;
-                "#,
-                params![tag.id(), tag.name(), last_modified,],
-                |_| Ok(()),
-            );
-            match result {
-                Ok(_) => true,
-                Err(rusqlite::Error::QueryReturnedNoRows) => false,
-                Err(e) => return Err(e.into()),
-            }
-        };
-
-        if !needs_update {
-            return Ok(());
-        }
-
         let tx = conn.transaction()?;
 
-        tx.execute(
-            "DELETE FROM asset_tags WHERE tag_id = ?1",
-            params![tag.id()],
-        )?;
+        let stored_tag = tx
+            .query_row(
+                "SELECT asset_ty, last_modified FROM tags WHERE tag_id = ?1",
+                params![tag.id()],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, DateTime<Utc>>(1)?,
+                    ))
+                },
+            )
+            .optional()?;
 
-        for asset_id in tag.assets() {
-            println!("Associating asset {} with tag {}", asset_id, tag.name());
-            tx.execute(
-                "INSERT INTO asset_tags (asset_id, tag_id) VALUES (?1, ?2)",
-                params![asset_id, tag.id()],
-            )?;
+        match stored_tag {
+            None => {
+                tx.execute(
+                    r#"
+INSERT INTO tags (tag_id, name, asset_ty, last_modified)
+VALUES (?1, ?2, ?3, ?4);
+                    "#,
+                    params![tag.id(), tag.name(), tag.asset_ty(), last_modified],
+                )?;
+            }
+            Some((stored_asset_ty, stored_last_modified)) => {
+                if stored_asset_ty.as_deref() != tag.asset_ty() {
+                    return Err(AssetError::TagAssetTypeChanged {
+                        tag_id: tag.id().clone(),
+                        current_asset_ty: stored_asset_ty,
+                        new_asset_ty: tag.asset_ty().map(str::to_string),
+                    }
+                    .into());
+                }
+
+                if stored_last_modified == last_modified {
+                    tx.commit()?;
+                    return Ok(());
+                }
+
+                tx.execute(
+                    r#"
+UPDATE tags
+SET name = ?2, last_modified = ?3
+WHERE tag_id = ?1;
+                    "#,
+                    params![tag.id(), tag.name(), last_modified],
+                )?;
+            }
         }
 
         tx.commit()?;
@@ -722,126 +733,88 @@ mod tests {
     }
 
     #[test]
-    fn tags_are_upserted_and_filter_assets() -> AssetResult<()> {
+    fn tags_are_upserted_without_changing_asset_type() -> AssetResult<()> {
         let db = AssetIndexDb::open_in_memory()?;
-        let first_bundle_id = BundleId::new(Uuid::from_u128(50));
-        let second_bundle_id = BundleId::new(Uuid::from_u128(51));
         let last_modified = Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+        let mut tag = Tag::new(
+            "Original".to_string(),
+            Some(TestAsset::TYPE_NAME.to_string()),
+        );
 
-        for bundle in [
-            AssetBundleMetadata {
-                bundle_id: first_bundle_id,
-                name: "First".to_string(),
-                last_modified,
-            },
-            AssetBundleMetadata {
-                bundle_id: second_bundle_id,
-                name: "Second".to_string(),
-                last_modified,
-            },
-        ] {
-            db.upsert_bundle(&bundle)?;
-        }
-
-        let first_id = UntypedAssetId::new(Uuid::from_u128(60));
-        let second_id = UntypedAssetId::new(Uuid::from_u128(61));
-        let third_id = UntypedAssetId::new(Uuid::from_u128(62));
-        for asset in [
-            AssetMetadata {
-                asset_id: first_id,
-                ty: TestAsset::TYPE_NAME.to_string(),
-                bundle_id: first_bundle_id,
-                relative_path: "a.asset".to_string(),
-                revision: 0,
-                last_modified,
-                in_memory: false,
-            },
-            AssetMetadata {
-                asset_id: second_id,
-                ty: OtherAsset::TYPE_NAME.to_string(),
-                bundle_id: first_bundle_id,
-                relative_path: "b.asset".to_string(),
-                revision: 0,
-                last_modified,
-                in_memory: false,
-            },
-            AssetMetadata {
-                asset_id: third_id,
-                ty: TestAsset::TYPE_NAME.to_string(),
-                bundle_id: second_bundle_id,
-                relative_path: "c.asset".to_string(),
-                revision: 0,
-                last_modified,
-                in_memory: false,
-            },
-        ] {
-            db.add_asset(&asset)?;
-        }
-
-        let mut tag = Tag::new("Selected".to_string());
-        tag.add_asset(first_id);
-        tag.add_asset(second_id);
         db.upsert_tag(&tag, last_modified)?;
 
-        let tagged = db.get_assets(UntypedAssetFilter {
-            tag: Some(tag.id().clone()),
-            ..Default::default()
-        })?;
-        assert_eq!(
-            tagged
-                .iter()
-                .map(|asset| asset.asset_id)
-                .collect::<Vec<_>>(),
-            vec![first_id, second_id]
-        );
-
-        let typed = db.get_assets(
-            AssetFilter::<TestAsset>::new()
-                .with_tag(tag.id().clone())
-                .into_untyped(),
+        let stored = db.conn.lock().query_row(
+            "SELECT name, asset_ty, last_modified FROM tags WHERE tag_id = ?1",
+            params![tag.id()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, DateTime<Utc>>(2)?,
+                ))
+            },
         )?;
-        assert_eq!(typed.len(), 1);
-        assert_eq!(typed[0].asset_id, first_id);
+        assert_eq!(stored.0, "Original");
+        assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
+        assert_eq!(stored.2, last_modified);
 
-        tag.remove_asset(&first_id);
-        tag.add_asset(third_id);
-        tag.set_name("Changed".to_string());
+        tag.set_name("Ignored".to_string());
         db.upsert_tag(&tag, last_modified)?;
-
-        let unchanged = db.get_assets(UntypedAssetFilter {
-            tag: Some(tag.id().clone()),
-            ..Default::default()
-        })?;
-        assert_eq!(
-            unchanged
-                .iter()
-                .map(|asset| asset.asset_id)
-                .collect::<Vec<_>>(),
-            vec![first_id, second_id]
-        );
-
-        db.upsert_tag(&tag, Utc.with_ymd_and_hms(2026, 4, 2, 0, 0, 0).unwrap())?;
-
-        let changed = db.get_assets(UntypedAssetFilter {
-            tag: Some(tag.id().clone()),
-            ..Default::default()
-        })?;
-        assert_eq!(
-            changed
-                .iter()
-                .map(|asset| asset.asset_id)
-                .collect::<Vec<_>>(),
-            vec![second_id, third_id]
-        );
-
-        let typed_in_second_bundle = db.get_assets(
-            AssetFilter::<TestAsset>::new()
-                .with_tag(tag.id().clone())
-                .with_bundle(second_bundle_id)
-                .into_untyped(),
+        let stored_name = db.conn.lock().query_row(
+            "SELECT name FROM tags WHERE tag_id = ?1",
+            params![tag.id()],
+            |row| row.get::<_, String>(0),
         )?;
-        assert_eq!(typed_in_second_bundle.len(), 1);
-        assert_eq!(typed_in_second_bundle[0].asset_id, third_id);
+        assert_eq!(stored_name, "Original");
+
+        let updated_at = Utc.with_ymd_and_hms(2026, 4, 2, 0, 0, 0).unwrap();
+        db.upsert_tag(&tag, updated_at)?;
+        let stored = db.conn.lock().query_row(
+            "SELECT name, asset_ty, last_modified FROM tags WHERE tag_id = ?1",
+            params![tag.id()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, DateTime<Utc>>(2)?,
+                ))
+            },
+        )?;
+        assert_eq!(stored.0, "Ignored");
+        assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
+        assert_eq!(stored.2, updated_at);
+
+        let changed_asset_ty_tag: Tag = toml::from_str(&format!(
+            r#"
+tag_id = "{}"
+name = "Changed type"
+asset_ty = "{}"
+            "#,
+            tag.id(),
+            OtherAsset::TYPE_NAME,
+        ))?;
+        assert!(
+            db.upsert_tag(
+                &changed_asset_ty_tag,
+                Utc.with_ymd_and_hms(2026, 4, 3, 0, 0, 0).unwrap(),
+            )
+            .is_err()
+        );
+
+        let stored = db.conn.lock().query_row(
+            "SELECT name, asset_ty, last_modified FROM tags WHERE tag_id = ?1",
+            params![tag.id()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, DateTime<Utc>>(2)?,
+                ))
+            },
+        )?;
+        assert_eq!(stored.0, "Ignored");
+        assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
+        assert_eq!(stored.2, updated_at);
 
         Ok(())
     }

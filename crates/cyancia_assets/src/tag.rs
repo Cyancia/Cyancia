@@ -5,10 +5,7 @@ use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    asset::{Asset, UntypedAssetId},
-    loader::AssetSerializer,
-};
+use crate::{asset::Asset, loader::AssetSerializer};
 
 wrapper! {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
@@ -32,7 +29,7 @@ impl rusqlite::types::ToSql for TagId {
 pub struct Tag {
     tag_id: TagId,
     name: String,
-    assets: Vec<UntypedAssetId>,
+    asset_ty: Option<String>,
 }
 
 impl Asset for Tag {
@@ -40,11 +37,11 @@ impl Asset for Tag {
 }
 
 impl Tag {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, asset_ty: Option<String>) -> Self {
         Self {
             tag_id: TagId::new(Uuid::new_v4()),
             name,
-            assets: Vec::new(),
+            asset_ty,
         }
     }
 
@@ -60,18 +57,8 @@ impl Tag {
         self.name = name;
     }
 
-    pub fn assets(&self) -> &[UntypedAssetId] {
-        &self.assets
-    }
-
-    pub fn add_asset(&mut self, asset_id: UntypedAssetId) {
-        if !self.assets.contains(&asset_id) {
-            self.assets.push(asset_id);
-        }
-    }
-
-    pub fn remove_asset(&mut self, asset_id: &UntypedAssetId) {
-        self.assets.retain(|id| id != asset_id);
+    pub fn asset_ty(&self) -> Option<&str> {
+        self.asset_ty.as_deref()
     }
 }
 

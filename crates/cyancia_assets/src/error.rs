@@ -5,7 +5,7 @@ use std::{
     path::{PathBuf, StripPrefixError},
 };
 
-use crate::{asset::UntypedAssetId, bundle::BundleId};
+use crate::{asset::UntypedAssetId, bundle::BundleId, tag::TagId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssetError {
@@ -17,6 +17,14 @@ pub enum AssetError {
     BundleNotFound(BundleId),
     #[error("No serializer found for asset extension: {0}")]
     SerializerNotFound(String),
+    #[error(
+        "Asset type restriction for tag {tag_id} cannot be changed from {current_asset_ty:?} to {new_asset_ty:?}"
+    )]
+    TagAssetTypeChanged {
+        tag_id: TagId,
+        current_asset_ty: Option<String>,
+        new_asset_ty: Option<String>,
+    },
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Zip error: {0}")]
