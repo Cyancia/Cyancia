@@ -368,6 +368,73 @@ mod tests {
     }
 
     #[test]
+    fn bundle_sync_does_not_restore_deleted_assets() -> AssetResult<()> {
+        let root = temp_root("deleted-asset-sync");
+        let bundle_root = root.join("asset-bundle");
+        std::fs::create_dir_all(&bundle_root)?;
+        std::fs::write(bundle_root.join("sample.storetest"), "9")?;
+
+        let mut builder = registry_builder(&root);
+        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)));
+        let mut registry = builder.try_build()?;
+
+        let handle = registry.all_handles_of::<TestAsset>()?.remove(0);
+        let asset_id = handle.untyped_id();
+        handle.delete()?;
+
+        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root));
+        registry.add_erased_bundles([bundle])?;
+
+        assert!(registry.all_handles_of::<TestAsset>()?.is_empty());
+        let deleted = registry.index_db().get_assets(UntypedAssetFilter {
+            is_deleted: true,
+            ..Default::default()
+        })?;
+        assert_eq!(deleted.len(), 1);
+        assert_eq!(deleted[0].asset_id, asset_id);
+
+        drop(handle);
+        drop(registry);
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bundle_sync_keeps_active_assets_and_removes_missing_assets() -> AssetResult<()> {
+        let root = temp_root("missing-asset-sync");
+        let bundle_root = root.join("asset-bundle");
+        std::fs::create_dir_all(&bundle_root)?;
+        std::fs::write(bundle_root.join("retained.storetest"), "1")?;
+        std::fs::write(bundle_root.join("removed.storetest"), "2")?;
+
+        let mut builder = registry_builder(&root);
+        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)));
+        let mut registry = builder.try_build()?;
+        assert_eq!(registry.all_handles_of::<TestAsset>()?.len(), 2);
+
+        std::fs::remove_file(bundle_root.join("removed.storetest"))?;
+        std::fs::remove_file(bundle_root.join("manifest.toml"))?;
+        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root));
+        registry.add_erased_bundles([bundle])?;
+
+        let active = registry
+            .index_db()
+            .get_assets(UntypedAssetFilter::default())?;
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].relative_path, "retained.storetest");
+
+        let deleted = registry.index_db().get_assets(UntypedAssetFilter {
+            is_deleted: true,
+            ..Default::default()
+        })?;
+        assert!(deleted.is_empty());
+
+        drop(registry);
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn corrupt_sidecar_does_not_advance_bundle_metadata() -> AssetResult<()> {
         let root = temp_root("corrupt-sidecar");
         let bundle_root = root.join("asset-bundle");

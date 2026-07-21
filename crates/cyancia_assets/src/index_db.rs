@@ -1,4 +1,4 @@
-use std::{fs::File, marker::PhantomData, path::Path};
+use std::{collections::BTreeMap, fs::File, marker::PhantomData, path::Path};
 
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS asset_tags (
         let tx = conn.transaction()?;
 
         for bundle in bundles {
+            // bundle
             tx.execute(
                 r#"
 INSERT INTO bundles (bundle_id, name, last_modified)
@@ -188,55 +189,67 @@ ON CONFLICT(bundle_id) DO UPDATE SET
                 ],
             )?;
 
-            tx.execute(
-                "UPDATE assets SET is_deleted = 1 WHERE bundle_id = ?1",
-                params![bundle.metadata.bundle_id],
-            )?;
+            // assets
 
+            let mut asset_revisions = BTreeMap::<UntypedAssetId, Vec<&AssetMetadata>>::new();
             for asset in &bundle.assets {
-                tx.execute(
-                    r#"
-DELETE FROM asset_revisions
-WHERE asset_id = ?1
-  AND EXISTS (
-      SELECT 1 FROM assets
-      WHERE asset_id = ?1 AND is_deleted = 1
-  );
-                    "#,
-                    params![asset.asset_id],
-                )?;
+                asset_revisions
+                    .entry(asset.asset_id)
+                    .or_default()
+                    .push(asset);
+            }
+
+            for (asset_id, revisions) in &asset_revisions {
+                let Some(asset) = revisions.first() else {
+                    continue;
+                };
                 tx.execute(
                     r#"
 INSERT INTO assets (asset_id, ty, bundle_id, is_deleted)
 VALUES (?1, ?2, ?3, 0)
 ON CONFLICT(asset_id) DO UPDATE SET
     ty = excluded.ty,
-    bundle_id = excluded.bundle_id,
-    is_deleted = 0;
+    bundle_id = excluded.bundle_id;
                     "#,
                     params![asset.asset_id, asset.ty, asset.bundle_id],
                 )?;
-                tx.execute(
-                    r#"
-INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
-VALUES (?1, ?2, ?3, ?4, ?5)
-ON CONFLICT(asset_id, revision) DO UPDATE SET
-    relative_path = excluded.relative_path,
-    last_modified = excluded.last_modified,
-    in_memory = excluded.in_memory;
-                    "#,
-                    params![
-                        asset.asset_id,
-                        asset.revision,
-                        asset.relative_path,
-                        asset.last_modified,
-                        asset.in_memory as i64,
-                    ],
-                )?;
-            }
-        }
 
-        for bundle in bundles {
+                tx.execute(
+                    "DELETE FROM asset_revisions WHERE asset_id = ?1",
+                    params![asset_id],
+                )?;
+                for revision in revisions {
+                    tx.execute(
+                        r#"
+INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
+VALUES (?1, ?2, ?3, ?4, ?5);
+                        "#,
+                        params![
+                            revision.asset_id,
+                            revision.revision,
+                            revision.relative_path,
+                            revision.last_modified,
+                            revision.in_memory as i64,
+                        ],
+                    )?;
+                }
+            }
+
+            let stored_asset_ids = {
+                let mut statement =
+                    tx.prepare("SELECT asset_id FROM assets WHERE bundle_id = ?1")?;
+                statement
+                    .query_map(params![bundle.metadata.bundle_id], |row| row.get(0))?
+                    .collect::<Result<Vec<UntypedAssetId>, _>>()?
+            };
+            for asset_id in stored_asset_ids {
+                if !asset_revisions.contains_key(&asset_id) {
+                    tx.execute("DELETE FROM assets WHERE asset_id = ?1", params![asset_id])?;
+                }
+            }
+
+            // tags
+
             for tag in &bundle.tags {
                 tx.execute(
                     r#"
@@ -255,9 +268,8 @@ ON CONFLICT(id) DO UPDATE SET
                     ],
                 )?;
             }
-        }
 
-        for bundle in bundles {
+            // asset tags
             tx.execute(
                 r#"
 DELETE FROM asset_tags
