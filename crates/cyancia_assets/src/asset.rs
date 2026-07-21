@@ -1,4 +1,4 @@
-use std::{hash::Hash, marker::PhantomData, sync::Arc};
+use std::{collections::BTreeSet, hash::Hash, marker::PhantomData, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use cyancia_utils::wrapper;
@@ -238,15 +238,40 @@ impl<T: Asset> AssetHandle<T> {
         Ok(())
     }
 
+    pub fn read_tags(&self) -> AssetResult<BTreeSet<TagId>> {
+        Ok(self.bundle.read_asset_tags(&self.untyped_id())?.tags)
+    }
+
     pub fn add_tag(&self, tag_id: &TagId) -> AssetResult<()> {
-        self.index_db.add_tag_to_asset(&self.untyped_id(), tag_id)?;
-        Ok(())
+        let asset_id = self.untyped_id();
+        let mut tags = self.read_tags()?;
+        if !tags.insert(tag_id.clone()) {
+            return Err(AssetError::TagAlreadyAssigned {
+                asset_id,
+                tag_id: tag_id.clone(),
+            }
+            .into());
+        }
+
+        let tags = tags.into_iter().collect::<Vec<_>>();
+        self.bundle.write_asset_tags(&asset_id, &tags)?;
+        self.index_db.add_tag_to_asset(&asset_id, tag_id)
     }
 
     pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
-        self.index_db
-            .remove_tag_from_asset(&self.untyped_id(), tag_id)?;
-        Ok(())
+        let asset_id = self.untyped_id();
+        let mut tags = self.read_tags()?;
+        if !tags.remove(tag_id) {
+            return Err(AssetError::TagNotAssigned {
+                asset_id,
+                tag_id: tag_id.clone(),
+            }
+            .into());
+        }
+
+        let tags = tags.into_iter().collect::<Vec<_>>();
+        self.bundle.write_asset_tags(&asset_id, &tags)?;
+        self.index_db.remove_tag_from_asset(&asset_id, tag_id)
     }
 
     pub fn metadata(&self) -> AssetResult<AssetMetadata> {

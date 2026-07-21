@@ -108,12 +108,8 @@ impl AssetRegistry {
     fn scan_bundle(&self, bundle: Arc<dyn ErasedAssetBundle>) -> AssetResult<BundleSnapshot> {
         let metadata = bundle.metadata().map_err(AssetError::BundleError)?;
         let manifest = bundle.manifest().map_err(AssetError::BundleError)?;
-        let assets = scan_bundle_assets(
-            &self.root,
-            metadata.clone(),
-            &manifest,
-            &self.serializers,
-        )?;
+        let assets =
+            scan_bundle_assets(&self.root, metadata.clone(), &manifest, &self.serializers)?;
         let tags = scan_tags(bundle.as_ref(), &manifest)?;
         let asset_tags = scan_asset_tags(
             self.root.as_path(),
@@ -314,19 +310,27 @@ mod tests {
 
         let handles = registry.all_handles_of::<TestAsset>()?;
         assert_eq!(handles.len(), 1);
-        assert_eq!(
-            handles[0]
-                .bundle()
-                .read_asset_tags(&handles[0].untyped_id())?
-                .tags,
-            BTreeSet::from([tag.id.clone()])
+        let handle = &handles[0];
+        assert_eq!(handle.read_tags()?, BTreeSet::from([tag.id.clone()]));
+
+        handle.remove_tag(&tag.id)?;
+        assert!(handle.read_tags()?.is_empty());
+        assert!(
+            registry
+                .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(tag.id.clone()))?
+                .is_empty()
         );
+        assert!(handle.remove_tag(&tag.id).is_err());
+
+        handle.add_tag(&tag.id)?;
+        assert_eq!(handle.read_tags()?, BTreeSet::from([tag.id.clone()]));
         assert_eq!(
             registry
                 .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(tag.id.clone()))?
                 .len(),
             1
         );
+        assert!(handle.add_tag(&tag.id).is_err());
 
         drop(handles);
         drop(registry);
