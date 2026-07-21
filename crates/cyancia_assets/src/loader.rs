@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -49,6 +49,13 @@ impl AssetRegistryBuilder {
         }
         let mut registry = AssetRegistry::new(&self.root, serializers.into())?;
         registry.add_erased_bundles(self.bundles)?;
+        let loaded_bundle_ids = registry
+            .bundles()
+            .map(|bundle| bundle.metadata().bundle_id)
+            .collect::<HashSet<_>>();
+        registry
+            .index_db()
+            .remove_unloaded_bundles(&loaded_bundle_ids)?;
         Ok(registry)
     }
 }

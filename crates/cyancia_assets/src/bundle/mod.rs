@@ -20,7 +20,7 @@ use crate::{
     asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
     error::{AssetError, AssetResult},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
-    tag::{ASSET_TAGS_EXT, AssetTags, TAG_EXT, TagFile, TagId},
+    tag::{ASSET_TAGS_EXT, AssetTags, TAG_EXT, Tag, TagFile, TagId},
 };
 
 pub mod directory;
@@ -56,7 +56,7 @@ pub(crate) struct BundleSnapshot {
     pub metadata: AssetBundleMetadata,
     pub manifest: BundleManifest,
     pub assets: Vec<AssetMetadata>,
-    pub tags: Vec<TagFile>,
+    pub tags: Vec<Tag>,
     pub asset_tags: HashMap<UntypedAssetId, AssetTags>,
 }
 
@@ -224,12 +224,12 @@ impl AssetBundleCache {
         Ok(asset)
     }
 
-    pub fn add_tag(&self, path: impl AsRef<Path>, tag: TagFile) -> AssetResult<()> {
-        let path = path.as_ref().clean();
+    pub fn add_tag(&self, tag: &Tag) -> AssetResult<()> {
+        let path = PathBuf::from(&tag.relative_path).clean();
         self.bundle
-            .add_tag(&path, &tag)
+            .add_tag(&path, &TagFile::from(tag.clone()))
             .map_err(AssetError::BundleError)?;
-        self.manifest.write().tags.insert(tag.id, path);
+        self.manifest.write().tags.insert(tag.id.clone(), path);
         Ok(())
     }
 
@@ -751,7 +751,13 @@ mod tests {
         assert!(cache.read_asset_tags(&asset_id)?.tags.is_empty());
         assert!(
             cache
-                .add_tag("new.ctag", TagFile::new("New".to_string(), None))
+                .add_tag(&Tag {
+                    id: TagId::new(Uuid::new_v4()),
+                    bundle_id,
+                    relative_path: "new.ctag".to_string(),
+                    name: "New".to_string(),
+                    asset_ty: None,
+                })
                 .is_err()
         );
 

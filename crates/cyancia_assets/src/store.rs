@@ -6,6 +6,7 @@ use std::{
 
 use chrono::Utc;
 use gpui::Global;
+use path_clean::PathClean;
 
 use crate::{
     asset::{Asset, AssetHandle, AssetId, AssetMetadata, ErasedAsset, UntypedAssetId},
@@ -16,7 +17,7 @@ use crate::{
     error::{AssetError, AssetResult},
     index_db::{AssetFilter, AssetIndexDb, TagFilter, UntypedAssetFilter},
     loader::AssetSerializerRegistry,
-    tag::{AssetTags, Tag, TagFile, TagId},
+    tag::{AssetTags, Tag, TagId},
 };
 
 pub struct AssetRegistry {
@@ -110,7 +111,7 @@ impl AssetRegistry {
         let manifest = bundle.manifest().map_err(AssetError::BundleError)?;
         let assets =
             scan_bundle_assets(&self.root, metadata.clone(), &manifest, &self.serializers)?;
-        let tags = scan_tags(bundle.as_ref(), &manifest)?;
+        let tags = scan_tags(bundle.as_ref(), &manifest, metadata.bundle_id)?;
         let asset_tags = scan_asset_tags(
             self.root.as_path(),
             &metadata.bundle_id,
@@ -178,17 +179,16 @@ impl AssetRegistry {
         self.index_db.get_tags(filter)
     }
 
-    pub fn add_tag(
-        &self,
-        bundle_id: &BundleId,
-        path: impl AsRef<Path>,
-        tag: Tag,
-    ) -> AssetResult<()> {
+    pub fn add_tag(&self, mut tag: Tag) -> AssetResult<()> {
         let bundle = self
             .bundles
-            .get(bundle_id)
-            .ok_or_else(|| AssetError::BundleNotFound(*bundle_id))?;
-        bundle.add_tag(path, TagFile::from(tag.clone()))?;
+            .get(&tag.bundle_id)
+            .ok_or_else(|| AssetError::BundleNotFound(tag.bundle_id))?;
+        tag.relative_path = PathBuf::from(&tag.relative_path)
+            .clean()
+            .to_string_lossy()
+            .replace('\\', "/");
+        bundle.add_tag(&tag)?;
         self.index_db.add_tag(tag)
     }
 
@@ -217,11 +217,21 @@ impl AssetRegistry {
 fn scan_tags(
     bundle: &dyn ErasedAssetBundle,
     manifest: &BundleManifest,
-) -> AssetResult<Vec<TagFile>> {
+    bundle_id: BundleId,
+) -> AssetResult<Vec<Tag>> {
     manifest
         .tags
         .values()
-        .map(|path| read_tag_file(path, bundle))
+        .map(|path| {
+            let tag = read_tag_file(path, bundle)?;
+            Ok(Tag {
+                id: tag.id,
+                bundle_id,
+                relative_path: path.to_string_lossy().replace('\\', "/"),
+                name: tag.name,
+                asset_ty: tag.asset_ty,
+            })
+        })
         .collect()
 }
 
@@ -257,6 +267,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::tag::TagFile;
     use crate::{
         bundle::directory::AssetDirectory,
         loader::{AssetRegistryBuilder, AssetSerializer},
@@ -321,10 +332,18 @@ mod tests {
         let assets_bundle_id = AssetBundle::metadata(&assets_bundle)
             .map_err(|error| AssetError::BundleError(Box::new(error)))?
             .bundle_id;
+        let tags_bundle = AssetDirectory::new(&tags_root);
+        let tags_bundle_id = AssetBundle::metadata(&tags_bundle)
+            .map_err(|error| AssetError::BundleError(Box::new(error)))?
+            .bundle_id;
         let mut builder = registry_builder(&root);
         builder.add_bundle(Arc::new(assets_bundle));
-        builder.add_bundle(Arc::new(AssetDirectory::new(&tags_root)));
+        builder.add_bundle(Arc::new(tags_bundle));
         let registry = builder.try_build()?;
+
+        let stored_tag = registry.index_db().get_tag(tag.id.clone())?;
+        assert_eq!(stored_tag.bundle_id, tags_bundle_id);
+        assert_eq!(stored_tag.relative_path, "test.ctag");
 
         let handles = registry.all_handles_of::<TestAsset>()?;
         assert_eq!(handles.len(), 1);
@@ -352,16 +371,97 @@ mod tests {
 
         let added_tag = Tag {
             id: TagId::new(Uuid::new_v4()),
+            bundle_id: assets_bundle_id,
+            relative_path: "runtime/added.ctag".to_string(),
             name: "Added at runtime".to_string(),
             asset_ty: None,
         };
-        registry.add_tag(&assets_bundle_id, "runtime/added.ctag", added_tag.clone())?;
+        registry.add_tag(added_tag.clone())?;
         assert!(assets_root.join("runtime/added.ctag").is_file());
         let stored_tag = registry.index_db().get_tag(added_tag.id.clone())?;
+        assert_eq!(stored_tag.bundle_id, added_tag.bundle_id);
+        assert_eq!(stored_tag.relative_path, added_tag.relative_path);
         assert_eq!(stored_tag.name, added_tag.name);
         assert_eq!(stored_tag.asset_ty, added_tag.asset_ty);
 
         drop(handles);
+        drop(registry);
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bundle_sync_removes_tags_missing_from_disk() -> AssetResult<()> {
+        let root = temp_root("missing-tag-sync");
+        let bundle_root = root.join("tag-bundle");
+        std::fs::create_dir_all(&bundle_root)?;
+        let tag = TagFile::new("Removed tag".to_string(), None);
+        std::fs::write(bundle_root.join("removed.ctag"), toml::to_string(&tag)?)?;
+
+        let mut builder = registry_builder(&root);
+        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)));
+        let mut registry = builder.try_build()?;
+        assert_eq!(
+            registry.index_db().get_tag(tag.id.clone())?.relative_path,
+            "removed.ctag"
+        );
+
+        std::fs::remove_file(bundle_root.join("removed.ctag"))?;
+        std::fs::remove_file(bundle_root.join("manifest.toml"))?;
+        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root));
+        registry.add_erased_bundles([bundle])?;
+
+        assert!(registry.index_db().get_tag(tag.id.clone()).is_err());
+        assert!(registry.index_db().restore_tag(&tag.id).is_err());
+
+        drop(registry);
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_tag_ids_across_bundles_are_rejected() -> AssetResult<()> {
+        let root = temp_root("duplicate-tag-id");
+        let first_root = root.join("first-tags");
+        let second_root = root.join("second-tags");
+        std::fs::create_dir_all(&first_root)?;
+        std::fs::create_dir_all(&second_root)?;
+        let tag = TagFile::new("Duplicate".to_string(), None);
+        let serialized = toml::to_string(&tag)?;
+        std::fs::write(first_root.join("first.ctag"), &serialized)?;
+        std::fs::write(second_root.join("second.ctag"), serialized)?;
+
+        let mut builder = registry_builder(&root);
+        builder.add_bundle(Arc::new(AssetDirectory::new(&first_root)));
+        builder.add_bundle(Arc::new(AssetDirectory::new(&second_root)));
+        assert!(builder.try_build().is_err());
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn startup_removes_tags_from_unloaded_bundles() -> AssetResult<()> {
+        let root = temp_root("unloaded-tag-bundle");
+        let bundle_root = root.join("tag-bundle");
+        std::fs::create_dir_all(&bundle_root)?;
+        let tag = TagFile::new("Unloaded tag".to_string(), None);
+        std::fs::write(bundle_root.join("unloaded.ctag"), toml::to_string(&tag)?)?;
+        let bundle = AssetDirectory::new(&bundle_root);
+        let bundle_id = AssetBundle::metadata(&bundle)
+            .map_err(|error| AssetError::BundleError(Box::new(error)))?
+            .bundle_id;
+
+        let mut builder = registry_builder(&root);
+        builder.add_bundle(Arc::new(bundle));
+        let registry = builder.try_build()?;
+        assert!(registry.index_db().get_tag(tag.id.clone()).is_ok());
+        drop(registry);
+
+        let registry = registry_builder(&root).try_build()?;
+        assert!(registry.index_db().get_tag(tag.id).is_err());
+        assert!(registry.index_db().get_bundle(&bundle_id).is_err());
+
         drop(registry);
         std::fs::remove_dir_all(root)?;
         Ok(())

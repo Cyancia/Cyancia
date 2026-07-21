@@ -5,6 +5,8 @@ use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::bundle::BundleId;
+
 wrapper! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Display)]
     #[display("{0}")]
@@ -26,6 +28,8 @@ impl rusqlite::types::ToSql for TagId {
 #[derive(Debug, Clone)]
 pub struct Tag {
     pub id: TagId,
+    pub bundle_id: BundleId,
+    pub relative_path: String,
     pub name: String,
     pub asset_ty: Option<String>,
 }
