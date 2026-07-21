@@ -139,7 +139,10 @@ CREATE TABLE IF NOT EXISTS tags (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     asset_ty TEXT,
-    last_modified TEXT NOT NULL
+    last_modified TEXT NOT NULL,
+    is_deleted INTEGER NOT NULL,
+
+    CHECK (is_deleted IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS asset_tags (
@@ -240,12 +243,13 @@ ON CONFLICT(asset_id, revision) DO UPDATE SET
 
         let stored_tag = tx
             .query_row(
-                "SELECT asset_ty, last_modified FROM tags WHERE id = ?1",
+                "SELECT asset_ty, last_modified, is_deleted FROM tags WHERE id = ?1",
                 params![tag.id],
                 |row| {
                     Ok((
                         row.get::<_, Option<String>>(0)?,
                         row.get::<_, DateTime<Utc>>(1)?,
+                        row.get::<_, bool>(2)?,
                     ))
                 },
             )
@@ -255,13 +259,18 @@ ON CONFLICT(asset_id, revision) DO UPDATE SET
             None => {
                 tx.execute(
                     r#"
-INSERT INTO tags (id, name, asset_ty, last_modified)
-VALUES (?1, ?2, ?3, ?4);
+INSERT INTO tags (id, name, asset_ty, last_modified, is_deleted)
+VALUES (?1, ?2, ?3, ?4, 0);
                     "#,
                     params![tag.id, tag.name, tag.asset_ty, last_modified],
                 )?;
             }
-            Some((stored_asset_ty, stored_last_modified)) => {
+            Some((stored_asset_ty, stored_last_modified, is_deleted)) => {
+                if is_deleted {
+                    tx.commit()?;
+                    return Ok(());
+                }
+
                 if stored_asset_ty != tag.asset_ty {
                     return Err(AssetError::TagAssetTypeChanged {
                         tag_id: tag.id.clone(),
@@ -294,7 +303,7 @@ WHERE id = ?1;
     pub fn get_tag(&self, tag_id: TagId) -> AssetResult<Tag> {
         let conn = self.conn.lock();
         let tag = conn.query_row(
-            "SELECT id, name, asset_ty FROM tags WHERE id = ?1",
+            "SELECT id, name, asset_ty FROM tags WHERE id = ?1 AND is_deleted = 0",
             params![tag_id],
             |row| {
                 Ok(Tag {
@@ -319,9 +328,12 @@ WHERE id = ?1;
             r#"
 SELECT id, name, asset_ty
 FROM tags
-WHERE ?1 = 0
-    OR (?1 = 1 AND asset_ty IS NULL)
-    OR (?1 = 2 AND asset_ty = ?2)
+WHERE is_deleted = 0
+    AND (
+        ?1 = 0
+        OR (?1 = 1 AND asset_ty IS NULL)
+        OR (?1 = 2 AND asset_ty = ?2)
+    )
 ORDER BY name ASC, id ASC;
             "#,
         )?;
@@ -336,9 +348,12 @@ ORDER BY name ASC, id ASC;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
+    pub fn delete_tag(&self, tag_id: &TagId) -> AssetResult<()> {
         let conn = self.conn.lock();
-        let deleted = conn.execute("DELETE FROM tags WHERE id = ?1", params![tag_id])?;
+        let deleted = conn.execute(
+            "UPDATE tags SET is_deleted = 1 WHERE id = ?1 AND is_deleted = 0",
+            params![tag_id],
+        )?;
         if deleted == 0 {
             return Err(AssetError::TagNotFound(tag_id.clone()).into());
         }
@@ -460,7 +475,17 @@ JOIN assets a ON a.asset_id = l.asset_id
 WHERE l.ord = 1
     AND a.is_deleted = 0
     AND (?1 IS NULL OR a.ty = ?1)
-    AND (?2 IS NULL OR a.asset_id IN (SELECT asset_id FROM asset_tags WHERE tag_id = ?2))
+    AND (
+        ?2 IS NULL
+        OR EXISTS (
+            SELECT 1
+            FROM asset_tags at
+            JOIN tags t ON t.id = at.tag_id
+            WHERE at.asset_id = a.asset_id
+                AND at.tag_id = ?2
+                AND t.is_deleted = 0
+        )
+    )
     AND (?3 IS NULL OR a.bundle_id = ?3)
 ORDER BY l.relative_path ASC;
             "#,
@@ -585,7 +610,7 @@ RETURNING revision;
             .ok_or_else(|| AssetError::AssetNotFound(*asset_id))?;
         let tag_asset_ty = tx
             .query_row(
-                "SELECT asset_ty FROM tags WHERE id = ?1",
+                "SELECT asset_ty FROM tags WHERE id = ?1 AND is_deleted = 0",
                 params![tag_id],
                 |row| row.get::<_, Option<String>>(0),
             )
@@ -629,8 +654,19 @@ ON CONFLICT DO NOTHING;
         asset_id: &UntypedAssetId,
         tag_id: &TagId,
     ) -> AssetResult<()> {
-        let conn = self.conn.lock();
-        let deleted = conn.execute(
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+
+        let tag_exists = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tags WHERE id = ?1 AND is_deleted = 0)",
+            params![tag_id],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !tag_exists {
+            return Err(AssetError::TagNotFound(tag_id.clone()).into());
+        }
+
+        let deleted = tx.execute(
             "DELETE FROM asset_tags WHERE asset_id = ?1 AND tag_id = ?2",
             params![asset_id, tag_id],
         )?;
@@ -642,6 +678,7 @@ ON CONFLICT DO NOTHING;
             .into());
         }
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -940,19 +977,21 @@ mod tests {
         db.upsert_tag(&tag, last_modified)?;
 
         let stored = db.conn.lock().query_row(
-            "SELECT name, asset_ty, last_modified FROM tags WHERE id = ?1",
+            "SELECT name, asset_ty, last_modified, is_deleted FROM tags WHERE id = ?1",
             params![tag.id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, Option<String>>(1)?,
                     row.get::<_, DateTime<Utc>>(2)?,
+                    row.get::<_, bool>(3)?,
                 ))
             },
         )?;
         assert_eq!(stored.0, "Original");
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, last_modified);
+        assert!(!stored.3);
 
         tag.name = "Ignored".to_string();
         db.upsert_tag(&tag, last_modified)?;
@@ -1116,15 +1155,50 @@ asset_ty = "{}"
             .is_empty()
         );
 
-        db.remove_tag(&untyped_tag.id)?;
+        db.delete_tag(&untyped_tag.id)?;
+
         assert!(db.get_tag(untyped_tag.id.clone()).is_err());
-        let association_count = db.conn.lock().query_row(
-            "SELECT COUNT(*) FROM asset_tags WHERE tag_id = ?1",
-            params![untyped_tag.id],
-            |row| row.get::<_, u32>(0),
+        assert!(
+            db.get_tags(TagFilter::default())?
+                .iter()
+                .all(|tag| tag.id != untyped_tag.id)
+        );
+        assert!(
+            db.get_assets(UntypedAssetFilter {
+                tag: Some(untyped_tag.id.clone()),
+                ..Default::default()
+            })?
+            .is_empty()
+        );
+        assert!(
+            db.add_tag_to_asset(&test_asset_id, &untyped_tag.id)
+                .is_err()
+        );
+        assert!(
+            db.remove_tag_from_asset(&other_asset_id, &untyped_tag.id)
+                .is_err()
+        );
+        assert!(db.delete_tag(&untyped_tag.id).is_err());
+
+        let mut rediscovered_tag = untyped_tag.clone();
+        rediscovered_tag.name = "Rediscovered tag".to_string();
+        db.upsert_tag(
+            &rediscovered_tag,
+            Utc.with_ymd_and_hms(2026, 4, 6, 0, 0, 0).unwrap(),
         )?;
-        assert_eq!(association_count, 0);
-        assert!(db.remove_tag(&untyped_tag.id).is_err());
+        assert!(db.get_tag(untyped_tag.id.clone()).is_err());
+
+        let (association_count, is_deleted) = db.conn.lock().query_row(
+            r#"
+SELECT
+    (SELECT COUNT(*) FROM asset_tags WHERE tag_id = ?1),
+    (SELECT is_deleted FROM tags WHERE id = ?1);
+            "#,
+            params![untyped_tag.id],
+            |row| Ok((row.get::<_, u32>(0)?, row.get::<_, bool>(1)?)),
+        )?;
+        assert_eq!(association_count, 1);
+        assert!(is_deleted);
 
         Ok(())
     }

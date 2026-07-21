@@ -196,7 +196,7 @@ impl AssetRegistry {
     }
 
     pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
-        self.index_db.remove_tag(tag_id)
+        self.index_db.delete_tag(tag_id)
     }
 
     pub fn serializers(&self) -> &AssetSerializerRegistry {
