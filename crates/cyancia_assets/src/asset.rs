@@ -193,11 +193,12 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub fn get(&self) -> AssetResult<Arc<T>> {
-        let dynamic = match self.bundle.get_cached(&self.untyped_id()) {
+        let dynamic = match self.bundle.get_cached_asset(&self.untyped_id()) {
             Ok(cached) => cached,
             Err(_) => {
                 let metadata = self.metadata()?;
-                self.bundle.read_asset(self.untyped_id(), metadata.revision)?
+                self.bundle
+                    .read_asset(self.untyped_id(), metadata.revision)?
             }
         };
 
@@ -207,7 +208,8 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub fn update(&self, asset: T) -> AssetResult<()> {
-        self.bundle.update(self.untyped_id(), Arc::new(asset))?;
+        self.bundle
+            .update_asset(self.untyped_id(), Arc::new(asset))?;
         self.index_db.update_asset(&self.untyped_id())?;
 
         Ok(())
@@ -218,7 +220,9 @@ impl<T: Asset> AssetHandle<T> {
         if !metadata.in_memory {
             return Ok(());
         }
-        let new_path = self.bundle.write(&self.untyped_id(), metadata.revision)?;
+        let new_path = self
+            .bundle
+            .write_asset(&self.untyped_id(), metadata.revision)?;
         let last_modified =
             std::fs::metadata(self.bundle.absolute_modified_path(&new_path))?.modified()?;
         self.index_db.write_asset(

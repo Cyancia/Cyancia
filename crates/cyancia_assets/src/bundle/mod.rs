@@ -84,7 +84,7 @@ impl AssetBundleCache {
         })
     }
 
-    pub fn get_cached(&self, id: &UntypedAssetId) -> AssetResult<Arc<dyn ErasedAsset>> {
+    pub fn get_cached_asset(&self, id: &UntypedAssetId) -> AssetResult<Arc<dyn ErasedAsset>> {
         let assets = self.assets.read();
         Ok(assets
             .get(id)
@@ -92,12 +92,12 @@ impl AssetBundleCache {
             .ok_or_else(|| AssetError::AssetNotFound(*id))?)
     }
 
-    pub fn update(&self, id: UntypedAssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
+    pub fn update_asset(&self, id: UntypedAssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
         self.assets.write().insert(id, asset);
         Ok(())
     }
 
-    pub fn write(&self, id: &UntypedAssetId, revision: u32) -> AssetResult<PathBuf> {
+    pub fn write_asset(&self, id: &UntypedAssetId, revision: u32) -> AssetResult<PathBuf> {
         let assets = self.assets.read();
         let asset = assets
             .get(id)
