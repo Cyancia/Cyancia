@@ -611,6 +611,32 @@ RETURNING revision;
         Ok(())
     }
 
+    pub fn restore_tag(&self, tag_id: &TagId) -> AssetResult<()> {
+        let conn = self.conn.lock();
+        let restored = conn.execute(
+            "UPDATE tags SET is_deleted = 0 WHERE id = ?1 AND is_deleted = 1",
+            params![tag_id],
+        )?;
+        if restored == 0 {
+            return Err(AssetError::TagNotFound(tag_id.clone()).into());
+        }
+
+        Ok(())
+    }
+
+    pub fn restore_asset(&self, asset_id: &UntypedAssetId) -> AssetResult<()> {
+        let conn = self.conn.lock();
+        let restored = conn.execute(
+            "UPDATE assets SET is_deleted = 0 WHERE asset_id = ?1 AND is_deleted = 1",
+            params![asset_id],
+        )?;
+        if restored == 0 {
+            return Err(AssetError::AssetNotFound(*asset_id).into());
+        }
+
+        Ok(())
+    }
+
     pub fn add_tag_to_asset(&self, asset_id: &UntypedAssetId, tag_id: &TagId) -> AssetResult<()> {
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
@@ -1253,6 +1279,25 @@ SELECT
         assert_eq!(association_count, 1);
         assert!(is_deleted);
 
+        db.restore_tag(&untyped_tag.id)?;
+        assert_eq!(db.get_tag(untyped_tag.id.clone())?.id, untyped_tag.id);
+        assert!(
+            db.get_tags(TagFilter {
+                is_deleted: true,
+                ..Default::default()
+            })?
+            .is_empty()
+        );
+        assert!(db.restore_tag(&untyped_tag.id).is_err());
+
+        db.restore_asset(&other_asset_id)?;
+        let tagged = db.get_assets(UntypedAssetFilter {
+            tag: Some(untyped_tag.id.clone()),
+            ..Default::default()
+        })?;
+        assert_eq!(tagged.len(), 1);
+        assert_eq!(tagged[0].asset_id, other_asset_id);
+
         Ok(())
     }
 
@@ -1333,6 +1378,26 @@ SELECT
         )?;
         assert_eq!(association_count, 1);
 
+        db.restore_asset(&asset_id)?;
+        let restored_in_place = db.get_asset(&asset_id)?;
+        assert_eq!(restored_in_place.relative_path, "original.asset");
+        assert_eq!(restored_in_place.revision, 5);
+        assert!(
+            db.get_assets(UntypedAssetFilter {
+                is_deleted: true,
+                ..Default::default()
+            })?
+            .is_empty()
+        );
+        assert!(db.restore_asset(&asset_id).is_err());
+        let tagged = db.get_assets(UntypedAssetFilter {
+            tag: Some(tag.id.clone()),
+            ..Default::default()
+        })?;
+        assert_eq!(tagged.len(), 1);
+        assert_eq!(tagged[0].asset_id, asset_id);
+
+        db.delete_asset(&asset_id)?;
         let restored = AssetMetadata {
             relative_path: "restored.asset".to_string(),
             revision: 0,
