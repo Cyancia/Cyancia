@@ -192,7 +192,7 @@ impl AssetRegistry {
         self.index_db.add_tag(tag)
     }
 
-    pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
+    pub fn delete_tag(&self, tag_id: &TagId) -> AssetResult<()> {
         self.index_db.delete_tag(tag_id)
     }
 
