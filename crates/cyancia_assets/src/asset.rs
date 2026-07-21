@@ -197,7 +197,7 @@ impl<T: Asset> AssetHandle<T> {
             Ok(cached) => cached,
             Err(_) => {
                 let metadata = self.metadata()?;
-                self.bundle.read(self.untyped_id(), metadata.revision)?
+                self.bundle.read_asset(self.untyped_id(), metadata.revision)?
             }
         };
 

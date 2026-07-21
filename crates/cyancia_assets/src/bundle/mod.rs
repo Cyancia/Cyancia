@@ -19,7 +19,7 @@ use crate::{
     asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
     error::{AssetError, AssetResult},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
-    tag::{ASSET_TAGS_EXT, AssetTags},
+    tag::{ASSET_TAGS_EXT, AssetTags, TagId},
 };
 
 pub mod directory;
@@ -58,6 +58,7 @@ pub struct AssetBundleCache {
     id_to_original_path: RwLock<HashMap<UntypedAssetId, PathBuf>>,
     id_to_path: RwLock<HashMap<UntypedAssetId, PathBuf>>,
     assets: RwLock<HashMap<UntypedAssetId, Arc<dyn ErasedAsset>>>,
+    asset_tags: RwLock<HashMap<UntypedAssetId, Arc<[TagId]>>>,
 
     serializers: Arc<AssetSerializerRegistry>,
 }
@@ -77,6 +78,7 @@ impl AssetBundleCache {
             id_to_path: manifest.into(),
             bundle,
             assets: Default::default(),
+            asset_tags: Default::default(),
 
             serializers,
         })
@@ -127,7 +129,7 @@ impl AssetBundleCache {
         self.bundle.is_readonly()
     }
 
-    pub fn add(
+    pub fn add_asset(
         &self,
         path: impl AsRef<Path>,
         asset: Arc<dyn ErasedAsset>,
@@ -150,7 +152,16 @@ impl AssetBundleCache {
         &self.metadata
     }
 
-    pub fn read_asset_tags(&self, id: &UntypedAssetId) -> AssetResult<AssetTags> {
+    pub fn read_asset_tags(&self, id: &UntypedAssetId) -> AssetResult<Arc<[TagId]>> {
+        if let Some(tags) = self.asset_tags.read().get(id).cloned() {
+            return Ok(tags);
+        }
+
+        let mut asset_tags = self.asset_tags.write();
+        if let Some(tags) = asset_tags.get(id).cloned() {
+            return Ok(tags);
+        }
+
         let id_to_original_path = self.id_to_original_path.read();
         let path = id_to_original_path
             .get(id)
@@ -166,18 +177,24 @@ impl AssetBundleCache {
             }
         }
 
-        Ok(self
+        let tags = self
             .bundle
             .read_asset_tags(path)
             .map_err(AssetError::BundleError)?
-            .unwrap_or_default())
+            .unwrap_or_default();
+        let tags = tags.tags.into_iter().collect::<Vec<_>>().into();
+        asset_tags.insert(*id, Arc::clone(&tags));
+        Ok(tags)
     }
 
-    pub fn write_asset_tags(&self, id: &UntypedAssetId, tags: &AssetTags) -> AssetResult<()> {
+    pub fn write_asset_tags(&self, id: &UntypedAssetId, tags: &[TagId]) -> AssetResult<()> {
         let id_to_original_path = self.id_to_original_path.read();
         let path = id_to_original_path
             .get(id)
             .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
+        let tags = AssetTags {
+            tags: tags.iter().cloned().collect(),
+        };
 
         if self.bundle.is_readonly() {
             let modified_path =
@@ -186,17 +203,25 @@ impl AssetBundleCache {
             if let Some(parent) = modified_path.parent() {
                 create_dir_all(parent)?;
             }
-            File::create(modified_path)?.write_all(toml::to_string(tags)?.as_bytes())?;
+            File::create(modified_path)?.write_all(toml::to_string(&tags)?.as_bytes())?;
         } else {
             self.bundle
-                .write_asset_tags(path, tags)
+                .write_asset_tags(path, &tags)
                 .map_err(AssetError::BundleError)?;
         }
 
         Ok(())
     }
 
-    pub fn read(&self, id: UntypedAssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
+    pub fn update_asset_tags(&self, id: &UntypedAssetId, tags: Arc<[TagId]>) {
+        self.asset_tags.write().insert(*id, tags);
+    }
+
+    pub fn read_asset(
+        &self,
+        id: UntypedAssetId,
+        revision: u32,
+    ) -> AssetResult<Arc<dyn ErasedAsset>> {
         let id_to_path = self.id_to_path.read();
         let path = id_to_path
             .get(&id)
@@ -619,29 +644,20 @@ mod tests {
             Arc::new(AssetSerializerRegistry::default()),
         )?;
 
-        assert_eq!(
-            cache.read_asset_tags(&asset_id)?.tags,
-            std::collections::BTreeSet::from([base_tag])
-        );
+        assert_eq!(cache.read_asset_tags(&asset_id)?.as_ref(), &[base_tag]);
 
-        cache.write_asset_tags(
-            &asset_id,
-            &AssetTags {
-                tags: std::collections::BTreeSet::from([override_tag.clone()]),
-            },
-        )?;
-        assert_eq!(
-            cache.read_asset_tags(&asset_id)?.tags,
-            std::collections::BTreeSet::from([override_tag])
-        );
+        cache.write_asset_tags(&asset_id, std::slice::from_ref(&override_tag))?;
+        cache.update_asset_tags(&asset_id, Arc::from([override_tag.clone()]));
+        assert_eq!(cache.read_asset_tags(&asset_id)?.as_ref(), &[override_tag]);
         assert!(
             modified_bundle_absolute_path(&root, &bundle_id)
                 .join(asset_path.with_added_extension(ASSET_TAGS_EXT))
                 .is_file()
         );
 
-        cache.write_asset_tags(&asset_id, &AssetTags::default())?;
-        assert!(cache.read_asset_tags(&asset_id)?.tags.is_empty());
+        cache.write_asset_tags(&asset_id, &[])?;
+        cache.update_asset_tags(&asset_id, Arc::from([]));
+        assert!(cache.read_asset_tags(&asset_id)?.is_empty());
 
         std::fs::remove_dir_all(root)?;
         Ok(())

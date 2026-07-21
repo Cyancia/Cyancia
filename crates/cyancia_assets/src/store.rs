@@ -64,7 +64,7 @@ impl AssetRegistry {
             .bundles
             .get(&bundle_id)
             .ok_or_else(|| AssetError::BundleNotFound(bundle_id))?;
-        let asset_id = bundle.add(&path, asset.clone())?;
+        let asset_id = bundle.add_asset(&path, asset.clone())?;
         self.index_db.add_asset(&AssetMetadata {
             asset_id,
             ty: asset.type_name().to_string(),
