@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     bundle::{AssetBundleCache, BundleId},
-    error::{AssetError, AssetResult},
+    error::{AssetErrorKind, AssetResult},
     index_db::AssetIndexDb,
     tag::TagId,
 };
@@ -204,7 +204,7 @@ impl<T: Asset> AssetHandle<T> {
 
         Ok(dynamic
             .downcast_arc::<T>()
-            .map_err(|_| AssetError::CastAssetError(T::TYPE_NAME.to_string()))?)
+            .map_err(|_| AssetErrorKind::CastAssetError(T::TYPE_NAME.to_string()))?)
     }
 
     pub fn update(&self, asset: T) -> AssetResult<()> {
@@ -246,7 +246,7 @@ impl<T: Asset> AssetHandle<T> {
         let asset_id = self.untyped_id();
         let mut tags = self.read_tags()?;
         if !tags.insert(tag_id.clone()) {
-            return Err(AssetError::TagAlreadyAssigned {
+            return Err(AssetErrorKind::TagAlreadyAssigned {
                 asset_id,
                 tag_id: tag_id.clone(),
             }
@@ -262,7 +262,7 @@ impl<T: Asset> AssetHandle<T> {
         let asset_id = self.untyped_id();
         let mut tags = self.read_tags()?;
         if !tags.remove(tag_id) {
-            return Err(AssetError::TagNotAssigned {
+            return Err(AssetErrorKind::TagNotAssigned {
                 asset_id,
                 tag_id: tag_id.clone(),
             }

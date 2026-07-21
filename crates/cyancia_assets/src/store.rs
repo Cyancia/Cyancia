@@ -14,7 +14,7 @@ use crate::{
         AssetBundle, AssetBundleCache, BundleId, BundleManifest, BundleSnapshot, ErasedAssetBundle,
         read_asset_tags_file, read_tag_file, scan_bundle_assets,
     },
-    error::{AssetError, AssetResult},
+    error::{AssetErrorKind, AssetResult},
     index_db::{AssetFilter, AssetIndexDb, TagFilter, UntypedAssetFilter},
     loader::AssetSerializerRegistry,
     tag::{AssetTags, Tag, TagId},
@@ -63,7 +63,7 @@ impl AssetRegistry {
         let bundle = self
             .bundles
             .get(&bundle_id)
-            .ok_or_else(|| AssetError::BundleNotFound(bundle_id))?;
+            .ok_or_else(|| AssetErrorKind::BundleNotFound(bundle_id))?;
         let asset_id = bundle.add_asset(&path, asset.clone())?;
         self.index_db.add_asset(&AssetMetadata {
             asset_id,
@@ -107,8 +107,8 @@ impl AssetRegistry {
     }
 
     fn scan_bundle(&self, bundle: Arc<dyn ErasedAssetBundle>) -> AssetResult<BundleSnapshot> {
-        let metadata = bundle.metadata().map_err(AssetError::BundleError)?;
-        let manifest = bundle.manifest().map_err(AssetError::BundleError)?;
+        let metadata = bundle.metadata().map_err(AssetErrorKind::BundleError)?;
+        let manifest = bundle.manifest().map_err(AssetErrorKind::BundleError)?;
         let assets =
             scan_bundle_assets(&self.root, metadata.clone(), &manifest, &self.serializers)?;
         let tags = scan_tags(bundle.as_ref(), &manifest, metadata.bundle_id)?;
@@ -139,7 +139,7 @@ impl AssetRegistry {
         let bundle = self
             .bundles
             .get(&bundle_id)
-            .ok_or_else(|| AssetError::BundleNotFound(bundle_id))?;
+            .ok_or_else(|| AssetErrorKind::BundleNotFound(bundle_id))?;
 
         Ok(AssetHandle::new(
             asset_id,
@@ -183,7 +183,7 @@ impl AssetRegistry {
         let bundle = self
             .bundles
             .get(&tag.bundle_id)
-            .ok_or_else(|| AssetError::BundleNotFound(tag.bundle_id))?;
+            .ok_or_else(|| AssetErrorKind::BundleNotFound(tag.bundle_id))?;
         tag.relative_path = PathBuf::from(&tag.relative_path)
             .clean()
             .to_string_lossy()
@@ -248,7 +248,7 @@ fn scan_asset_tags(
         let asset_path = manifest
             .assets
             .get(&asset.asset_id)
-            .ok_or_else(|| AssetError::AssetPathNotFound(asset.asset_id))?;
+            .ok_or_else(|| AssetErrorKind::AssetPathNotFound(asset.asset_id))?;
         let tags = read_asset_tags_file(assets_root, asset_path, bundle_id, bundle)?;
         asset_tags.insert(asset.asset_id, tags.unwrap_or_default());
     }
@@ -330,11 +330,11 @@ mod tests {
 
         let assets_bundle = AssetDirectory::new(&assets_root);
         let assets_bundle_id = AssetBundle::metadata(&assets_bundle)
-            .map_err(|error| AssetError::BundleError(Box::new(error)))?
+            .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
         let tags_bundle = AssetDirectory::new(&tags_root);
         let tags_bundle_id = AssetBundle::metadata(&tags_bundle)
-            .map_err(|error| AssetError::BundleError(Box::new(error)))?
+            .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
         let mut builder = registry_builder(&root);
         builder.add_bundle(Arc::new(assets_bundle));
@@ -449,7 +449,7 @@ mod tests {
         std::fs::write(bundle_root.join("unloaded.ctag"), toml::to_string(&tag)?)?;
         let bundle = AssetDirectory::new(&bundle_root);
         let bundle_id = AssetBundle::metadata(&bundle)
-            .map_err(|error| AssetError::BundleError(Box::new(error)))?
+            .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
 
         let mut builder = registry_builder(&root);
@@ -542,7 +542,7 @@ mod tests {
         std::fs::write(bundle_root.join("sample.storetest"), "9")?;
         let bundle = AssetDirectory::new(&bundle_root);
         let bundle_id = AssetBundle::metadata(&bundle)
-            .map_err(|error| AssetError::BundleError(Box::new(error)))?
+            .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
 
         let mut builder = registry_builder(&root);

@@ -1,14 +1,14 @@
 use std::{
     backtrace::Backtrace,
     error::Error,
-    fmt::Debug,
+    fmt::{Debug, Display},
     path::{PathBuf, StripPrefixError},
 };
 
 use crate::{asset::UntypedAssetId, bundle::BundleId, tag::TagId};
 
 #[derive(Debug, thiserror::Error)]
-pub enum AssetError {
+pub enum AssetErrorKind {
     #[error("Asset path not found for asset ID: {0}")]
     AssetPathNotFound(UntypedAssetId),
     #[error("Asset not found for asset ID: {0}")]
@@ -81,32 +81,62 @@ pub enum AssetError {
     SqliteError(#[from] rusqlite::Error),
 }
 
-pub struct AssetErrorWithBacktrace {
-    error: AssetError,
+pub struct AssetError {
+    kind: AssetErrorKind,
     backtrace: Box<Backtrace>,
 }
 
-impl From<AssetError> for AssetErrorWithBacktrace {
-    fn from(value: AssetError) -> Self {
+impl AssetError {
+    pub fn new(kind: AssetErrorKind) -> Self {
         Self {
-            error: value,
+            kind,
             backtrace: Box::new(Backtrace::capture()),
         }
     }
+
+    pub fn kind(&self) -> &AssetErrorKind {
+        &self.kind
+    }
+
+    pub fn into_kind(self) -> AssetErrorKind {
+        self.kind
+    }
+
+    pub fn backtrace(&self) -> &Backtrace {
+        &self.backtrace
+    }
 }
 
-impl Debug for AssetErrorWithBacktrace {
+impl From<AssetErrorKind> for AssetError {
+    fn from(kind: AssetErrorKind) -> Self {
+        Self::new(kind)
+    }
+}
+
+impl Display for AssetError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}\nBacktrace:\n{}", self.error, self.backtrace)
+        Display::fmt(&self.kind, f)
+    }
+}
+
+impl Debug for AssetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}\nBacktrace:\n{}", self.kind, self.backtrace)
+    }
+}
+
+impl Error for AssetError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.kind.source()
     }
 }
 
 macro_rules! from_error {
     ($($error:ty),*) => {
         $(
-            impl From<$error> for AssetErrorWithBacktrace {
+            impl From<$error> for AssetError {
                 fn from(value: $error) -> Self {
-                    Self::from(AssetError::from(value))
+                    Self::from(AssetErrorKind::from(value))
                 }
             }
         )*
@@ -120,4 +150,4 @@ from_error!(
     rusqlite::Error
 );
 
-pub type AssetResult<T> = std::result::Result<T, AssetErrorWithBacktrace>;
+pub type AssetResult<T> = std::result::Result<T, AssetError>;

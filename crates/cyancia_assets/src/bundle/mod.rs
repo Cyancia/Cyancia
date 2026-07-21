@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::{
     asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
-    error::{AssetError, AssetResult},
+    error::{AssetErrorKind, AssetResult},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
     tag::{ASSET_TAGS_EXT, AssetTags, TAG_EXT, Tag, TagFile, TagId},
 };
@@ -92,7 +92,7 @@ impl AssetBundleCache {
         Ok(assets
             .get(id)
             .cloned()
-            .ok_or_else(|| AssetError::AssetNotFound(*id))?)
+            .ok_or_else(|| AssetErrorKind::AssetNotFound(*id))?)
     }
 
     pub fn update_asset(&self, id: UntypedAssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
@@ -104,18 +104,18 @@ impl AssetBundleCache {
         let assets = self.assets.read();
         let asset = assets
             .get(id)
-            .ok_or_else(|| AssetError::AssetNotFound(*id))?;
+            .ok_or_else(|| AssetErrorKind::AssetNotFound(*id))?;
         let manifest = self.manifest.read();
         let path = manifest
             .assets
             .get(id)
-            .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
+            .ok_or_else(|| AssetErrorKind::AssetPathNotFound(*id))?;
         let serializer = self.serializers.get_for_path(path)?;
 
         if !self.bundle.is_readonly() && revision == 0 {
             self.bundle
                 .add(path, asset.as_ref(), serializer.as_ref())
-                .map_err(AssetError::BundleError)?;
+                .map_err(AssetErrorKind::BundleError)?;
             Ok(path.clone())
         } else {
             write_modified_asset(
@@ -143,7 +143,7 @@ impl AssetBundleCache {
         let id = self
             .bundle
             .add(&path, asset.as_ref(), serializer.as_ref())
-            .map_err(AssetError::BundleError)?;
+            .map_err(AssetErrorKind::BundleError)?;
 
         self.manifest.write().assets.insert(id, path.clone());
         self.assets.write().insert(id, asset);
@@ -161,7 +161,7 @@ impl AssetBundleCache {
             .assets
             .get(id)
             .cloned()
-            .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
+            .ok_or_else(|| AssetErrorKind::AssetPathNotFound(*id))?;
         let tags = read_asset_tags_file(
             self.assets_root.as_path(),
             &asset_path,
@@ -177,7 +177,7 @@ impl AssetBundleCache {
         let path = manifest
             .assets
             .get(id)
-            .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
+            .ok_or_else(|| AssetErrorKind::AssetPathNotFound(*id))?;
         let tags = AssetTags {
             tags: tags.iter().cloned().collect(),
         };
@@ -193,7 +193,7 @@ impl AssetBundleCache {
         } else {
             self.bundle
                 .write_asset_tags(path, &tags)
-                .map_err(AssetError::BundleError)?;
+                .map_err(AssetErrorKind::BundleError)?;
         }
 
         Ok(())
@@ -208,7 +208,7 @@ impl AssetBundleCache {
         let path = id_to_path
             .assets
             .get(&id)
-            .ok_or_else(|| AssetError::AssetPathNotFound(id))?;
+            .ok_or_else(|| AssetErrorKind::AssetPathNotFound(id))?;
         let serializer = self.serializers.get_for_path(path)?;
 
         let asset = read_asset_file(
@@ -228,7 +228,7 @@ impl AssetBundleCache {
         let path = PathBuf::from(&tag.relative_path).clean();
         self.bundle
             .add_tag(&path, &TagFile::from(tag.clone()))
-            .map_err(AssetError::BundleError)?;
+            .map_err(AssetErrorKind::BundleError)?;
         self.manifest.write().tags.insert(tag.id.clone(), path);
         Ok(())
     }
@@ -249,7 +249,7 @@ pub(crate) fn read_asset_file(
     if revision == 0 {
         Ok(bundle
             .read(path, serializer)
-            .map_err(AssetError::BundleError)?)
+            .map_err(AssetErrorKind::BundleError)?)
     } else {
         let path = modified_asset_relative_path(path, revision);
         read_modified_asset(assets_root, &path, bundle_id, serializer)
@@ -260,7 +260,9 @@ pub(crate) fn read_tag_file(
     tag_path: &Path,
     bundle: &dyn ErasedAssetBundle,
 ) -> AssetResult<TagFile> {
-    Ok(bundle.read_tag(tag_path).map_err(AssetError::BundleError)?)
+    Ok(bundle
+        .read_tag(tag_path)
+        .map_err(AssetErrorKind::BundleError)?)
 }
 
 pub(crate) fn read_asset_tags_file(
@@ -281,7 +283,7 @@ pub(crate) fn read_asset_tags_file(
 
     Ok(bundle
         .read_asset_tags(asset_path)
-        .map_err(AssetError::BundleError)?)
+        .map_err(AssetErrorKind::BundleError)?)
 }
 
 pub(crate) fn scan_bundle_assets(
@@ -461,7 +463,7 @@ fn read_modified_asset(
     let mut file = File::open(path)?;
     Ok(serializer
         .read(&mut file)
-        .map_err(AssetError::SerializerError)
+        .map_err(AssetErrorKind::SerializerError)
         .map(Into::into)?)
 }
 
@@ -483,7 +485,7 @@ fn write_modified_asset(
     let mut file = File::create(modified_asset_path)?;
     serializer
         .write(asset, &mut file)
-        .map_err(AssetError::SerializerError)?;
+        .map_err(AssetErrorKind::SerializerError)?;
 
     Ok(new_relative_path)
 }

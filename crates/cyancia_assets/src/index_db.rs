@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     asset::{Asset, AssetMetadata, UntypedAssetId},
     bundle::{AssetBundleMetadata, BundleId, BundleSnapshot},
-    error::{AssetError, AssetResult},
+    error::{AssetErrorKind, AssetResult},
     tag::{Tag, TagId},
 };
 
@@ -293,7 +293,7 @@ VALUES (?1, ?2, ?3, ?4, ?5);
                 if let Some(existing_bundle_id) = existing_bundle_id
                     && existing_bundle_id != tag.bundle_id
                 {
-                    return Err(AssetError::DuplicateTagDefinition {
+                    return Err(AssetErrorKind::DuplicateTagDefinition {
                         tag_id: tag.id.clone(),
                         first_bundle_id: existing_bundle_id,
                         second_bundle_id: tag.bundle_id,
@@ -440,7 +440,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0);
             }
             Some((stored_bundle_id, stored_asset_ty, stored_last_modified, is_deleted)) => {
                 if stored_bundle_id != tag.bundle_id {
-                    return Err(AssetError::DuplicateTagDefinition {
+                    return Err(AssetErrorKind::DuplicateTagDefinition {
                         tag_id: tag.id.clone(),
                         first_bundle_id: stored_bundle_id,
                         second_bundle_id: tag.bundle_id,
@@ -454,7 +454,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0);
                 }
 
                 if stored_asset_ty != tag.asset_ty {
-                    return Err(AssetError::TagAssetTypeChanged {
+                    return Err(AssetErrorKind::TagAssetTypeChanged {
                         tag_id: tag.id.clone(),
                         current_asset_ty: stored_asset_ty,
                         new_asset_ty: tag.asset_ty.clone(),
@@ -566,7 +566,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0);
             params![tag_id],
         )?;
         if deleted == 0 {
-            return Err(AssetError::TagNotFound(tag_id.clone()).into());
+            return Err(AssetErrorKind::TagNotFound(tag_id.clone()).into());
         }
 
         Ok(())
@@ -806,7 +806,7 @@ RETURNING revision;
             params![asset_id],
         )?;
         if deleted == 0 {
-            return Err(AssetError::AssetNotFound(*asset_id).into());
+            return Err(AssetErrorKind::AssetNotFound(*asset_id).into());
         }
 
         Ok(())
@@ -819,7 +819,7 @@ RETURNING revision;
             params![tag_id],
         )?;
         if restored == 0 {
-            return Err(AssetError::TagNotFound(tag_id.clone()).into());
+            return Err(AssetErrorKind::TagNotFound(tag_id.clone()).into());
         }
 
         Ok(())
@@ -832,7 +832,7 @@ RETURNING revision;
             params![asset_id],
         )?;
         if restored == 0 {
-            return Err(AssetError::AssetNotFound(*asset_id).into());
+            return Err(AssetErrorKind::AssetNotFound(*asset_id).into());
         }
 
         Ok(())
@@ -849,7 +849,7 @@ RETURNING revision;
                 |row| row.get::<_, String>(0),
             )
             .optional()?
-            .ok_or_else(|| AssetError::AssetNotFound(*asset_id))?;
+            .ok_or_else(|| AssetErrorKind::AssetNotFound(*asset_id))?;
         let tag_asset_ty = tx
             .query_row(
                 "SELECT asset_ty FROM tags WHERE id = ?1 AND is_deleted = 0",
@@ -857,12 +857,12 @@ RETURNING revision;
                 |row| row.get::<_, Option<String>>(0),
             )
             .optional()?
-            .ok_or_else(|| AssetError::TagNotFound(tag_id.clone()))?;
+            .ok_or_else(|| AssetErrorKind::TagNotFound(tag_id.clone()))?;
 
         if let Some(expected_ty) = tag_asset_ty
             && asset_ty != expected_ty
         {
-            return Err(AssetError::InvalidTagAssetType {
+            return Err(AssetErrorKind::InvalidTagAssetType {
                 tag_id: tag_id.clone(),
                 asset_id: *asset_id,
                 asset_ty,
@@ -880,7 +880,7 @@ ON CONFLICT DO NOTHING;
             params![asset_id, tag_id],
         )?;
         if inserted == 0 {
-            return Err(AssetError::TagAlreadyAssigned {
+            return Err(AssetErrorKind::TagAlreadyAssigned {
                 asset_id: *asset_id,
                 tag_id: tag_id.clone(),
             }
@@ -905,7 +905,7 @@ ON CONFLICT DO NOTHING;
             |row| row.get::<_, bool>(0),
         )?;
         if !tag_exists {
-            return Err(AssetError::TagNotFound(tag_id.clone()).into());
+            return Err(AssetErrorKind::TagNotFound(tag_id.clone()).into());
         }
 
         let deleted = tx.execute(
@@ -913,7 +913,7 @@ ON CONFLICT DO NOTHING;
             params![asset_id, tag_id],
         )?;
         if deleted == 0 {
-            return Err(AssetError::TagNotAssigned {
+            return Err(AssetErrorKind::TagNotAssigned {
                 asset_id: *asset_id,
                 tag_id: tag_id.clone(),
             }

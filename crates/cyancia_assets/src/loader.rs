@@ -11,7 +11,7 @@ use gpui::Global;
 use crate::{
     asset::{Asset, ErasedAsset},
     bundle::ErasedAssetBundle,
-    error::{AssetError, AssetResult},
+    error::{AssetErrorKind, AssetResult},
     store::AssetRegistry,
 };
 
@@ -80,10 +80,10 @@ impl AssetSerializerRegistry {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
-            .ok_or_else(|| AssetError::MissingExtension(path.to_path_buf()))?;
+            .ok_or_else(|| AssetErrorKind::MissingExtension(path.to_path_buf()))?;
         Ok(self
             .get(ext)
-            .ok_or_else(|| AssetError::SerializerNotFound(ext.to_string()))?)
+            .ok_or_else(|| AssetErrorKind::SerializerNotFound(ext.to_string()))?)
     }
 }
 
