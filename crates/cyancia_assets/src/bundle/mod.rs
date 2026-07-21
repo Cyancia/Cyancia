@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     error::Error,
     fs::{File, create_dir_all, metadata},
+    io::Write,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -18,6 +19,7 @@ use crate::{
     asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
     error::{AssetError, AssetResult},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
+    tag::AssetTags,
 };
 
 pub mod directory;
@@ -146,6 +148,52 @@ impl AssetBundleCache {
 
     pub fn metadata(&self) -> &AssetBundleMetadata {
         &self.metadata
+    }
+
+    pub fn read_asset_tags(&self, id: &UntypedAssetId) -> AssetResult<AssetTags> {
+        let id_to_original_path = self.id_to_original_path.read();
+        let path = id_to_original_path
+            .get(id)
+            .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
+
+        if self.bundle.is_readonly() {
+            let modified_path =
+                modified_bundle_absolute_path(&self.assets_root, &self.metadata.bundle_id)
+                    .join(asset_tags_path(path));
+            if modified_path.exists() {
+                return toml::from_str(&std::fs::read_to_string(modified_path)?)
+                    .map_err(Into::into);
+            }
+        }
+
+        Ok(self
+            .bundle
+            .read_asset_tags(path)
+            .map_err(AssetError::BundleError)?
+            .unwrap_or_default())
+    }
+
+    pub fn write_asset_tags(&self, id: &UntypedAssetId, tags: &AssetTags) -> AssetResult<()> {
+        let id_to_original_path = self.id_to_original_path.read();
+        let path = id_to_original_path
+            .get(id)
+            .ok_or_else(|| AssetError::AssetPathNotFound(*id))?;
+
+        if self.bundle.is_readonly() {
+            let modified_path =
+                modified_bundle_absolute_path(&self.assets_root, &self.metadata.bundle_id)
+                    .join(asset_tags_path(path));
+            if let Some(parent) = modified_path.parent() {
+                create_dir_all(parent)?;
+            }
+            File::create(modified_path)?.write_all(toml::to_string(tags)?.as_bytes())?;
+        } else {
+            self.bundle
+                .write_asset_tags(path, tags)
+                .map_err(AssetError::BundleError)?;
+        }
+
+        Ok(())
     }
 
     pub fn read(&self, id: UntypedAssetId, revision: u32) -> AssetResult<Arc<dyn ErasedAsset>> {
@@ -397,6 +445,12 @@ pub fn modified_bundle_absolute_path(
         .join(format!("{}.modified", bundle_id.0))
 }
 
+pub fn asset_tags_path(asset_path: impl AsRef<Path>) -> PathBuf {
+    let mut path = asset_path.as_ref().as_os_str().to_os_string();
+    path.push(".tags");
+    path.into()
+}
+
 pub trait AssetBundle: Send + Sync + 'static {
     const READONLY: bool;
     type Error: Error + Sync + Send + 'static;
@@ -414,6 +468,8 @@ pub trait AssetBundle: Send + Sync + 'static {
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, Self::Error>;
+    fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error>;
+    fn write_asset_tags(&self, path: &Path, tags: &AssetTags) -> Result<(), Self::Error>;
 }
 
 pub trait ErasedAssetBundle: Send + Sync + 'static {
@@ -433,6 +489,15 @@ pub trait ErasedAssetBundle: Send + Sync + 'static {
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, Box<dyn Error + Send + Sync + 'static>>;
+    fn read_asset_tags(
+        &self,
+        path: &Path,
+    ) -> Result<Option<AssetTags>, Box<dyn Error + Send + Sync + 'static>>;
+    fn write_asset_tags(
+        &self,
+        path: &Path,
+        tags: &AssetTags,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
 }
 
 impl<T: AssetBundle> ErasedAssetBundle for T {
@@ -465,5 +530,126 @@ impl<T: AssetBundle> ErasedAssetBundle for T {
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, Box<dyn Error + Send + Sync + 'static>> {
         self.add(path, asset, serializer).map_err(Into::into)
+    }
+
+    fn read_asset_tags(
+        &self,
+        path: &Path,
+    ) -> Result<Option<AssetTags>, Box<dyn Error + Send + Sync + 'static>> {
+        self.read_asset_tags(path).map_err(Into::into)
+    }
+
+    fn write_asset_tags(
+        &self,
+        path: &Path,
+        tags: &AssetTags,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        self.write_asset_tags(path, tags).map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tag::TagId;
+
+    struct ReadonlyBundle {
+        id: BundleId,
+        asset_id: UntypedAssetId,
+        asset_path: PathBuf,
+        tags: AssetTags,
+    }
+
+    impl AssetBundle for ReadonlyBundle {
+        const READONLY: bool = true;
+        type Error = std::io::Error;
+
+        fn metadata(&self) -> Result<AssetBundleMetadata, Self::Error> {
+            Ok(AssetBundleMetadata {
+                bundle_id: self.id,
+                name: "readonly".to_string(),
+                last_modified: Utc::now(),
+            })
+        }
+
+        fn manifest(&self) -> Result<HashMap<UntypedAssetId, PathBuf>, Self::Error> {
+            Ok(HashMap::from([(self.asset_id, self.asset_path.clone())]))
+        }
+
+        fn read(
+            &self,
+            _: &Path,
+            _: &dyn ErasedAssetSerializer,
+        ) -> Result<Arc<dyn ErasedAsset>, Self::Error> {
+            Err(std::io::Error::other("not used by this test"))
+        }
+
+        fn add(
+            &self,
+            _: &Path,
+            _: &dyn ErasedAsset,
+            _: &dyn ErasedAssetSerializer,
+        ) -> Result<UntypedAssetId, Self::Error> {
+            Err(std::io::Error::other("readonly"))
+        }
+
+        fn read_asset_tags(&self, _: &Path) -> Result<Option<AssetTags>, Self::Error> {
+            Ok(Some(self.tags.clone()))
+        }
+
+        fn write_asset_tags(&self, _: &Path, _: &AssetTags) -> Result<(), Self::Error> {
+            Err(std::io::Error::other("readonly"))
+        }
+    }
+
+    #[test]
+    fn readonly_asset_tags_are_overridden_in_modified_directory() -> AssetResult<()> {
+        let root = std::env::temp_dir().join(format!("cyancia-readonly-tags-{}", Uuid::new_v4()));
+        let bundle_id = BundleId::new(Uuid::from_u128(1));
+        let asset_id = UntypedAssetId::new(Uuid::from_u128(2));
+        let asset_path = PathBuf::from("brushes/sample.cbp");
+        let base_tag = TagId::new(Uuid::from_u128(3));
+        let override_tag = TagId::new(Uuid::from_u128(4));
+        let bundle = Arc::new(ReadonlyBundle {
+            id: bundle_id,
+            asset_id,
+            asset_path: asset_path.clone(),
+            tags: AssetTags {
+                tags: std::collections::BTreeSet::from([base_tag.clone()]),
+            },
+        });
+        let cache = AssetBundleCache::new(
+            &root,
+            bundle,
+            HashMap::from([(asset_id, asset_path.clone())]),
+            Arc::new(AssetSerializerRegistry::default()),
+        )?;
+
+        assert_eq!(
+            cache.read_asset_tags(&asset_id)?.tags,
+            std::collections::BTreeSet::from([base_tag])
+        );
+
+        cache.write_asset_tags(
+            &asset_id,
+            &AssetTags {
+                tags: std::collections::BTreeSet::from([override_tag.clone()]),
+            },
+        )?;
+        assert_eq!(
+            cache.read_asset_tags(&asset_id)?.tags,
+            std::collections::BTreeSet::from([override_tag])
+        );
+        assert!(
+            modified_bundle_absolute_path(&root, &bundle_id)
+                .join(asset_tags_path(&asset_path))
+                .is_file()
+        );
+
+        cache.write_asset_tags(&asset_id, &AssetTags::default())?;
+        assert!(cache.read_asset_tags(&asset_id)?.tags.is_empty());
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
     }
 }

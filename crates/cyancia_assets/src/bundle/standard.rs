@@ -13,8 +13,9 @@ use zip::ZipArchive;
 
 use crate::{
     asset::{ErasedAsset, UntypedAssetId},
-    bundle::{AssetBundle, AssetBundleMetadata, BundleId},
+    bundle::{AssetBundle, AssetBundleMetadata, BundleId, asset_tags_path},
     loader::ErasedAssetSerializer,
+    tag::AssetTags,
 };
 
 pub struct StandardAssetBundle {
@@ -145,6 +146,22 @@ impl AssetBundle for StandardAssetBundle {
         _: &dyn ErasedAsset,
         _: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, StandardAssetBundleError> {
+        Err(StandardAssetBundleError::UnsupportedWriting)
+    }
+
+    fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {
+        let path = asset_tags_path(path).to_string_lossy().replace('\\', "/");
+        let mut archive = self.archive.write();
+        let mut file = match archive.by_name(&path) {
+            Ok(file) => file,
+            Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let content = read_to_string(&mut file)?;
+        Ok(Some(toml::from_str(&content)?))
+    }
+
+    fn write_asset_tags(&self, _: &Path, _: &AssetTags) -> Result<(), Self::Error> {
         Err(StandardAssetBundleError::UnsupportedWriting)
     }
 }

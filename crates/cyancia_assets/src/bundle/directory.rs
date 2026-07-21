@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{File, metadata, read_to_string},
+    fs::{File, create_dir_all, metadata, read_to_string},
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
@@ -11,8 +11,9 @@ use uuid::Uuid;
 
 use crate::{
     asset::{ErasedAsset, UntypedAssetId},
-    bundle::{AssetBundle, AssetBundleMetadata, BundleId},
+    bundle::{AssetBundle, AssetBundleMetadata, BundleId, asset_tags_path},
     loader::ErasedAssetSerializer,
+    tag::AssetTags,
 };
 
 pub struct AssetDirectory {
@@ -122,6 +123,24 @@ impl AssetBundle for AssetDirectory {
             .write_all(format!("{} = \"{}\"", asset_id, path_str).as_bytes())?;
         Ok(asset_id)
     }
+
+    fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {
+        let path = self.root.join(asset_tags_path(path));
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        Ok(Some(toml::from_str(&read_to_string(path)?)?))
+    }
+
+    fn write_asset_tags(&self, path: &Path, tags: &AssetTags) -> Result<(), Self::Error> {
+        let path = self.root.join(asset_tags_path(path));
+        if let Some(parent) = path.parent() {
+            create_dir_all(parent)?;
+        }
+        File::create(path)?.write_all(toml::to_string(tags)?.as_bytes())?;
+        Ok(())
+    }
 }
 
 fn scan_dir(root: &Path) -> Result<HashMap<UntypedAssetId, PathBuf>, DataDirectoryError> {
@@ -163,4 +182,51 @@ fn asset_id_from_relative_path(path: &str) -> UntypedAssetId {
     UntypedAssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
         path.as_bytes(),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tag::TagId;
+
+    #[test]
+    fn asset_tags_are_read_written_and_overwritten() -> Result<(), DataDirectoryError> {
+        let root = std::env::temp_dir().join(format!("cyancia-asset-tags-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root)?;
+        let bundle = AssetDirectory::new(&root);
+        let asset_path = Path::new("brushes/sample.cbp");
+        let first_tag = TagId::new(Uuid::from_u128(1));
+        let second_tag = TagId::new(Uuid::from_u128(2));
+
+        assert!(bundle.read_asset_tags(asset_path)?.is_none());
+
+        bundle.write_asset_tags(
+            asset_path,
+            &AssetTags {
+                tags: std::collections::BTreeSet::from([first_tag.clone()]),
+            },
+        )?;
+        assert_eq!(
+            bundle.read_asset_tags(asset_path)?.unwrap().tags,
+            std::collections::BTreeSet::from([first_tag])
+        );
+        assert!(root.join("brushes/sample.cbp.tags").is_file());
+
+        bundle.write_asset_tags(
+            asset_path,
+            &AssetTags {
+                tags: std::collections::BTreeSet::from([second_tag.clone()]),
+            },
+        )?;
+        assert_eq!(
+            bundle.read_asset_tags(asset_path)?.unwrap().tags,
+            std::collections::BTreeSet::from([second_tag])
+        );
+
+        bundle.write_asset_tags(asset_path, &AssetTags::default())?;
+        assert!(bundle.read_asset_tags(asset_path)?.unwrap().tags.is_empty());
+
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
 }

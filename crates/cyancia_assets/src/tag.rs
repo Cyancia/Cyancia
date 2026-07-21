@@ -1,4 +1,7 @@
-use std::io::{Read, Write, read_to_string};
+use std::{
+    collections::BTreeSet,
+    io::{Read, Write, read_to_string},
+};
 
 use cyancia_utils::wrapper;
 use parse_display::Display;
@@ -8,7 +11,7 @@ use uuid::Uuid;
 use crate::{asset::Asset, loader::AssetSerializer};
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Display)]
     #[display("{0}")]
     pub TagId : Uuid
 }
@@ -94,4 +97,9 @@ impl AssetSerializer for TagSerializer {
         writer.write_all(toml_str.as_bytes())?;
         Ok(())
     }
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct AssetTags {
+    pub tags: BTreeSet<TagId>,
 }
