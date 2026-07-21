@@ -128,6 +128,19 @@ impl AssetBundle for AssetDirectory {
         Ok(toml::from_str(&read_to_string(path)?)?)
     }
 
+    fn add_tag(&self, path: &Path, tag: &TagFile) -> Result<(), Self::Error> {
+        let tag_path = self.root.join(path);
+        if let Some(parent) = tag_path.parent() {
+            create_dir_all(parent)?;
+        }
+        File::create(tag_path)?.write_all(toml::to_string(tag)?.as_bytes())?;
+
+        let mut manifest = self.manifest()?;
+        manifest.tags.insert(tag.id.clone(), path.to_path_buf());
+        std::fs::write(self.root.join("manifest.toml"), toml::to_string(&manifest)?)?;
+        Ok(())
+    }
+
     fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {
         let path = self.root.join(path).with_added_extension(ASSET_TAGS_EXT);
         if !path.exists() {

@@ -178,6 +178,20 @@ impl AssetRegistry {
         self.index_db.get_tags(filter)
     }
 
+    pub fn add_tag(
+        &self,
+        bundle_id: &BundleId,
+        path: impl AsRef<Path>,
+        tag: Tag,
+    ) -> AssetResult<()> {
+        let bundle = self
+            .bundles
+            .get(bundle_id)
+            .ok_or_else(|| AssetError::BundleNotFound(*bundle_id))?;
+        bundle.add_tag(path, TagFile::from(tag.clone()))?;
+        self.index_db.add_tag(tag)
+    }
+
     pub fn remove_tag(&self, tag_id: &TagId) -> AssetResult<()> {
         self.index_db.delete_tag(tag_id)
     }
@@ -303,8 +317,12 @@ mod tests {
         )?;
         std::fs::write(tags_root.join("test.ctag"), toml::to_string(&tag)?)?;
 
+        let assets_bundle = AssetDirectory::new(&assets_root);
+        let assets_bundle_id = AssetBundle::metadata(&assets_bundle)
+            .map_err(|error| AssetError::BundleError(Box::new(error)))?
+            .bundle_id;
         let mut builder = registry_builder(&root);
-        builder.add_bundle(Arc::new(AssetDirectory::new(&assets_root)));
+        builder.add_bundle(Arc::new(assets_bundle));
         builder.add_bundle(Arc::new(AssetDirectory::new(&tags_root)));
         let registry = builder.try_build()?;
 
@@ -331,6 +349,17 @@ mod tests {
             1
         );
         assert!(handle.add_tag(&tag.id).is_err());
+
+        let added_tag = Tag {
+            id: TagId::new(Uuid::new_v4()),
+            name: "Added at runtime".to_string(),
+            asset_ty: None,
+        };
+        registry.add_tag(&assets_bundle_id, "runtime/added.ctag", added_tag.clone())?;
+        assert!(assets_root.join("runtime/added.ctag").is_file());
+        let stored_tag = registry.index_db().get_tag(added_tag.id.clone())?;
+        assert_eq!(stored_tag.name, added_tag.name);
+        assert_eq!(stored_tag.asset_ty, added_tag.asset_ty);
 
         drop(handles);
         drop(registry);

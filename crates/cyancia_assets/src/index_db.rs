@@ -415,6 +415,18 @@ ORDER BY name ASC, id ASC;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn add_tag(&self, tag: Tag) -> AssetResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            r#"
+INSERT INTO tags (id, name, asset_ty, last_modified, is_deleted)
+VALUES (?1, ?2, ?3, ?4, 0);
+            "#,
+            params![tag.id, tag.name, tag.asset_ty, Utc::now()],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_tag(&self, tag_id: &TagId) -> AssetResult<()> {
         let conn = self.conn.lock();
         let deleted = conn.execute(

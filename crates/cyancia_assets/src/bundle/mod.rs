@@ -224,6 +224,15 @@ impl AssetBundleCache {
         Ok(asset)
     }
 
+    pub fn add_tag(&self, path: impl AsRef<Path>, tag: TagFile) -> AssetResult<()> {
+        let path = path.as_ref().clean();
+        self.bundle
+            .add_tag(&path, &tag)
+            .map_err(AssetError::BundleError)?;
+        self.manifest.write().tags.insert(tag.id, path);
+        Ok(())
+    }
+
     pub fn absolute_modified_path(&self, path: impl AsRef<Path>) -> PathBuf {
         modified_bundle_absolute_path(&self.assets_root, &self.metadata.bundle_id).join(path)
     }
@@ -524,6 +533,7 @@ pub trait AssetBundle: Send + Sync + 'static {
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, Self::Error>;
     fn read_tag(&self, tag: &Path) -> Result<TagFile, Self::Error>;
+    fn add_tag(&self, path: &Path, tag: &TagFile) -> Result<(), Self::Error>;
     fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error>;
     fn write_asset_tags(&self, path: &Path, tags: &AssetTags) -> Result<(), Self::Error>;
 }
@@ -544,6 +554,11 @@ pub trait ErasedAssetBundle: Send + Sync + 'static {
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, Box<dyn Error + Send + Sync + 'static>>;
     fn read_tag(&self, path: &Path) -> Result<TagFile, Box<dyn Error + Send + Sync + 'static>>;
+    fn add_tag(
+        &self,
+        path: &Path,
+        tag: &TagFile,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
     fn read_asset_tags(
         &self,
         path: &Path,
@@ -587,6 +602,14 @@ impl<T: AssetBundle> ErasedAssetBundle for T {
 
     fn read_tag(&self, path: &Path) -> Result<TagFile, Box<dyn Error + Send + Sync + 'static>> {
         self.read_tag(path).map_err(Into::into)
+    }
+
+    fn add_tag(
+        &self,
+        path: &Path,
+        tag: &TagFile,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        self.add_tag(path, tag).map_err(Into::into)
     }
 
     fn read_asset_tags(
@@ -659,6 +682,10 @@ mod tests {
             Err(IoError::other("not used by this test"))
         }
 
+        fn add_tag(&self, _: &Path, _: &TagFile) -> Result<(), Self::Error> {
+            Err(IoError::other("readonly"))
+        }
+
         fn read_asset_tags(&self, _: &Path) -> Result<Option<AssetTags>, Self::Error> {
             Ok(Some(self.tags.clone()))
         }
@@ -722,6 +749,11 @@ mod tests {
 
         cache.write_asset_tags(&asset_id, &[])?;
         assert!(cache.read_asset_tags(&asset_id)?.tags.is_empty());
+        assert!(
+            cache
+                .add_tag("new.ctag", TagFile::new("New".to_string(), None))
+                .is_err()
+        );
 
         std::fs::remove_dir_all(root)?;
         Ok(())

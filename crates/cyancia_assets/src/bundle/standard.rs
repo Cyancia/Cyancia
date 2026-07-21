@@ -155,6 +155,10 @@ impl AssetBundle for StandardAssetBundle {
         Ok(toml::from_str(&read_to_string(&mut file)?)?)
     }
 
+    fn add_tag(&self, _: &Path, _: &TagFile) -> Result<(), Self::Error> {
+        Err(StandardAssetBundleError::UnsupportedWriting)
+    }
+
     fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {
         let path = path
             .with_added_extension(ASSET_TAGS_EXT)

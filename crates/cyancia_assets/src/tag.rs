@@ -48,6 +48,16 @@ impl TagFile {
     }
 }
 
+impl From<Tag> for TagFile {
+    fn from(tag: Tag) -> Self {
+        Self {
+            id: tag.id,
+            name: tag.name,
+            asset_ty: tag.asset_ty,
+        }
+    }
+}
+
 pub const TAG_EXT: &str = "ctag";
 
 #[derive(Default, Clone, Serialize, Deserialize)]
