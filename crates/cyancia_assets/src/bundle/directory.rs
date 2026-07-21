@@ -11,9 +11,9 @@ use uuid::Uuid;
 
 use crate::{
     asset::{ErasedAsset, UntypedAssetId},
-    bundle::{AssetBundle, AssetBundleMetadata, BundleId, asset_tags_path},
+    bundle::{AssetBundle, AssetBundleMetadata, BundleId},
     loader::ErasedAssetSerializer,
-    tag::AssetTags,
+    tag::{ASSET_TAGS_EXT, AssetTags},
 };
 
 pub struct AssetDirectory {
@@ -125,7 +125,7 @@ impl AssetBundle for AssetDirectory {
     }
 
     fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {
-        let path = self.root.join(asset_tags_path(path));
+        let path = self.root.join(path).with_added_extension(ASSET_TAGS_EXT);
         if !path.exists() {
             return Ok(None);
         }
@@ -134,7 +134,7 @@ impl AssetBundle for AssetDirectory {
     }
 
     fn write_asset_tags(&self, path: &Path, tags: &AssetTags) -> Result<(), Self::Error> {
-        let path = self.root.join(asset_tags_path(path));
+        let path = self.root.join(path).with_added_extension(ASSET_TAGS_EXT);
         if let Some(parent) = path.parent() {
             create_dir_all(parent)?;
         }

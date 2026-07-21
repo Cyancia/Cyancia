@@ -103,3 +103,5 @@ impl AssetSerializer for TagSerializer {
 pub struct AssetTags {
     pub tags: BTreeSet<TagId>,
 }
+
+pub const ASSET_TAGS_EXT: &str = "tags";

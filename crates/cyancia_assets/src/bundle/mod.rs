@@ -19,7 +19,7 @@ use crate::{
     asset::{AssetMetadata, ErasedAsset, UntypedAssetId},
     error::{AssetError, AssetResult},
     loader::{AssetSerializerRegistry, ErasedAssetSerializer},
-    tag::AssetTags,
+    tag::{ASSET_TAGS_EXT, AssetTags},
 };
 
 pub mod directory;
@@ -159,7 +159,7 @@ impl AssetBundleCache {
         if self.bundle.is_readonly() {
             let modified_path =
                 modified_bundle_absolute_path(&self.assets_root, &self.metadata.bundle_id)
-                    .join(asset_tags_path(path));
+                    .join(path.with_added_extension(ASSET_TAGS_EXT));
             if modified_path.exists() {
                 return toml::from_str(&std::fs::read_to_string(modified_path)?)
                     .map_err(Into::into);
@@ -182,7 +182,7 @@ impl AssetBundleCache {
         if self.bundle.is_readonly() {
             let modified_path =
                 modified_bundle_absolute_path(&self.assets_root, &self.metadata.bundle_id)
-                    .join(asset_tags_path(path));
+                    .join(path.with_added_extension(ASSET_TAGS_EXT));
             if let Some(parent) = modified_path.parent() {
                 create_dir_all(parent)?;
             }
@@ -445,12 +445,6 @@ pub fn modified_bundle_absolute_path(
         .join(format!("{}.modified", bundle_id.0))
 }
 
-pub fn asset_tags_path(asset_path: impl AsRef<Path>) -> PathBuf {
-    let mut path = asset_path.as_ref().as_os_str().to_os_string();
-    path.push(".tags");
-    path.into()
-}
-
 pub trait AssetBundle: Send + Sync + 'static {
     const READONLY: bool;
     type Error: Error + Sync + Send + 'static;
@@ -642,7 +636,7 @@ mod tests {
         );
         assert!(
             modified_bundle_absolute_path(&root, &bundle_id)
-                .join(asset_tags_path(&asset_path))
+                .join(asset_path.with_added_extension(ASSET_TAGS_EXT))
                 .is_file()
         );
 

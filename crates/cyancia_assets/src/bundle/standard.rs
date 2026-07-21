@@ -13,9 +13,9 @@ use zip::ZipArchive;
 
 use crate::{
     asset::{ErasedAsset, UntypedAssetId},
-    bundle::{AssetBundle, AssetBundleMetadata, BundleId, asset_tags_path},
+    bundle::{AssetBundle, AssetBundleMetadata, BundleId},
     loader::ErasedAssetSerializer,
-    tag::AssetTags,
+    tag::{ASSET_TAGS_EXT, AssetTags},
 };
 
 pub struct StandardAssetBundle {
@@ -150,7 +150,10 @@ impl AssetBundle for StandardAssetBundle {
     }
 
     fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {
-        let path = asset_tags_path(path).to_string_lossy().replace('\\', "/");
+        let path = path
+            .with_added_extension(ASSET_TAGS_EXT)
+            .to_string_lossy()
+            .replace('\\', "/");
         let mut archive = self.archive.write();
         let mut file = match archive.by_name(&path) {
             Ok(file) => file,
