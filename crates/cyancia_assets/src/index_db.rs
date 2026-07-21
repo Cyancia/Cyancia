@@ -21,6 +21,7 @@ pub enum ItemStatus {
 pub struct AssetFilter<T: Asset> {
     tag: Option<TagId>,
     bundle: Option<BundleId>,
+    is_deleted: bool,
     _marker: PhantomData<T>,
 }
 
@@ -29,6 +30,7 @@ impl<T: Asset> Default for AssetFilter<T> {
         Self {
             tag: Default::default(),
             bundle: Default::default(),
+            is_deleted: false,
             _marker: PhantomData,
         }
     }
@@ -49,11 +51,17 @@ impl<T: Asset> AssetFilter<T> {
         self
     }
 
+    pub fn with_deleted(mut self, is_deleted: bool) -> Self {
+        self.is_deleted = is_deleted;
+        self
+    }
+
     pub fn into_untyped(self) -> UntypedAssetFilter {
         UntypedAssetFilter {
             ty: Some(T::TYPE_NAME.to_string()),
             tag: self.tag,
             bundle: self.bundle,
+            is_deleted: self.is_deleted,
         }
     }
 }
@@ -63,11 +71,13 @@ pub struct UntypedAssetFilter {
     pub ty: Option<String>,
     pub tag: Option<TagId>,
     pub bundle: Option<BundleId>,
+    pub is_deleted: bool,
 }
 
 #[derive(Default)]
 pub struct TagFilter {
     pub asset_ty: Option<Option<String>>,
+    pub is_deleted: bool,
 }
 
 pub struct AssetIndexDb {
@@ -328,7 +338,7 @@ WHERE id = ?1;
             r#"
 SELECT id, name, asset_ty
 FROM tags
-WHERE is_deleted = 0
+WHERE is_deleted = ?3
     AND (
         ?1 = 0
         OR (?1 = 1 AND asset_ty IS NULL)
@@ -337,7 +347,7 @@ WHERE is_deleted = 0
 ORDER BY name ASC, id ASC;
             "#,
         )?;
-        let rows = stmt.query_map(params![filter_kind, asset_ty], |row| {
+        let rows = stmt.query_map(params![filter_kind, asset_ty, filter.is_deleted], |row| {
             Ok(Tag {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -473,7 +483,7 @@ SELECT
 FROM latest l
 JOIN assets a ON a.asset_id = l.asset_id
 WHERE l.ord = 1
-    AND a.is_deleted = 0
+    AND a.is_deleted = ?4
     AND (?1 IS NULL OR a.ty = ?1)
     AND (
         ?2 IS NULL
@@ -483,7 +493,7 @@ WHERE l.ord = 1
             JOIN tags t ON t.id = at.tag_id
             WHERE at.asset_id = a.asset_id
                 AND at.tag_id = ?2
-                AND t.is_deleted = 0
+                AND (t.is_deleted = 0 OR ?4 = 1)
         )
     )
     AND (?3 IS NULL OR a.bundle_id = ?3)
@@ -492,7 +502,12 @@ ORDER BY l.relative_path ASC;
         )?;
 
         let rows = stmt.query_map(
-            params![filter.ty, filter.tag.as_ref(), filter.bundle.as_ref(),],
+            params![
+                filter.ty,
+                filter.tag.as_ref(),
+                filter.bundle.as_ref(),
+                filter.is_deleted,
+            ],
             |row| {
                 Ok(AssetMetadata {
                     asset_id: row.get(0)?,
@@ -1074,12 +1089,14 @@ asset_ty = "{}"
 
         let untyped = db.get_tags(TagFilter {
             asset_ty: Some(None),
+            ..Default::default()
         })?;
         assert_eq!(untyped.len(), 1);
         assert_eq!(untyped[0].id, untyped_tag.id);
 
         let typed = db.get_tags(TagFilter {
             asset_ty: Some(Some(TestAsset::TYPE_NAME.to_string())),
+            ..Default::default()
         })?;
         assert_eq!(typed.len(), 1);
         assert_eq!(typed[0].id, tag.id);
@@ -1087,6 +1104,7 @@ asset_ty = "{}"
         assert!(
             db.get_tags(TagFilter {
                 asset_ty: Some(Some("missing_asset".to_string())),
+                ..Default::default()
             })?
             .is_empty()
         );
@@ -1163,12 +1181,47 @@ asset_ty = "{}"
                 .iter()
                 .all(|tag| tag.id != untyped_tag.id)
         );
+        assert_eq!(
+            db.get_tags(TagFilter {
+                is_deleted: true,
+                ..Default::default()
+            })?
+            .iter()
+            .map(|tag| tag.id.clone())
+            .collect::<Vec<_>>(),
+            vec![untyped_tag.id.clone()]
+        );
+        assert_eq!(
+            db.get_tags(TagFilter {
+                asset_ty: Some(None),
+                is_deleted: true,
+            })?[0]
+                .id,
+            untyped_tag.id
+        );
+        assert!(
+            db.get_tags(TagFilter {
+                asset_ty: Some(Some(TestAsset::TYPE_NAME.to_string())),
+                is_deleted: true,
+            })?
+            .is_empty()
+        );
         assert!(
             db.get_assets(UntypedAssetFilter {
                 tag: Some(untyped_tag.id.clone()),
                 ..Default::default()
             })?
             .is_empty()
+        );
+        db.delete_asset(&other_asset_id)?;
+        assert_eq!(
+            db.get_assets(UntypedAssetFilter {
+                tag: Some(untyped_tag.id.clone()),
+                is_deleted: true,
+                ..Default::default()
+            })?[0]
+                .asset_id,
+            other_asset_id
         );
         assert!(
             db.add_tag_to_asset(&test_asset_id, &untyped_tag.id)
@@ -1246,6 +1299,33 @@ SELECT
         assert!(db.update_asset(&asset_id).is_err());
         assert!(db.add_tag_to_asset(&asset_id, &tag.id).is_err());
         assert!(db.delete_asset(&asset_id).is_err());
+
+        let deleted = db.get_assets(UntypedAssetFilter {
+            is_deleted: true,
+            ..Default::default()
+        })?;
+        assert_eq!(deleted.len(), 1);
+        assert_eq!(deleted[0].asset_id, asset_id);
+        assert_eq!(deleted[0].relative_path, "original.asset");
+        assert_eq!(deleted[0].revision, 5);
+        assert_eq!(
+            db.get_assets(UntypedAssetFilter {
+                tag: Some(tag.id.clone()),
+                is_deleted: true,
+                ..Default::default()
+            })?[0]
+                .asset_id,
+            asset_id
+        );
+        assert!(
+            db.get_assets(UntypedAssetFilter {
+                ty: Some(OtherAsset::TYPE_NAME.to_string()),
+                is_deleted: true,
+                ..Default::default()
+            })?
+            .is_empty()
+        );
+
         let association_count = db.conn.lock().query_row(
             "SELECT COUNT(*) FROM asset_tags WHERE asset_id = ?1 AND tag_id = ?2",
             params![asset_id, tag.id],
@@ -1263,6 +1343,13 @@ SELECT
         let stored = db.get_asset(&asset_id)?;
         assert_eq!(stored.revision, 0);
         assert_eq!(stored.relative_path, "restored.asset");
+        assert!(
+            db.get_assets(UntypedAssetFilter {
+                is_deleted: true,
+                ..Default::default()
+            })?
+            .is_empty()
+        );
         let tagged = db.get_assets(UntypedAssetFilter {
             tag: Some(tag.id.clone()),
             ..Default::default()
