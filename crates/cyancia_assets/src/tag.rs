@@ -25,23 +25,40 @@ impl rusqlite::types::ToSql for TagId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Tag {
     pub id: TagId,
     pub name: String,
     pub asset_ty: Option<String>,
 }
 
-impl Asset for Tag {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagAsset {
+    pub id: TagId,
+    pub name: String,
+    pub asset_ty: Option<String>,
+}
+
+impl Asset for TagAsset {
     const TYPE_NAME: &'static str = "tag";
 }
 
-impl Tag {
+impl TagAsset {
     pub fn new(name: String, asset_ty: Option<String>) -> Self {
         Self {
             id: TagId::new(Uuid::new_v4()),
             name,
             asset_ty,
+        }
+    }
+}
+
+impl From<&TagAsset> for Tag {
+    fn from(tag: &TagAsset) -> Self {
+        Self {
+            id: tag.id.clone(),
+            name: tag.name.clone(),
+            asset_ty: tag.asset_ty.clone(),
         }
     }
 }
@@ -60,7 +77,7 @@ pub enum TagSerializerError {
 }
 
 impl AssetSerializer for TagSerializer {
-    type Asset = Tag;
+    type Asset = TagAsset;
 
     type Error = TagSerializerError;
 

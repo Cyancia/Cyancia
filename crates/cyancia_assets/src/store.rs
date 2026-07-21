@@ -17,7 +17,7 @@ use crate::{
     error::{AssetError, AssetResult},
     index_db::{AssetFilter, AssetIndexDb, ItemStatus, TagFilter, UntypedAssetFilter},
     loader::AssetSerializerRegistry,
-    tag::{Tag, TagId},
+    tag::{Tag, TagAsset, TagId},
 };
 
 pub struct AssetRegistry {
@@ -105,7 +105,7 @@ impl AssetRegistry {
 
         let tags = manifest
             .iter()
-            .filter(|a| a.ty == Tag::TYPE_NAME)
+            .filter(|a| a.ty == TagAsset::TYPE_NAME)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -124,14 +124,14 @@ impl AssetRegistry {
             ItemStatus::UpToDate => {}
             ItemStatus::Outdated => {
                 for tag in tags {
-                    let handle = AssetHandle::<Tag>::new(
+                    let handle = AssetHandle::<TagAsset>::new(
                         tag.asset_id.into_typed(),
                         cache.clone(),
                         self.index_db.clone(),
                     );
                     let tag_asset = handle.get()?;
                     self.index_db.upsert_tag(&tag_asset, tag.last_modified)?;
-                    let handle = AssetHandle::<Tag>::new(
+                    let handle = AssetHandle::<TagAsset>::new(
                         tag.asset_id.into_typed(),
                         cache.clone(),
                         self.index_db.clone(),

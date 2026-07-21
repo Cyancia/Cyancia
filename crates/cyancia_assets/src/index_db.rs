@@ -9,7 +9,7 @@ use crate::{
     asset::{Asset, AssetMetadata, UntypedAssetId},
     bundle::{AssetBundleMetadata, BundleId},
     error::{AssetError, AssetResult},
-    tag::{Tag, TagId},
+    tag::{Tag, TagAsset, TagId},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,7 +247,7 @@ ON CONFLICT(asset_id, revision) DO UPDATE SET
         Ok(())
     }
 
-    pub fn upsert_tag(&self, tag: &Tag, last_modified: DateTime<Utc>) -> AssetResult<()> {
+    pub fn upsert_tag(&self, tag: &TagAsset, last_modified: DateTime<Utc>) -> AssetResult<()> {
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
 
@@ -1010,7 +1010,7 @@ mod tests {
     fn tags_are_upserted_queried_and_filtered() -> AssetResult<()> {
         let db = AssetIndexDb::open_in_memory()?;
         let last_modified = Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
-        let mut tag = Tag::new(
+        let mut tag = TagAsset::new(
             "Original".to_string(),
             Some(TestAsset::TYPE_NAME.to_string()),
         );
@@ -1060,7 +1060,7 @@ mod tests {
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, updated_at);
 
-        let changed_asset_ty_tag: Tag = toml::from_str(&format!(
+        let changed_asset_ty_tag: TagAsset = toml::from_str(&format!(
             r#"
 id = "{}"
 name = "Changed type"
@@ -1092,8 +1092,8 @@ asset_ty = "{}"
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, updated_at);
 
-        let untyped_tag = Tag::new("All assets".to_string(), None);
-        let other_asset_tag = Tag::new(
+        let untyped_tag = TagAsset::new("All assets".to_string(), None);
+        let other_asset_tag = TagAsset::new(
             "Other assets".to_string(),
             Some(OtherAsset::TYPE_NAME.to_string()),
         );
@@ -1166,11 +1166,11 @@ asset_ty = "{}"
             })?;
         }
 
-        let typed_tag = Tag::new(
+        let typed_tag = TagAsset::new(
             "Test assets".to_string(),
             Some(TestAsset::TYPE_NAME.to_string()),
         );
-        let untyped_tag = Tag::new("Any assets".to_string(), None);
+        let untyped_tag = TagAsset::new("Any assets".to_string(), None);
         db.upsert_tag(&typed_tag, last_modified)?;
         db.upsert_tag(&untyped_tag, last_modified)?;
 
@@ -1323,7 +1323,7 @@ SELECT
             in_memory: false,
         };
         db.add_asset(&asset)?;
-        let tag = Tag::new(
+        let tag = TagAsset::new(
             "Restored tag".to_string(),
             Some(TestAsset::TYPE_NAME.to_string()),
         );
