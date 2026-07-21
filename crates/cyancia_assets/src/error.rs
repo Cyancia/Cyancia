@@ -38,6 +38,19 @@ pub enum AssetError {
         asset_id: UntypedAssetId,
         tag_id: TagId,
     },
+    #[error("Tag asset {asset_id} cannot have an asset tag sidecar at {path}")]
+    TagAssetTagsNotAllowed {
+        asset_id: UntypedAssetId,
+        path: PathBuf,
+    },
+    #[error(
+        "Tag {tag_id} is defined by multiple bundles: {first_bundle_id} and {second_bundle_id}"
+    )]
+    DuplicateTagDefinition {
+        tag_id: TagId,
+        first_bundle_id: BundleId,
+        second_bundle_id: BundleId,
+    },
     #[error(
         "Asset type restriction for tag {tag_id} cannot be changed from {current_asset_ty:?} to {new_asset_ty:?}"
     )]

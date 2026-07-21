@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs::{File, metadata},
     io::{Cursor, Read, read_to_string},
     path::{Path, PathBuf},
@@ -13,9 +12,9 @@ use zip::ZipArchive;
 
 use crate::{
     asset::{ErasedAsset, UntypedAssetId},
-    bundle::{AssetBundle, AssetBundleMetadata, BundleId},
+    bundle::{AssetBundle, AssetBundleMetadata, BundleId, BundleManifest},
     loader::ErasedAssetSerializer,
-    tag::{ASSET_TAGS_EXT, AssetTags},
+    tag::{ASSET_TAGS_EXT, AssetTags, TagFile},
 };
 
 pub struct StandardAssetBundle {
@@ -119,13 +118,13 @@ impl AssetBundle for StandardAssetBundle {
         })
     }
 
-    fn manifest(&self) -> Result<HashMap<UntypedAssetId, PathBuf>, Self::Error> {
+    fn manifest(&self) -> Result<BundleManifest, Self::Error> {
         let mut archive = self.archive.write();
         let content = read_to_string(archive.by_name("manifest.toml")?)?;
         Ok(toml::from_str(&content)?)
     }
 
-    fn read(
+    fn read_asset(
         &self,
         path: &Path,
         serializer: &dyn ErasedAssetSerializer,
@@ -140,13 +139,20 @@ impl AssetBundle for StandardAssetBundle {
         Ok(asset.into())
     }
 
-    fn add(
+    fn add_asset(
         &self,
         _: &Path,
         _: &dyn ErasedAsset,
         _: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, StandardAssetBundleError> {
         Err(StandardAssetBundleError::UnsupportedWriting)
+    }
+
+    fn read_tag(&self, tag: &Path) -> Result<TagFile, Self::Error> {
+        let path = tag.to_string_lossy().replace('\\', "/");
+        let mut archive = self.archive.write();
+        let mut file = archive.by_name(&path)?;
+        Ok(toml::from_str(&read_to_string(&mut file)?)?)
     }
 
     fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {

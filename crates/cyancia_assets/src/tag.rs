@@ -1,17 +1,12 @@
-use std::{
-    collections::BTreeSet,
-    io::{Read, Write, read_to_string},
-};
+use std::collections::BTreeSet;
 
 use cyancia_utils::wrapper;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{asset::Asset, loader::AssetSerializer};
-
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Display)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Display)]
     #[display("{0}")]
     pub TagId : Uuid
 }
@@ -36,17 +31,14 @@ pub struct Tag {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TagAsset {
+pub struct TagFile {
     pub id: TagId,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_ty: Option<String>,
 }
 
-impl Asset for TagAsset {
-    const TYPE_NAME: &'static str = "tag";
-}
-
-impl TagAsset {
+impl TagFile {
     pub fn new(name: String, asset_ty: Option<String>) -> Self {
         Self {
             id: TagId::new(Uuid::new_v4()),
@@ -56,48 +48,7 @@ impl TagAsset {
     }
 }
 
-impl From<&TagAsset> for Tag {
-    fn from(tag: &TagAsset) -> Self {
-        Self {
-            id: tag.id.clone(),
-            name: tag.name.clone(),
-            asset_ty: tag.asset_ty.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct TagSerializer;
-
-#[derive(Debug, thiserror::Error)]
-pub enum TagSerializerError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Toml serialization error: {0}")]
-    TomlSer(#[from] toml::ser::Error),
-    #[error("Toml deserialization error: {0}")]
-    TomlDe(#[from] toml::de::Error),
-}
-
-impl AssetSerializer for TagSerializer {
-    type Asset = TagAsset;
-
-    type Error = TagSerializerError;
-
-    fn file_extension() -> &'static str {
-        "ctag"
-    }
-
-    fn read(&self, reader: &mut dyn Read) -> Result<Self::Asset, Self::Error> {
-        Ok(toml::from_str(&read_to_string(reader)?)?)
-    }
-
-    fn write(&self, asset: &Self::Asset, writer: &mut dyn Write) -> Result<(), Self::Error> {
-        let toml_str = toml::to_string(asset)?;
-        writer.write_all(toml_str.as_bytes())?;
-        Ok(())
-    }
-}
+pub const TAG_EXT: &str = "ctag";
 
 #[derive(Default, Clone, Serialize, Deserialize)]
 pub struct AssetTags {

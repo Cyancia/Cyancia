@@ -2,14 +2,14 @@ use std::{fs::File, marker::PhantomData, path::Path};
 
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, Error as SqliteError, OptionalExtension, params};
 use uuid::Uuid;
 
 use crate::{
     asset::{Asset, AssetMetadata, UntypedAssetId},
-    bundle::{AssetBundleMetadata, BundleId},
+    bundle::{AssetBundleMetadata, BundleId, BundleSnapshot},
     error::{AssetError, AssetResult},
-    tag::{Tag, TagAsset, TagId},
+    tag::{Tag, TagFile, TagId},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +168,119 @@ CREATE TABLE IF NOT EXISTS asset_tags (
         Ok(())
     }
 
+    pub(crate) fn sync_bundles(&self, bundles: &[BundleSnapshot]) -> AssetResult<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+
+        for bundle in bundles {
+            tx.execute(
+                r#"
+INSERT INTO bundles (bundle_id, name, last_modified)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(bundle_id) DO UPDATE SET
+    name = excluded.name,
+    last_modified = excluded.last_modified;
+                "#,
+                params![
+                    bundle.metadata.bundle_id,
+                    bundle.metadata.name,
+                    bundle.metadata.last_modified,
+                ],
+            )?;
+
+            tx.execute(
+                "UPDATE assets SET is_deleted = 1 WHERE bundle_id = ?1",
+                params![bundle.metadata.bundle_id],
+            )?;
+
+            for asset in &bundle.assets {
+                tx.execute(
+                    r#"
+DELETE FROM asset_revisions
+WHERE asset_id = ?1
+  AND EXISTS (
+      SELECT 1 FROM assets
+      WHERE asset_id = ?1 AND is_deleted = 1
+  );
+                    "#,
+                    params![asset.asset_id],
+                )?;
+                tx.execute(
+                    r#"
+INSERT INTO assets (asset_id, ty, bundle_id, is_deleted)
+VALUES (?1, ?2, ?3, 0)
+ON CONFLICT(asset_id) DO UPDATE SET
+    ty = excluded.ty,
+    bundle_id = excluded.bundle_id,
+    is_deleted = 0;
+                    "#,
+                    params![asset.asset_id, asset.ty, asset.bundle_id],
+                )?;
+                tx.execute(
+                    r#"
+INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
+VALUES (?1, ?2, ?3, ?4, ?5)
+ON CONFLICT(asset_id, revision) DO UPDATE SET
+    relative_path = excluded.relative_path,
+    last_modified = excluded.last_modified,
+    in_memory = excluded.in_memory;
+                    "#,
+                    params![
+                        asset.asset_id,
+                        asset.revision,
+                        asset.relative_path,
+                        asset.last_modified,
+                        asset.in_memory as i64,
+                    ],
+                )?;
+            }
+        }
+
+        for bundle in bundles {
+            for tag in &bundle.tags {
+                tx.execute(
+                    r#"
+INSERT INTO tags (id, name, asset_ty, last_modified, is_deleted)
+VALUES (?1, ?2, ?3, ?4, 0)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    asset_ty = excluded.asset_ty,
+    last_modified = excluded.last_modified;
+                    "#,
+                    params![
+                        tag.id,
+                        tag.name,
+                        tag.asset_ty,
+                        bundle.metadata.last_modified,
+                    ],
+                )?;
+            }
+        }
+
+        for bundle in bundles {
+            tx.execute(
+                r#"
+DELETE FROM asset_tags
+WHERE asset_id IN (
+    SELECT asset_id FROM assets WHERE bundle_id = ?1
+);
+                "#,
+                params![bundle.metadata.bundle_id],
+            )?;
+            for (asset_id, asset_tags) in &bundle.asset_tags {
+                for tag_id in &asset_tags.tags {
+                    tx.execute(
+                        "INSERT INTO asset_tags (asset_id, tag_id) VALUES (?1, ?2)",
+                        params![asset_id, tag_id],
+                    )?;
+                }
+            }
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn upsert_bundle(&self, bundle: &AssetBundleMetadata) -> AssetResult<ItemStatus> {
         let conn = self.conn.lock();
         let result = conn.query_row(
@@ -186,68 +299,12 @@ RETURNING 0;
 
         match result {
             Ok(_) => Ok(ItemStatus::Outdated),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(ItemStatus::UpToDate),
+            Err(SqliteError::QueryReturnedNoRows) => Ok(ItemStatus::UpToDate),
             Err(e) => Err(e.into()),
         }
     }
 
-    // This is only intended use by asset store to update a out-dated bundle
-    pub fn replace_assets(&self, bundle: &BundleId, assets: &[AssetMetadata]) -> AssetResult<()> {
-        let mut conn = self.conn.lock();
-        let tx = conn.transaction()?;
-
-        tx.execute(
-            "UPDATE assets SET is_deleted = 1 WHERE bundle_id = ?1",
-            params![bundle],
-        )?;
-
-        for asset in assets {
-            tx.execute(
-                r#"
-DELETE FROM asset_revisions
-WHERE asset_id = ?1
-  AND EXISTS (
-      SELECT 1 FROM assets
-      WHERE asset_id = ?1 AND is_deleted = 1
-  );
-                "#,
-                params![asset.asset_id],
-            )?;
-            tx.execute(
-                r#"
-INSERT INTO assets (asset_id, ty, bundle_id, is_deleted)
-VALUES (?1, ?2, ?3, 0)
-ON CONFLICT(asset_id) DO UPDATE SET
-    ty = excluded.ty,
-    bundle_id = excluded.bundle_id,
-    is_deleted = 0;
-                "#,
-                params![asset.asset_id, asset.ty, asset.bundle_id,],
-            )?;
-            tx.execute(
-                r#"
-INSERT INTO asset_revisions (asset_id, revision, relative_path, last_modified, in_memory)
-VALUES (?1, ?2, ?3, ?4, ?5)
-ON CONFLICT(asset_id, revision) DO UPDATE SET
-    relative_path = excluded.relative_path,
-    last_modified = excluded.last_modified,
-    in_memory = excluded.in_memory;
-                "#,
-                params![
-                    asset.asset_id,
-                    asset.revision,
-                    asset.relative_path,
-                    asset.last_modified,
-                    asset.in_memory as i64,
-                ],
-            )?;
-        }
-
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn upsert_tag(&self, tag: &TagAsset, last_modified: DateTime<Utc>) -> AssetResult<()> {
+    pub fn upsert_tag(&self, tag: &TagFile, last_modified: DateTime<Utc>) -> AssetResult<()> {
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
 
@@ -912,105 +969,10 @@ mod tests {
     }
 
     #[test]
-    fn replace_assets_replaces_one_bundle_and_keeps_latest_revisions() -> AssetResult<()> {
-        let db = AssetIndexDb::open_in_memory()?;
-        let replaced_bundle_id = BundleId::new(Uuid::from_u128(30));
-        let retained_bundle_id = BundleId::new(Uuid::from_u128(31));
-        let last_modified = Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap();
-
-        for bundle in [
-            AssetBundleMetadata {
-                bundle_id: replaced_bundle_id,
-                name: "Replaced".to_string(),
-                last_modified,
-            },
-            AssetBundleMetadata {
-                bundle_id: retained_bundle_id,
-                name: "Retained".to_string(),
-                last_modified,
-            },
-        ] {
-            db.upsert_bundle(&bundle)?;
-        }
-
-        let removed_id = UntypedAssetId::new(Uuid::from_u128(40));
-        let retained_id = UntypedAssetId::new(Uuid::from_u128(41));
-        db.add_asset(&AssetMetadata {
-            asset_id: removed_id,
-            ty: TestAsset::TYPE_NAME.to_string(),
-            bundle_id: replaced_bundle_id,
-            relative_path: "removed.asset".to_string(),
-            revision: 0,
-            last_modified,
-            in_memory: false,
-        })?;
-        db.add_asset(&AssetMetadata {
-            asset_id: retained_id,
-            ty: TestAsset::TYPE_NAME.to_string(),
-            bundle_id: retained_bundle_id,
-            relative_path: "retained.asset".to_string(),
-            revision: 0,
-            last_modified,
-            in_memory: false,
-        })?;
-
-        let replacement_id = UntypedAssetId::new(Uuid::from_u128(42));
-        db.replace_assets(
-            &replaced_bundle_id,
-            &[
-                AssetMetadata {
-                    asset_id: replacement_id,
-                    ty: TestAsset::TYPE_NAME.to_string(),
-                    bundle_id: replaced_bundle_id,
-                    relative_path: "replacement.asset".to_string(),
-                    revision: 0,
-                    last_modified,
-                    in_memory: false,
-                },
-                AssetMetadata {
-                    asset_id: replacement_id,
-                    ty: TestAsset::TYPE_NAME.to_string(),
-                    bundle_id: replaced_bundle_id,
-                    relative_path: "replacement.rev3.asset".to_string(),
-                    revision: 3,
-                    last_modified: Utc.with_ymd_and_hms(2026, 3, 2, 0, 0, 0).unwrap(),
-                    in_memory: false,
-                },
-            ],
-        )?;
-
-        assert!(db.get_asset(&removed_id).is_err());
-        assert_eq!(db.get_asset(&retained_id)?.asset_id, retained_id);
-
-        let replacement = db.get_asset(&replacement_id)?;
-        assert_eq!(replacement.revision, 3);
-        assert_eq!(replacement.relative_path, "replacement.rev3.asset");
-
-        let replaced_bundle_assets = db.get_assets(UntypedAssetFilter {
-            bundle: Some(replaced_bundle_id),
-            ..Default::default()
-        })?;
-        assert_eq!(replaced_bundle_assets.len(), 1);
-        assert_eq!(replaced_bundle_assets[0].asset_id, replacement_id);
-
-        db.replace_assets(&replaced_bundle_id, &[])?;
-        assert!(
-            db.get_assets(UntypedAssetFilter {
-                bundle: Some(replaced_bundle_id),
-                ..Default::default()
-            })?
-            .is_empty()
-        );
-        assert_eq!(db.get_asset(&retained_id)?.asset_id, retained_id);
-
-        Ok(())
-    }
-
-    #[test]
     fn tags_are_upserted_queried_and_filtered() -> AssetResult<()> {
         let db = AssetIndexDb::open_in_memory()?;
         let last_modified = Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
-        let mut tag = TagAsset::new(
+        let mut tag = TagFile::new(
             "Original".to_string(),
             Some(TestAsset::TYPE_NAME.to_string()),
         );
@@ -1060,7 +1022,7 @@ mod tests {
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, updated_at);
 
-        let changed_asset_ty_tag: TagAsset = toml::from_str(&format!(
+        let changed_asset_ty_tag: TagFile = toml::from_str(&format!(
             r#"
 id = "{}"
 name = "Changed type"
@@ -1092,8 +1054,8 @@ asset_ty = "{}"
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, updated_at);
 
-        let untyped_tag = TagAsset::new("All assets".to_string(), None);
-        let other_asset_tag = TagAsset::new(
+        let untyped_tag = TagFile::new("All assets".to_string(), None);
+        let other_asset_tag = TagFile::new(
             "Other assets".to_string(),
             Some(OtherAsset::TYPE_NAME.to_string()),
         );
@@ -1166,11 +1128,11 @@ asset_ty = "{}"
             })?;
         }
 
-        let typed_tag = TagAsset::new(
+        let typed_tag = TagFile::new(
             "Test assets".to_string(),
             Some(TestAsset::TYPE_NAME.to_string()),
         );
-        let untyped_tag = TagAsset::new("Any assets".to_string(), None);
+        let untyped_tag = TagFile::new("Any assets".to_string(), None);
         db.upsert_tag(&typed_tag, last_modified)?;
         db.upsert_tag(&untyped_tag, last_modified)?;
 
@@ -1323,7 +1285,7 @@ SELECT
             in_memory: false,
         };
         db.add_asset(&asset)?;
-        let tag = TagAsset::new(
+        let tag = TagFile::new(
             "Restored tag".to_string(),
             Some(TestAsset::TYPE_NAME.to_string()),
         );
@@ -1421,13 +1383,6 @@ SELECT
         })?;
         assert_eq!(tagged.len(), 1);
         assert_eq!(tagged[0].asset_id, asset_id);
-
-        db.delete_asset(&asset_id)?;
-        db.replace_assets(&bundle_id, std::slice::from_ref(&restored))?;
-        assert_eq!(db.get_asset(&asset_id)?.revision, 0);
-
-        db.replace_assets(&bundle_id, &[])?;
-        assert!(db.get_asset(&asset_id).is_err());
 
         Ok(())
     }

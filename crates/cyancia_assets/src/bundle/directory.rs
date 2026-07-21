@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    ffi::OsStr,
     fs::{File, create_dir_all, metadata, read_to_string},
     io::Write,
     path::{Path, PathBuf},
@@ -11,9 +11,9 @@ use uuid::Uuid;
 
 use crate::{
     asset::{ErasedAsset, UntypedAssetId},
-    bundle::{AssetBundle, AssetBundleMetadata, BundleId},
+    bundle::{AssetBundle, AssetBundleMetadata, BundleId, BundleManifest},
     loader::ErasedAssetSerializer,
-    tag::{ASSET_TAGS_EXT, AssetTags},
+    tag::{ASSET_TAGS_EXT, AssetTags, TAG_EXT, TagFile},
 };
 
 pub struct AssetDirectory {
@@ -69,7 +69,7 @@ impl AssetBundle for AssetDirectory {
         })
     }
 
-    fn manifest(&self) -> Result<HashMap<UntypedAssetId, PathBuf>, DataDirectoryError> {
+    fn manifest(&self) -> Result<BundleManifest, DataDirectoryError> {
         let path = self.root.join("manifest.toml");
         let exists = path.exists();
         if !exists || metadata(&path)?.modified()? != metadata(&self.root)?.modified()? {
@@ -78,7 +78,8 @@ impl AssetBundle for AssetDirectory {
                 std::fs::remove_file(&path)?;
             }
 
-            let manifest = scan_dir(&self.root)?;
+            let mut manifest = BundleManifest::default();
+            scan_dir_dfs(&self.root, &self.root, &mut manifest)?;
             std::fs::write(&path, toml::to_string(&manifest)?)?;
             Ok(manifest)
         } else {
@@ -86,7 +87,7 @@ impl AssetBundle for AssetDirectory {
         }
     }
 
-    fn read(
+    fn read_asset(
         &self,
         path: &Path,
         serializer: &dyn ErasedAssetSerializer,
@@ -99,7 +100,7 @@ impl AssetBundle for AssetDirectory {
         Ok(asset.into())
     }
 
-    fn add(
+    fn add_asset(
         &self,
         path: &Path,
         asset: &dyn ErasedAsset,
@@ -116,12 +117,15 @@ impl AssetBundle for AssetDirectory {
         let path_str = path.to_string_lossy().to_string();
         let asset_id = asset_id_from_relative_path(&path_str);
 
-        File::options()
-            .append(true)
-            .open(self.root.join("manifest.toml"))?
-            // Only works because it's toml.
-            .write_all(format!("{} = \"{}\"", asset_id, path_str).as_bytes())?;
+        let mut manifest = self.manifest()?;
+        manifest.assets.insert(asset_id, path.to_path_buf());
+        std::fs::write(self.root.join("manifest.toml"), toml::to_string(&manifest)?)?;
         Ok(asset_id)
+    }
+
+    fn read_tag(&self, tag: &Path) -> Result<TagFile, Self::Error> {
+        let path = self.root.join(tag);
+        Ok(toml::from_str(&read_to_string(path)?)?)
     }
 
     fn read_asset_tags(&self, path: &Path) -> Result<Option<AssetTags>, Self::Error> {
@@ -143,16 +147,10 @@ impl AssetBundle for AssetDirectory {
     }
 }
 
-fn scan_dir(root: &Path) -> Result<HashMap<UntypedAssetId, PathBuf>, DataDirectoryError> {
-    let mut assets = HashMap::new();
-    scan_dir_dfs(root, root, &mut assets)?;
-    Ok(assets)
-}
-
 fn scan_dir_dfs(
     current_path: &Path,
     root: &Path,
-    assets: &mut HashMap<UntypedAssetId, PathBuf>,
+    manifest: &mut BundleManifest,
 ) -> Result<(), DataDirectoryError> {
     let entries = std::fs::read_dir(current_path)?;
     for entry in entries {
@@ -162,16 +160,26 @@ fn scan_dir_dfs(
 
         let path = entry.path();
         if path.is_dir() {
-            scan_dir_dfs(&path, root, assets)?;
+            scan_dir_dfs(&path, root, manifest)?;
         } else {
+            if path.extension() == Some(OsStr::new(ASSET_TAGS_EXT)) {
+                continue;
+            }
+
             let relative_path = path
                 .strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
                 .to_string();
-            let asset_id = asset_id_from_relative_path(&relative_path);
 
-            assets.insert(asset_id, relative_path.into());
+            if path.extension() == Some(OsStr::new(TAG_EXT)) {
+                let tag = toml::from_slice::<TagFile>(&std::fs::read(&path)?)?;
+                manifest.tags.insert(tag.id, relative_path.into());
+            } else {
+                let asset_id = asset_id_from_relative_path(&relative_path);
+
+                manifest.assets.insert(asset_id, relative_path.into());
+            }
         }
     }
 
@@ -186,6 +194,8 @@ fn asset_id_from_relative_path(path: &str) -> UntypedAssetId {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::tag::TagId;
 
@@ -203,24 +213,27 @@ mod tests {
         bundle.write_asset_tags(
             asset_path,
             &AssetTags {
-                tags: std::collections::BTreeSet::from([first_tag.clone()]),
+                tags: BTreeSet::from([first_tag.clone()]),
             },
         )?;
         assert_eq!(
             bundle.read_asset_tags(asset_path)?.unwrap().tags,
-            std::collections::BTreeSet::from([first_tag])
+            BTreeSet::from([first_tag])
         );
         assert!(root.join("brushes/sample.cbp.tags").is_file());
+        let manifest = bundle.manifest()?;
+        assert!(manifest.assets.is_empty());
+        assert!(manifest.tags.is_empty());
 
         bundle.write_asset_tags(
             asset_path,
             &AssetTags {
-                tags: std::collections::BTreeSet::from([second_tag.clone()]),
+                tags: BTreeSet::from([second_tag.clone()]),
             },
         )?;
         assert_eq!(
             bundle.read_asset_tags(asset_path)?.unwrap().tags,
-            std::collections::BTreeSet::from([second_tag])
+            BTreeSet::from([second_tag])
         );
 
         bundle.write_asset_tags(asset_path, &AssetTags::default())?;

@@ -15,7 +15,7 @@ use crate::{
 };
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Display)]
     #[display("{0}")]
     pub UntypedAssetId: Uuid
 }
