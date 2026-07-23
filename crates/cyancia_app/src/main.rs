@@ -52,7 +52,9 @@ fn main() {
             cyancia_selection_tool::init(cx);
 
             {
-                cx.add_asset_bundle(Arc::new(AssetDirectory::new("assets/builtin_assets")));
+                cx.add_asset_bundle(Arc::new(
+                    AssetDirectory::new("assets/builtin_assets").unwrap(),
+                ));
                 let (standard_bundles, errs) = StandardAssetBundle::scan_bundles("assets");
                 log::info!(
                     "Loaded {} csb bundles with {} errors",

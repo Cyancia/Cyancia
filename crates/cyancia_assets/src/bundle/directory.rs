@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::{
     asset::{ErasedAsset, UntypedAssetId},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId, BundleManifest},
+    error::AssetResult,
     loader::ErasedAssetSerializer,
     tag::{ASSET_TAGS_EXT, AssetTags, TAG_EXT, TagFile},
 };
@@ -20,10 +21,11 @@ pub struct AssetDirectory {
     root: PathBuf,
     id: BundleId,
     name: String,
+    manifest: BundleManifest,
 }
 
 impl AssetDirectory {
-    pub fn new(root: impl AsRef<Path>) -> Self {
+    pub fn new(root: impl AsRef<Path>) -> AssetResult<Self> {
         let root = root.as_ref();
         let name = root
             .file_name()
@@ -34,11 +36,15 @@ impl AssetDirectory {
             name.as_bytes(),
         )));
 
-        Self {
+        let mut manifest = BundleManifest::default();
+        scan_dir_dfs(&root, &root, &id, &mut manifest)?;
+
+        Ok(Self {
             id,
             name,
             root: root.into(),
-        }
+            manifest,
+        })
     }
 }
 
@@ -70,21 +76,7 @@ impl AssetBundle for AssetDirectory {
     }
 
     fn manifest(&self) -> Result<BundleManifest, DataDirectoryError> {
-        let path = self.root.join("manifest.toml");
-        let exists = path.exists();
-        if !exists || metadata(&path)?.modified()? != metadata(&self.root)?.modified()? {
-            if exists {
-                // Or the manifest itself will be scanned.
-                std::fs::remove_file(&path)?;
-            }
-
-            let mut manifest = BundleManifest::default();
-            scan_dir_dfs(&self.root, &self.root, &self.id, &mut manifest)?;
-            std::fs::write(&path, toml::to_string(&manifest)?)?;
-            Ok(manifest)
-        } else {
-            Ok(toml::from_str(&read_to_string(&path)?)?)
-        }
+        Ok(self.manifest.clone())
     }
 
     fn read_asset(
@@ -114,12 +106,7 @@ impl AssetBundle for AssetDirectory {
         serializer
             .write(asset, &mut file)
             .map_err(DataDirectoryError::SerializerError)?;
-        let asset_id = asset_id_from_relative_path(&self.id, path);
-
-        let mut manifest = self.manifest()?;
-        manifest.assets.insert(asset_id, path.to_path_buf());
-        std::fs::write(self.root.join("manifest.toml"), toml::to_string(&manifest)?)?;
-        Ok(asset_id)
+        Ok(asset_id_from_relative_path(&self.id, path))
     }
 
     fn read_tag(&self, tag: &Path) -> Result<TagFile, Self::Error> {
@@ -134,9 +121,6 @@ impl AssetBundle for AssetDirectory {
         }
         File::create(tag_path)?.write_all(toml::to_string(tag)?.as_bytes())?;
 
-        let mut manifest = self.manifest()?;
-        manifest.tags.insert(tag.id.clone(), path.to_path_buf());
-        std::fs::write(self.root.join("manifest.toml"), toml::to_string(&manifest)?)?;
         Ok(())
     }
 
@@ -164,7 +148,7 @@ fn scan_dir_dfs(
     root: &Path,
     bundle_id: &BundleId,
     manifest: &mut BundleManifest,
-) -> Result<(), DataDirectoryError> {
+) -> AssetResult<()> {
     let entries = std::fs::read_dir(current_path)?;
     for entry in entries {
         let Ok(entry) = entry else {
@@ -231,10 +215,10 @@ mod tests {
     }
 
     #[test]
-    fn asset_tags_are_read_written_and_overwritten() -> Result<(), DataDirectoryError> {
+    fn asset_tags_are_read_written_and_overwritten() -> Result<(), Box<dyn std::error::Error>> {
         let root = std::env::temp_dir().join(format!("cyancia-asset-tags-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root)?;
-        let bundle = AssetDirectory::new(&root);
+        let bundle = AssetDirectory::new(&root)?;
         let asset_path = Path::new("brushes/sample.cbp");
         let first_tag = TagId::new(Uuid::from_u128(1));
         let second_tag = TagId::new(Uuid::from_u128(2));

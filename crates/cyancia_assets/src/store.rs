@@ -328,11 +328,11 @@ mod tests {
         )?;
         std::fs::write(tags_root.join("test.ctag"), toml::to_string(&tag)?)?;
 
-        let assets_bundle = AssetDirectory::new(&assets_root);
+        let assets_bundle = AssetDirectory::new(&assets_root)?;
         let assets_bundle_id = AssetBundle::metadata(&assets_bundle)
             .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
-        let tags_bundle = AssetDirectory::new(&tags_root);
+        let tags_bundle = AssetDirectory::new(&tags_root)?;
         let tags_bundle_id = AssetBundle::metadata(&tags_bundle)
             .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
@@ -399,7 +399,7 @@ mod tests {
         std::fs::write(bundle_root.join("removed.ctag"), toml::to_string(&tag)?)?;
 
         let mut builder = registry_builder(&root);
-        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)));
+        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)?));
         let mut registry = builder.try_build()?;
         assert_eq!(
             registry.index_db().get_tag(tag.id.clone())?.relative_path,
@@ -407,8 +407,7 @@ mod tests {
         );
 
         std::fs::remove_file(bundle_root.join("removed.ctag"))?;
-        std::fs::remove_file(bundle_root.join("manifest.toml"))?;
-        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root));
+        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root)?);
         registry.add_erased_bundles([bundle])?;
 
         assert!(registry.index_db().get_tag(tag.id.clone()).is_err());
@@ -432,8 +431,8 @@ mod tests {
         std::fs::write(second_root.join("second.ctag"), serialized)?;
 
         let mut builder = registry_builder(&root);
-        builder.add_bundle(Arc::new(AssetDirectory::new(&first_root)));
-        builder.add_bundle(Arc::new(AssetDirectory::new(&second_root)));
+        builder.add_bundle(Arc::new(AssetDirectory::new(&first_root)?));
+        builder.add_bundle(Arc::new(AssetDirectory::new(&second_root)?));
         assert!(builder.try_build().is_err());
 
         std::fs::remove_dir_all(root)?;
@@ -447,7 +446,7 @@ mod tests {
         std::fs::create_dir_all(&bundle_root)?;
         let tag = TagFile::new("Unloaded tag".to_string(), None);
         std::fs::write(bundle_root.join("unloaded.ctag"), toml::to_string(&tag)?)?;
-        let bundle = AssetDirectory::new(&bundle_root);
+        let bundle = AssetDirectory::new(&bundle_root)?;
         let bundle_id = AssetBundle::metadata(&bundle)
             .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
@@ -475,14 +474,14 @@ mod tests {
         std::fs::write(bundle_root.join("sample.storetest"), "9")?;
 
         let mut builder = registry_builder(&root);
-        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)));
+        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)?));
         let mut registry = builder.try_build()?;
 
         let handle = registry.all_handles_of::<TestAsset>()?.remove(0);
         let asset_id = handle.untyped_id();
         handle.delete()?;
 
-        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root));
+        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root)?);
         registry.add_erased_bundles([bundle])?;
 
         assert!(registry.all_handles_of::<TestAsset>()?.is_empty());
@@ -508,13 +507,12 @@ mod tests {
         std::fs::write(bundle_root.join("removed.storetest"), "2")?;
 
         let mut builder = registry_builder(&root);
-        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)));
+        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)?));
         let mut registry = builder.try_build()?;
         assert_eq!(registry.all_handles_of::<TestAsset>()?.len(), 2);
 
         std::fs::remove_file(bundle_root.join("removed.storetest"))?;
-        std::fs::remove_file(bundle_root.join("manifest.toml"))?;
-        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root));
+        let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root)?);
         registry.add_erased_bundles([bundle])?;
 
         let active = registry
@@ -540,7 +538,7 @@ mod tests {
         let bundle_root = root.join("asset-bundle");
         std::fs::create_dir_all(&bundle_root)?;
         std::fs::write(bundle_root.join("sample.storetest"), "9")?;
-        let bundle = AssetDirectory::new(&bundle_root);
+        let bundle = AssetDirectory::new(&bundle_root)?;
         let bundle_id = AssetBundle::metadata(&bundle)
             .map_err(|error| AssetErrorKind::BundleError(Box::new(error)))?
             .bundle_id;
@@ -553,7 +551,7 @@ mod tests {
 
         std::fs::write(bundle_root.join("sample.storetest.tags"), "tags = [")?;
         let mut builder = registry_builder(&root);
-        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)));
+        builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)?));
         assert!(builder.try_build().is_err());
 
         let index = AssetIndexDb::connect(root.join("index.sqlite3"))?;
