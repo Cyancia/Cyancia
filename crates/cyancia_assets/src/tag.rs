@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::bundle::BundleId;
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Display)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Display)]
     #[display("{0}")]
     pub TagId : Uuid
 }

@@ -7,6 +7,7 @@ use std::{
 };
 
 use chrono::DateTime;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -18,6 +19,8 @@ use crate::{
     tag::{ASSET_TAGS_EXT, AssetTags, TAG_EXT, TagFile},
 };
 
+const METADATA_FILE_NAME: &str = "metadata.toml";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetDirectoryMetadata {
     pub bundle_id: BundleId,
@@ -27,7 +30,7 @@ pub struct AssetDirectory {
     root: PathBuf,
     id: BundleId,
     name: String,
-    manifest: BundleManifest,
+    manifest: Mutex<BundleManifest>,
 }
 
 impl AssetDirectory {
@@ -39,7 +42,7 @@ impl AssetDirectory {
             .unwrap_or_default()
             .to_string();
 
-        let metadata_path = root.join("metadata.toml");
+        let metadata_path = root.join(METADATA_FILE_NAME);
         let metadata = if metadata_path.exists() {
             toml::from_str(&read_to_string(&metadata_path)?)?
         } else {
@@ -57,7 +60,7 @@ impl AssetDirectory {
             id: metadata.bundle_id,
             name,
             root: root.into(),
-            manifest,
+            manifest: Mutex::new(manifest),
         })
     }
 }
@@ -90,7 +93,7 @@ impl AssetBundle for AssetDirectory {
     }
 
     fn manifest(&self) -> Result<BundleManifest, DataDirectoryError> {
-        Ok(self.manifest.clone())
+        Ok(self.manifest.lock().clone())
     }
 
     fn read_asset(
@@ -120,7 +123,9 @@ impl AssetBundle for AssetDirectory {
         serializer
             .write(asset, &mut file)
             .map_err(DataDirectoryError::SerializerError)?;
-        Ok(asset_id_from_relative_path(&self.id, path))
+        let asset_id = asset_id_from_relative_path(&self.id, path);
+        self.manifest.lock().assets.insert(asset_id, path.into());
+        Ok(asset_id)
     }
 
     fn read_tag(&self, tag: &Path) -> Result<TagFile, Self::Error> {
@@ -134,6 +139,8 @@ impl AssetBundle for AssetDirectory {
             create_dir_all(parent)?;
         }
         File::create(tag_path)?.write_all(toml::to_string(tag)?.as_bytes())?;
+
+        self.manifest.lock().tags.insert(tag.id, path.to_path_buf());
 
         Ok(())
     }
@@ -178,6 +185,9 @@ fn scan_dir_dfs(
             }
 
             let relative_path = path.strip_prefix(root).unwrap();
+            if relative_path == Path::new(METADATA_FILE_NAME) {
+                continue;
+            }
 
             if path.extension() == Some(OsStr::new(TAG_EXT)) {
                 let tag = toml::from_slice::<TagFile>(&std::fs::read(&path)?)?;
