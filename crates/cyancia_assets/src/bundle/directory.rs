@@ -79,7 +79,7 @@ impl AssetBundle for AssetDirectory {
             }
 
             let mut manifest = BundleManifest::default();
-            scan_dir_dfs(&self.root, &self.root, &mut manifest)?;
+            scan_dir_dfs(&self.root, &self.root, &self.id, &mut manifest)?;
             std::fs::write(&path, toml::to_string(&manifest)?)?;
             Ok(manifest)
         } else {
@@ -114,8 +114,7 @@ impl AssetBundle for AssetDirectory {
         serializer
             .write(asset, &mut file)
             .map_err(DataDirectoryError::SerializerError)?;
-        let path_str = path.to_string_lossy().to_string();
-        let asset_id = asset_id_from_relative_path(&path_str);
+        let asset_id = asset_id_from_relative_path(&self.id, path);
 
         let mut manifest = self.manifest()?;
         manifest.assets.insert(asset_id, path.to_path_buf());
@@ -163,6 +162,7 @@ impl AssetBundle for AssetDirectory {
 fn scan_dir_dfs(
     current_path: &Path,
     root: &Path,
+    bundle_id: &BundleId,
     manifest: &mut BundleManifest,
 ) -> Result<(), DataDirectoryError> {
     let entries = std::fs::read_dir(current_path)?;
@@ -173,23 +173,19 @@ fn scan_dir_dfs(
 
         let path = entry.path();
         if path.is_dir() {
-            scan_dir_dfs(&path, root, manifest)?;
+            scan_dir_dfs(&path, root, bundle_id, manifest)?;
         } else {
             if path.extension() == Some(OsStr::new(ASSET_TAGS_EXT)) {
                 continue;
             }
 
-            let relative_path = path
-                .strip_prefix(root)
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
+            let relative_path = path.strip_prefix(root).unwrap();
 
             if path.extension() == Some(OsStr::new(TAG_EXT)) {
                 let tag = toml::from_slice::<TagFile>(&std::fs::read(&path)?)?;
                 manifest.tags.insert(tag.id, relative_path.into());
             } else {
-                let asset_id = asset_id_from_relative_path(&relative_path);
+                let asset_id = asset_id_from_relative_path(bundle_id, &relative_path);
 
                 manifest.assets.insert(asset_id, relative_path.into());
             }
@@ -199,10 +195,15 @@ fn scan_dir_dfs(
     Ok(())
 }
 
-fn asset_id_from_relative_path(path: &str) -> UntypedAssetId {
-    UntypedAssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
-        path.as_bytes(),
-    )))
+fn asset_id_from_relative_path(bundle_id: &BundleId, path: &Path) -> UntypedAssetId {
+    let path = path_clean::clean(path);
+    let path_str = path.to_string_lossy();
+    let path_bytes = path_str.as_bytes();
+    let mut key = Vec::with_capacity(bundle_id.as_bytes().len() + path_bytes.len());
+    key.extend_from_slice(bundle_id.as_bytes());
+    key.extend_from_slice(path_bytes);
+
+    UntypedAssetId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(&key)))
 }
 
 #[cfg(test)]
@@ -211,6 +212,20 @@ mod tests {
 
     use super::*;
     use crate::tag::TagId;
+
+    #[test]
+    fn asset_id_is_namespaced_by_bundle_id() {
+        let path = Path::new("brushes/sample.cbp");
+        let first_bundle = BundleId::new(Uuid::from_u128(1));
+        let second_bundle = BundleId::new(Uuid::from_u128(2));
+
+        let first_id = asset_id_from_relative_path(&first_bundle, path);
+        assert_eq!(
+            first_id,
+            asset_id_from_relative_path(&first_bundle, Path::new("./brushes/sample.cbp"))
+        );
+        assert_ne!(first_id, asset_id_from_relative_path(&second_bundle, path));
+    }
 
     #[test]
     fn asset_tags_are_read_written_and_overwritten() -> Result<(), DataDirectoryError> {
