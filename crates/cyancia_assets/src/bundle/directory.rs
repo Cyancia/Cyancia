@@ -196,8 +196,11 @@ fn scan_dir_dfs(
 }
 
 fn asset_id_from_relative_path(bundle_id: &BundleId, path: &Path) -> UntypedAssetId {
-    let path = path_clean::clean(path);
-    let path_str = path.to_string_lossy();
+    let path_str = path_clean::clean(path)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join("/");
     let path_bytes = path_str.as_bytes();
     let mut key = Vec::with_capacity(bundle_id.as_bytes().len() + path_bytes.len());
     key.extend_from_slice(bundle_id.as_bytes());
