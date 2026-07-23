@@ -95,6 +95,12 @@ impl AssetBundleCache {
             .ok_or_else(|| AssetErrorKind::AssetNotFound(*id))?)
     }
 
+    pub fn delete_cached_asset(&self, id: &UntypedAssetId) -> AssetResult<()> {
+        let mut assets = self.assets.write();
+        assets.remove(id);
+        Ok(())
+    }
+
     pub fn update_asset(&self, id: UntypedAssetId, asset: Arc<dyn ErasedAsset>) -> AssetResult<()> {
         self.assets.write().insert(id, asset);
         Ok(())

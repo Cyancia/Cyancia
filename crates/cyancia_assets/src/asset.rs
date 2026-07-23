@@ -234,7 +234,9 @@ impl<T: Asset> AssetHandle<T> {
     }
 
     pub fn delete(&self) -> AssetResult<()> {
-        self.index_db.delete_asset(&self.untyped_id())?;
+        let id = self.untyped_id();
+        self.bundle.delete_cached_asset(&id)?;
+        self.index_db.delete_asset(&id)?;
         Ok(())
     }
 
