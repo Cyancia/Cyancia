@@ -7,6 +7,7 @@ use std::{
 };
 
 use chrono::DateTime;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -16,6 +17,11 @@ use crate::{
     loader::ErasedAssetSerializer,
     tag::{ASSET_TAGS_EXT, AssetTags, TAG_EXT, TagFile},
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetDirectoryMetadata {
+    pub bundle_id: BundleId,
+}
 
 pub struct AssetDirectory {
     root: PathBuf,
@@ -32,15 +38,23 @@ impl AssetDirectory {
             .and_then(|n| n.to_str())
             .unwrap_or_default()
             .to_string();
-        let id = BundleId::new(Uuid::from_u128(xxhash_rust::xxh3::xxh3_128(
-            name.as_bytes(),
-        )));
+
+        let metadata_path = root.join("metadata.toml");
+        let metadata = if metadata_path.exists() {
+            toml::from_str(&read_to_string(&metadata_path)?)?
+        } else {
+            let metadata = AssetDirectoryMetadata {
+                bundle_id: BundleId::new(Uuid::new_v4()),
+            };
+            File::create_new(&metadata_path)?.write_all(toml::to_string(&metadata)?.as_bytes())?;
+            metadata
+        };
 
         let mut manifest = BundleManifest::default();
-        scan_dir_dfs(&root, &root, &id, &mut manifest)?;
+        scan_dir_dfs(&root, &root, &metadata.bundle_id, &mut manifest)?;
 
         Ok(Self {
-            id,
+            id: metadata.bundle_id,
             name,
             root: root.into(),
             manifest,
