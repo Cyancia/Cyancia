@@ -115,7 +115,8 @@ impl AssetBundle for AssetDirectory {
         asset: &dyn ErasedAsset,
         serializer: &dyn ErasedAssetSerializer,
     ) -> Result<UntypedAssetId, DataDirectoryError> {
-        let asset_path = self.root.join(path);
+        let path = path_clean::clean(path);
+        let asset_path = self.root.join(&path);
         if let Some(parent) = asset_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -123,7 +124,7 @@ impl AssetBundle for AssetDirectory {
         serializer
             .write(asset, &mut file)
             .map_err(DataDirectoryError::SerializerError)?;
-        let asset_id = asset_id_from_relative_path(&self.id, path);
+        let asset_id = asset_id_from_relative_path(&self.id, &path);
         self.manifest.lock().assets.insert(asset_id, path.into());
         Ok(asset_id)
     }
@@ -134,13 +135,14 @@ impl AssetBundle for AssetDirectory {
     }
 
     fn add_tag(&self, path: &Path, tag: &TagFile) -> Result<(), Self::Error> {
-        let tag_path = self.root.join(path);
+        let path = path_clean::clean(path);
+        let tag_path = self.root.join(&path);
         if let Some(parent) = tag_path.parent() {
             create_dir_all(parent)?;
         }
         File::create(tag_path)?.write_all(toml::to_string(tag)?.as_bytes())?;
 
-        self.manifest.lock().tags.insert(tag.id, path.to_path_buf());
+        self.manifest.lock().tags.insert(tag.id, path);
 
         Ok(())
     }
