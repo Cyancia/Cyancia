@@ -323,7 +323,7 @@ mod tests {
         std::fs::write(
             assets_root.join("sample.storetest.tags"),
             toml::to_string(&AssetTags {
-                tags: BTreeSet::from([tag.id.clone()]),
+                tags: BTreeSet::from([tag.id]),
             })?,
         )?;
         std::fs::write(tags_root.join("test.ctag"), toml::to_string(&tag)?)?;
@@ -341,29 +341,29 @@ mod tests {
         builder.add_bundle(Arc::new(tags_bundle));
         let registry = builder.try_build()?;
 
-        let stored_tag = registry.index_db().get_tag(tag.id.clone())?;
+        let stored_tag = registry.index_db().get_tag(tag.id)?;
         assert_eq!(stored_tag.bundle_id, tags_bundle_id);
         assert_eq!(stored_tag.relative_path, "test.ctag");
 
         let handles = registry.all_handles_of::<TestAsset>()?;
         assert_eq!(handles.len(), 1);
         let handle = &handles[0];
-        assert_eq!(handle.read_tags()?, BTreeSet::from([tag.id.clone()]));
+        assert_eq!(handle.read_tags()?, BTreeSet::from([tag.id]));
 
         handle.remove_tag(&tag.id)?;
         assert!(handle.read_tags()?.is_empty());
         assert!(
             registry
-                .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(tag.id.clone()))?
+                .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(tag.id))?
                 .is_empty()
         );
         assert!(handle.remove_tag(&tag.id).is_err());
 
         handle.add_tag(&tag.id)?;
-        assert_eq!(handle.read_tags()?, BTreeSet::from([tag.id.clone()]));
+        assert_eq!(handle.read_tags()?, BTreeSet::from([tag.id]));
         assert_eq!(
             registry
-                .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(tag.id.clone()))?
+                .all_handles_of_filtered::<TestAsset>(AssetFilter::new().with_tag(tag.id))?
                 .len(),
             1
         );
@@ -378,7 +378,7 @@ mod tests {
         };
         registry.add_tag(added_tag.clone())?;
         assert!(assets_root.join("runtime/added.ctag").is_file());
-        let stored_tag = registry.index_db().get_tag(added_tag.id.clone())?;
+        let stored_tag = registry.index_db().get_tag(added_tag.id)?;
         assert_eq!(stored_tag.bundle_id, added_tag.bundle_id);
         assert_eq!(stored_tag.relative_path, added_tag.relative_path);
         assert_eq!(stored_tag.name, added_tag.name);
@@ -402,7 +402,7 @@ mod tests {
         builder.add_bundle(Arc::new(AssetDirectory::new(&bundle_root)?));
         let mut registry = builder.try_build()?;
         assert_eq!(
-            registry.index_db().get_tag(tag.id.clone())?.relative_path,
+            registry.index_db().get_tag(tag.id)?.relative_path,
             "removed.ctag"
         );
 
@@ -410,7 +410,7 @@ mod tests {
         let bundle: Arc<dyn ErasedAssetBundle> = Arc::new(AssetDirectory::new(&bundle_root)?);
         registry.add_erased_bundles([bundle])?;
 
-        assert!(registry.index_db().get_tag(tag.id.clone()).is_err());
+        assert!(registry.index_db().get_tag(tag.id).is_err());
         assert!(registry.index_db().restore_tag(&tag.id).is_err());
 
         drop(registry);
@@ -454,7 +454,7 @@ mod tests {
         let mut builder = registry_builder(&root);
         builder.add_bundle(Arc::new(bundle));
         let registry = builder.try_build()?;
-        assert!(registry.index_db().get_tag(tag.id.clone()).is_ok());
+        assert!(registry.index_db().get_tag(tag.id).is_ok());
         drop(registry);
 
         let registry = registry_builder(&root).try_build()?;

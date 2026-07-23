@@ -54,7 +54,7 @@ impl AssetDirectory {
         };
 
         let mut manifest = BundleManifest::default();
-        scan_dir_dfs(&root, &root, &metadata.bundle_id, &mut manifest)?;
+        scan_dir_dfs(root, root, &metadata.bundle_id, &mut manifest)?;
 
         Ok(Self {
             id: metadata.bundle_id,
@@ -125,7 +125,7 @@ impl AssetBundle for AssetDirectory {
             .write(asset, &mut file)
             .map_err(DataDirectoryError::SerializerError)?;
         let asset_id = asset_id_from_relative_path(&self.id, &path);
-        self.manifest.lock().assets.insert(asset_id, path.into());
+        self.manifest.lock().assets.insert(asset_id, path);
         Ok(asset_id)
     }
 
@@ -195,7 +195,7 @@ fn scan_dir_dfs(
                 let tag = toml::from_slice::<TagFile>(&std::fs::read(&path)?)?;
                 manifest.tags.insert(tag.id, relative_path.into());
             } else {
-                let asset_id = asset_id_from_relative_path(bundle_id, &relative_path);
+                let asset_id = asset_id_from_relative_path(bundle_id, relative_path);
 
                 manifest.assets.insert(asset_id, relative_path.into());
             }
@@ -254,7 +254,7 @@ mod tests {
         bundle.write_asset_tags(
             asset_path,
             &AssetTags {
-                tags: BTreeSet::from([first_tag.clone()]),
+                tags: BTreeSet::from([first_tag]),
             },
         )?;
         assert_eq!(
@@ -269,7 +269,7 @@ mod tests {
         bundle.write_asset_tags(
             asset_path,
             &AssetTags {
-                tags: BTreeSet::from([second_tag.clone()]),
+                tags: BTreeSet::from([second_tag]),
             },
         )?;
         assert_eq!(

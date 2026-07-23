@@ -247,10 +247,10 @@ impl<T: Asset> AssetHandle<T> {
     pub fn add_tag(&self, tag_id: &TagId) -> AssetResult<()> {
         let asset_id = self.untyped_id();
         let mut tags = self.read_tags()?;
-        if !tags.insert(tag_id.clone()) {
+        if !tags.insert(*tag_id) {
             return Err(AssetErrorKind::TagAlreadyAssigned {
                 asset_id,
-                tag_id: tag_id.clone(),
+                tag_id: *tag_id,
             }
             .into());
         }
@@ -266,7 +266,7 @@ impl<T: Asset> AssetHandle<T> {
         if !tags.remove(tag_id) {
             return Err(AssetErrorKind::TagNotAssigned {
                 asset_id,
-                tag_id: tag_id.clone(),
+                tag_id: *tag_id,
             }
             .into());
         }

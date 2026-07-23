@@ -294,7 +294,7 @@ VALUES (?1, ?2, ?3, ?4, ?5);
                     && existing_bundle_id != tag.bundle_id
                 {
                     return Err(AssetErrorKind::DuplicateTagDefinition {
-                        tag_id: tag.id.clone(),
+                        tag_id: tag.id,
                         first_bundle_id: existing_bundle_id,
                         second_bundle_id: tag.bundle_id,
                     }
@@ -441,7 +441,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0);
             Some((stored_bundle_id, stored_asset_ty, stored_last_modified, is_deleted)) => {
                 if stored_bundle_id != tag.bundle_id {
                     return Err(AssetErrorKind::DuplicateTagDefinition {
-                        tag_id: tag.id.clone(),
+                        tag_id: tag.id,
                         first_bundle_id: stored_bundle_id,
                         second_bundle_id: tag.bundle_id,
                     }
@@ -455,7 +455,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0);
 
                 if stored_asset_ty != tag.asset_ty {
                     return Err(AssetErrorKind::TagAssetTypeChanged {
-                        tag_id: tag.id.clone(),
+                        tag_id: tag.id,
                         current_asset_ty: stored_asset_ty,
                         new_asset_ty: tag.asset_ty.clone(),
                     }
@@ -566,7 +566,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0);
             params![tag_id],
         )?;
         if deleted == 0 {
-            return Err(AssetErrorKind::TagNotFound(tag_id.clone()).into());
+            return Err(AssetErrorKind::TagNotFound(*tag_id).into());
         }
 
         Ok(())
@@ -819,7 +819,7 @@ RETURNING revision;
             params![tag_id],
         )?;
         if restored == 0 {
-            return Err(AssetErrorKind::TagNotFound(tag_id.clone()).into());
+            return Err(AssetErrorKind::TagNotFound(*tag_id).into());
         }
 
         Ok(())
@@ -857,13 +857,13 @@ RETURNING revision;
                 |row| row.get::<_, Option<String>>(0),
             )
             .optional()?
-            .ok_or_else(|| AssetErrorKind::TagNotFound(tag_id.clone()))?;
+            .ok_or_else(|| AssetErrorKind::TagNotFound(*tag_id))?;
 
         if let Some(expected_ty) = tag_asset_ty
             && asset_ty != expected_ty
         {
             return Err(AssetErrorKind::InvalidTagAssetType {
-                tag_id: tag_id.clone(),
+                tag_id: *tag_id,
                 asset_id: *asset_id,
                 asset_ty,
                 expected_ty,
@@ -882,7 +882,7 @@ ON CONFLICT DO NOTHING;
         if inserted == 0 {
             return Err(AssetErrorKind::TagAlreadyAssigned {
                 asset_id: *asset_id,
-                tag_id: tag_id.clone(),
+                tag_id: *tag_id,
             }
             .into());
         }
@@ -905,7 +905,7 @@ ON CONFLICT DO NOTHING;
             |row| row.get::<_, bool>(0),
         )?;
         if !tag_exists {
-            return Err(AssetErrorKind::TagNotFound(tag_id.clone()).into());
+            return Err(AssetErrorKind::TagNotFound(*tag_id).into());
         }
 
         let deleted = tx.execute(
@@ -915,7 +915,7 @@ ON CONFLICT DO NOTHING;
         if deleted == 0 {
             return Err(AssetErrorKind::TagNotAssigned {
                 asset_id: *asset_id,
-                tag_id: tag_id.clone(),
+                tag_id: *tag_id,
             }
             .into());
         }
@@ -1227,7 +1227,7 @@ mod tests {
         db.upsert_tag(&untyped_tag, updated_at)?;
         db.upsert_tag(&other_asset_tag, updated_at)?;
 
-        let queried = db.get_tag(tag.id.clone())?;
+        let queried = db.get_tag(tag.id)?;
         assert_eq!(queried.id, tag.id);
         assert_eq!(queried.name, "Ignored");
         assert_eq!(queried.asset_ty.as_deref(), Some(TestAsset::TYPE_NAME));
@@ -1309,7 +1309,7 @@ mod tests {
         db.add_tag_to_asset(&other_asset_id, &untyped_tag.id)?;
 
         let tagged = db.get_assets(UntypedAssetFilter {
-            tag: Some(typed_tag.id.clone()),
+            tag: Some(typed_tag.id),
             ..Default::default()
         })?;
         assert_eq!(tagged.len(), 1);
@@ -1322,7 +1322,7 @@ mod tests {
         );
         assert!(
             db.get_assets(UntypedAssetFilter {
-                tag: Some(typed_tag.id.clone()),
+                tag: Some(typed_tag.id),
                 ..Default::default()
             })?
             .is_empty()
@@ -1330,7 +1330,7 @@ mod tests {
 
         db.delete_tag(&untyped_tag.id)?;
 
-        assert!(db.get_tag(untyped_tag.id.clone()).is_err());
+        assert!(db.get_tag(untyped_tag.id).is_err());
         assert!(
             db.get_tags(TagFilter::default())?
                 .iter()
@@ -1342,9 +1342,9 @@ mod tests {
                 ..Default::default()
             })?
             .iter()
-            .map(|tag| tag.id.clone())
+            .map(|tag| tag.id)
             .collect::<Vec<_>>(),
-            vec![untyped_tag.id.clone()]
+            vec![untyped_tag.id]
         );
         assert_eq!(
             db.get_tags(TagFilter {
@@ -1363,7 +1363,7 @@ mod tests {
         );
         assert!(
             db.get_assets(UntypedAssetFilter {
-                tag: Some(untyped_tag.id.clone()),
+                tag: Some(untyped_tag.id),
                 ..Default::default()
             })?
             .is_empty()
@@ -1371,7 +1371,7 @@ mod tests {
         db.delete_asset(&other_asset_id)?;
         assert_eq!(
             db.get_assets(UntypedAssetFilter {
-                tag: Some(untyped_tag.id.clone()),
+                tag: Some(untyped_tag.id),
                 is_deleted: true,
                 ..Default::default()
             })?[0]
@@ -1394,7 +1394,7 @@ mod tests {
             &rediscovered_tag,
             Utc.with_ymd_and_hms(2026, 4, 6, 0, 0, 0).unwrap(),
         )?;
-        assert!(db.get_tag(untyped_tag.id.clone()).is_err());
+        assert!(db.get_tag(untyped_tag.id).is_err());
 
         let (association_count, is_deleted) = db.conn.lock().query_row(
             r#"
@@ -1409,7 +1409,7 @@ SELECT
         assert!(is_deleted);
 
         db.restore_tag(&untyped_tag.id)?;
-        assert_eq!(db.get_tag(untyped_tag.id.clone())?.id, untyped_tag.id);
+        assert_eq!(db.get_tag(untyped_tag.id)?.id, untyped_tag.id);
         assert!(
             db.get_tags(TagFilter {
                 is_deleted: true,
@@ -1421,7 +1421,7 @@ SELECT
 
         db.restore_asset(&other_asset_id)?;
         let tagged = db.get_assets(UntypedAssetFilter {
-            tag: Some(untyped_tag.id.clone()),
+            tag: Some(untyped_tag.id),
             ..Default::default()
         })?;
         assert_eq!(tagged.len(), 1);
@@ -1467,7 +1467,7 @@ SELECT
         assert!(db.get_assets(UntypedAssetFilter::default())?.is_empty());
         assert!(
             db.get_assets(UntypedAssetFilter {
-                tag: Some(tag.id.clone()),
+                tag: Some(tag.id),
                 ..Default::default()
             })?
             .is_empty()
@@ -1486,7 +1486,7 @@ SELECT
         assert_eq!(deleted[0].revision, 5);
         assert_eq!(
             db.get_assets(UntypedAssetFilter {
-                tag: Some(tag.id.clone()),
+                tag: Some(tag.id),
                 is_deleted: true,
                 ..Default::default()
             })?[0]
@@ -1522,7 +1522,7 @@ SELECT
         );
         assert!(db.restore_asset(&asset_id).is_err());
         let tagged = db.get_assets(UntypedAssetFilter {
-            tag: Some(tag.id.clone()),
+            tag: Some(tag.id),
             ..Default::default()
         })?;
         assert_eq!(tagged.len(), 1);
@@ -1547,7 +1547,7 @@ SELECT
             .is_empty()
         );
         let tagged = db.get_assets(UntypedAssetFilter {
-            tag: Some(tag.id.clone()),
+            tag: Some(tag.id),
             ..Default::default()
         })?;
         assert_eq!(tagged.len(), 1);

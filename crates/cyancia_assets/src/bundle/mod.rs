@@ -235,7 +235,7 @@ impl AssetBundleCache {
         self.bundle
             .add_tag(&path, &TagFile::from(tag.clone()))
             .map_err(AssetErrorKind::BundleError)?;
-        self.manifest.write().tags.insert(tag.id.clone(), path);
+        self.manifest.write().tags.insert(tag.id, path);
         Ok(())
     }
 
@@ -716,7 +716,7 @@ mod tests {
             asset_id,
             asset_path: asset_path.clone(),
             tags: AssetTags {
-                tags: BTreeSet::from([base_tag.clone()]),
+                tags: BTreeSet::from([base_tag]),
             },
         });
         let cache = AssetBundleCache::new(
