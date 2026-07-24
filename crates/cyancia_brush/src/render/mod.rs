@@ -1,9 +1,12 @@
+use std::time::Instant;
+
 use bevy_math::IRect;
+use chrono::{DateTime, Utc};
 use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
 use cyancia_canvas::{CCanvas, command::TileReplaceCommand, event::CanvasUpdated};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
-    layer::LayerId,
+    layer::{LayerId, properties::LayerTexelTypeProp},
     scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, LayerBinding, TileStorageAppExt},
@@ -23,7 +26,7 @@ use cyancia_undo::QueuedUndoCommand;
 use encase::ShaderType;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use glam::{IVec2, Vec2};
-use gpui::{App, AsyncApp, Task, WeakEntity};
+use gpui::{App, AsyncApp, Entity, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Task, WeakEntity};
 use wgpu::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
     BufferDescriptor, BufferUsages, ComputePassDescriptor, Device, Extent3d, Queue, ShaderStages,
@@ -45,9 +48,12 @@ pub mod pipeline;
 
 const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 pub const MAX_DABS_PER_STROKE: u32 = 256;
+const TIMESTAMP_MOD: i64 = 1_000_000;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct BrushStrokeSessionInfo {
+    pub stroke_begin: DateTime<Utc>,
+    pub canvas: WeakEntity<CCanvas>,
     pub target_layer_id: LayerId,
     pub selection_layer_id: LayerId,
     pub brush_runtime_revision: u64,
@@ -93,42 +99,54 @@ impl BrushPresetOperator {
 
     pub fn begin_stroke(
         &mut self,
-        input: RawPenInput,
-        target_layer_id: LayerId,
-        selection_layer_id: LayerId,
-        canvas: WeakEntity<CCanvas>,
+        input: &MouseDownEvent,
+        canvas_entity: Entity<CCanvas>,
         queued_cmd: QueuedUndoCommand,
         cx: &mut App,
     ) {
+        let canvas = canvas_entity.read(cx);
+        let Some(position) = canvas
+            .transform
+            .window_to_pixel(Vec2::new(input.position.x.into(), input.position.y.into()))
+        else {
+            return;
+        };
+        let active_layer_id = canvas.active_layer_id();
+        let selection_layer_id = canvas.image.selection_layer();
+        if !canvas
+            .active_layer_node()
+            .properties()
+            .contains::<LayerTexelTypeProp>()
+        {
+            log::warn!("Unable to paint to the active layer which cannot contain pixels.");
+            return;
+        }
+
+        let now = Utc::now();
         let tiles = cx.tile_storage();
 
-        let target_layer_info = tiles.get_layer_info(target_layer_id).unwrap();
+        let target_layer_info = tiles.get_layer_info(active_layer_id).unwrap();
         let selection_layer_info = tiles.get_layer_info(selection_layer_id).unwrap();
         let session = BrushStrokeSessionInfo {
-            target_layer_id,
+            stroke_begin: now,
+            canvas: canvas_entity.downgrade(),
+            target_layer_id: active_layer_id,
             selection_layer_id,
             brush_runtime_revision: self.instance.runtime_revision(),
             target_layer_format: target_layer_info.texel_type,
             selection_layer_format: selection_layer_info.texel_type,
         };
-        match self.last_session.as_mut() {
-            Some(last_session) => {
-                if last_session.brush_runtime_revision != session.brush_runtime_revision {
-                    self.cached_brush = None;
-                    self.renderer = None;
-                }
-
-                if last_session.target_layer_format != session.target_layer_format {
-                    self.renderer = None;
-                }
-                if last_session.selection_layer_format != session.selection_layer_format {
-                    self.renderer = None;
-                }
-
-                self.last_session = Some(session);
+        if let Some(last_session) = self.last_session.as_mut() {
+            if last_session.brush_runtime_revision != session.brush_runtime_revision {
+                self.cached_brush = None;
+                self.renderer = None;
             }
-            None => {
-                self.last_session = Some(session);
+
+            if last_session.target_layer_format != session.target_layer_format {
+                self.renderer = None;
+            }
+            if last_session.selection_layer_format != session.selection_layer_format {
+                self.renderer = None;
             }
         }
 
@@ -170,32 +188,90 @@ impl BrushPresetOperator {
         renderer.begin(
             &self.device,
             &self.queue,
-            target_layer_id,
+            session.target_layer_id,
             target_layer,
             selection_layer,
-            canvas,
+            &canvas_entity,
             queued_cmd,
             cx,
         );
 
-        if let Some(sample) = self.input_processor.push(input) {
+        let params = RawPenInput {
+            position,
+            time: Time {
+                now: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
+            },
+        };
+
+        if let Some(sample) = self.input_processor.push(params) {
             renderer.update(&self.device, &self.queue, sample);
         }
+
+        self.last_session = Some(session);
     }
 
-    pub fn update_stroke(&mut self, input: RawPenInput) {
+    pub fn update_stroke(&mut self, input: &MouseMoveEvent, cx: &App) {
         let Some(renderer) = &mut self.renderer else {
             return;
         };
 
-        if let Some(sample) = self.input_processor.push(input) {
+        let Some(session) = self.last_session.as_ref() else {
+            return;
+        };
+
+        let Some(canvas_entity) = session.canvas.upgrade() else {
+            return;
+        };
+        let canvas = canvas_entity.read(cx);
+
+        let Some(position) = canvas
+            .transform
+            .window_to_pixel(Vec2::new(input.position.x.into(), input.position.y.into()))
+        else {
+            return;
+        };
+
+        let params = RawPenInput {
+            position,
+            time: Time {
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (session.stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
+            },
+        };
+
+        if let Some(sample) = self.input_processor.push(params) {
             renderer.update(&self.device, &self.queue, sample);
         }
     }
 
-    pub fn end_stroke(&mut self, final_input: RawPenInput) {
+    pub fn end_stroke(&mut self, input: &MouseUpEvent, cx: &App) {
         let Some(renderer) = self.renderer.as_mut() else {
             return;
+        };
+
+        let Some(session) = self.last_session.as_ref() else {
+            return;
+        };
+
+        let Some(canvas_entity) = session.canvas.upgrade() else {
+            return;
+        };
+        let canvas = canvas_entity.read(cx);
+
+        let Some(position) = canvas
+            .transform
+            .window_to_pixel(Vec2::new(input.position.x.into(), input.position.y.into()))
+        else {
+            return;
+        };
+
+        let final_input = RawPenInput {
+            position,
+            time: Time {
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (session.stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
+            },
         };
 
         for sample in self.input_processor.flush(final_input) {
@@ -309,7 +385,7 @@ impl BrushPresetRenderer {
         target_layer_id: LayerId,
         target_layer: LayerBinding,
         selection_layer: LayerBinding,
-        canvas: WeakEntity<CCanvas>,
+        canvas: &Entity<CCanvas>,
         queued_cmd: QueuedUndoCommand,
         cx: &mut App,
     ) {
@@ -332,7 +408,7 @@ impl BrushPresetRenderer {
             let target_layer = target_layer.clone();
             let has_selection = has_selection.clone();
             let selection_layer = selection_layer.clone();
-            let canvas = canvas.clone();
+            let canvas = canvas.downgrade();
 
             async move |cx| {
                 brush_renderer_worker_main(

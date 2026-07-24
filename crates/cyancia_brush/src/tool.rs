@@ -33,8 +33,6 @@ use crate::{
     render::{BrushPresetOperator, Time},
 };
 
-const TIMESTAMP_MOD: i64 = 1_000_000;
-
 pub(crate) fn init(cx: &mut App) {
     cx.observe_global::<CurrentBrushPresetHandle>(|cx| {
         let Some(handle) = cx.try_global::<CurrentBrushPresetHandle>().cloned() else {
@@ -101,15 +99,8 @@ pub(crate) fn init(cx: &mut App) {
     .detach();
 }
 
-struct BrushToolState {
-    canvas_entity: WeakEntity<CCanvas>,
-    stroke_begin: DateTime<Utc>,
-}
-
 #[derive(Default)]
-pub struct BrushTool {
-    state: Option<BrushToolState>,
-}
+pub struct BrushTool;
 
 impl ToolFunction for BrushTool {
     fn new(cx: &mut Context<Self>) -> Self {
@@ -124,40 +115,6 @@ impl ToolFunction for BrushTool {
         let Some(canvas_entity) = cx.current_canvas() else {
             return;
         };
-        let Some(canvas) = canvas_entity.upgrade().map(|c| c.read(cx)) else {
-            return;
-        };
-
-        let Some(position) = canvas
-            .transform
-            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
-        else {
-            return;
-        };
-        let active_layer = canvas.active_layer_id();
-        let selection_layer = canvas.image.selection_layer();
-        if !canvas
-            .active_layer_node()
-            .properties()
-            .contains::<LayerTexelTypeProp>()
-        {
-            log::warn!("Unable to paint to the active layer which cannot contain pixels.");
-            return;
-        }
-
-        let now = Utc::now();
-        self.state = Some(BrushToolState {
-            canvas_entity: canvas_entity.clone(),
-            stroke_begin: now,
-        });
-
-        let params = RawPenInput {
-            position,
-            time: Time {
-                now: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
-                stroke_begin: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
-            },
-        };
 
         if !cx.has_global::<CurrentBrushPreset>() {
             return;
@@ -167,92 +124,29 @@ impl ToolFunction for BrushTool {
             let Ok(queued_cmd) = cx.queue_undo_command_to_current() else {
                 return;
             };
-            brush.begin_stroke(
-                params,
-                active_layer,
-                selection_layer,
-                canvas_entity,
-                queued_cmd,
-                cx,
-            );
+            brush.begin_stroke(mouse, canvas_entity.upgrade().unwrap(), queued_cmd, cx);
         });
     }
 
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
-        let Some(BrushToolState {
-            canvas_entity,
-            stroke_begin,
-        }) = &self.state
-        else {
-            return;
-        };
-
-        let Some(canvas_entity) = canvas_entity.upgrade() else {
-            return;
-        };
-        let canvas = canvas_entity.read(cx);
-
-        let Some(position) = canvas
-            .transform
-            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
-        else {
-            return;
-        };
-
-        let params = RawPenInput {
-            position,
-            time: Time {
-                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
-                stroke_begin: (stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
-            },
-        };
-
         if !cx.has_global::<CurrentBrushPreset>() {
             return;
         }
 
-        cx.update_global::<CurrentBrushPreset, _>(|brush, _cx| {
+        cx.update_global::<CurrentBrushPreset, _>(|brush, cx| {
             let now = std::time::Instant::now();
-            brush.update_stroke(params);
+            brush.update_stroke(mouse, cx);
             log::debug!("Brush stroke update took {:?}", now.elapsed());
         });
     }
 
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
-        let Some(BrushToolState {
-            canvas_entity,
-            stroke_begin,
-        }) = self.state.take()
-        else {
-            return;
-        };
-
-        let Some(canvas_entity) = canvas_entity.upgrade() else {
-            return;
-        };
-        let canvas = canvas_entity.read(cx);
-
-        let Some(position) = canvas
-            .transform
-            .window_to_pixel(Vec2::new(mouse.position.x.into(), mouse.position.y.into()))
-        else {
-            return;
-        };
-
-        let final_input = RawPenInput {
-            position,
-            time: Time {
-                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
-                stroke_begin: (stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
-            },
-        };
-
         if !cx.has_global::<CurrentBrushPreset>() {
             return;
         }
 
-        cx.update_global::<CurrentBrushPreset, _>(|brush, _cx| {
-            brush.end_stroke(final_input);
+        cx.update_global::<CurrentBrushPreset, _>(|brush, cx| {
+            brush.end_stroke(mouse, cx);
         });
     }
 
