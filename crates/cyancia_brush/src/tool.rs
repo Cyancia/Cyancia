@@ -30,7 +30,7 @@ use crate::{
     editor::{FUNCTION_GRAPH_NODE_REGISTRY, FUNCTION_GRAPH_TYPE_REGISTRY},
     input_processing::{BasicStabilizer, InputProcessor, RawPenInput},
     instance::BrushPresetInstance,
-    render::{BrushPresetOperator, Time},
+    render::{CanvasBrushPresetOperator, Time},
 };
 
 pub(crate) fn init(cx: &mut App) {
@@ -82,7 +82,7 @@ pub(crate) fn init(cx: &mut App) {
             return;
         };
 
-        let op = BrushPresetOperator::new(
+        let op = CanvasBrushPresetOperator::new(
             instance,
             cx.render_device().clone(),
             cx.render_queue().clone(),
@@ -191,7 +191,7 @@ impl ToolFunction for BrushTool {
 
 // This needs to share between canvases. So should be a global.
 wrapper! {
-    mut CurrentBrushPreset : BrushPresetOperator
+    mut CurrentBrushPreset : CanvasBrushPresetOperator
 }
 
 impl Global for CurrentBrushPreset {}

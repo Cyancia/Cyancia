@@ -51,7 +51,7 @@ pub const MAX_DABS_PER_STROKE: u32 = 256;
 const TIMESTAMP_MOD: i64 = 1_000_000;
 
 #[derive(Debug, Clone)]
-pub struct BrushStrokeSessionInfo {
+pub struct CanvasBrushStrokeSessionInfo {
     pub stroke_begin: DateTime<Utc>,
     pub canvas: WeakEntity<CCanvas>,
     pub target_layer_id: LayerId,
@@ -61,17 +61,17 @@ pub struct BrushStrokeSessionInfo {
     pub selection_layer_format: TexelType,
 }
 
-pub struct BrushPresetOperator {
+pub struct CanvasBrushPresetOperator {
     instance: BrushPresetInstance,
     device: Device,
     queue: Queue,
     renderer: Option<BrushPresetRenderer>,
-    last_session: Option<BrushStrokeSessionInfo>,
+    last_session: Option<CanvasBrushStrokeSessionInfo>,
     input_processor: InputProcessor,
     cached_brush: Option<CompiledBrushPreset>,
 }
 
-impl BrushPresetOperator {
+impl CanvasBrushPresetOperator {
     pub fn new(
         instance: BrushPresetInstance,
         device: Device,
@@ -127,7 +127,7 @@ impl BrushPresetOperator {
 
         let target_layer_info = tiles.get_layer_info(active_layer_id).unwrap();
         let selection_layer_info = tiles.get_layer_info(selection_layer_id).unwrap();
-        let session = BrushStrokeSessionInfo {
+        let session = CanvasBrushStrokeSessionInfo {
             stroke_begin: now,
             canvas: canvas_entity.downgrade(),
             target_layer_id: active_layer_id,
