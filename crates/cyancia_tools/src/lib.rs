@@ -68,7 +68,7 @@ wrapper! {
     pub ToolId : Arc<str>
 }
 
-pub trait ToolFunction: Send + Sync + 'static + Sized {
+pub trait ToolFunction: 'static + Sized {
     fn new(cx: &mut Context<Self>) -> Self;
     fn id() -> ToolId;
     fn activate(&mut self, _: &mut Context<Self>) {}
@@ -177,6 +177,7 @@ struct State {
 pub struct ToolProxy {
     current_state: Option<State>,
     override_state: Option<State>,
+    // TODO all tool states should be initialized once a proxy initialize.
     tool_functions: HashMap<ToolId, Box<dyn ErasedToolFunction>>,
 }
 

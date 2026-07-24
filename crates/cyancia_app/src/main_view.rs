@@ -16,7 +16,7 @@ use gpui_component::{
     menu::AppMenuBar,
 };
 
-use crate::dock::{CanvasDock, CurrentCanvasLayersDock, FiltersDock, LayersDock, ToolOptionsDock};
+use crate::dock::{BrushPresetDock, CanvasDock, CurrentCanvasLayersDock, FiltersDock, LayersDock, ToolOptionsDock};
 
 fn default_dock_layout(
     dock_area: &WeakEntity<DockArea>,
@@ -30,6 +30,7 @@ fn default_dock_layout(
                 Arc::new(cx.new(FiltersDock::new)),
                 Arc::new(cx.new(|cx| ToolOptionsDock::new(window, cx))),
                 Arc::new(cx.new(|cx| CurrentCanvasLayersDock::new(window, cx))),
+                Arc::new(cx.new(|cx| BrushPresetDock::new(window, cx))),
             ],
             dock_area,
             window,

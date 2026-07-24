@@ -52,7 +52,7 @@ use crate::{
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
 
-static FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+pub static FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(|| {
         let mut registry = GraphNodeRegistry::default();
 
@@ -63,7 +63,7 @@ static FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphDa
         registry.into()
     });
 
-static FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(|| {
+pub static FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(|| {
     let mut registry = GraphTypeRegistry::default();
 
     registry.merge(builtin_types());

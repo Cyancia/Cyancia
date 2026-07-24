@@ -1,3 +1,9 @@
+use cyancia_assets::{AssetAppExt, index_db::AssetFilter};
+use cyancia_brush::{
+    asset::BrushPreset,
+    tool::CurrentBrushPresetHandle,
+    widget::{BrushPresetListDelegate, BrushPresetListItem},
+};
 use cyancia_canvas::{
     CanvasAppExt, CanvasId,
     event::CurrentCanvasChanged,
@@ -7,9 +13,14 @@ use cyancia_canvas::{
 use cyancia_tools::{ToolFunction, ToolProxies, ToolProxyId};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, Render, SharedString, Window, div,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div,
 };
-use gpui_component::dock::{Panel, PanelEvent};
+use gpui_component::{
+    Sizable,
+    dock::{Panel, PanelEvent},
+    list::{List, ListEvent, ListState},
+    select::SearchableVec,
+};
 
 macro_rules! test_dummy_dock {
     ($name:ident) => {
@@ -209,5 +220,83 @@ impl Render for ToolOptionsDock {
                 .tool_option_widget(window, cx)
                 .unwrap_or_else(|| div().into_any_element())
         })
+    }
+}
+
+pub struct BrushPresetDock {
+    filter_condition: AssetFilter<BrushPreset>,
+    list_state: Entity<ListState<BrushPresetListDelegate>>,
+    focus_handle: FocusHandle,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl BrushPresetDock {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let list_state = cx.new(|cx| {
+            ListState::new(
+                BrushPresetListDelegate::new(cx.assets().all_handles_of::<BrushPreset>().unwrap()),
+                window,
+                cx,
+            )
+        });
+
+        let _subscriptions =
+            vec![cx.subscribe_in(&list_state, window, Self::on_select_brush_preset)];
+
+        Self {
+            filter_condition: Default::default(),
+            list_state,
+            focus_handle: cx.focus_handle(),
+            _subscriptions,
+        }
+    }
+
+    fn on_select_brush_preset(
+        &mut self,
+        state: &Entity<ListState<BrushPresetListDelegate>>,
+        event: &ListEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ListEvent::Confirm(ix) => {
+                let handle = state.read_with(cx, |state, _| {
+                    let item = state.delegate().get(*ix)?;
+                    Some(item.handle.clone())
+                });
+
+                if let Some(handle) = handle {
+                    cx.set_global(CurrentBrushPresetHandle::new(handle));
+                }
+            }
+            ListEvent::Select(_) | ListEvent::Cancel => {}
+        }
+    }
+}
+
+impl EventEmitter<PanelEvent> for BrushPresetDock {}
+
+impl Focusable for BrushPresetDock {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Panel for BrushPresetDock {
+    fn panel_name(&self) -> &'static str {
+        "brush_presets"
+    }
+
+    fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        "Brush Presets"
+    }
+}
+
+impl Render for BrushPresetDock {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .p_1()
+            .size_full()
+            .child(List::new(&self.list_state).small().size_full())
     }
 }

@@ -4,7 +4,7 @@ use gpui::App;
 
 use crate::{
     asset::BrushPresetSerializer,
-    tool::{BrushTool, CurrentBrushPresetOperator},
+    tool::{BrushTool, CurrentBrushPresetHandle},
 };
 
 pub mod asset;
@@ -18,7 +18,6 @@ pub mod widget;
 pub fn init(cx: &mut App) {
     cx.add_asset_serializer::<BrushPresetSerializer>();
     cx.add_tool_function::<BrushTool>();
-    cx.set_global(CurrentBrushPresetOperator::new(None));
 
     editor::init(cx);
 }

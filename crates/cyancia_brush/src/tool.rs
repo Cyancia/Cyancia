@@ -1,20 +1,35 @@
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 use chrono::{DateTime, Utc};
+use cyancia_assets::{
+    AssetAppExt,
+    asset::{AssetHandle, AssetId},
+};
 use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasUndoStackAppExt};
 use cyancia_image::layer::properties::LayerTexelTypeProp;
-use cyancia_shader_graph::graph::slot::GraphInlineLiteralRenderContext;
+use cyancia_render::{render_context::RenderContextAppExt, texture::Image};
+use cyancia_shader_graph::{
+    graph::{
+        function::GraphFunctionStorage, slot::GraphInlineLiteralRenderContext,
+        texture::GraphTextureStorage,
+    },
+    save::SerializableGraphFunction,
+};
 use cyancia_tools::{ToolFunction, ToolId};
-use cyancia_utils::wrapper;
+use cyancia_utils::{log_err::LogErr, wrapper};
 use glam::Vec2;
 use gpui::{
     AnyElement, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Styled, WeakEntity, Window,
+    MouseUpEvent, ParentElement, Styled, Subscription, WeakEntity, Window,
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
+use log::error;
 
 use crate::{
-    input_processing::RawPenInput,
+    asset::BrushPreset,
+    editor::{FUNCTION_GRAPH_NODE_REGISTRY, FUNCTION_GRAPH_TYPE_REGISTRY},
+    input_processing::{BasicStabilizer, InputProcessor, RawPenInput},
+    instance::BrushPresetInstance,
     render::{BrushPresetOperator, Time},
 };
 
@@ -28,11 +43,82 @@ struct BrushToolState {
 #[derive(Default)]
 pub struct BrushTool {
     state: Option<BrushToolState>,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl BrushTool {
+    fn reload_preset(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = cx.try_global::<CurrentBrushPresetHandle>().cloned() else {
+            return;
+        };
+
+        let function_assets = cx
+            .assets()
+            .all_handles_of::<SerializableGraphFunction>()
+            .unwrap();
+        let functions = function_assets
+            .iter()
+            .map(|handle| {
+                let func = handle.get().unwrap();
+                // TODO err handling
+                (
+                    func.id,
+                    func.deserialize_func(
+                        Some(handle.id()),
+                        FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
+                        FUNCTION_GRAPH_NODE_REGISTRY.as_ref(),
+                        cx,
+                    )
+                    .0
+                    .unwrap(),
+                )
+            })
+            .collect();
+        let function_storage = Arc::new(GraphFunctionStorage::new(functions));
+
+        // TODO: Update this storage when asset changes.
+        let textures = cx.assets().all_handles_of::<Image>().unwrap();
+        let texture_storage = Arc::new(GraphTextureStorage::new(textures));
+        let (instance, err) = BrushPresetInstance::from_asset(
+            &handle.0,
+            texture_storage,
+            function_storage,
+            Arc::new(Default::default()), // TODO
+            cx,
+        );
+
+        for err in err {
+            error!("{}", err);
+        }
+
+        let Some(instance) = instance else {
+            return;
+        };
+
+        let op = BrushPresetOperator::new(
+            instance,
+            cx.render_device().clone(),
+            cx.render_queue().clone(),
+            InputProcessor::new(256, Box::new(BasicStabilizer)),
+        );
+        log::info!(
+            "Loaded brush preset {} {:?}",
+            op.instance().metadata().name,
+            op.instance().asset_id()
+        );
+
+        cx.set_global(CurrentBrushPreset::new(op));
+    }
 }
 
 impl ToolFunction for BrushTool {
-    fn new(_: &mut Context<Self>) -> Self {
-        Self::default()
+    fn new(cx: &mut Context<Self>) -> Self {
+        let _subscriptions =
+            vec![cx.observe_global::<CurrentBrushPresetHandle>(Self::reload_preset)];
+        Self {
+            state: None,
+            _subscriptions,
+        }
     }
 
     fn id() -> ToolId {
@@ -78,16 +164,11 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        if !cx.has_global::<CurrentBrushPresetOperator>() {
-            log::error!("No current brush preset operator found.");
+        if !cx.has_global::<CurrentBrushPreset>() {
             return;
         }
 
-        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
-            let Some(brush) = brush.as_mut() else {
-                return;
-            };
-
+        cx.update_global::<CurrentBrushPreset, _>(|brush, cx| {
             let Ok(queued_cmd) = cx.queue_undo_command_to_current() else {
                 return;
             };
@@ -131,10 +212,11 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, _cx| {
-            let Some(brush) = brush.as_mut() else {
-                return;
-            };
+        if !cx.has_global::<CurrentBrushPreset>() {
+            return;
+        }
+
+        cx.update_global::<CurrentBrushPreset, _>(|brush, _cx| {
             let now = std::time::Instant::now();
             brush.update_stroke(params);
             log::debug!("Brush stroke update took {:?}", now.elapsed());
@@ -170,19 +252,21 @@ impl ToolFunction for BrushTool {
             },
         };
 
-        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, _cx| {
-            if let Some(brush) = brush.as_mut() {
-                brush.end_stroke(final_input);
-            }
+        if !cx.has_global::<CurrentBrushPreset>() {
+            return;
+        }
+
+        cx.update_global::<CurrentBrushPreset, _>(|brush, _cx| {
+            brush.end_stroke(final_input);
         });
     }
 
     fn tool_option_widget(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        cx.update_global::<CurrentBrushPresetOperator, _>(|brush, cx| {
-            let Some(brush) = brush.as_ref() else {
-                return "No brush selected".into_any_element();
-            };
+        if !cx.has_global::<CurrentBrushPreset>() {
+            return "No brush selected".into_any_element();
+        }
 
+        cx.update_global::<CurrentBrushPreset, _>(|brush, cx| {
             let ext_vars = brush.instance().iter_external_vars().map(|(id, var)| {
                 v_flex()
                     .gap_1()
@@ -194,11 +278,10 @@ impl ToolFunction for BrushTool {
                             window,
                             cx,
                             on_update: Rc::new(move |value, cx| {
-                                let Some(op) =
-                                    cx.global_mut::<CurrentBrushPresetOperator>().as_mut()
-                                else {
+                                if !cx.has_global::<CurrentBrushPreset>() {
                                     return;
-                                };
+                                }
+                                let op = cx.global_mut::<CurrentBrushPreset>();
                                 op.instance_mut().update_external_var(&id, value);
                             }),
                         },
@@ -217,8 +300,16 @@ impl ToolFunction for BrushTool {
     }
 }
 
+// This needs to share between canvases. So should be a global.
 wrapper! {
-    pub mut CurrentBrushPresetOperator : Option<BrushPresetOperator>
+    mut CurrentBrushPreset : BrushPresetOperator
 }
 
-impl Global for CurrentBrushPresetOperator {}
+impl Global for CurrentBrushPreset {}
+
+wrapper! {
+    #[derive(Clone)]
+    pub CurrentBrushPresetHandle : AssetHandle<BrushPreset>
+}
+
+impl Global for CurrentBrushPresetHandle {}
