@@ -620,12 +620,6 @@ async fn brush_renderer_worker_main(
                 }
 
                 let result = &intermediate_buffers[round as usize % 2];
-                dbg!(
-                    result
-                        .iter_tile_indices()
-                        .map(|i| i.to_string())
-                        .collect::<String>()
-                );
 
                 cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
                     overriders.insert_overrider(

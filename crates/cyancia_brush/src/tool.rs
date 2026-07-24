@@ -19,8 +19,8 @@ use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::{log_err::LogErr, wrapper};
 use glam::Vec2;
 use gpui::{
-    AnyElement, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Styled, Subscription, WeakEntity, Window,
+    AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Styled, Subscription, WeakEntity, Window,
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
 use log::error;
@@ -35,19 +35,8 @@ use crate::{
 
 const TIMESTAMP_MOD: i64 = 1_000_000;
 
-struct BrushToolState {
-    canvas_entity: WeakEntity<CCanvas>,
-    stroke_begin: DateTime<Utc>,
-}
-
-#[derive(Default)]
-pub struct BrushTool {
-    state: Option<BrushToolState>,
-    _subscriptions: Vec<Subscription>,
-}
-
-impl BrushTool {
-    fn reload_preset(&mut self, cx: &mut Context<Self>) {
+pub(crate) fn init(cx: &mut App) {
+    cx.observe_global::<CurrentBrushPresetHandle>(|cx| {
         let Some(handle) = cx.try_global::<CurrentBrushPresetHandle>().cloned() else {
             return;
         };
@@ -108,17 +97,23 @@ impl BrushTool {
         );
 
         cx.set_global(CurrentBrushPreset::new(op));
-    }
+    })
+    .detach();
+}
+
+struct BrushToolState {
+    canvas_entity: WeakEntity<CCanvas>,
+    stroke_begin: DateTime<Utc>,
+}
+
+#[derive(Default)]
+pub struct BrushTool {
+    state: Option<BrushToolState>,
 }
 
 impl ToolFunction for BrushTool {
     fn new(cx: &mut Context<Self>) -> Self {
-        let _subscriptions =
-            vec![cx.observe_global::<CurrentBrushPresetHandle>(Self::reload_preset)];
-        Self {
-            state: None,
-            _subscriptions,
-        }
+        Self::default()
     }
 
     fn id() -> ToolId {

@@ -20,6 +20,7 @@ pub fn init(cx: &mut App) {
     cx.add_tool_function::<BrushTool>();
 
     editor::init(cx);
+    tool::init(cx);
 }
 
 // pub struct BrushPlugin;
