@@ -81,10 +81,6 @@ fn marching_ants(pixel: vec2f) -> vec4f {
     return vec4f(v, v, v, 1.0);
 }
 
-fn write_pixel(pixel_pos: vec2u, color: vec4f) {
-    textureStore(output, pixel_pos, color.bgra);
-}
-
 //CODEGEN_FLAG_CALIBRATE_COLOR
 
 @compute
@@ -94,7 +90,7 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
     let canvas_pos = (canvas.inverse_transform * vec3f(vec2f(pixel_pos), 1.0)).xy;
 
     if is_at_selection_edge(vec2i(pixel_pos)) {
-        write_pixel(pixel_pos, marching_ants(vec2f(pixel_pos)));
+        textureStore(output, pixel_pos, marching_ants(vec2f(pixel_pos)));
         return;
     }
 
@@ -113,5 +109,5 @@ fn main(@builtin(global_invocation_id) index: vec3u) {
         }
     }
 
-    write_pixel(pixel_pos, color);
+    textureStore(output, pixel_pos, color);
 }
