@@ -28,19 +28,25 @@ pub struct BrushInputSamplingPipeline {
 }
 
 impl BrushInputSamplingPipeline {
-    pub fn new(device: &Device, compiled_shader: Cow<'_, str>) -> Self {
+    pub fn new(
+        device: &Device,
+        resources: &StrokeResources,
+        compiled_shader: Cow<'_, str>,
+    ) -> Self {
+        let mut layout_entries = BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                binding_types::storage_buffer_read_only::<PenInput>(false),
+                binding_types::storage_buffer::<InputSampler>(false),
+                binding_types::storage_buffer::<OutputSamples>(false),
+                binding_types::storage_buffer::<UVec4>(false),
+            ),
+        )
+        .to_vec();
+        layout_entries.extend(resources.external_var_layouts.clone());
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush input sampling layout"),
-            entries: BindGroupLayoutEntries::sequential(
-                ShaderStages::COMPUTE,
-                (
-                    binding_types::storage_buffer_read_only::<PenInput>(false),
-                    binding_types::storage_buffer::<InputSampler>(false),
-                    binding_types::storage_buffer::<OutputSamples>(false),
-                    binding_types::storage_buffer::<UVec4>(false),
-                ),
-            )
-            .as_ref(),
+            entries: &layout_entries,
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -74,17 +80,20 @@ impl BrushInputSamplingPipeline {
         input_sampler: &DynamicBuffer<InputSampler>,
         output_samples: &DynamicBuffer<OutputSamples>,
         bounds_eval_dispatch: &Buffer,
+        resources: &StrokeResources,
     ) {
+        let mut entries = BindGroupEntries::sequential((
+            pen_input.binding().unwrap(),
+            input_sampler.binding().unwrap(),
+            output_samples.inner_buffer().unwrap().as_entire_binding(),
+            bounds_eval_dispatch.as_entire_binding(),
+        ))
+        .to_vec();
+        entries.extend(resources.external_var_bindings());
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush input sampling bind group"),
             layout: &self.layout,
-            entries: BindGroupEntries::sequential((
-                pen_input.binding().unwrap(),
-                input_sampler.binding().unwrap(),
-                output_samples.inner_buffer().unwrap().as_entire_binding(),
-                bounds_eval_dispatch.as_entire_binding(),
-            ))
-            .as_ref(),
+            entries: &entries,
         });
 
         pass.push_debug_group("brush preset input sampling");

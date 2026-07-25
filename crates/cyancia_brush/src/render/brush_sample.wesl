@@ -6,6 +6,8 @@ import package::render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_ev
 @group(0) @binding(2) var<storage, read_write> output_samples: OutputSamples;
 @group(0) @binding(3) var<storage, read_write> bounds_eval_dispatch: vec3u;
 
+//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
+
 const BEZIER_SAMPLES: u32 = 32u;
 
 fn compute_required_spacing(graph_input: ComputedPenInput) -> f32 {

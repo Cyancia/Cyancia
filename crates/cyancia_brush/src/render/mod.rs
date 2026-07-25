@@ -323,8 +323,11 @@ impl BrushPresetRenderer {
         );
         let scan_pixels = ScanPixelsPipeline::new(device, selection_layer_format);
 
-        let input_sample =
-            BrushInputSamplingPipeline::new(device, brush.input_sampling.clone().into());
+        let input_sample = BrushInputSamplingPipeline::new(
+            device,
+            &resources,
+            brush.input_sampling.clone().into(),
+        );
 
         let main = BrushMainPipeline::new(device, &resources, brush.main_graph.main.clone().into());
         let main_bounds_eval = BrushMainBoundsEvalPipeline::new(
@@ -477,6 +480,7 @@ impl BrushPresetRenderer {
                 &self.input_sampler_buffer,
                 &output_samples,
                 &bounds_eval_dispatch,
+                &self.resources,
             );
             self.main_bounds_eval.dispatch(
                 device,

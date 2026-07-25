@@ -451,14 +451,17 @@ fn compile_template(
 fn compile_template_input_sampling(
     graph: &Graph<BrushGraphData>,
     texture_usage: &mut GraphTextureUsageRecorder,
-    _external_variable_bindings: &str,
+    external_variable_bindings: &str,
     cx: &App,
 ) -> anyhow::Result<String> {
-    // TODO Support external variables
     let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage, cx)?;
 
     let shader = include_str!("render/brush_sample.wesl")
-        .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &shader);
+        .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &shader)
+        .replace(
+            "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
+            external_variable_bindings,
+        );
 
     let mut resolver = VirtualResolver::new();
     resolver.add_module("package::template".parse().unwrap(), shader.into());
