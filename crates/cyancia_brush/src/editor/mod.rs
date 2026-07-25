@@ -146,153 +146,14 @@ impl BrushEditor {
             .new(|cx| ListState::new(BrushFunctionListDelegate::new(function_assets), window, cx));
         let name_input_state = cx.new(|cx| InputState::new(window, cx));
 
-        cx.subscribe_in(
-            &brushes,
-            window,
-            move |editor, brushes_entity, event: &ListEvent, window, cx| match event {
-                ListEvent::Select(_) => {}
-                ListEvent::Confirm(ix) => {
-                    editor.functions.update(cx, |funcs, cx| {
-                        funcs.set_selected_index(None, window, cx);
-                    });
+        cx.subscribe_in(&brushes, window, Self::on_brush_list_event)
+            .detach();
 
-                    let Some(brush) = brushes_entity.update(cx, |brushes, _| {
-                        let item = brushes.delegate().get(*ix)?;
-                        Some(item.handle.clone())
-                    }) else {
-                        return;
-                    };
+        cx.subscribe_in(&functions, window, Self::on_function_list_event)
+            .detach();
 
-                    let (maybe_instance, errs) = BrushPresetInstance::from_asset(
-                        &brush,
-                        editor.texture_storage.clone(),
-                        editor.main_function_storage.clone(),
-                        editor.stroke_pp_function_storage.clone(),
-                        cx,
-                    );
-
-                    for err in errs {
-                        log::error!("Error deserializing brush preset {}: {}", brush.id(), err);
-                    }
-
-                    let Some(instance) = maybe_instance else {
-                        log::error!("Failed to load brush preset {}", brush.id());
-                        return;
-                    };
-
-                    editor.name_input_state.update(cx, |st, cx| {
-                        st.set_value(instance.metadata().name.clone(), window, cx);
-                    });
-                    editor.editor_state = Some(EditorState::Main(cx.new(|cx| {
-                        GraphEditor::new(
-                            instance.main_graph().clone(),
-                            MAIN_GRAPH_NODES.clone(),
-                            cx,
-                        )
-                    })));
-                    editor.selected = Some(Selected::Brush(SelectedBrush {
-                        asset_id: Some(brush.id()),
-                        instance,
-                        viewing_graph: BrushPresetGraph::Main,
-                    }));
-                    editor.saved_runtime_revision = 0;
-                }
-                ListEvent::Cancel => {}
-            },
-        )
-        .detach();
-
-        cx.subscribe_in(
-            &functions,
-            window,
-            move |editor, functions_entity, event: &ListEvent, window, cx| match event {
-                ListEvent::Select(_) => {}
-                ListEvent::Confirm(ix) => {
-                    editor.brushes.update(cx, |brushes, cx| {
-                        brushes.set_selected_index(None, window, cx);
-                    });
-
-                    let Some(func) = functions_entity.update(cx, |funcs, _| {
-                        let item = funcs.delegate().get(*ix)?;
-                        Some(item.handle.clone())
-                    }) else {
-                        return;
-                    };
-
-                    let ser_func = match func.get() {
-                        Ok(ser_func) => ser_func,
-                        Err(err) => {
-                            log::error!("Failed reading function {}: {:?}", func.id(), err);
-                            return;
-                        }
-                    };
-                    let (maybe_func, errs) = ser_func.deserialize_func(
-                        Some(func.id()),
-                        FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
-                        FUNCTION_GRAPH_NODE_REGISTRY.as_ref(),
-                        cx,
-                    );
-
-                    for err in errs {
-                        log::error!("Error deserializing function {:?}: {:?}", func.id(), err);
-                    }
-                    let Some(func) = maybe_func else {
-                        log::error!("Failed to load function {}", func.id());
-                        return;
-                    };
-
-                    editor.name_input_state.update(cx, |st, cx| {
-                        st.set_value(func.name.clone(), window, cx);
-                    });
-                    editor.editor_state = Some(EditorState::Main(cx.new(|cx| {
-                        GraphEditor::new(
-                            func.graph.clone(),
-                            FUNCTION_GRAPH_NODE_REGISTRY.clone(),
-                            cx,
-                        )
-                    })));
-                    editor.selected = Some(Selected::Function(SelectedFunction {
-                        asset_id: func.asset_id,
-                        id: func.id,
-                        instance: GraphFunctionInstance::new(func),
-                    }));
-                    editor.saved_runtime_revision = 0;
-                }
-                ListEvent::Cancel => {}
-            },
-        )
-        .detach();
-
-        cx.subscribe_in(
-            &name_input_state,
-            window,
-            |editor, input_state, event: &InputEvent, window, cx| match event {
-                InputEvent::PressEnter { secondary: _ } => {
-                    if let Some(selected) = &mut editor.selected {
-                        let name = input_state.read(cx).value();
-                        match selected {
-                            Selected::Brush(brush) => {
-                                brush.instance.metadata_mut().name = name.into();
-                            }
-                            Selected::Function(func) => {
-                                func.instance.graph_function_mut().name = name.into()
-                            }
-                        }
-                    }
-                }
-                InputEvent::Blur => {
-                    if let Some(selected) = &editor.selected {
-                        let name = match selected {
-                            Selected::Brush(brush) => brush.instance.metadata().name.clone(),
-                            Selected::Function(func) => func.instance.graph_function().name.clone(),
-                        };
-                        input_state.update(cx, |state, cx| state.set_value(name, window, cx));
-                    }
-                }
-                InputEvent::Change | InputEvent::Focus => {}
-            },
-        )
-        .detach();
+        cx.subscribe_in(&name_input_state, window, Self::on_name_input_event)
+            .detach();
 
         let new_ext_var_name_input_state = cx.new(|cx| InputState::new(window, cx));
         let rename_ext_var_input_state = cx.new(|cx| InputState::new(window, cx));
@@ -312,14 +173,7 @@ impl BrushEditor {
         cx.subscribe_in(
             &rename_ext_var_input_state,
             window,
-            |editor, _, event: &InputEvent, _, cx| match event {
-                InputEvent::PressEnter { secondary: _ } => {
-                    if let Some(id) = editor.renaming_ext_var {
-                        editor.confirm_external_var_rename(id, cx);
-                    }
-                }
-                InputEvent::Blur | InputEvent::Change | InputEvent::Focus => {}
-            },
+            Self::on_ext_var_input_event,
         )
         .detach();
 
@@ -339,6 +193,172 @@ impl BrushEditor {
             rename_ext_var_input_state,
             renaming_ext_var: None,
             pane_selection: PaneSelection::Brush,
+        }
+    }
+
+    fn on_brush_list_event(
+        &mut self,
+        brushes_entity: &Entity<ListState<BrushPresetListDelegate>>,
+        event: &ListEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ListEvent::Select(_) => {}
+            ListEvent::Confirm(ix) => {
+                self.functions.update(cx, |funcs, cx| {
+                    funcs.set_selected_index(None, window, cx);
+                });
+
+                let Some(brush) = brushes_entity.update(cx, |brushes, _| {
+                    let item = brushes.delegate().get(*ix)?;
+                    Some(item.handle.clone())
+                }) else {
+                    return;
+                };
+
+                let (maybe_instance, errs) = BrushPresetInstance::from_asset(
+                    &brush,
+                    self.texture_storage.clone(),
+                    self.main_function_storage.clone(),
+                    self.stroke_pp_function_storage.clone(),
+                    cx,
+                );
+
+                for err in errs {
+                    log::error!("Error deserializing brush preset {}: {}", brush.id(), err);
+                }
+
+                let Some(instance) = maybe_instance else {
+                    log::error!("Failed to load brush preset {}", brush.id());
+                    return;
+                };
+
+                self.name_input_state.update(cx, |st, cx| {
+                    st.set_value(instance.metadata().name.clone(), window, cx);
+                });
+                self.editor_state = Some(EditorState::Main(cx.new(|cx| {
+                    GraphEditor::new(instance.main_graph().clone(), MAIN_GRAPH_NODES.clone(), cx)
+                })));
+                self.selected = Some(Selected::Brush(SelectedBrush {
+                    asset_id: Some(brush.id()),
+                    instance,
+                    viewing_graph: BrushPresetGraph::Main,
+                }));
+                self.saved_runtime_revision = 0;
+            }
+            ListEvent::Cancel => {}
+        }
+    }
+
+    fn on_function_list_event(
+        &mut self,
+        functions_entity: &Entity<ListState<BrushFunctionListDelegate>>,
+        event: &ListEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ListEvent::Select(_) => {}
+            ListEvent::Confirm(ix) => {
+                self.brushes.update(cx, |brushes, cx| {
+                    brushes.set_selected_index(None, window, cx);
+                });
+
+                let Some(func) = functions_entity.update(cx, |funcs, _| {
+                    let item = funcs.delegate().get(*ix)?;
+                    Some(item.handle.clone())
+                }) else {
+                    return;
+                };
+
+                let ser_func = match func.get() {
+                    Ok(ser_func) => ser_func,
+                    Err(err) => {
+                        log::error!("Failed reading function {}: {:?}", func.id(), err);
+                        return;
+                    }
+                };
+                let (maybe_func, errs) = ser_func.deserialize_func(
+                    Some(func.id()),
+                    FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
+                    FUNCTION_GRAPH_NODE_REGISTRY.as_ref(),
+                    cx,
+                );
+
+                for err in errs {
+                    log::error!("Error deserializing function {:?}: {:?}", func.id(), err);
+                }
+                let Some(func) = maybe_func else {
+                    log::error!("Failed to load function {}", func.id());
+                    return;
+                };
+
+                self.name_input_state.update(cx, |st, cx| {
+                    st.set_value(func.name.clone(), window, cx);
+                });
+                self.editor_state = Some(EditorState::Main(cx.new(|cx| {
+                    GraphEditor::new(func.graph.clone(), FUNCTION_GRAPH_NODE_REGISTRY.clone(), cx)
+                })));
+                self.selected = Some(Selected::Function(SelectedFunction {
+                    asset_id: func.asset_id,
+                    id: func.id,
+                    instance: GraphFunctionInstance::new(func),
+                }));
+                self.saved_runtime_revision = 0;
+            }
+            ListEvent::Cancel => {}
+        }
+    }
+
+    fn on_name_input_event(
+        &mut self,
+        input_state: &Entity<InputState>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::PressEnter { secondary: _ } => {
+                if let Some(selected) = &mut self.selected {
+                    let name = input_state.read(cx).value();
+                    match selected {
+                        Selected::Brush(brush) => {
+                            brush.instance.metadata_mut().name = name.into();
+                        }
+                        Selected::Function(func) => {
+                            func.instance.graph_function_mut().name = name.into()
+                        }
+                    }
+                }
+            }
+            InputEvent::Blur => {
+                if let Some(selected) = &self.selected {
+                    let name = match selected {
+                        Selected::Brush(brush) => brush.instance.metadata().name.clone(),
+                        Selected::Function(func) => func.instance.graph_function().name.clone(),
+                    };
+                    input_state.update(cx, |state, cx| state.set_value(name, window, cx));
+                }
+            }
+            InputEvent::Change | InputEvent::Focus => {}
+        }
+    }
+
+    fn on_ext_var_input_event(
+        &mut self,
+        _: &Entity<InputState>,
+        event: &InputEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::PressEnter { secondary: _ } => {
+                if let Some(id) = self.renaming_ext_var {
+                    self.confirm_external_var_rename(id, cx);
+                }
+            }
+            InputEvent::Blur | InputEvent::Change | InputEvent::Focus => {}
         }
     }
 
