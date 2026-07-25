@@ -12,12 +12,11 @@ use cyancia_tools::{ToolProxies, ToolProxyId};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, UVec2, Vec2};
 use gpui::{
-    AppContext, BorrowAppContext, Context, Corners, DisplayId, InteractiveElement, IntoElement,
-    MouseButton, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement, Render, RenderImage,
-    Styled, Subscription, WeakEntity, Window, canvas, div, px,
+    BorrowAppContext, Context, DisplayId, InteractiveElement, IntoElement, MouseButton,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Render, Size, Styled, Subscription, WeakEntity,
+    Window, canvas, div, px,
 };
 use moxcms::Layout;
-use wgpu::PollType;
 
 use crate::{
     CCanvas, CanvasAppExt, CanvasId,
@@ -47,9 +46,7 @@ pub struct CanvasWidget {
     manage_color: bool,
     renderer: CanvasRenderer,
 
-    latest_image: Option<Arc<RenderImage>>,
     output_size: UVec2,
-    ongoing_render: bool,
     dirty_tiles: IRect,
     compositor: ImageCompositor,
 
@@ -123,9 +120,7 @@ impl CanvasWidget {
             manage_color,
             renderer,
 
-            latest_image: None,
             output_size: UVec2::ZERO,
-            ongoing_render: false,
             dirty_tiles,
             compositor: ImageCompositor::new(),
 
@@ -225,14 +220,9 @@ impl CanvasWidget {
             return;
         }
 
-        if self.ongoing_render {
-            return;
-        }
-
         let Some(canvas_entity) = self.canvas.upgrade() else {
             return;
         };
-        self.ongoing_render = true;
         self.recomposite(cx);
 
         let canvas = canvas_entity.read(cx);
@@ -254,40 +244,16 @@ impl CanvasWidget {
 
         let tool_proxy_id = canvas.tool_proxy_id();
 
-        let (submission_index, rx) = cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
-            self.renderer.draw(&device, &queue, |canvas_surface| {
-                tool_proxies
-                    .get_mut(&tool_proxy_id)
-                    .canvas_overlay(canvas_surface, window, cx);
-            })
+        self.renderer.draw(&device, &queue);
+        let Some(output_texture) = self.renderer.texture() else {
+            return;
+        };
+
+        cx.update_global::<ToolProxies, _>(|tool_proxies, cx| {
+            tool_proxies
+                .get_mut(&tool_proxy_id)
+                .canvas_overlay(output_texture, window, cx);
         });
-
-        let render_task = cx.background_spawn(async move {
-            device
-                .poll(PollType::Wait {
-                    submission_index: Some(submission_index),
-                    timeout: None,
-                })
-                .unwrap();
-
-            rx.await
-        });
-
-        cx.spawn(async move |this, cx| {
-            let result = render_task.await;
-            this.update(cx, |this, cx| {
-                this.ongoing_render = false;
-                if let Ok(result) = result {
-                    this.latest_image = Some(result);
-                }
-
-                // log::info!("Image rendered");
-                cx.notify();
-            })
-            .ok();
-            cx.refresh();
-        })
-        .detach();
     }
 
     pub fn update_output_size(&mut self, size: UVec2, window: &mut Window, cx: &mut Context<Self>) {
@@ -350,22 +316,25 @@ impl Render for CanvasWidget {
                         let canvas = self.canvas.clone();
 
                         move |bounds, _, window, cx| {
-                            if let Some(image) = widget
-                                .read_with(cx, |widget, _| widget.latest_image.clone())
-                                .ok()
-                                .flatten()
-                            {
-                                let image_bounds =
-                                    ObjectFit::None.get_bounds(bounds, image.size(0));
-                                let _ = window.paint_image(
-                                    image_bounds,
-                                    Corners::all(px(0.0)),
-                                    image,
-                                    0,
-                                    false,
-                                );
-                                // log::info!("Image painted");
-                            }
+                            widget
+                                .read_with(cx, |widget, _| {
+                                    let Some(output_texture) = widget
+                                        .renderer
+                                        .texture()
+                                        .map(|view| view.texture().clone())
+                                    else {
+                                        return;
+                                    };
+                                    let _ = window.paint_surface(
+                                        bounds,
+                                        Arc::new(output_texture),
+                                        Size::new(
+                                            widget.output_size.x.into(),
+                                            widget.output_size.y.into(),
+                                        ),
+                                    );
+                                })
+                                .ok();
 
                             window.on_mouse_event({
                                 let widget = widget.clone();

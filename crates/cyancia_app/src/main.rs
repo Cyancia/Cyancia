@@ -6,6 +6,7 @@ use cyancia_assets::{
     loader::AssetRegistryBuilder,
 };
 use cyancia_view::{View, ViewAppExt, ViewManager};
+use gpui::{App, Window};
 use tracing_subscriber::fmt::format::FmtSpan;
 
 use crate::{brush_editor_view::BrushEditorView, main_view::MainView};
@@ -13,6 +14,42 @@ use crate::{brush_editor_view::BrushEditorView, main_view::MainView};
 mod brush_editor_view;
 mod dock;
 mod main_view;
+
+fn init_after_window_created(window: &Window, cx: &mut App) {
+    cyancia_render::init(window, cx);
+    cyancia_actions::init(cx);
+    cyancia_tools::init(cx);
+    cyancia_brush::init(cx);
+    cyancia_canvas::init(cx);
+    cyancia_image::init(cx);
+    cyancia_shader_graph::init(cx);
+    cyancia_theme::init(cx);
+    cyancia_undo::init(cx);
+    cyancia_bucket_tool::init(cx);
+    cyancia_selection_tool::init(cx);
+
+    cx.add_asset_bundle(Arc::new(
+        AssetDirectory::new("assets/builtin_assets").unwrap(),
+    ));
+    let (standard_bundles, errs) = StandardAssetBundle::scan_bundles("assets");
+    log::info!(
+        "Loaded {} csb bundles with {} errors",
+        standard_bundles.len(),
+        errs.len()
+    );
+    for err in errs {
+        log::error!("Error loading asset bundle: {}", err);
+    }
+    for bundle in standard_bundles {
+        log::info!("Loaded asset bundle: {}", bundle.path().display());
+        cx.add_asset_bundle(Arc::new(bundle));
+    }
+
+    cyancia_assets::finish(cx);
+    cyancia_actions::finish(cx);
+    cyancia_theme::finish(cx);
+    cyancia_tools::finish(cx);
+}
 
 fn main() {
     #[cfg(debug_assertions)]
@@ -38,42 +75,14 @@ fn main() {
             cyancia_assets::init(cx);
             cx.global_mut::<AssetRegistryBuilder>()
                 .set_root("assets".into());
-            cyancia_render::init(cx);
-            cyancia_actions::init(cx);
-            cyancia_tools::init(cx);
-            cyancia_brush::init(cx);
-            cyancia_canvas::init(cx);
-            cyancia_image::init(cx);
-            cyancia_shader_graph::init(cx);
-            cyancia_theme::init(cx);
             cyancia_view::init(cx);
-            cyancia_undo::init(cx);
-            cyancia_bucket_tool::init(cx);
-            cyancia_selection_tool::init(cx);
 
-            {
-                cx.add_asset_bundle(Arc::new(
-                    AssetDirectory::new("assets/builtin_assets").unwrap(),
-                ));
-                let (standard_bundles, errs) = StandardAssetBundle::scan_bundles("assets");
-                log::info!(
-                    "Loaded {} csb bundles with {} errors",
-                    standard_bundles.len(),
-                    errs.len()
-                );
-                for err in errs {
-                    log::error!("Error loading asset bundle: {}", err);
-                }
-                for bundle in standard_bundles {
-                    log::info!("Loaded asset bundle: {}", bundle.path().display());
-                    cx.add_asset_bundle(Arc::new(bundle));
-                }
-            }
-
-            cyancia_assets::finish(cx);
-            cyancia_actions::finish(cx);
-            cyancia_theme::finish(cx);
-            cyancia_tools::finish(cx);
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            cx.set_gpu_requirements(Box::new(gpui_wgpu::WgpuDeviceRequirements {
+                features: wgpu::Features::CLEAR_TEXTURE
+                    | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                limits: wgpu::Limits::default(),
+            }));
 
             let vm = cx.global_mut::<ViewManager>();
             vm.set_main_view(MainView::id());

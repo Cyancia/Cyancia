@@ -28,6 +28,7 @@ cyancia_widgets.workspace = true
 futures.workspace = true
 glam.workspace = true
 gpui.workspace = true
+gpui_wgpu.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
 gpui_platform.workspace = true

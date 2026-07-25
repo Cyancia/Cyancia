@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, OnceLock},
-    time::Instant,
-};
+use std::{sync::OnceLock, time::Instant};
 
 use bevy_math::IRect;
 use cyancia_color::shader::IccTransformShader;
@@ -18,16 +15,13 @@ use cyancia_render::{
 };
 use encase::ShaderType;
 use glam::{IVec2, Mat3, UVec2, UVec3};
-use gpui::{Global, RenderImage};
-use image::{Frame, RgbaImage};
+use gpui::Global;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindingResource,
-    Buffer, BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, CommandEncoder,
-    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d, MapMode,
-    PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    StorageTextureAccess, SubmissionIndex, TexelCopyBufferInfo, TexelCopyBufferLayout,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
-    TextureViewDescriptor,
+    BufferUsages, CommandEncoder, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, Extent3d, PipelineLayoutDescriptor, Queue,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
 };
 
 use crate::control::CanvasTransform;
@@ -40,7 +34,7 @@ pub const ICC_TRANSFORM_SHADER_IDENT: &str = "calibrate_color";
 
 #[derive(Debug)]
 pub struct CanvasRenderer {
-    buffer: Option<(TextureView, Buffer)>,
+    texture: Option<TextureView>,
     render_pipeline: CanvasRenderPipeline,
 }
 
@@ -56,7 +50,7 @@ impl CanvasRenderer {
         let render_pipeline =
             CanvasRenderPipeline::new(device, root_texel_type, selection_texel_type, icc_transform);
         Self {
-            buffer: Default::default(),
+            texture: None,
             render_pipeline,
             // present_pipeline,
         }
@@ -64,24 +58,19 @@ impl CanvasRenderer {
 
     pub fn resize_output_buffer(&mut self, device: &Device, size: UVec2) {
         if self
-            .buffer
+            .texture
             .as_ref()
-            .is_some_and(|(t, _)| t.texture().width() == size.x && t.texture().height() == size.y)
+            .is_some_and(|t| t.texture().width() == size.x && t.texture().height() == size.y)
         {
             return;
         }
 
         let format = INTERMEDIATE_BUFFER_FORMAT;
 
-        let texel_size = format.block_copy_size(None).unwrap();
-        let aligned_bytes_per_row =
-            (size.x * texel_size).next_multiple_of(COPY_BYTES_PER_ROW_ALIGNMENT);
-        let aligned_width = aligned_bytes_per_row / texel_size;
-
         let texture = device.create_texture(&TextureDescriptor {
             label: Some("canvas render buffer"),
             size: Extent3d {
-                width: aligned_width,
+                width: size.x,
                 height: size.y,
                 depth_or_array_layers: 1,
             },
@@ -97,14 +86,8 @@ impl CanvasRenderer {
         });
 
         let texture_view = texture.create_view(&TextureViewDescriptor::default());
-        let buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("canvas readback buffer"),
-            size: (aligned_width * size.y * texel_size) as u64,
-            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
 
-        self.buffer = Some((texture_view, buffer));
+        self.texture = Some(texture_view);
     }
 
     pub fn prepare(
@@ -117,7 +100,7 @@ impl CanvasRenderer {
         root_layer_id: LayerId,
         selection_layer_id: LayerId,
     ) {
-        let Some((buffer, _)) = &self.buffer else {
+        let Some(texture) = &self.texture else {
             return;
         };
 
@@ -138,7 +121,7 @@ impl CanvasRenderer {
                 tile_size: GpuTileStorage::TILE_SIZE,
                 time: FIRST_DRAW.get_or_init(Instant::now).elapsed().as_secs_f32(),
             },
-            buffer,
+            texture,
             tile_storage,
             root_layer_id,
             selection_layer_id,
@@ -146,64 +129,14 @@ impl CanvasRenderer {
         // self.present_pipeline.prepare(&device, buffer);
     }
 
-    pub fn draw(
-        &self,
-        device: &Device,
-        queue: &Queue,
-        post_draw: impl FnOnce(&TextureView),
-    ) -> (
-        SubmissionIndex,
-        futures::channel::oneshot::Receiver<Arc<RenderImage>>,
-    ) {
+    pub fn draw(&self, device: &Device, queue: &Queue) {
         let mut ec = device.create_command_encoder(&Default::default());
         self.render_pipeline.draw(&mut ec);
         queue.submit([ec.finish()]);
+    }
 
-        // TODO Dirty workaround. Remove this once gpui supports wgpu backend on all platforms.
-        post_draw(&self.buffer.as_ref().unwrap().0);
-
-        let (texture, buffer) = self.buffer.as_ref().expect("buffer not initialized");
-        let buffer = buffer.clone();
-        let texture_size = texture.texture().size();
-        let texel_size = texture.texture().format().block_copy_size(None).unwrap();
-
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        ec.copy_texture_to_buffer(
-            texture.texture().as_image_copy(),
-            TexelCopyBufferInfo {
-                buffer: &buffer,
-                layout: TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(texture_size.width * texel_size),
-                    rows_per_image: Some(texture_size.height),
-                },
-            },
-            texture_size,
-        );
-
-        let (tx, rx) = futures::channel::oneshot::channel();
-        let mapped_buffer = buffer.clone();
-        let submission_index = queue.submit([ec.finish()]);
-
-        buffer.slice(..).map_async(MapMode::Read, move |result| {
-            result.unwrap();
-
-            let buffer_slice = mapped_buffer.slice(..);
-            let mapped = buffer_slice.get_mapped_range();
-            // We are treating this texture as bgra texture in shader, so we can
-            // convert it to RenderImage directly. See canvas_render.wesl
-            let image =
-                RgbaImage::from_raw(texture_size.width, texture_size.height, mapped.to_vec())
-                    .unwrap();
-            let render_image = RenderImage::new([Frame::new(image)]);
-            drop(mapped);
-            mapped_buffer.unmap();
-
-            tx.send(Arc::new(render_image)).ok();
-        });
-
-        (submission_index, rx)
+    pub fn texture(&self) -> Option<&TextureView> {
+        self.texture.as_ref()
     }
 }
 

@@ -64,6 +64,7 @@ impl View for MainView {
                 ..Default::default()
             },
             |window, cx| {
+                super::init_after_window_created(window, cx);
                 let main_view = cx.new(|cx| MainView::new(window, cx));
 
                 cx.new(|cx| Root::new(main_view, window, cx))

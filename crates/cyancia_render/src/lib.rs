@@ -1,7 +1,7 @@
 wesl::wesl_pkg!(pub render);
 
 use cyancia_assets::AssetAppExt;
-use gpui::App;
+use gpui::{App, Window};
 
 use crate::{
     render_context::RenderContext,
@@ -20,8 +20,11 @@ pub mod texture_atlas;
 pub mod util;
 pub mod wesl_jit;
 
-pub fn init(cx: &mut App) {
-    cx.set_global(RenderContext::request_new());
+pub fn init(window: &Window, cx: &mut App) {
+    cx.set_global(
+        RenderContext::from_window(window).expect("failed to acquire GPUI's WGPU context"),
+    );
+
     cx.set_global(GlobalSamplers::from_app(cx));
     cx.add_asset_serializer::<ImageSerializer>();
     cx.set_global(FullscreenVertex::from_app(cx));
