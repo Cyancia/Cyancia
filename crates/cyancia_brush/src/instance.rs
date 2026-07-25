@@ -29,8 +29,9 @@ use crate::{
         BrushGraphDataTuple, BrushGraphPostprocessData, CurrentPixelColorNode, DrawDirectionNode,
         DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
         LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
-        OutputSpacingNode, PasteTextureNode, PenPositionNode, PenPositionsNode, PixelPositionNode,
-        SelectionMaskNode, StrokeBoundsNode, TimesNode,
+        OutputSpacingNode, PasteTextureNode, PenAngleNode, PenPositionNode, PenPositionsNode,
+        PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode, StrokeBoundsNode,
+        TimesNode,
     },
 };
 
@@ -513,8 +514,6 @@ fn compile_template_stroke_postprocess<'a>(
 pub static BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
 pub static REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(required_spacing_graph_nodes);
-pub static SPACING_FACTOR_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphDataTuple>>> =
-    LazyLock::new(spacing_factor_graph_nodes);
 pub static MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
     LazyLock::new(main_graph_nodes);
 pub static STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<
@@ -533,21 +532,12 @@ fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     nodes.merge(builtin_nodes());
 
     nodes.register::<PenPositionNode>();
+    nodes.register::<PenPressureNode>();
+    nodes.register::<PenAngleNode>();
+    nodes.register::<PenTiltNode>();
     nodes.register::<DrawDirectionNode>();
     nodes.register::<TimeNode>();
     nodes.register::<OutputRequiredSpacingNode>();
-
-    nodes.into()
-}
-
-fn spacing_factor_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphDataTuple>> {
-    let mut nodes = GraphNodeRegistry::default();
-    nodes.merge(builtin_nodes());
-
-    nodes.register::<PenPositionsNode>();
-    nodes.register::<DrawDirectionsNode>();
-    nodes.register::<TimesNode>();
-    nodes.register::<OutputSpacingNode>();
 
     nodes.into()
 }
@@ -557,6 +547,9 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     nodes.merge(builtin_nodes());
 
     nodes.register::<PenPositionNode>();
+    nodes.register::<PenPressureNode>();
+    nodes.register::<PenAngleNode>();
+    nodes.register::<PenTiltNode>();
     nodes.register::<DrawDirectionNode>();
     nodes.register::<TimeNode>();
     nodes.register::<PixelPositionNode>();

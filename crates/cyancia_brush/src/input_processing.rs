@@ -1,12 +1,61 @@
+use std::f32::consts::FRAC_PI_2;
+
+use chrono::{DateTime, Utc};
 use glam::Vec2;
+use gpui::{MouseDownEvent, MouseMoveEvent, MouseUpEvent};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
+use winit::event::{Force, TabletToolData};
 
 use crate::render::{ComputedPenInput, PenInput, Time};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RawPenInput {
     pub position: Vec2,
+    pub pressure: f32,
+    pub tilt: Vec2,
+    pub angle: Vec2,
     pub time: Time,
+}
+
+const TIMESTAMP_MOD: i64 = 1_000_000;
+
+impl RawPenInput {
+    const DEFAULT: Self = Self {
+        position: Vec2::new(0.0, 0.0),
+        pressure: 1.0,
+        tilt: Vec2::new(0.0, 0.0),
+        angle: Vec2::new(FRAC_PI_2, 0.0),
+        time: Time {
+            now: 0.0,
+            stroke_begin: 0.0,
+        },
+    };
+
+    pub fn new(
+        position_ps: Vec2,
+        tablet_data: Option<TabletToolData>,
+        stroke_begin: DateTime<Utc>,
+    ) -> Self {
+        let mut input = Self {
+            position: position_ps,
+            time: Time {
+                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
+                stroke_begin: (stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
+            },
+            ..Self::DEFAULT
+        };
+        if let Some(data) = tablet_data {
+            if let Some(Force::Normalized(pressure)) = data.force {
+                input.pressure = pressure as f32;
+            }
+            if let Some(tilt) = data.clone().tilt() {}
+            if let Some(angle) = data.clone().angle() {
+                input.angle = Vec2::new(angle.altitude as f32, angle.azimuth as f32);
+            }
+        }
+
+        input
+    }
 }
 
 pub struct InputProcessor {
@@ -77,6 +126,9 @@ impl InputProcessor {
 
         Some(PenInput {
             position: input.position,
+            pressure: input.pressure,
+            tilt: input.tilt,
+            angle: input.angle,
             time: input.time,
             bezier_control_prev,
             bezier_control_next,
@@ -145,15 +197,25 @@ impl InputSampleStabilizer for GaussianStabilizer {
         let kernel_offset = window - available;
 
         let mut weighted_pos = Vec2::ZERO;
+        let mut weighted_pressure = 0.0_f32;
+        let mut weighted_tilt = Vec2::ZERO;
+        let mut weighted_angle = Vec2::ZERO;
+
         let mut weight_sum = 0.0_f32;
         for (i, sample) in inputs.iter().rev().take(available).enumerate() {
             let w = self.kernel[kernel_offset + i];
             weighted_pos += sample.position * w;
+            weighted_pressure += sample.pressure * w;
+            weighted_tilt += sample.tilt * w;
+            weighted_angle += sample.angle * w;
             weight_sum += w;
         }
 
         Some(RawPenInput {
             position: weighted_pos / weight_sum,
+            pressure: weighted_pressure / weight_sum,
+            tilt: weighted_tilt / weight_sum,
+            angle: weighted_angle / weight_sum,
             time: inputs.back().unwrap().time,
         })
     }

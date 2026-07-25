@@ -46,7 +46,6 @@ pub mod pipeline;
 
 const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 pub const MAX_DABS_PER_STROKE: u32 = 256;
-const TIMESTAMP_MOD: i64 = 1_000_000;
 
 #[derive(Debug, Clone)]
 pub struct CanvasBrushStrokeSessionInfo {
@@ -187,13 +186,11 @@ impl CanvasBrushPresetOperator {
             cx,
         );
 
-        let params = RawPenInput {
+        let params = RawPenInput::new(
             position,
-            time: Time {
-                now: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
-                stroke_begin: (now.timestamp_micros() % TIMESTAMP_MOD) as f32,
-            },
-        };
+            input.tablet_tool.as_ref().map(|t| t.data.clone()),
+            session.stroke_begin,
+        );
 
         if let Some(sample) = self.input_processor.push(params) {
             renderer.update(&self.device, &self.queue, sample);
@@ -223,13 +220,11 @@ impl CanvasBrushPresetOperator {
             return;
         };
 
-        let params = RawPenInput {
+        let params = RawPenInput::new(
             position,
-            time: Time {
-                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
-                stroke_begin: (session.stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
-            },
-        };
+            input.tablet_tool.as_ref().map(|t| t.data.clone()),
+            session.stroke_begin,
+        );
 
         if let Some(sample) = self.input_processor.push(params) {
             renderer.update(&self.device, &self.queue, sample);
@@ -257,13 +252,11 @@ impl CanvasBrushPresetOperator {
             return;
         };
 
-        let final_input = RawPenInput {
+        let final_input = RawPenInput::new(
             position,
-            time: Time {
-                now: (Utc::now().timestamp_micros() % TIMESTAMP_MOD) as f32,
-                stroke_begin: (session.stroke_begin.timestamp_micros() % TIMESTAMP_MOD) as f32,
-            },
-        };
+            input.tablet_tool.as_ref().map(|t| t.data.clone()),
+            session.stroke_begin,
+        );
 
         for sample in self.input_processor.flush(final_input) {
             renderer.update(&self.device, &self.queue, sample);
@@ -915,6 +908,9 @@ pub struct InputSampler {
 #[derive(ShaderType, Debug, Default, Clone, Copy)]
 pub struct PenInput {
     pub position: Vec2,
+    pub tilt: Vec2,
+    pub angle: Vec2,
+    pub pressure: f32,
     pub time: Time,
     pub bezier_control_prev: Vec2,
     pub bezier_control_next: Vec2,
@@ -924,7 +920,10 @@ pub struct PenInput {
 pub struct ComputedPenInput {
     pub position: Vec2,
     pub draw_direction_vec: Vec2,
+    pub tilt: Vec2,
+    pub angle: Vec2,
     pub draw_direction_angle: f32,
+    pub pressure: f32,
     pub time: Time,
 }
 

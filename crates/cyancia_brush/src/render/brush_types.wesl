@@ -32,7 +32,10 @@ struct DabInfo {
 struct ComputedPenInput {
     position: vec2f,
     draw_direction_vec: vec2f,
+    tilt: vec2f,
+    angle: vec2f,
     draw_direction_angle: f32,
+    pressure: f32,
     time: Time,
 }
 
@@ -44,6 +47,9 @@ struct PenInputSampler {
 
 struct PenInput {
     position: vec2f,
+    tilt: vec2f,
+    angle: vec2f,
+    pressure: f32,
     time: Time,
     // Inner control points of the cubic Bezier from the previous position to
     // this one.  Computed on the CPU by BezierInputSampler.

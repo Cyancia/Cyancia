@@ -1,5 +1,5 @@
 import package::brush::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, Time};
-import package::render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angles};
+import package::render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angle};
 
 @group(0) @binding(0) var<storage> new_input: PenInput;
 @group(0) @binding(1) var<storage, read_write> input_sampler: PenInputSampler;
@@ -37,10 +37,16 @@ fn bezier_t_for_arc_length(table: ptr<function, array<f32, BEZIER_SAMPLES + 1u>>
 
 fn compute_pen_input(last: PenInput, current: PenInput, p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> ComputedPenInput {
     let position = bezier_eval(p0, p1, p2, p3, t);
+    let pressure = mix(last.pressure, current.pressure, t);
+    let tilt = mix(last.tilt, current.tilt, t);
+    let angle = vec2f(
+        mix_angle(last.angle.x, current.angle.x, t),
+        mix_angle(last.angle.y, current.angle.y, t),
+    );
     let time = Time(mix(last.time.now, current.time.now, t), last.time.stroke_begin);
     let draw_direction_vec = bezier_tangent_eval(p0, p1, p2, p3, t);
     let draw_direction_angle = atan2(draw_direction_vec.y, draw_direction_vec.x);
-    return ComputedPenInput(position, draw_direction_vec, draw_direction_angle, time);
+    return ComputedPenInput(position, draw_direction_vec, tilt, angle, draw_direction_angle, pressure, time);
 }
 
 @compute

@@ -42,6 +42,7 @@ toml.workspace = true
 uuid.workspace = true
 wesl.workspace = true
 wgpu.workspace = true
+winit.workspace = true
 zip.workspace = true
 
 [dev-dependencies]
