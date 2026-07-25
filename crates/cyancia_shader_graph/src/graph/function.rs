@@ -19,6 +19,7 @@ wrapper! {
 }
 
 pub struct GraphFunction<Data: GraphData> {
+    // FIXME This should always exist
     pub asset_id: Option<AssetId<SerializableGraphFunction>>,
     pub id: GraphFunctionId,
     pub name: String,

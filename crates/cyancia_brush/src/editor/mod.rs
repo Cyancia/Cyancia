@@ -177,6 +177,9 @@ impl BrushEditor {
         )
         .detach();
 
+        cx.observe_window_activation(window, Self::on_window_activation_changed)
+            .detach();
+
         Self {
             selected: None,
             texture_storage,
@@ -241,7 +244,7 @@ impl BrushEditor {
                     GraphEditor::new(instance.main_graph().clone(), MAIN_GRAPH_NODES.clone(), cx)
                 })));
                 self.selected = Some(Selected::Brush(SelectedBrush {
-                    asset_id: Some(brush.id()),
+                    asset_id: brush.id(),
                     instance,
                     viewing_graph: BrushPresetGraph::Main,
                 }));
@@ -301,7 +304,7 @@ impl BrushEditor {
                     GraphEditor::new(func.graph.clone(), FUNCTION_GRAPH_NODE_REGISTRY.clone(), cx)
                 })));
                 self.selected = Some(Selected::Function(SelectedFunction {
-                    asset_id: func.asset_id,
+                    asset_id: func.asset_id.unwrap(),
                     id: func.id,
                     instance: GraphFunctionInstance::new(func),
                 }));
@@ -376,6 +379,35 @@ impl BrushEditor {
         cx.notify();
     }
 
+    fn on_window_activation_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if window.is_window_active() {
+            return;
+        }
+
+        let Some(selected) = &self.selected else {
+            return;
+        };
+
+        match selected {
+            Selected::Brush(brush) => {
+                let preset = brush.instance.as_asset(cx).unwrap();
+                let assets = cx.assets();
+
+                let handle = assets.handle(brush.asset_id).unwrap();
+                handle.update(preset).unwrap();
+                dbg!();
+            }
+            Selected::Function(func) => {
+                let assets = cx.assets();
+                let ser_func =
+                    SerializableGraphFunction::serialize_func(func.instance.graph_function(), cx)
+                        .unwrap();
+                let handle = assets.handle(func.asset_id).unwrap();
+                handle.update(ser_func).unwrap();
+            }
+        }
+    }
+
     pub fn on_save_current_item_action(
         &mut self,
         _: &SaveCurrentItem,
@@ -385,43 +417,25 @@ impl BrushEditor {
         let Some(selected) = &mut self.selected else {
             return;
         };
+        let assets = cx.assets();
 
         match selected {
             Selected::Brush(brush) => {
-                let Some(asset_id) = brush.asset_id else {
-                    return;
-                };
                 self.saved_runtime_revision = brush.instance.runtime_revision();
                 let preset = brush.instance.as_asset(cx).unwrap();
-                let assets = cx.assets();
 
-                let handle = assets.handle(asset_id).unwrap();
+                let handle = assets.handle(brush.asset_id).unwrap();
                 handle.update(preset).unwrap();
                 handle.write().unwrap();
             }
             Selected::Function(func) => {
-                let assets = cx.assets();
                 let ser_func =
                     SerializableGraphFunction::serialize_func(func.instance.graph_function(), cx)
                         .unwrap();
                 self.saved_runtime_revision = func.instance.runtime_revision();
-                if let Some(asset_id) = func.asset_id {
-                    let handle = assets.handle(asset_id).unwrap();
-                    handle.update(ser_func).unwrap();
-                    handle.write().unwrap();
-                } else {
-                    let new_id = assets
-                        .add_asset(
-                            // TODO
-                            BundleId::new(
-                                Uuid::from_str("b92c20f6-8cdb-42b8-efae-a92705efd029").unwrap(),
-                            ),
-                            format!("{}.csf", func.instance.graph_function().name),
-                            Arc::new(ser_func),
-                        )
-                        .unwrap();
-                    func.asset_id = Some(new_id);
-                }
+                let handle = assets.handle(func.asset_id).unwrap();
+                handle.update(ser_func).unwrap();
+                handle.write().unwrap();
             }
         }
 
@@ -429,6 +443,15 @@ impl BrushEditor {
     }
 
     fn on_new_item(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let assets = cx.assets();
+        let Some(bundle) = assets
+            .bundles()
+            .find(|b| !b.is_readonly())
+            .map(|b| b.metadata().bundle_id)
+        else {
+            return;
+        };
+
         match self.pane_selection {
             PaneSelection::Brush => {
                 let new_brush = BrushPreset {
@@ -452,12 +475,21 @@ impl BrushEditor {
                     return;
                 };
 
+                let new_id = cx
+                    .assets()
+                    .add_asset(
+                        bundle,
+                        format!("{}.cbp", instance.metadata().name),
+                        Arc::new(instance.as_asset(cx).unwrap()),
+                    )
+                    .unwrap();
+
                 self.name_input_state.update(cx, |state, cx| {
                     state.set_value(instance.metadata().name.clone(), window, cx);
                 });
                 self.editor_state = Some(EditorState::new_main(instance.main_graph().clone(), cx));
                 self.selected = Some(Selected::Brush(SelectedBrush {
-                    asset_id: None,
+                    asset_id: new_id,
                     instance,
                     viewing_graph: BrushPresetGraph::Main,
                 }));
@@ -480,6 +512,18 @@ impl BrushEditor {
                     }),
                 });
 
+                let ser_func =
+                    SerializableGraphFunction::serialize_func(instance.graph_function(), cx)
+                        .unwrap();
+                let new_id = cx
+                    .assets()
+                    .add_asset(
+                        bundle,
+                        format!("{}.csf", instance.graph_function().name),
+                        Arc::new(ser_func),
+                    )
+                    .unwrap();
+
                 self.name_input_state.update(cx, |state, cx| {
                     state.set_value(instance.graph_function().name.clone(), window, cx)
                 });
@@ -487,8 +531,9 @@ impl BrushEditor {
                     instance.graph_function().graph.clone(),
                     cx,
                 ));
+
                 self.selected = Some(Selected::Function(SelectedFunction {
-                    asset_id: None,
+                    asset_id: new_id,
                     id,
                     instance,
                 }));
@@ -948,13 +993,13 @@ pub enum BrushPresetGraph {
 }
 
 pub struct SelectedBrush {
-    pub asset_id: Option<AssetId<BrushPreset>>,
+    pub asset_id: AssetId<BrushPreset>,
     pub instance: BrushPresetInstance,
     pub viewing_graph: BrushPresetGraph,
 }
 
 pub struct SelectedFunction {
-    pub asset_id: Option<AssetId<SerializableGraphFunction>>,
+    pub asset_id: AssetId<SerializableGraphFunction>,
     pub id: GraphFunctionId,
     pub instance: GraphFunctionInstance,
 }
