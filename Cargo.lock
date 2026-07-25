@@ -3144,7 +3144,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3294,7 +3294,7 @@ dependencies = [
 [[package]]
 name = "gpui_macos"
 version = "0.1.0"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -3339,7 +3339,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3350,7 +3350,7 @@ dependencies = [
 [[package]]
 name = "gpui_platform"
 version = "0.1.0"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "console_error_panic_hook",
  "gpui",
@@ -3362,7 +3362,7 @@ dependencies = [
 [[package]]
 name = "gpui_shared_string"
 version = "0.1.0"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "schemars",
  "serde",
@@ -3381,7 +3381,7 @@ dependencies = [
 [[package]]
 name = "gpui_web"
 version = "0.1.0"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -3404,7 +3404,7 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3432,7 +3432,7 @@ dependencies = [
 [[package]]
 name = "gpui_winit"
 version = "0.1.0"
-source = "git+https://github.com/443eb9/gpui-ce?rev=96fe74f6910c566ac9cee79ca9aed4e34ba8d058#96fe74f6910c566ac9cee79ca9aed4e34ba8d058"
+source = "git+https://github.com/443eb9/gpui-ce?rev=0046c129bf5272c2a2aea9d969cfa497aa90cf7e#0046c129bf5272c2a2aea9d969cfa497aa90cf7e"
 dependencies = [
  "anyhow",
  "arboard",
