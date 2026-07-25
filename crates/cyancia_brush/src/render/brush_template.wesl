@@ -1,5 +1,5 @@
 import package::image::image_tiling::{TileInfo, TILE_SIZE};
-import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv};
+import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv, rotate_mat2x2};
 import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
 
 @if(!BOUNDS_EVAL || POSTPROCESS) @group(0) @binding(0) var<storage> sample: GraphInput;
@@ -36,10 +36,14 @@ fn atlas_size(local_index: u32) -> vec2u {
     return bounds.max - bounds.min;
 }
 
-fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f) -> Mask {
-    let dist = sdf_ellipse(pixel, center, ab);
+fn elliptical_mask(pixel: vec2f, center: vec2f, ab: vec2f, rotation: f32) -> Mask {
+    let p0 = pixel - center;
+    let p1 = rotate_mat2x2(rotation) * p0;
+    let mx = vec2f(max(ab.x, ab.y));
+
+    let dist = sdf_ellipse(p1, vec2f(0.0), ab);
     let value = smoothstep(1.0, 0.0, dist);
-    return Mask(Rect(center - ab, center + ab), value);
+    return Mask(Rect(center - mx, center + mx), value);
 }
 
 fn convert_pixel_to_layer_tile(pixel: vec2i) -> vec3u {

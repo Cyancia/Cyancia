@@ -913,6 +913,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
             GraphDefaultInputSlot::new::<Vec2FType>("Sample Position".into()),
             GraphDefaultInputSlot::new::<Vec2FType>("Center".into()),
             GraphDefaultInputSlot::new::<Vec2FType>("Radii".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Rotation".into()),
         ]
     }
 
@@ -932,10 +933,11 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for EllipticalMaskNode {
     ) -> Result<String, GraphNodeCodeGenError> {
         let mask = ctx.ident_generator.next_output();
         Ok(format!(
-            "let {mask} = elliptical_mask({}, {}, {});\nlet {} = {mask}.value;\nlet {} = {mask}.bounds;\n",
+            "let {mask} = elliptical_mask({}, {}, {}, {});\nlet {} = {mask}.value;\nlet {} = {mask}.bounds;\n",
             ctx.get_input(0)?,
             ctx.get_input(1)?,
             ctx.get_input(2)?,
+            ctx.get_input(3)?,
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))

@@ -30,6 +30,25 @@ fn div_ceil(lhs: u32, rhs: u32) -> u32 {
     }
 }
 
+fn rotate_mat3x3(angle: f32) -> mat3x3<f32> {
+    let c = cos(angle);
+    let s = sin(angle);
+    return mat3x3<f32>(
+        vec3f(c, s, 0.0),
+        vec3f(-s, c, 0.0),
+        vec3f(0.0, 0.0, 1.0)
+    );
+}
+
+fn rotate_mat2x2(angle: f32) -> mat2x2<f32> {
+    let c = cos(angle);
+    let s = sin(angle);
+    return mat2x2<f32>(
+        vec2f(c, s),
+        vec2f(-s, c)
+    );
+}
+
 fn inverse_mat3x3(matrix: mat3x3<f32>) -> mat3x3<f32> {
     let tmp0 = cross(matrix[1], matrix[2]);
     let tmp1 = cross(matrix[2], matrix[0]);
