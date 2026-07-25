@@ -97,7 +97,6 @@ impl Display for CompiledBrushPreset {
 pub struct BrushPresetInstance {
     brush_id: Option<AssetId<BrushPreset>>,
     metadata: BrushPresetMetadata,
-    asset_revision: u32,
 
     required_spacing_graph: Entity<Graph<BrushGraphData>>,
     main_graph: Entity<Graph<BrushGraphData>>,
@@ -205,7 +204,6 @@ impl BrushPresetInstance {
             Some(Self {
                 brush_id: None,
                 metadata: preset.metadata.clone(),
-                asset_revision: 0,
                 required_spacing_graph,
                 main_graph,
                 stroke_postprocess_graphs,
@@ -230,7 +228,6 @@ impl BrushPresetInstance {
             Self::new(&preset, textures, main_functions, stroke_pp_functions, cx);
         if let Some(instance) = instance.as_mut() {
             instance.brush_id = Some(handle.id());
-            instance.asset_revision = handle.metadata().unwrap().revision;
         }
         (instance, errors)
     }
@@ -346,10 +343,6 @@ impl BrushPresetInstance {
 
     pub fn asset_id(&self) -> Option<AssetId<BrushPreset>> {
         self.brush_id
-    }
-
-    pub fn revision(&self) -> u32 {
-        self.asset_revision
     }
 
     pub fn metadata(&self) -> &BrushPresetMetadata {

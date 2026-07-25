@@ -13,11 +13,11 @@ use cyancia_shader_graph::{
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use gpui::{
-    AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
+    AnyElement, App, AppContext, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement, Styled, Window,
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
-use log::error;
+use log::{error, info};
 
 use crate::{
     asset::BrushPreset,
@@ -30,6 +30,7 @@ use crate::{
 pub(crate) fn init(cx: &mut App) {
     cx.observe_global::<CurrentBrushPresetHandle>(|cx| {
         let Some(handle) = cx.try_global::<CurrentBrushPresetHandle>().cloned() else {
+            cx.remove_global::<CurrentBrushPreset>();
             return;
         };
 

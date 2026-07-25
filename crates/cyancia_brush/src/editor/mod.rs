@@ -49,6 +49,7 @@ use crate::{
         REQUIRED_SPACING_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
     render::graph::{BrushGraphData, BrushGraphPostprocessData},
+    tool::CurrentBrushPresetHandle,
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
 
@@ -391,7 +392,13 @@ impl BrushEditor {
 
                 let handle = assets.handle(brush.asset_id).unwrap();
                 handle.update(preset).unwrap();
-                dbg!();
+
+                if let Some(cur_handle) = cx.try_global::<CurrentBrushPresetHandle>()
+                    && cur_handle.0.id() == handle.id()
+                {
+                    // To notify the tool
+                    cx.set_global(CurrentBrushPresetHandle(handle));
+                }
             }
             Selected::Function(func) => {
                 let assets = cx.assets();
