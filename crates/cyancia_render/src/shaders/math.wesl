@@ -216,5 +216,5 @@ fn circle_rectangle_intersect(circle_center: vec2f, circle_radius: f32, rect_min
 fn mix_angle(a: f32, b: f32, t: f32) -> f32 {
     let diff = (b - a) % TAU;
     let shortest = (2.0 * diff) % TAU - diff;
-    return shortest * t;
+    return a + shortest * t;
 }
