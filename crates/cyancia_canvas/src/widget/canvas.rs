@@ -325,7 +325,7 @@ impl Render for CanvasWidget {
                                     else {
                                         return;
                                     };
-                                    let _ = window.paint_surface(
+                                    window.paint_surface(
                                         bounds,
                                         Arc::new(output_texture),
                                         Size::new(
