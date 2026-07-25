@@ -3,7 +3,7 @@ use std::{
     fs::{File, create_dir_all, metadata, read_to_string},
     io::Write,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 use chrono::DateTime;

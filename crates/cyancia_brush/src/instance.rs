@@ -1,9 +1,6 @@
 use std::{
     fmt::Display,
-    sync::{
-        Arc, LazyLock,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, LazyLock},
 };
 
 use cyancia_assets::asset::{AssetHandle, AssetId};

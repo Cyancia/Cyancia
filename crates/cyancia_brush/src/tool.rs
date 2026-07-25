@@ -13,11 +13,11 @@ use cyancia_shader_graph::{
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_utils::wrapper;
 use gpui::{
-    AnyElement, App, AppContext, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
+    AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement, Styled, Window,
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
-use log::{error, info};
+use log::error;
 
 use crate::{
     asset::BrushPreset,

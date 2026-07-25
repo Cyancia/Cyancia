@@ -1,11 +1,10 @@
 use std::{
     collections::HashMap,
     rc::Rc,
-    str::FromStr,
     sync::{Arc, LazyLock},
 };
 
-use cyancia_assets::{AssetAppExt, asset::AssetId, bundle::BundleId};
+use cyancia_assets::{AssetAppExt, asset::AssetId};
 use cyancia_render::texture::Image;
 use cyancia_shader_graph::{
     editor::GraphEditor,
