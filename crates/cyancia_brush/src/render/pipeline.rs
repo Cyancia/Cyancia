@@ -141,7 +141,6 @@ impl BrushMainPipeline {
             )
             .to_vec(),
         );
-        layout_entries.extend_from_slice(&resources.external_var_layouts);
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush main layout"),
@@ -211,7 +210,6 @@ impl BrushMainPipeline {
                 ))
                 .to_vec(),
             );
-            entries.extend(resources.external_var_bindings());
             entries
         };
 

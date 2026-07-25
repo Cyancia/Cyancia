@@ -580,8 +580,6 @@ async fn brush_renderer_worker_main(
         );
         let mut dab_info_offsets = Vec::new();
 
-        dbg!(samples.n_samples);
-
         for (sample, dab_info) in samples
             .samples
             .into_iter()
