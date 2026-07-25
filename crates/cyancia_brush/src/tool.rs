@@ -1,12 +1,7 @@
 use std::{rc::Rc, sync::Arc};
 
-use chrono::{DateTime, Utc};
-use cyancia_assets::{
-    AssetAppExt,
-    asset::{AssetHandle, AssetId},
-};
-use cyancia_canvas::{CCanvas, CanvasAppExt, CanvasUndoStackAppExt};
-use cyancia_image::layer::properties::LayerTexelTypeProp;
+use cyancia_assets::{AssetAppExt, asset::AssetHandle};
+use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
 use cyancia_render::{render_context::RenderContextAppExt, texture::Image};
 use cyancia_shader_graph::{
     graph::{
@@ -16,11 +11,10 @@ use cyancia_shader_graph::{
     save::SerializableGraphFunction,
 };
 use cyancia_tools::{ToolFunction, ToolId};
-use cyancia_utils::{log_err::LogErr, wrapper};
-use glam::Vec2;
+use cyancia_utils::wrapper;
 use gpui::{
     AnyElement, App, BorrowAppContext, Context, Global, IntoElement, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Styled, Subscription, WeakEntity, Window,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Styled, Window,
 };
 use gpui_component::{scroll::ScrollableElement, v_flex};
 use log::error;
@@ -28,9 +22,9 @@ use log::error;
 use crate::{
     asset::BrushPreset,
     editor::{FUNCTION_GRAPH_NODE_REGISTRY, FUNCTION_GRAPH_TYPE_REGISTRY},
-    input_processing::{BasicStabilizer, InputProcessor, RawPenInput},
+    input_processing::{BasicStabilizer, InputProcessor},
     instance::BrushPresetInstance,
-    render::{CanvasBrushPresetOperator, Time},
+    render::CanvasBrushPresetOperator,
 };
 
 pub(crate) fn init(cx: &mut App) {
@@ -106,8 +100,8 @@ pub(crate) fn init(cx: &mut App) {
 pub struct BrushTool;
 
 impl ToolFunction for BrushTool {
-    fn new(cx: &mut Context<Self>) -> Self {
-        Self::default()
+    fn new(_cx: &mut Context<Self>) -> Self {
+        Self
     }
 
     fn id() -> ToolId {

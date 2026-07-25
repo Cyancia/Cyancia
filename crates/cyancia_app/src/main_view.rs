@@ -16,7 +16,9 @@ use gpui_component::{
     menu::AppMenuBar,
 };
 
-use crate::dock::{BrushPresetDock, CanvasDock, CurrentCanvasLayersDock, FiltersDock, LayersDock, ToolOptionsDock};
+use crate::dock::{
+    BrushPresetDock, CanvasDock, CurrentCanvasLayersDock, FiltersDock, LayersDock, ToolOptionsDock,
+};
 
 fn default_dock_layout(
     dock_area: &WeakEntity<DockArea>,

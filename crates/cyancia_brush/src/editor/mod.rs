@@ -26,7 +26,7 @@ use cyancia_shader_graph::{
 };
 use gpui::{
     Action, App, AppContext, Axis, ClickEvent, Context, Entity, InteractiveElement, IntoElement,
-    KeyBinding, ParentElement, Render, SharedString, Styled, Window, actions, div, px,
+    KeyBinding, ParentElement, Render, Styled, Window, actions, div, px,
 };
 use gpui_component::{
     IconName, Selectable,

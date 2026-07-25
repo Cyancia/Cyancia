@@ -1,8 +1,6 @@
 use cyancia_assets::{AssetAppExt, index_db::AssetFilter};
 use cyancia_brush::{
-    asset::BrushPreset,
-    tool::CurrentBrushPresetHandle,
-    widget::{BrushPresetListDelegate, BrushPresetListItem},
+    asset::BrushPreset, tool::CurrentBrushPresetHandle, widget::BrushPresetListDelegate,
 };
 use cyancia_canvas::{
     CanvasAppExt, CanvasId,
@@ -19,7 +17,6 @@ use gpui_component::{
     IndexPath, Sizable,
     dock::{Panel, PanelEvent},
     list::{List, ListEvent, ListState},
-    select::SearchableVec,
 };
 
 macro_rules! test_dummy_dock {
@@ -225,7 +222,7 @@ impl Render for ToolOptionsDock {
 
 pub struct BrushPresetDock {
     // TODO Use this after tag hierarchy is implemented.
-    filter_condition: AssetFilter<BrushPreset>,
+    _filter_condition: AssetFilter<BrushPreset>,
     list_state: Entity<ListState<BrushPresetListDelegate>>,
     focus_handle: FocusHandle,
     _subscriptions: Vec<Subscription>,
@@ -247,7 +244,7 @@ impl BrushPresetDock {
         ];
 
         Self {
-            filter_condition: Default::default(),
+            _filter_condition: Default::default(),
             list_state,
             focus_handle: cx.focus_handle(),
             _subscriptions,
@@ -258,7 +255,7 @@ impl BrushPresetDock {
         &mut self,
         state: &Entity<ListState<BrushPresetListDelegate>>,
         event: &ListEvent,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
@@ -289,7 +286,7 @@ impl BrushPresetDock {
                         .iter()
                         .position(|i| i.handle.id() == preset.id())
                 })
-                .map(|index| IndexPath::new(index));
+                .map(IndexPath::new);
 
             // TODO Hacky, but the delegate is not using the window.
             #[allow(invalid_value)]
@@ -302,7 +299,7 @@ impl BrushPresetDock {
 impl EventEmitter<PanelEvent> for BrushPresetDock {}
 
 impl Focusable for BrushPresetDock {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
@@ -318,7 +315,7 @@ impl Panel for BrushPresetDock {
 }
 
 impl Render for BrushPresetDock {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .p_1()
             .size_full()

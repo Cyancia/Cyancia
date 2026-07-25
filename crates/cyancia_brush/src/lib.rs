@@ -2,10 +2,7 @@ use cyancia_assets::AssetAppExt;
 use cyancia_tools::ToolsAppExt;
 use gpui::App;
 
-use crate::{
-    asset::BrushPresetSerializer,
-    tool::{BrushTool, CurrentBrushPresetHandle},
-};
+use crate::{asset::BrushPresetSerializer, tool::BrushTool};
 
 pub mod asset;
 pub mod editor;

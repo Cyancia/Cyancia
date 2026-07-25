@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
 use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
