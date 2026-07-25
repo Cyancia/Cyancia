@@ -63,6 +63,7 @@ pub enum ScalarMathNodeMode {
     Log2,
     Max,
     Min,
+    Mix,
     Pow,
     Radians,
     Round,
@@ -77,7 +78,7 @@ pub enum ScalarMathNodeMode {
 }
 
 impl ScalarMathNodeMode {
-    pub const ALL: [ScalarMathNodeMode; 34] = [
+    pub const ALL: [ScalarMathNodeMode; 35] = [
         ScalarMathNodeMode::Add,
         ScalarMathNodeMode::Subtract,
         ScalarMathNodeMode::Multiply,
@@ -101,6 +102,7 @@ impl ScalarMathNodeMode {
         ScalarMathNodeMode::Log2,
         ScalarMathNodeMode::Max,
         ScalarMathNodeMode::Min,
+        ScalarMathNodeMode::Mix,
         ScalarMathNodeMode::Pow,
         ScalarMathNodeMode::Radians,
         ScalarMathNodeMode::Round,
@@ -171,6 +173,11 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
             ScalarMathNodeMode::Acosh => {
                 vec![GraphDefaultInputSlot::new::<F32Type>("X".into())]
             }
+            ScalarMathNodeMode::Mix => vec![
+                GraphDefaultInputSlot::new::<F32Type>("A".into()),
+                GraphDefaultInputSlot::new::<F32Type>("B".into()),
+                GraphDefaultInputSlot::new::<F32Type>("Factor".into()),
+            ],
             ScalarMathNodeMode::Ln
             | ScalarMathNodeMode::Log2
             | ScalarMathNodeMode::Sqrt
@@ -262,51 +269,50 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         state: &Self::State,
         mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        let input_a = ctx.get_input(0)?;
-        let input_b = ctx.get_input(1)?;
-        let __c = ctx.get_input(2)?;
+        let a = ctx.get_input(0);
+        let b = ctx.get_input(1);
+        let c = ctx.get_input(2);
+
+        let expression = match state {
+            ScalarMathNodeMode::Add => format!("{} + {}", a?, b?),
+            ScalarMathNodeMode::Subtract => format!("{} - {}", a?, b?),
+            ScalarMathNodeMode::Multiply => format!("{} * {}", a?, b?),
+            ScalarMathNodeMode::Divide => format!("{} / {}", a?, b?),
+            ScalarMathNodeMode::Acos => format!("acos({})", a?),
+            ScalarMathNodeMode::Acosh => format!("acosh({})", a?),
+            ScalarMathNodeMode::Asin => format!("asin({})", a?),
+            ScalarMathNodeMode::Asinh => format!("asinh({})", a?),
+            ScalarMathNodeMode::Atan => format!("atan({})", a?),
+            ScalarMathNodeMode::Atanh => format!("atanh({})", a?),
+            ScalarMathNodeMode::Ceil => format!("ceil({})", a?),
+            ScalarMathNodeMode::Cos => format!("cos({})", a?),
+            ScalarMathNodeMode::Cosh => format!("cosh({})", a?),
+            ScalarMathNodeMode::Degrees => format!("degrees({})", a?),
+            ScalarMathNodeMode::Exp => format!("exp({})", a?),
+            ScalarMathNodeMode::Exp2 => format!("exp2({})", a?),
+            ScalarMathNodeMode::Floor => format!("floor({})", a?),
+            ScalarMathNodeMode::Fract => format!("fract({})", a?),
+            ScalarMathNodeMode::InverseSqrt => format!("inverseSqrt({})", a?),
+            ScalarMathNodeMode::Ln => format!("log({})", a?),
+            ScalarMathNodeMode::Log2 => format!("log2({})", a?),
+            ScalarMathNodeMode::Max => format!("max({}, {})", a?, b?),
+            ScalarMathNodeMode::Min => format!("min({}, {})", a?, b?),
+            ScalarMathNodeMode::Mix => format!("mix({}, {}, {})", a?, b?, c?),
+            ScalarMathNodeMode::Pow => format!("pow({}, {})", a?, b?),
+            ScalarMathNodeMode::Radians => format!("radians({})", a?),
+            ScalarMathNodeMode::Round => format!("round({})", a?),
+            ScalarMathNodeMode::Saturate => format!("saturate({})", a?),
+            ScalarMathNodeMode::Sign => format!("sign({})", a?),
+            ScalarMathNodeMode::Sin => format!("sin({})", a?),
+            ScalarMathNodeMode::Sinh => format!("sinh({})", a?),
+            ScalarMathNodeMode::Sqrt => format!("sqrt({})", a?),
+            ScalarMathNodeMode::Tan => format!("tan({})", a?),
+            ScalarMathNodeMode::Tanh => format!("tanh({})", a?),
+            ScalarMathNodeMode::Trunc => format!("trunc({})", a?),
+        };
         let output = ctx.get_output(0)?;
 
-        Ok(format!(
-            "let {} = {};\n",
-            output,
-            match state {
-                ScalarMathNodeMode::Add => format!("{} + {}", input_a, input_b),
-                ScalarMathNodeMode::Subtract => format!("{} - {}", input_a, input_b),
-                ScalarMathNodeMode::Multiply => format!("{} * {}", input_a, input_b),
-                ScalarMathNodeMode::Divide => format!("{} / {}", input_a, input_b),
-                ScalarMathNodeMode::Acos => format!("acos({})", input_a),
-                ScalarMathNodeMode::Acosh => format!("acosh({})", input_a),
-                ScalarMathNodeMode::Asin => format!("asin({})", input_a),
-                ScalarMathNodeMode::Asinh => format!("asinh({})", input_a),
-                ScalarMathNodeMode::Atan => format!("atan({})", input_a),
-                ScalarMathNodeMode::Atanh => format!("atanh({})", input_a),
-                ScalarMathNodeMode::Ceil => format!("ceil({})", input_a),
-                ScalarMathNodeMode::Cos => format!("cos({})", input_a),
-                ScalarMathNodeMode::Cosh => format!("cosh({})", input_a),
-                ScalarMathNodeMode::Degrees => format!("degrees({})", input_a),
-                ScalarMathNodeMode::Exp => format!("exp({})", input_a),
-                ScalarMathNodeMode::Exp2 => format!("exp2({})", input_a),
-                ScalarMathNodeMode::Floor => format!("floor({})", input_a),
-                ScalarMathNodeMode::Fract => format!("fract({})", input_a),
-                ScalarMathNodeMode::InverseSqrt => format!("inverseSqrt({})", input_a),
-                ScalarMathNodeMode::Ln => format!("log({})", input_a),
-                ScalarMathNodeMode::Log2 => format!("log2({})", input_a),
-                ScalarMathNodeMode::Max => format!("max({}, {})", input_a, input_b),
-                ScalarMathNodeMode::Min => format!("min({}, {})", input_a, input_b),
-                ScalarMathNodeMode::Pow => format!("pow({}, {})", input_a, input_b),
-                ScalarMathNodeMode::Radians => format!("radians({})", input_a),
-                ScalarMathNodeMode::Round => format!("round({})", input_a),
-                ScalarMathNodeMode::Saturate => format!("saturate({})", input_a),
-                ScalarMathNodeMode::Sign => format!("sign({})", input_a),
-                ScalarMathNodeMode::Sin => format!("sin({})", input_a),
-                ScalarMathNodeMode::Sinh => format!("sinh({})", input_a),
-                ScalarMathNodeMode::Sqrt => format!("sqrt({})", input_a),
-                ScalarMathNodeMode::Tan => format!("tan({})", input_a),
-                ScalarMathNodeMode::Tanh => format!("tanh({})", input_a),
-                ScalarMathNodeMode::Trunc => format!("trunc({})", input_a),
-            }
-        ))
+        Ok(format!("let {} = {};\n", output, expression))
     }
 }
 
@@ -606,54 +612,54 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         state: &Self::State,
         mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        let input_a = ctx.get_input(0)?;
-        let input_b = ctx.get_input(1)?;
-        let input_c = ctx.get_input(2)?;
+        let a = ctx.get_input(0);
+        let b = ctx.get_input(1);
+        let c = ctx.get_input(2);
         let output = ctx.get_output(0)?;
 
         Ok(format!(
             "let {} = {};\n",
             output,
             match state {
-                VectorMathNodeMode::Add => format!("{} + {}", input_a, input_b),
-                VectorMathNodeMode::Subtract => format!("{} - {}", input_a, input_b),
-                VectorMathNodeMode::Multiply => format!("{} * {}", input_a, input_b),
-                VectorMathNodeMode::Divide => format!("{} / {}", input_a, input_b),
-                VectorMathNodeMode::Acos => format!("acos({})", input_a),
-                VectorMathNodeMode::Acosh => format!("acosh({})", input_a),
-                VectorMathNodeMode::Asin => format!("asin({})", input_a),
-                VectorMathNodeMode::Asinh => format!("asinh({})", input_a),
-                VectorMathNodeMode::Atan => format!("atan({})", input_a),
-                VectorMathNodeMode::Atanh => format!("atanh({})", input_a),
-                VectorMathNodeMode::Ceil => format!("ceil({})", input_a),
-                VectorMathNodeMode::Cos => format!("cos({})", input_a),
-                VectorMathNodeMode::Cosh => format!("cosh({})", input_a),
-                VectorMathNodeMode::Degrees => format!("degrees({})", input_a),
-                VectorMathNodeMode::Distance => format!("distance({}, {})", input_a, input_b),
-                VectorMathNodeMode::Dot => format!("dot({}, {})", input_a, input_b),
-                VectorMathNodeMode::Exp => format!("exp({})", input_a),
-                VectorMathNodeMode::Exp2 => format!("exp2({})", input_a),
-                VectorMathNodeMode::Floor => format!("floor({})", input_a),
-                VectorMathNodeMode::Fract => format!("fract({})", input_a),
-                VectorMathNodeMode::InverseSqrt => format!("inverseSqrt({})", input_a),
-                VectorMathNodeMode::Ln => format!("log({})", input_a),
-                VectorMathNodeMode::Length => format!("length({})", input_a),
-                VectorMathNodeMode::Log2 => format!("log2({})", input_a),
-                VectorMathNodeMode::Max => format!("max({}, {})", input_a, input_b),
-                VectorMathNodeMode::Min => format!("min({}, {})", input_a, input_b),
-                VectorMathNodeMode::Mix => format!("mix({}, {}, {})", input_a, input_b, input_c),
-                VectorMathNodeMode::Pow => format!("pow({}, {})", input_a, input_b),
-                VectorMathNodeMode::Radians => format!("radians({})", input_a),
-                VectorMathNodeMode::Reflect => format!("reflect({}, {})", input_a, input_b),
-                VectorMathNodeMode::Round => format!("round({})", input_a),
-                VectorMathNodeMode::Saturate => format!("saturate({})", input_a),
-                VectorMathNodeMode::Sign => format!("sign({})", input_a),
-                VectorMathNodeMode::Sin => format!("sin({})", input_a),
-                VectorMathNodeMode::Sinh => format!("sinh({})", input_a),
-                VectorMathNodeMode::Sqrt => format!("sqrt({})", input_a),
-                VectorMathNodeMode::Tan => format!("tan({})", input_a),
-                VectorMathNodeMode::Tanh => format!("tanh({})", input_a),
-                VectorMathNodeMode::Trunc => format!("trunc({})", input_a),
+                VectorMathNodeMode::Add => format!("{} + {}", a?, b?),
+                VectorMathNodeMode::Subtract => format!("{} - {}", a?, b?),
+                VectorMathNodeMode::Multiply => format!("{} * {}", a?, b?),
+                VectorMathNodeMode::Divide => format!("{} / {}", a?, b?),
+                VectorMathNodeMode::Acos => format!("acos({})", a?),
+                VectorMathNodeMode::Acosh => format!("acosh({})", a?),
+                VectorMathNodeMode::Asin => format!("asin({})", a?),
+                VectorMathNodeMode::Asinh => format!("asinh({})", a?),
+                VectorMathNodeMode::Atan => format!("atan({})", a?),
+                VectorMathNodeMode::Atanh => format!("atanh({})", a?),
+                VectorMathNodeMode::Ceil => format!("ceil({})", a?),
+                VectorMathNodeMode::Cos => format!("cos({})", a?),
+                VectorMathNodeMode::Cosh => format!("cosh({})", a?),
+                VectorMathNodeMode::Degrees => format!("degrees({})", a?),
+                VectorMathNodeMode::Distance => format!("distance({}, {})", a?, b?),
+                VectorMathNodeMode::Dot => format!("dot({}, {})", a?, b?),
+                VectorMathNodeMode::Exp => format!("exp({})", a?),
+                VectorMathNodeMode::Exp2 => format!("exp2({})", a?),
+                VectorMathNodeMode::Floor => format!("floor({})", a?),
+                VectorMathNodeMode::Fract => format!("fract({})", a?),
+                VectorMathNodeMode::InverseSqrt => format!("inverseSqrt({})", a?),
+                VectorMathNodeMode::Ln => format!("log({})", a?),
+                VectorMathNodeMode::Length => format!("length({})", a?),
+                VectorMathNodeMode::Log2 => format!("log2({})", a?),
+                VectorMathNodeMode::Max => format!("max({}, {})", a?, b?),
+                VectorMathNodeMode::Min => format!("min({}, {})", a?, b?),
+                VectorMathNodeMode::Mix => format!("mix({}, {}, {})", a?, b?, c?),
+                VectorMathNodeMode::Pow => format!("pow({}, {})", a?, b?),
+                VectorMathNodeMode::Radians => format!("radians({})", a?),
+                VectorMathNodeMode::Reflect => format!("reflect({}, {})", a?, b?),
+                VectorMathNodeMode::Round => format!("round({})", a?),
+                VectorMathNodeMode::Saturate => format!("saturate({})", a?),
+                VectorMathNodeMode::Sign => format!("sign({})", a?),
+                VectorMathNodeMode::Sin => format!("sin({})", a?),
+                VectorMathNodeMode::Sinh => format!("sinh({})", a?),
+                VectorMathNodeMode::Sqrt => format!("sqrt({})", a?),
+                VectorMathNodeMode::Tan => format!("tan({})", a?),
+                VectorMathNodeMode::Tanh => format!("tanh({})", a?),
+                VectorMathNodeMode::Trunc => format!("trunc({})", a?),
             }
         ))
     }
