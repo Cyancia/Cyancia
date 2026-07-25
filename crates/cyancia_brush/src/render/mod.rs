@@ -566,17 +566,15 @@ async fn brush_renderer_worker_main(
     let mut accumulated_tile_bounds = IRect::EMPTY;
 
     while let Ok(WorkerThreadData { samples, dab_infos }) = data.recv().await {
-        let (samples, dab_infos) =
-            async move { (samples.into_inner().await, dab_infos.into_inner().await) }
-                .instrument(tracing::info_span!("sample_readback"))
-                .await;
+        let samples = samples.into_inner().await;
+        let dab_infos = dab_infos.into_inner().await;
 
         let (Ok(Ok(samples)), Ok(Ok(dab_infos))) = (samples, dab_infos) else {
             return;
         };
 
-        let prepare_span = tracing::info_span!("prepare");
-        let guard = prepare_span.enter();
+        let dispatch_span = tracing::info_span!("main_dispatch");
+        let _span = dispatch_span.enter();
 
         let mut samples_buffer =
             DynamicBuffer::new(Some("output samples buffer".into()), BufferUsages::STORAGE);
@@ -615,8 +613,6 @@ async fn brush_renderer_worker_main(
         samples_buffer.write_buffer(&device, &queue);
         dab_infos_buffer.write_buffer(&device, &queue);
 
-        drop(guard);
-
         let mut ec = device.create_command_encoder(&Default::default());
 
         {
@@ -644,6 +640,7 @@ async fn brush_renderer_worker_main(
                 &mut round,
             );
         }
+
         queue.submit([ec.finish()]);
 
         cx.spawn({
