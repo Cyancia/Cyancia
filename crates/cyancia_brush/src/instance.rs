@@ -97,6 +97,7 @@ impl Display for CompiledBrushPreset {
 pub struct BrushPresetInstance {
     brush_id: Option<AssetId<BrushPreset>>,
     metadata: BrushPresetMetadata,
+    asset_revision: u32,
 
     required_spacing_graph: Entity<Graph<BrushGraphData>>,
     main_graph: Entity<Graph<BrushGraphData>>,
@@ -105,7 +106,6 @@ pub struct BrushPresetInstance {
     main_functions: Arc<GraphFunctionStorage<BrushGraphData>>,
     stroke_pp_functions: Arc<GraphFunctionStorage<BrushGraphPostprocessData>>,
     external_vars: Arc<GraphExternalVariableStorage>,
-    runtime_revision: AtomicU64,
 }
 
 impl BrushPresetInstance {
@@ -205,6 +205,7 @@ impl BrushPresetInstance {
             Some(Self {
                 brush_id: None,
                 metadata: preset.metadata.clone(),
+                asset_revision: 0,
                 required_spacing_graph,
                 main_graph,
                 stroke_postprocess_graphs,
@@ -212,7 +213,6 @@ impl BrushPresetInstance {
                 main_functions,
                 stroke_pp_functions,
                 external_vars,
-                runtime_revision: AtomicU64::new(0),
             }),
             errors,
         )
@@ -230,6 +230,7 @@ impl BrushPresetInstance {
             Self::new(&preset, textures, main_functions, stroke_pp_functions, cx);
         if let Some(instance) = instance.as_mut() {
             instance.brush_id = Some(handle.id());
+            instance.asset_revision = handle.metadata().unwrap().revision;
         }
         (instance, errors)
     }
@@ -321,7 +322,6 @@ impl BrushPresetInstance {
     }
 
     pub fn remove_stroke_postprocess_graph(&mut self, index: usize) {
-        self.increment_runtime_revision();
         self.stroke_postprocess_graphs.remove(index);
     }
 
@@ -348,12 +348,15 @@ impl BrushPresetInstance {
         self.brush_id
     }
 
+    pub fn revision(&self) -> u32 {
+        self.asset_revision
+    }
+
     pub fn metadata(&self) -> &BrushPresetMetadata {
         &self.metadata
     }
 
     pub fn metadata_mut(&mut self) -> &mut BrushPresetMetadata {
-        self.increment_runtime_revision();
         &mut self.metadata
     }
 
@@ -367,12 +370,10 @@ impl BrushPresetInstance {
     }
 
     pub fn insert_external_var(&mut self, var: ExternalVariable) {
-        self.increment_runtime_revision();
         self.external_vars.insert(var);
     }
 
     pub fn rename_external_var(&mut self, id: &ExternalVariableId, new_name: String) {
-        self.increment_runtime_revision();
         self.external_vars.rename(id, new_name);
     }
 
@@ -385,7 +386,6 @@ impl BrushPresetInstance {
     }
 
     pub fn remove_external_var(&mut self, id: &ExternalVariableId) {
-        self.increment_runtime_revision();
         self.external_vars.remove(id);
     }
 
@@ -395,14 +395,6 @@ impl BrushPresetInstance {
 
     pub fn main_functions(&self) -> &Arc<GraphFunctionStorage<BrushGraphData>> {
         &self.main_functions
-    }
-
-    pub fn runtime_revision(&self) -> u64 {
-        self.runtime_revision.load(Ordering::Acquire)
-    }
-
-    fn increment_runtime_revision(&self) {
-        self.runtime_revision.fetch_add(1, Ordering::AcqRel);
     }
 }
 
@@ -618,15 +610,11 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphPostproce
 
 pub struct GraphFunctionInstance {
     graph_function: GraphFunction<BrushGraphData>,
-    runtime_revision: AtomicU64,
 }
 
 impl GraphFunctionInstance {
     pub fn new(graph_function: GraphFunction<BrushGraphData>) -> Self {
-        Self {
-            graph_function,
-            runtime_revision: AtomicU64::new(0),
-        }
+        Self { graph_function }
     }
 
     pub fn graph_function(&self) -> &GraphFunction<BrushGraphData> {
@@ -634,15 +622,6 @@ impl GraphFunctionInstance {
     }
 
     pub fn graph_function_mut(&mut self) -> &mut GraphFunction<BrushGraphData> {
-        self.increment_runtime_revision();
         &mut self.graph_function
-    }
-
-    pub fn runtime_revision(&self) -> u64 {
-        self.runtime_revision.load(Ordering::Acquire)
-    }
-
-    fn increment_runtime_revision(&self) {
-        self.runtime_revision.fetch_add(1, Ordering::AcqRel);
     }
 }

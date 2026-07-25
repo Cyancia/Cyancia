@@ -54,7 +54,6 @@ pub struct CanvasBrushStrokeSessionInfo {
     pub canvas: WeakEntity<CCanvas>,
     pub target_layer_id: LayerId,
     pub selection_layer_id: LayerId,
-    pub brush_runtime_revision: u64,
     pub target_layer_format: TexelType,
     pub selection_layer_format: TexelType,
 }
@@ -130,16 +129,10 @@ impl CanvasBrushPresetOperator {
             canvas: canvas_entity.downgrade(),
             target_layer_id: active_layer_id,
             selection_layer_id,
-            brush_runtime_revision: self.instance.runtime_revision(),
             target_layer_format: target_layer_info.texel_type,
             selection_layer_format: selection_layer_info.texel_type,
         };
         if let Some(last_session) = self.last_session.as_mut() {
-            if last_session.brush_runtime_revision != session.brush_runtime_revision {
-                self.cached_brush = None;
-                self.renderer = None;
-            }
-
             if last_session.target_layer_format != session.target_layer_format {
                 self.renderer = None;
             }

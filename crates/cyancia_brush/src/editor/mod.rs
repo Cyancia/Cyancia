@@ -97,7 +97,6 @@ pub struct BrushEditor {
 
     selected: Option<Selected>,
 
-    saved_runtime_revision: u64,
     editor_state: Option<EditorState>,
     brushes: Entity<ListState<BrushPresetListDelegate>>,
     functions: Entity<ListState<BrushFunctionListDelegate>>,
@@ -186,7 +185,6 @@ impl BrushEditor {
             main_function_storage: function_storage,
             stroke_pp_function_storage: Arc::new(GraphFunctionStorage::new(HashMap::new())), // TODO
 
-            saved_runtime_revision: 0,
             editor_state: None,
             brushes,
             functions,
@@ -248,7 +246,6 @@ impl BrushEditor {
                     instance,
                     viewing_graph: BrushPresetGraph::Main,
                 }));
-                self.saved_runtime_revision = 0;
             }
             ListEvent::Cancel => {}
         }
@@ -308,7 +305,6 @@ impl BrushEditor {
                     id: func.id,
                     instance: GraphFunctionInstance::new(func),
                 }));
-                self.saved_runtime_revision = 0;
             }
             ListEvent::Cancel => {}
         }
@@ -421,7 +417,6 @@ impl BrushEditor {
 
         match selected {
             Selected::Brush(brush) => {
-                self.saved_runtime_revision = brush.instance.runtime_revision();
                 let preset = brush.instance.as_asset(cx).unwrap();
 
                 let handle = assets.handle(brush.asset_id).unwrap();
@@ -432,7 +427,6 @@ impl BrushEditor {
                 let ser_func =
                     SerializableGraphFunction::serialize_func(func.instance.graph_function(), cx)
                         .unwrap();
-                self.saved_runtime_revision = func.instance.runtime_revision();
                 let handle = assets.handle(func.asset_id).unwrap();
                 handle.update(ser_func).unwrap();
                 handle.write().unwrap();
@@ -493,7 +487,6 @@ impl BrushEditor {
                     instance,
                     viewing_graph: BrushPresetGraph::Main,
                 }));
-                self.saved_runtime_revision = 0;
             }
             PaneSelection::Function => {
                 let id = GraphFunctionId::new(Uuid::new_v4());
@@ -537,7 +530,6 @@ impl BrushEditor {
                     id,
                     instance,
                 }));
-                self.saved_runtime_revision = 0;
             }
         }
     }
