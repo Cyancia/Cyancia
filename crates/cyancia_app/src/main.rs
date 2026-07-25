@@ -8,6 +8,7 @@ use cyancia_assets::{
 use cyancia_view::{View, ViewAppExt, ViewManager};
 use gpui::{App, Window};
 use tracing_subscriber::fmt::format::FmtSpan;
+use wgpu::{Features, Limits};
 
 use crate::{brush_editor_view::BrushEditorView, main_view::MainView};
 
@@ -15,6 +16,8 @@ mod brush_editor_view;
 mod dock;
 mod main_view;
 
+// Many resources are only available after the window is created.
+// TODO This is a workaround, maybe avoid this.
 fn init_after_window_created(window: &Window, cx: &mut App) {
     cyancia_render::init(window, cx);
     cyancia_actions::init(cx);
@@ -77,11 +80,10 @@ fn main() {
                 .set_root("assets".into());
             cyancia_view::init(cx);
 
-            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
             cx.set_gpu_requirements(Box::new(gpui_wgpu::WgpuDeviceRequirements {
-                features: wgpu::Features::CLEAR_TEXTURE
-                    | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
-                limits: wgpu::Limits::default(),
+                features: Features::CLEAR_TEXTURE
+                    | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+                limits: Limits::default(),
             }));
 
             let vm = cx.global_mut::<ViewManager>();
