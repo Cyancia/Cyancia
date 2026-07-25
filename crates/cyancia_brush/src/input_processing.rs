@@ -48,7 +48,9 @@ impl RawPenInput {
             if let Some(Force::Normalized(pressure)) = data.force {
                 input.pressure = pressure as f32;
             }
-            if let Some(tilt) = data.clone().tilt() {}
+            if let Some(tilt) = data.clone().tilt() {
+                input.tilt = Vec2::new((tilt.x as f32).to_radians(), (tilt.y as f32).to_radians());
+            }
             if let Some(angle) = data.clone().angle() {
                 input.angle = Vec2::new(angle.altitude as f32, angle.azimuth as f32);
             }
