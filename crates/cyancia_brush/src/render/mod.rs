@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
 use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
@@ -565,6 +570,8 @@ async fn brush_renderer_worker_main(
     let mut round = 0;
     let mut accumulated_tile_bounds = IRect::EMPTY;
 
+    let preview_cancelled = Arc::new(AtomicBool::new(false));
+
     while let Ok(WorkerThreadData { samples, dab_infos }) = data.recv().await {
         let samples = samples.into_inner().await;
         let dab_infos = dab_infos.into_inner().await;
@@ -656,8 +663,12 @@ async fn brush_renderer_worker_main(
                 intermediate_buffers[0].deep_clone(),
                 intermediate_buffers[1].deep_clone(),
             ];
+            let preview_cancelled = preview_cancelled.clone();
 
             async move |cx| {
+                if preview_cancelled.load(Ordering::Acquire) {
+                    return;
+                }
                 // unsafe {
                 //     device.start_graphics_debugger_capture();
                 // }
@@ -679,13 +690,17 @@ async fn brush_renderer_worker_main(
                 //     device.stop_graphics_debugger_capture();
                 // }
 
-                if accumulated_tile_bounds.is_empty() {
+                if accumulated_tile_bounds.is_empty() || preview_cancelled.load(Ordering::Acquire) {
                     return;
                 }
 
                 let result = &intermediate_buffers[round as usize % 2];
 
                 cx.update_global::<LayerPreviewOverriders, _>(|overriders, cx| {
+                    if preview_cancelled.load(Ordering::Acquire) {
+                        return;
+                    }
+
                     overriders.insert_overrider(
                         target_layer_id,
                         PixelPreviewOverrider {
@@ -707,6 +722,7 @@ async fn brush_renderer_worker_main(
         .detach();
     }
 
+    preview_cancelled.store(true, Ordering::Release);
     cx.update_global::<LayerPreviewOverriders, _>(|overriders, _cx| {
         overriders.remove_overrider(&target_layer_id);
     });
