@@ -18,6 +18,7 @@ use gpui_component::{
     dock::{Panel, PanelEvent},
     list::{List, ListEvent, ListState},
 };
+use log::info;
 
 macro_rules! test_dummy_dock {
     ($name:ident) => {
@@ -269,6 +270,14 @@ impl BrushPresetDock {
                 });
 
                 if let Some(handle) = handle {
+                    if let Ok(metadata) = handle.metadata() {
+                        info!(
+                            "Selected new brush {} at {} revision {}",
+                            handle.id(),
+                            metadata.relative_path,
+                            metadata.revision
+                        );
+                    }
                     cx.set_global(CurrentBrushPresetHandle::new(handle));
                 }
             }

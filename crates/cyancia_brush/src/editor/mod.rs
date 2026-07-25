@@ -89,8 +89,6 @@ struct DeleteExternalVariable {
     id: ExternalVariableId,
 }
 
-// FIXME: Modifying preset won't take effect immediately.
-// TODO: Don't share the same brush with brush tool.
 // TODO: Tag filtering.
 pub struct BrushEditor {
     texture_storage: Arc<GraphTextureStorage>,
