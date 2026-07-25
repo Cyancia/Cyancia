@@ -25,8 +25,9 @@ use cyancia_shader_graph::{
     },
 };
 use gpui::{
-    Action, App, AppContext, Axis, ClickEvent, Context, Entity, InteractiveElement, IntoElement,
-    KeyBinding, ParentElement, Render, Styled, Window, actions, div, px,
+    Action, App, AppContext, Axis, BorrowAppContext, ClickEvent, Context, Entity,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, Styled, Window, actions,
+    div, px,
 };
 use gpui_component::{
     IconName, Selectable,
@@ -407,6 +408,14 @@ impl BrushEditor {
                         .unwrap();
                 let handle = assets.handle(func.asset_id).unwrap();
                 handle.update(ser_func).unwrap();
+
+                // We still needs to notify the tool. As user adjusting the function, the current brush is likely
+                // referencing the function. So we are refreshing the global brush.
+                if let Some(cur_handle) = cx.try_global::<CurrentBrushPresetHandle>() {
+                    let global = cur_handle.clone();
+                    // To notify the tool
+                    cx.set_global(global);
+                }
             }
         }
     }
