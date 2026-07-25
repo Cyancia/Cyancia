@@ -99,6 +99,9 @@ pub(crate) fn init(cx: &mut App) {
     .detach();
 }
 
+// TODO We should derive more tools based on the brush tool.
+//      For example, eraser tool, airbrush tool etc.
+//      They are fundamentally the same tool, but with different default tags.
 #[derive(Default)]
 pub struct BrushTool;
 

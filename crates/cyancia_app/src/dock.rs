@@ -16,7 +16,7 @@ use gpui::{
     IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div,
 };
 use gpui_component::{
-    Sizable,
+    IndexPath, Sizable,
     dock::{Panel, PanelEvent},
     list::{List, ListEvent, ListState},
     select::SearchableVec,
@@ -224,6 +224,7 @@ impl Render for ToolOptionsDock {
 }
 
 pub struct BrushPresetDock {
+    // TODO Use this after tag hierarchy is implemented.
     filter_condition: AssetFilter<BrushPreset>,
     list_state: Entity<ListState<BrushPresetListDelegate>>,
     focus_handle: FocusHandle,
@@ -240,8 +241,10 @@ impl BrushPresetDock {
             )
         });
 
-        let _subscriptions =
-            vec![cx.subscribe_in(&list_state, window, Self::on_select_brush_preset)];
+        let _subscriptions = vec![
+            cx.subscribe_in(&list_state, window, Self::on_select_brush_preset),
+            cx.observe_global::<CurrentBrushPresetHandle>(Self::on_active_brush_preset_changed),
+        ];
 
         Self {
             filter_condition: Default::default(),
@@ -271,6 +274,28 @@ impl BrushPresetDock {
             }
             ListEvent::Select(_) | ListEvent::Cancel => {}
         }
+    }
+
+    fn on_active_brush_preset_changed(&mut self, cx: &mut Context<Self>) {
+        let brush_preset = cx
+            .try_global::<CurrentBrushPresetHandle>()
+            .map(|h| h.0.clone());
+        self.list_state.update(cx, |state, cx| {
+            let ix = brush_preset
+                .and_then(|preset| {
+                    state
+                        .delegate()
+                        .items()
+                        .iter()
+                        .position(|i| i.handle.id() == preset.id())
+                })
+                .map(|index| IndexPath::new(index));
+
+            // TODO Hacky, but the delegate is not using the window.
+            #[allow(invalid_value)]
+            let window = unsafe { std::mem::zeroed() };
+            state.set_selected_index(ix, window, cx);
+        });
     }
 }
 

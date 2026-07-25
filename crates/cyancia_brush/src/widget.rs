@@ -65,6 +65,10 @@ impl BrushPresetListDelegate {
     pub fn get(&self, ix: IndexPath) -> Option<&BrushPresetListItem> {
         self.items.get(ix.row)
     }
+
+    pub fn items(&self) -> &[BrushPresetListItem] {
+        &self.items
+    }
 }
 
 impl ListDelegate for BrushPresetListDelegate {
