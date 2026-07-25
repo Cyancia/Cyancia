@@ -319,7 +319,7 @@ impl BrushEditor {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::PressEnter { secondary: _ } => {
+            InputEvent::PressEnter { secondary: _, .. } => {
                 if let Some(selected) = &mut self.selected {
                     let name = input_state.read(cx).value();
                     match selected {
@@ -353,7 +353,7 @@ impl BrushEditor {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::PressEnter { secondary: _ } => {
+            InputEvent::PressEnter { secondary: _, .. } => {
                 if let Some(id) = self.renaming_ext_var {
                     self.confirm_external_var_rename(id, cx);
                 }
