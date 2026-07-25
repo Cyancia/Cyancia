@@ -25,6 +25,7 @@ use encase::ShaderType;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use glam::{IVec2, Vec2};
 use gpui::{App, AsyncApp, Entity, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Task, WeakEntity};
+use tracing::Instrument;
 use wgpu::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
     BufferDescriptor, BufferUsages, ComputePassDescriptor, Device, Extent3d, Queue, ShaderStages,
@@ -141,18 +142,15 @@ impl CanvasBrushPresetOperator {
         }
 
         let compiled_brush = self.cached_brush.get_or_insert_with(|| {
-            let now = std::time::Instant::now();
             let compiled = self
                 .instance
                 .compile(EXTERNAL_VARIABLE_BASE_BINDING, cx)
                 .unwrap();
-            log::info!("Brush preset compilation: {:?}", now.elapsed());
             println!("Compiled brush preset: {}", compiled);
             compiled
         });
 
         let renderer = self.renderer.get_or_insert_with(|| {
-            let now = std::time::Instant::now();
             // FIXME target layer is initialize once, so strokes on other layers
             //       with the same texel type will be composited with the wrong layer.
             let renderer = BrushPresetRenderer::new(
@@ -161,7 +159,6 @@ impl CanvasBrushPresetOperator {
                 session.selection_layer_format,
                 cx,
             );
-            log::info!("Brush preset renderer creation: {:?}", now.elapsed());
             renderer
         });
 
@@ -303,6 +300,7 @@ pub struct BrushPresetRenderer {
 }
 
 impl BrushPresetRenderer {
+    #[tracing::instrument(skip_all, name = "new_renderer")]
     pub fn new(
         brush: &CompiledBrushPreset,
         target_layer_format: TexelType,
@@ -568,12 +566,17 @@ async fn brush_renderer_worker_main(
     let mut accumulated_tile_bounds = IRect::EMPTY;
 
     while let Ok(WorkerThreadData { samples, dab_infos }) = data.recv().await {
-        let samples = samples.into_inner().await;
-        let dab_infos = dab_infos.into_inner().await;
+        let (samples, dab_infos) =
+            async move { (samples.into_inner().await, dab_infos.into_inner().await) }
+                .instrument(tracing::info_span!("sample_readback"))
+                .await;
 
         let (Ok(Ok(samples)), Ok(Ok(dab_infos))) = (samples, dab_infos) else {
             return;
         };
+
+        let prepare_span = tracing::info_span!("prepare");
+        let guard = prepare_span.enter();
 
         let mut samples_buffer =
             DynamicBuffer::new(Some("output samples buffer".into()), BufferUsages::STORAGE);
@@ -611,6 +614,8 @@ async fn brush_renderer_worker_main(
 
         samples_buffer.write_buffer(&device, &queue);
         dab_infos_buffer.write_buffer(&device, &queue);
+
+        drop(guard);
 
         let mut ec = device.create_command_encoder(&Default::default());
 

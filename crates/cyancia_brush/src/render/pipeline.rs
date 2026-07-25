@@ -179,6 +179,7 @@ impl BrushMainPipeline {
         Self { pipeline, layout }
     }
 
+    #[tracing::instrument(skip_all, name = "dispatch_main")]
     pub fn dispatch(
         &self,
         device: &Device,

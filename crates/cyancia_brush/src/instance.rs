@@ -254,6 +254,7 @@ impl BrushPresetInstance {
         })
     }
 
+    #[tracing::instrument(skip_all, name = "compile_brush_preset")]
     pub fn compile(
         &self,
         mut existing_binding_count: u32,

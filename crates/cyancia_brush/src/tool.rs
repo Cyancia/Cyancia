@@ -109,6 +109,7 @@ impl ToolFunction for BrushTool {
         ToolId::new("brush_tool".into())
     }
 
+    #[tracing::instrument(skip_all, name = "brush_tool_begin")]
     fn begin(&mut self, mouse: &MouseDownEvent, cx: &mut Context<Self>) {
         let Some(canvas_entity) = cx.current_canvas() else {
             return;
@@ -126,18 +127,18 @@ impl ToolFunction for BrushTool {
         });
     }
 
+    #[tracing::instrument(skip_all, name = "brush_tool_update")]
     fn update(&mut self, mouse: &MouseMoveEvent, cx: &mut Context<Self>) {
         if !cx.has_global::<CurrentBrushPreset>() {
             return;
         }
 
         cx.update_global::<CurrentBrushPreset, _>(|brush, cx| {
-            let now = std::time::Instant::now();
             brush.update_stroke(mouse, cx);
-            log::debug!("Brush stroke update took {:?}", now.elapsed());
         });
     }
 
+    #[tracing::instrument(skip_all, name = "brush_tool_end")]
     fn end(&mut self, mouse: &MouseUpEvent, cx: &mut Context<Self>) {
         if !cx.has_global::<CurrentBrushPreset>() {
             return;
