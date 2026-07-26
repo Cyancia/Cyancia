@@ -22,7 +22,7 @@ use wgpu::{
 };
 
 use crate::{
-    config::ColorSelectorConfig,
+    config::{ColorSelectorConfig, GradientPlaneConfig},
     render::{GradientMesh, GradientPipeline, GradientRingPipeline, GradientSettings},
 };
 
@@ -31,7 +31,6 @@ pub mod render;
 
 const MAX_PLANES_PER_ROW: usize = 2;
 const MAX_PLANE_SIZE: u32 = 256;
-const GRADIENT_RING_WIDTH: f32 = 20.0;
 const GRADIENT_RING_GAP: f32 = 5.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
@@ -301,7 +300,7 @@ impl ColorSelectorState {
                 &self.profile,
                 reference,
                 config,
-                GRADIENT_RING_WIDTH,
+                config.primary_channel_ring_width,
                 texture.width() as f32,
             );
 
@@ -347,7 +346,7 @@ impl ColorSelectorState {
                     let antialias_width = 1.0 / texture_size;
                     let inner_radius = (0.5
                         - antialias_width
-                        - (GRADIENT_RING_WIDTH + GRADIENT_RING_GAP) / texture_size)
+                        - (config.primary_channel_ring_width + GRADIENT_RING_GAP) / texture_size)
                         .max(0.0);
                     let circumradius = match config.shape {
                         GradientPlaneShape::Square => std::f32::consts::SQRT_2,

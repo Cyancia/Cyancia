@@ -35,6 +35,7 @@ pub struct GradientPlaneConfig {
     pub flip_axis: GradientPlaneFlipAxis,
     pub rotation: f32,
     pub show_primary_channel_ring: bool,
+    pub primary_channel_ring_width: f32,
     pub saturated_primary_channel_ring: bool,
     pub ring_rotation: f32,
     pub reversed_ring: bool,
@@ -115,6 +116,7 @@ struct PlaneEditorControls {
     model: Entity<ColorModelSelectState>,
     shape: Entity<PlaneShapeSelectState>,
     rotation: Entity<SpinSliderState>,
+    ring_width: Entity<SpinSliderState>,
     ring_rotation: Entity<SpinSliderState>,
 }
 
@@ -362,6 +364,11 @@ impl ColorSelectorConfigEditorState {
                 .precision(3, window, cx)
                 .value(config.rotation.rem_euclid(TAU), window, cx)
         });
+        let ring_width = cx.new(|cx| {
+            SpinSliderState::new(10.0, 40.0, window, cx)
+                .precision(1, window, cx)
+                .value(config.primary_channel_ring_width, window, cx)
+        });
         let ring_rotation = cx.new(|cx| {
             SpinSliderState::new(0.0, TAU, window, cx)
                 .precision(3, window, cx)
@@ -395,6 +402,16 @@ impl ColorSelectorConfigEditorState {
             }
         })
         .detach();
+        cx.subscribe_in(&ring_width, window, move |this, _, event, _, cx| {
+            if let SpinSliderEvent::Change(width) = event {
+                if let Some(index) = this.plane_index(id) {
+                    this.active_config_mut().unwrap().planes[index].primary_channel_ring_width =
+                        *width;
+                    cx.notify();
+                }
+            }
+        })
+        .detach();
         cx.subscribe_in(&ring_rotation, window, move |this, _, event, _, cx| {
             if let SpinSliderEvent::Change(rotation) = event {
                 if let Some(index) = this.plane_index(id) {
@@ -410,6 +427,7 @@ impl ColorSelectorConfigEditorState {
             model,
             shape,
             rotation,
+            ring_width,
             ring_rotation,
         }
     }
@@ -460,6 +478,7 @@ impl ColorSelectorConfigEditorState {
             flip_axis: GradientPlaneFlipAxis::empty(),
             rotation: 0.0,
             show_primary_channel_ring: false,
+            primary_channel_ring_width: 20.0,
             saturated_primary_channel_ring: false,
             ring_rotation: 0.0,
             reversed_ring: false,
@@ -722,6 +741,13 @@ impl ColorSelectorConfigEditorState {
                                 }
                             })),
                     ),
+            )
+            .child(
+                SpinSlider::new(&controls.ring_width)
+                    .small()
+                    .disabled(!config.show_primary_channel_ring)
+                    .prefix("Ring width: ")
+                    .suffix(" px"),
             )
             .child(
                 SpinSlider::new(&controls.ring_rotation)
