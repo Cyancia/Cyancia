@@ -1012,7 +1012,9 @@ impl ColorSelectorState {
                 .planes
                 .len()
                 .min(preset.max_planes_per_row.clamp(1, 5));
-            let per_size = (width / columns as f32)
+            let available_width =
+                (width - 5.0 * columns.saturating_sub(1) as f32).max(columns as f32);
+            let per_size = (available_width / columns as f32)
                 .floor()
                 .max(1.0)
                 .min(preset.max_plane_size.clamp(128, 512) as f32)
@@ -1130,10 +1132,11 @@ impl Render for ColorSelectorState {
             .len()
             .min(max_planes_per_row)
             .max(1);
-        let plane_width = relative(1.0 / plane_columns as f32);
-        let max_plane_size = self.presets[self.selected_preset]
+        let plane_cell_width = relative(1.0 / plane_columns as f32);
+        let max_plane_cell_size = self.presets[self.selected_preset]
             .max_plane_size
-            .clamp(128, 512) as f32;
+            .clamp(128, 512) as f32
+            + 5.0;
         let bars = self.presets[self.selected_preset]
             .bars
             .iter()
@@ -1277,7 +1280,7 @@ impl Render for ColorSelectorState {
                 }
             })
             .child(
-                v_flex().w_full().flex_shrink_0().children(
+                v_flex().w_full().flex_shrink_0().gap(px(5.0)).children(
                     self.plane_targets
                         .chunks(max_planes_per_row)
                         .enumerate()
@@ -1296,12 +1299,15 @@ impl Render for ColorSelectorState {
                                         let plane_indicator = self.plane_indicator_position(index);
                                         let ring_indicator = self.ring_indicator_position(index);
                                         div()
+                                            .w(plane_cell_width)
+                                            .max_w(px(max_plane_cell_size))
+                                            .px(px(2.5))
+                                            .child(
+                                                div()
                                 .id(("color-plane-surface", index))
                                 .relative()
-                                .w(plane_width)
-                                .max_w(px(max_plane_size))
+                                .w_full()
                                 .aspect_square()
-                                .flex_none()
                                 .on_prepaint({
                                     let state = cx.entity().downgrade();
                                     move |bounds, _, cx| {
@@ -1398,7 +1404,8 @@ impl Render for ColorSelectorState {
                                         .rounded_full()
                                         .border_1()
                                         .border_color(indicator_color)
-                                }))
+                                })),
+                                            )
                                     },
                                 ))
                         }),
