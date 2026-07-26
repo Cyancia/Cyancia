@@ -12,9 +12,9 @@ use cyancia_tools::{ToolProxies, ToolProxyId};
 use cyancia_utils::log_err::LogErr;
 use glam::{IVec2, UVec2, Vec2};
 use gpui::{
-    BorrowAppContext, Context, DisplayId, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, ScrollWheelEvent, Size,
-    Styled, Subscription, WeakEntity, Window, canvas, div, px,
+    App, BorrowAppContext, Context, DisplayId, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
+    ScrollWheelEvent, Size, Styled, Subscription, WeakEntity, Window, canvas, div, px,
 };
 use moxcms::Layout;
 
@@ -25,20 +25,8 @@ use crate::{
     render::{CanvasRenderer, ICC_TRANSFORM_SHADER_IDENT},
 };
 
-// TODO: So, this is weird.
-//       For the brush tool, when a stroke is in progress, it's preview should be generated and
-//       in recomposite function, it will produce the correct output image, with the half-done
-//       stroke. The problem is that, gpui is not rerendering the element. So the rendered image
-//       cannot be output on time.
-//       I have tried numerous ways to fix this but none of them success.
-//       It's even more confusing when I found that, after commenting out the dirty rect check at
-//       the beginning of recomposite function, the pan tool is still able to work correctly, while
-//       the brush tool is not. All of them is recompositing the entire image on tool update.
-//       So probably, wait for gpui use wgpu on windows, so we can draw the texture directly onto
-//       the window surface, and that might fixes.
-//
-//       Edit: But it works in release build, okay nevermind.
 pub struct CanvasWidget {
+    focus_handle: FocusHandle,
     tool_proxy_id: ToolProxyId,
 
     canvas: WeakEntity<CCanvas>,
@@ -113,6 +101,7 @@ impl CanvasWidget {
         ];
 
         Ok(Self {
+            focus_handle: cx.focus_handle(),
             tool_proxy_id,
             canvas: canvas_entity.downgrade(),
 
@@ -265,12 +254,19 @@ impl CanvasWidget {
     }
 }
 
+impl Focusable for CanvasWidget {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
 impl Render for CanvasWidget {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tool_proxy_id = self.tool_proxy_id;
         self.request_rerender(window, cx);
 
         div()
+            .track_focus(&self.focus_handle)
             .w_full()
             .h_full()
             .overflow_hidden()
