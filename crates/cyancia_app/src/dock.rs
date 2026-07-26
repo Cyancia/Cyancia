@@ -431,17 +431,20 @@ impl ColorSelectorDock {
         let subscriptions = vec![
             cx.subscribe_in(&config_editor, window, Self::on_config_editor_event),
             cx.on_window_closed(move |cx, window_id| {
-                dock.update(cx, |dock, cx| {
-                    if dock
-                        .editor_window
-                        .is_some_and(|window| window.window_id() == window_id)
-                    {
-                        dock.editor_window = None;
-                        dock.is_editor_open = false;
-                        cx.notify();
-                    }
-                })
-                .ok();
+                let dock = dock.clone();
+                cx.defer(move |cx| {
+                    dock.update(cx, |dock, cx| {
+                        if dock
+                            .editor_window
+                            .is_some_and(|window| window.window_id() == window_id)
+                        {
+                            dock.editor_window = None;
+                            dock.is_editor_open = false;
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                });
             }),
         ];
 
@@ -462,17 +465,22 @@ impl ColorSelectorDock {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(event, ColorSelectorConfigEvent::Confirm) {
-            let configs = editor.read(cx).configs().to_vec();
-            self.color_selector.update(cx, |selector, cx| {
-                selector.set_configs(configs, cx);
-            });
-        }
-
-        if let Some(editor_window) = self.editor_window {
-            editor_window
-                .update(cx, |_, window, _| window.remove_window())
-                .ok();
+        match event {
+            ColorSelectorConfigEvent::Confirm => {
+                let configs = editor.read(cx).configs().to_vec();
+                self.color_selector.update(cx, |selector, cx| {
+                    selector.set_configs(configs, cx);
+                    cx.notify();
+                });
+                cx.refresh_windows();
+            }
+            ColorSelectorConfigEvent::Cancel => {
+                if let Some(editor_window) = self.editor_window {
+                    editor_window
+                        .update(cx, |_, window, _| window.remove_window())
+                        .ok();
+                }
+            }
         }
     }
 
