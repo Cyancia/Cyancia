@@ -298,6 +298,8 @@ impl ColorSelectorState {
                 reference,
                 config.model,
                 u32::from(config.variable_channels),
+                config.rotation,
+                u32::from(config.flip_axis.bits()),
             );
 
             self.pipeline.draw(device, queue, mesh, &settings, view);

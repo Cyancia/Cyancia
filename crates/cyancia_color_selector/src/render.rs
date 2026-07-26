@@ -30,7 +30,7 @@ impl GradientPipeline {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("gradient_layout"),
             entries: BindGroupLayoutEntries::sequential(
-                ShaderStages::FRAGMENT,
+                ShaderStages::VERTEX_FRAGMENT,
                 (binding_types::uniform_buffer::<GradientSettings>(false),),
             )
             .as_ref(),
@@ -235,6 +235,8 @@ pub struct GradientSettings {
     pub reference: Vec3,
     pub color_model: u32,
     pub variable_channels: u32,
+    pub rotation: f32,
+    pub flip_axis: u32,
 }
 
 impl GradientSettings {
@@ -243,6 +245,8 @@ impl GradientSettings {
         reference: Vec3,
         color_model: ColorModel,
         variable_channels: u32,
+        rotation: f32,
+        flip_axis: u32,
     ) -> Self {
         let m = profile.rgb_to_xyz_matrix().to_f32().v;
 
@@ -262,6 +266,8 @@ impl GradientSettings {
             reference,
             color_model: color_model as u32,
             variable_channels,
+            rotation,
+            flip_axis,
         }
     }
 }

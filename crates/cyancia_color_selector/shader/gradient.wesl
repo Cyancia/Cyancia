@@ -40,13 +40,30 @@ struct Settings {
     // Xyz,
     color_model: u32,
     variable_channels: u32,
+    rotation: f32,
+    flip_axis: u32,
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
 
 @vertex
 fn vertex(in: VertexInput) -> VertexOutput {
-    return VertexOutput(vec4f(in.position, 0.0, 1.0), in.uv);
+    var position = in.position;
+    if ((settings.flip_axis & 1u) != 0u) {
+        position.x = -position.x;
+    }
+    if ((settings.flip_axis & 2u) != 0u) {
+        position.y = -position.y;
+    }
+
+    let rotation_sin = sin(settings.rotation);
+    let rotation_cos = cos(settings.rotation);
+    position = vec2f(
+        rotation_cos * position.x + rotation_sin * position.y,
+        -rotation_sin * position.x + rotation_cos * position.y,
+    );
+
+    return VertexOutput(vec4f(position, 0.0, 1.0), in.uv);
 }
 
 @fragment
