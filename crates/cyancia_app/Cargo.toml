@@ -25,6 +25,7 @@ cyancia_selection_tool.workspace = true
 cyancia_theme.workspace = true
 cyancia_tools.workspace = true
 cyancia_undo.workspace = true
+cyancia_utils.workspace = true
 cyancia_view.workspace = true
 cyancia_widgets.workspace = true
 futures.workspace = true

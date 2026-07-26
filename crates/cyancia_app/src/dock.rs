@@ -10,17 +10,23 @@ use cyancia_canvas::{
 };
 use cyancia_color::{Color, model::rgb::Rgb};
 use cyancia_color_selector::{
-    ColorModel, ColorSelector, ColorSelectorState, GradientPlaneConfig, GradientPlaneShape,
-    SelectorModePreset,
+    ColorModel, ColorSelector, ColorSelectorState, GradientPlaneShape,
+    config::{
+        ColorSelectorConfig, ColorSelectorConfigEditorState, GradientPlaneConfig,
+        GradientPlaneFlipAxis,
+    },
 };
 use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolFunction, ToolProxies, ToolProxyId};
+use cyancia_utils::log_err::LogErr;
 use gpui::{
-    App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window, div,
+    App, AppContext, BorrowAppContext, Bounds, ClickEvent, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, IntoElement, ParentElement, Point, Render, SharedString, Size, Styled,
+    Subscription, Window, WindowBounds, WindowOptions, div, px,
 };
 use gpui_component::{
-    IndexPath, Sizable,
+    IndexPath, Root, Sizable,
+    button::Button,
     dock::{Panel, PanelEvent},
     list::{List, ListEvent, ListState},
 };
@@ -342,46 +348,86 @@ impl Render for BrushPresetDock {
 pub struct ColorSelectorDock {
     focus_handle: FocusHandle,
     color_selector: Entity<ColorSelectorState>,
+    config_editor: Entity<ColorSelectorConfigEditorState>,
+    is_editor_open: bool,
 }
 
 impl ColorSelectorDock {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let config = ColorSelectorConfig {
+            name: "RGB".to_string(),
+            planes: vec![
+                GradientPlaneConfig {
+                    model: ColorModel::Rgb,
+                    shape: GradientPlaneShape::Square,
+                    variable_channels: 0b110,
+                    flip_axis: GradientPlaneFlipAxis::empty(),
+                    rotation: 0.0,
+                    show_primary_channel_ring: false,
+                    saturated_primary_channel_ring: false,
+                    ring_rotation: 0.0,
+                    reversed_ring: false,
+                },
+                GradientPlaneConfig {
+                    model: ColorModel::Hsv,
+                    shape: GradientPlaneShape::Triangle,
+                    variable_channels: 0b110,
+                    flip_axis: GradientPlaneFlipAxis::empty(),
+                    rotation: 0.0,
+                    show_primary_channel_ring: false,
+                    saturated_primary_channel_ring: false,
+                    ring_rotation: 0.0,
+                    reversed_ring: false,
+                },
+            ],
+            bars: Vec::new(),
+        };
+
+        let config_editor =
+            cx.new(|cx| ColorSelectorConfigEditorState::new(config.clone(), window, cx));
+        let color_selector = cx.new(|cx| {
+            ColorSelectorState::new(
+                Color::Rgb(Rgb::new(0.0, 0.0, 0.0)),
+                ColorProfile::new_srgb(),
+                vec![config.clone()],
+                0,
+                cx,
+            )
+        });
+
         Self {
             focus_handle: cx.focus_handle(),
-            color_selector: cx.new(|cx| {
-                ColorSelectorState::new(
-                    Color::Rgb(Rgb::new(0.0, 0.0, 0.0)),
-                    ColorProfile::new_srgb(),
-                    vec![
-                        SelectorModePreset {
-                            name: "RGB".to_string(),
-                            planes: vec![
-                                GradientPlaneConfig {
-                                    model: ColorModel::Rgb,
-                                    shape: GradientPlaneShape::Square,
-                                    variable_channels: 0b110,
-                                },
-                                GradientPlaneConfig {
-                                    model: ColorModel::Hsv,
-                                    shape: GradientPlaneShape::Triangle,
-                                    variable_channels: 0b110,
-                                },
-                            ],
-                        },
-                        SelectorModePreset {
-                            name: "HSV".to_string(),
-                            planes: vec![GradientPlaneConfig {
-                                model: ColorModel::Hsv,
-                                shape: GradientPlaneShape::Square,
-                                variable_channels: 0b110,
-                            }],
-                        },
-                    ],
-                    0,
-                    cx,
-                )
-            }),
+            color_selector,
+            config_editor,
+            is_editor_open: false,
         }
+    }
+
+    fn on_open_editor(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.is_editor_open {
+            return;
+        }
+
+        let parent_center = window.bounds().center();
+        let size = Size::new(px(500.0), px(1080.0));
+
+        let config_editor = self.config_editor.clone();
+        let editor_window = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                    parent_center - Point::new(size.width, size.height) * 0.5,
+                    size,
+                ))),
+                ..Default::default()
+            },
+            move |window, cx| cx.new(|cx| Root::new(config_editor.clone(), window, cx)),
+        );
+
+        let Ok(editor_window) = editor_window.logged_err() else {
+            return;
+        };
+
+        self.is_editor_open = true;
     }
 }
 
@@ -405,6 +451,8 @@ impl Panel for ColorSelectorDock {
 
 impl Render for ColorSelectorDock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        ColorSelector::new(&self.color_selector)
+        div()
+            .child(ColorSelector::new(&self.color_selector))
+            .child(Button::new("open-editor").on_click(cx.listener(Self::on_open_editor)))
     }
 }

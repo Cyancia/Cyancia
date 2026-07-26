@@ -21,8 +21,12 @@ use wgpu::{
     TextureView,
 };
 
-use crate::render::{GradientMesh, GradientPipeline, GradientSettings};
+use crate::{
+    config::ColorSelectorConfig,
+    render::{GradientMesh, GradientPipeline, GradientSettings},
+};
 
+pub mod config;
 pub mod render;
 
 const MAX_PLANES_PER_ROW: usize = 2;
@@ -62,6 +66,49 @@ pub enum ColorModel {
 }
 
 impl ColorModel {
+    pub const ALL: [Self; 11] = [
+        Self::Gray,
+        Self::Hsl,
+        Self::Hsv,
+        Self::Lab,
+        Self::Lch,
+        Self::OkHsl,
+        Self::OkHsv,
+        Self::OkLab,
+        Self::OkLch,
+        Self::Rgb,
+        Self::Xyz,
+    ];
+
+    pub const PLANE_MODELS: [Self; 10] = [
+        Self::Hsl,
+        Self::Hsv,
+        Self::Lab,
+        Self::Lch,
+        Self::OkHsl,
+        Self::OkHsv,
+        Self::OkLab,
+        Self::OkLch,
+        Self::Rgb,
+        Self::Xyz,
+    ];
+
+    pub const fn channel_labels(self) -> &'static [&'static str] {
+        match self {
+            Self::Gray => &["V"],
+            Self::Hsl => &["H", "S", "L"],
+            Self::Hsv => &["H", "S", "V"],
+            Self::Lab => &["L", "a", "b"],
+            Self::Lch => &["L", "C", "h"],
+            Self::OkHsl => &["H", "S", "L"],
+            Self::OkHsv => &["H", "S", "V"],
+            Self::OkLab => &["L", "a", "b"],
+            Self::OkLch => &["L", "C", "h"],
+            Self::Rgb => &["R", "G", "B"],
+            Self::Xyz => &["X", "Y", "Z"],
+        }
+    }
+
     pub fn get_reference_color(&self, color: Color) -> Vec3 {
         match color {
             Color::Gray(gray) => Vec3::new(gray.v, 0.0, 0.0),
@@ -159,24 +206,11 @@ impl ColorModel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GradientPlaneConfig {
-    pub model: ColorModel,
-    pub shape: GradientPlaneShape,
-    pub variable_channels: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SelectorModePreset {
-    pub name: String,
-    pub planes: Vec<GradientPlaneConfig>,
-}
-
 pub struct ColorSelectorState {
     color: Color,
     profile: ColorProfile,
 
-    presets: Vec<SelectorModePreset>,
+    presets: Vec<ColorSelectorConfig>,
     selected_preset: usize,
 
     pipeline: GradientPipeline,
@@ -190,7 +224,7 @@ impl ColorSelectorState {
     pub fn new(
         color: Color,
         profile: ColorProfile,
-        presets: Vec<SelectorModePreset>,
+        presets: Vec<ColorSelectorConfig>,
         selected_preset: usize,
         cx: &mut Context<Self>,
     ) -> Self {

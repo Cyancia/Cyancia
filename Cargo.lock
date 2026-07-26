@@ -1720,6 +1720,7 @@ dependencies = [
  "cyancia_theme",
  "cyancia_tools",
  "cyancia_undo",
+ "cyancia_utils",
  "cyancia_view",
  "cyancia_widgets",
  "fs_extra",
@@ -1888,10 +1889,12 @@ name = "cyancia_color_selector"
 version = "0.1.0"
 dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bitflags 2.11.1",
  "bytemuck",
  "cyancia_color",
  "cyancia_math",
  "cyancia_render",
+ "cyancia_widgets",
  "encase",
  "glam",
  "gpui",
