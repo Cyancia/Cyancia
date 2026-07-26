@@ -425,6 +425,7 @@ impl ColorSelectorDock {
                 ColorProfile::new_srgb(),
                 vec![config.clone()],
                 0,
+                window,
                 cx,
             )
         });
@@ -464,14 +465,14 @@ impl ColorSelectorDock {
         &mut self,
         editor: &Entity<ColorSelectorConfigEditorState>,
         event: &ColorSelectorConfigEvent,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
             ColorSelectorConfigEvent::Confirm => {
                 let configs = editor.read(cx).configs().to_vec();
                 self.color_selector.update(cx, |selector, cx| {
-                    selector.set_configs(configs, cx);
+                    selector.set_configs(configs, window, cx);
                     cx.notify();
                 });
                 cx.refresh_windows();

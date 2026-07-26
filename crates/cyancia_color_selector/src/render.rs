@@ -18,7 +18,10 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-use crate::{GradientPlaneShape, config::GradientPlaneConfig};
+use crate::{
+    ColorModel, GradientPlaneShape,
+    config::{GradientBarConfig, GradientPlaneConfig},
+};
 
 pub struct GradientPipeline {
     layout: BindGroupLayout,
@@ -379,10 +382,62 @@ pub struct GradientSettings {
 }
 
 impl GradientSettings {
-    pub fn new(
+    pub fn new_plane(
         profile: &ColorProfile,
         reference: Vec3,
         config: &GradientPlaneConfig,
+        primary_channel_override: Option<u8>,
+        ring_width: f32,
+        texture_size: f32,
+    ) -> Self {
+        let variable_channels = primary_channel_override
+            .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel));
+        Self::new(
+            profile,
+            reference,
+            config.model,
+            variable_channels,
+            config.rotation,
+            u32::from(config.flip_axis.bits()),
+            config.ring_rotation,
+            config.reversed_ring,
+            config.saturated_primary_channel_ring,
+            ring_width,
+            texture_size,
+        )
+    }
+
+    pub fn new_bar(
+        profile: &ColorProfile,
+        reference: Vec3,
+        config: &GradientBarConfig,
+        texture_size: f32,
+    ) -> Self {
+        Self::new(
+            profile,
+            reference,
+            config.model,
+            1 << config.channel,
+            0.0,
+            0,
+            0.0,
+            false,
+            false,
+            0.0,
+            texture_size,
+        )
+    }
+
+    fn new(
+        profile: &ColorProfile,
+        reference: Vec3,
+        color_model: ColorModel,
+        variable_channels: u8,
+        rotation: f32,
+        flip_axis: u32,
+        ring_rotation: f32,
+        reversed_ring: bool,
+        saturated_ring: bool,
         ring_width: f32,
         texture_size: f32,
     ) -> Self {
@@ -393,8 +448,7 @@ impl GradientSettings {
         ]);
         let xyz_to_rgb = rgb_to_xyz.inverse();
 
-        let channel_ranges = config
-            .model
+        let channel_ranges = color_model
             .channel_ranges()
             .map(|range| Vec4::new(range.x, range.y, 0.0, 0.0));
 
@@ -403,16 +457,16 @@ impl GradientSettings {
             xyz_to_rgb,
             channel_ranges,
             reference,
-            color_model: config.model as u32,
-            variable_channels: u32::from(config.variable_channels),
-            rotation: config.rotation,
-            flip_axis: u32::from(config.flip_axis.bits()),
+            color_model: color_model as u32,
+            variable_channels: u32::from(variable_channels),
+            rotation,
+            flip_axis,
             primary_channel: (0..3)
-                .find(|channel| config.variable_channels & (1 << channel) == 0)
+                .find(|channel| variable_channels & (1 << channel) == 0)
                 .unwrap_or(0),
-            ring_rotation: config.ring_rotation,
-            reversed_ring: u32::from(config.reversed_ring),
-            saturated_ring: u32::from(config.saturated_primary_channel_ring),
+            ring_rotation,
+            reversed_ring: u32::from(reversed_ring),
+            saturated_ring: u32::from(saturated_ring),
             ring_width,
             texture_size,
         }
