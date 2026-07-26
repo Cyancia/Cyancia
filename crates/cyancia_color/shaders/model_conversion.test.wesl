@@ -1,6 +1,8 @@
 import package::{
     xyz::Xyz,
     gray::{Gray, gray_into_xyz, gray_from_xyz},
+    hsl::{hsl_into_rgb, hsl_from_rgb},
+    hsv::{hsv_into_rgb, hsv_from_rgb},
     lab::{Lab, lab_into_xyz, lab_from_xyz},
     lch::{Lch, lch_into_xyz, lch_from_xyz},
     oklab::{OkLab, oklab_into_xyz, oklab_from_xyz},
@@ -17,6 +19,12 @@ fn expect_xyz_near(lhs: Xyz, rhs: Xyz) {
     expectWithin(lhs.x, rhs.x, 0.0, 1e-4);
     expectWithin(lhs.y, rhs.y, 0.0, 1e-4);
     expectWithin(lhs.z, rhs.z, 0.0, 1e-4);
+}
+
+fn expect_rgb_near(lhs: Rgb, rhs: Rgb) {
+    expectWithin(lhs.r, rhs.r, 0.0, 1e-4);
+    expectWithin(lhs.g, rhs.g, 0.0, 1e-4);
+    expectWithin(lhs.b, rhs.b, 0.0, 1e-4);
 }
 
 const SRGB_LINEAR_TO_XYZ: mat3x3f = mat3x3f(
@@ -42,6 +50,40 @@ fn roundtrip_test_gray() {
         let roundtrip = gray_from_xyz(xyz);
         let roundtrip_xyz = gray_into_xyz(roundtrip);
         expect_xyz_near(xyz, roundtrip_xyz);
+    }
+}
+
+@test
+fn roundtrip_test_hsl() {
+    for (var a = 0u; a < TEST_SEGMENTS; a += 1u) {
+        for (var b = 0u; b < TEST_SEGMENTS; b += 1u) {
+            for (var c = 0u; c < TEST_SEGMENTS; c += 1u) {
+                let rgb = Rgb(
+                    f32(a) / f32(TEST_SEGMENTS - 1u),
+                    f32(b) / f32(TEST_SEGMENTS - 1u),
+                    f32(c) / f32(TEST_SEGMENTS - 1u),
+                );
+                let roundtrip = hsl_into_rgb(hsl_from_rgb(rgb));
+                expect_rgb_near(rgb, roundtrip);
+            }
+        }
+    }
+}
+
+@test
+fn roundtrip_test_hsv() {
+    for (var a = 0u; a < TEST_SEGMENTS; a += 1u) {
+        for (var b = 0u; b < TEST_SEGMENTS; b += 1u) {
+            for (var c = 0u; c < TEST_SEGMENTS; c += 1u) {
+                let rgb = Rgb(
+                    f32(a) / f32(TEST_SEGMENTS - 1u),
+                    f32(b) / f32(TEST_SEGMENTS - 1u),
+                    f32(c) / f32(TEST_SEGMENTS - 1u),
+                );
+                let roundtrip = hsv_into_rgb(hsv_from_rgb(rgb));
+                expect_rgb_near(rgb, roundtrip);
+            }
+        }
     }
 }
 
