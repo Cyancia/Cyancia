@@ -27,7 +27,7 @@ use wgpu::{
 };
 
 use crate::{
-    config::{ColorSelectorConfig, GradientBarConfig},
+    config::{ColorSelectorConfig, GradientBarConfig, GradientPlaneConfig},
     render::{GradientMesh, GradientPipeline, GradientRingPipeline, GradientSettings},
 };
 
@@ -425,6 +425,27 @@ impl ColorSelectorState {
             .and_then(|overrides| overrides[model as usize])
     }
 
+    fn plane_primary_channel(&self, config: &GradientPlaneConfig) -> u8 {
+        self.primary_channel_override(config.model)
+            .unwrap_or_else(|| {
+                (0..3)
+                    .find(|channel| config.variable_channels & (1 << channel) == 0)
+                    .unwrap_or(0)
+            })
+    }
+
+    fn bar_uses_saturated_primary_channel(&self, config: &GradientBarConfig) -> bool {
+        self.presets
+            .get(self.selected_preset)
+            .is_some_and(|preset| {
+                preset.planes.iter().any(|plane| {
+                    plane.model == config.model
+                        && plane.saturated_primary_channel
+                        && self.plane_primary_channel(plane) == config.channel
+                })
+            })
+    }
+
     fn toggle_primary_channel_override(
         &mut self,
         model: ColorModel,
@@ -489,8 +510,13 @@ impl ColorSelectorState {
         for (config, (mesh, texture, view)) in preset.bars.iter().zip(&self.bar_targets) {
             let reference_color = config.model.convert_to_self(self.color, &self.profile);
             let reference = config.model.get_reference_color(reference_color);
-            let settings =
-                GradientSettings::new_bar(&self.profile, reference, config, texture.width() as f32);
+            let settings = GradientSettings::new_bar(
+                &self.profile,
+                reference,
+                config,
+                self.bar_uses_saturated_primary_channel(config),
+                texture.width() as f32,
+            );
             self.bar_pipeline
                 .draw(device, queue, mesh, &settings, view, false);
         }

@@ -36,7 +36,7 @@ pub struct GradientPlaneConfig {
     pub rotation: f32,
     pub show_primary_channel_ring: bool,
     pub primary_channel_ring_width: f32,
-    pub saturated_primary_channel_ring: bool,
+    pub saturated_primary_channel: bool,
     pub ring_rotation: f32,
     pub reversed_ring: bool,
 }
@@ -499,7 +499,7 @@ impl ColorSelectorConfigEditorState {
             rotation: 0.0,
             show_primary_channel_ring: false,
             primary_channel_ring_width: 20.0,
-            saturated_primary_channel_ring: false,
+            saturated_primary_channel: false,
             ring_rotation: 0.0,
             reversed_ring: false,
         };
@@ -737,14 +737,13 @@ impl ColorSelectorConfigEditorState {
                             })),
                     )
                     .child(
-                        Checkbox::new(format!("plane-saturated-ring-{id}"))
-                            .label("Saturated ring")
-                            .checked(config.saturated_primary_channel_ring)
-                            .disabled(!config.show_primary_channel_ring)
+                        Checkbox::new(format!("plane-saturated-primary-channel-{id}"))
+                            .label("Saturated primary channel")
+                            .checked(config.saturated_primary_channel)
                             .on_click(cx.listener(move |this, checked, _, cx| {
                                 if let Some(index) = this.plane_index(id) {
                                     this.active_config_mut().unwrap().planes[index]
-                                        .saturated_primary_channel_ring = *checked;
+                                        .saturated_primary_channel = *checked;
                                     cx.notify();
                                 }
                             })),

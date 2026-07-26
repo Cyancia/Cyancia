@@ -376,7 +376,8 @@ pub struct GradientSettings {
     pub primary_channel: u32,
     pub ring_rotation: f32,
     pub reversed_ring: u32,
-    pub saturated_ring: u32,
+    pub saturated_primary_channel: u32,
+    pub saturated_bar: u32,
     pub ring_width: f32,
     pub texture_size: f32,
 }
@@ -401,7 +402,8 @@ impl GradientSettings {
             u32::from(config.flip_axis.bits()),
             config.ring_rotation,
             config.reversed_ring,
-            config.saturated_primary_channel_ring,
+            config.saturated_primary_channel,
+            false,
             ring_width,
             texture_size,
         )
@@ -411,6 +413,7 @@ impl GradientSettings {
         profile: &ColorProfile,
         reference: Vec3,
         config: &GradientBarConfig,
+        saturated_primary_channel: bool,
         texture_size: f32,
     ) -> Self {
         Self::new(
@@ -423,6 +426,7 @@ impl GradientSettings {
             0.0,
             false,
             false,
+            saturated_primary_channel,
             0.0,
             texture_size,
         )
@@ -437,7 +441,8 @@ impl GradientSettings {
         flip_axis: u32,
         ring_rotation: f32,
         reversed_ring: bool,
-        saturated_ring: bool,
+        saturated_primary_channel: bool,
+        saturated_bar: bool,
         ring_width: f32,
         texture_size: f32,
     ) -> Self {
@@ -466,7 +471,8 @@ impl GradientSettings {
                 .unwrap_or(0),
             ring_rotation,
             reversed_ring: u32::from(reversed_ring),
-            saturated_ring: u32::from(saturated_ring),
+            saturated_primary_channel: u32::from(saturated_primary_channel),
+            saturated_bar: u32::from(saturated_bar),
             ring_width,
             texture_size,
         }

@@ -45,7 +45,8 @@ struct Settings {
     primary_channel: u32,
     ring_rotation: f32,
     reversed_ring: u32,
-    saturated_ring: u32,
+    saturated_primary_channel: u32,
+    saturated_bar: u32,
     ring_width: f32,
     texture_size: f32,
 }
@@ -115,6 +116,22 @@ fn channels_into_rgb(ch: vec3f) -> vec3f {
     return vec3f(rgb.r, rgb.g, rgb.b);
 }
 
+fn saturate_primary_channel(ch: vec3f) -> vec3f {
+    var saturated = ch;
+    switch settings.color_model {
+        case 1, 5: {
+            saturated[1] = 1.0;
+            saturated[2] = 0.5;
+        }
+        case 2, 6: {
+            saturated[1] = 1.0;
+            saturated[2] = 1.0;
+        }
+        default: {}
+    }
+    return saturated;
+}
+
 @vertex
 fn ring_vertex(in: VertexInput) -> VertexOutput {
     return VertexOutput(vec4f(in.position, 0.0, 1.0), in.uv);
@@ -123,6 +140,9 @@ fn ring_vertex(in: VertexInput) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4f {
     var ch = settings.reference;
+    if (settings.saturated_bar != 0u) {
+        ch = saturate_primary_channel(ch);
+    }
     var j = 0u;
     for (var i = 0u; i < 3u; i += 1u) {
         if ((settings.variable_channels >> i) & 1u) != 0u {
@@ -160,18 +180,8 @@ fn ring_fragment(in: VertexOutput) -> @location(0) vec4f {
     let channel_factor = fract(angle / 6.283185307179586);
 
     var ch = settings.reference;
-    if (settings.saturated_ring != 0u) {
-        switch settings.color_model {
-            case 1, 5: {
-                ch[1] = 1.0;
-                ch[2] = 0.5;
-            }
-            case 2, 6: {
-                ch[1] = 1.0;
-                ch[2] = 1.0;
-            }
-            default: {}
-        }
+    if (settings.saturated_primary_channel != 0u) {
+        ch = saturate_primary_channel(ch);
     }
     ch[settings.primary_channel] = mix(
         settings.channel_ranges[settings.primary_channel].x,
