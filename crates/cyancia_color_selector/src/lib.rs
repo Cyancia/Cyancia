@@ -229,6 +229,11 @@ impl ColorSelectorState {
         cx: &mut Context<Self>,
     ) -> Self {
         let device = cx.render_device();
+        let selected_preset = if presets.is_empty() {
+            0
+        } else {
+            selected_preset.min(presets.len() - 1)
+        };
 
         Self {
             color,
@@ -245,20 +250,45 @@ impl ColorSelectorState {
         }
     }
 
+    pub fn configs(&self) -> &[ColorSelectorConfig] {
+        &self.presets
+    }
+
+    pub fn selected_config(&self) -> Option<usize> {
+        (!self.presets.is_empty()).then_some(self.selected_preset)
+    }
+
+    pub fn set_configs(&mut self, configs: Vec<ColorSelectorConfig>, cx: &mut Context<Self>) {
+        self.presets = configs;
+        if self.presets.is_empty() {
+            self.selected_preset = 0;
+            self.plane_targets.clear();
+            cx.notify();
+            return;
+        }
+
+        self.selected_preset = self.selected_preset.min(self.presets.len() - 1);
+        self.update_targets(cx);
+        self.redraw_config(cx);
+    }
+
     fn update_widget_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
         let width_changed = self.widget_bounds.size.width != bounds.size.width;
         self.widget_bounds = bounds;
 
-        if width_changed {
+        if width_changed && !self.presets.is_empty() {
             self.update_targets(cx);
             self.redraw_config(cx);
         }
     }
 
     fn redraw_config(&self, cx: &mut Context<Self>) {
+        let Some(preset) = self.presets.get(self.selected_preset) else {
+            return;
+        };
+
         let device = cx.render_device();
         let queue = cx.render_queue();
-        let preset = &self.presets[self.selected_preset];
 
         for (config, (mesh, _, view)) in preset.planes.iter().zip(&self.plane_targets) {
             let reference_color = config.model.convert_to_self(self.color, &self.profile);
@@ -277,11 +307,14 @@ impl ColorSelectorState {
     }
 
     fn update_targets(&mut self, cx: &mut Context<Self>) {
-        let preset = &self.presets[self.selected_preset];
+        let Some(preset) = self.presets.get(self.selected_preset) else {
+            self.plane_targets.clear();
+            return;
+        };
         let device = cx.render_device();
 
         let width = self.widget_bounds.size.width.as_f32();
-        if width <= 0.0 {
+        if width <= 0.0 || preset.planes.is_empty() {
             self.plane_targets.clear();
             return;
         }
@@ -301,7 +334,7 @@ impl ColorSelectorState {
     }
 
     fn switch_preset(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index == self.selected_preset {
+        if index >= self.presets.len() || index == self.selected_preset {
             return;
         }
 
@@ -339,6 +372,10 @@ impl ColorSelectorState {
 
 impl Render for ColorSelectorState {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.presets.is_empty() {
+            return div().into_any_element();
+        }
+
         v_flex()
             .size_full()
             .on_prepaint({
@@ -374,6 +411,7 @@ impl Render for ColorSelectorState {
                         })),
                 ),
             )
+            .into_any_element()
     }
 }
 

@@ -12,17 +12,17 @@ use cyancia_color::{Color, model::rgb::Rgb};
 use cyancia_color_selector::{
     ColorModel, ColorSelector, ColorSelectorState, GradientPlaneShape,
     config::{
-        ColorSelectorConfig, ColorSelectorConfigEditorState, GradientPlaneConfig,
-        GradientPlaneFlipAxis,
+        ColorSelectorConfig, ColorSelectorConfigEditorState, ColorSelectorConfigEvent,
+        GradientBarConfig, GradientPlaneConfig, GradientPlaneFlipAxis,
     },
 };
 use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolFunction, ToolProxies, ToolProxyId};
 use cyancia_utils::log_err::LogErr;
 use gpui::{
-    App, AppContext, BorrowAppContext, Bounds, ClickEvent, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, IntoElement, ParentElement, Point, Render, SharedString, Size, Styled,
-    Subscription, Window, WindowBounds, WindowOptions, div, px,
+    AnyWindowHandle, App, AppContext, BorrowAppContext, Bounds, ClickEvent, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Point, Render, SharedString,
+    Size, Styled, Subscription, Window, WindowBounds, WindowOptions, div, px,
 };
 use gpui_component::{
     IconName, IndexPath, Root, Sizable,
@@ -349,7 +349,9 @@ pub struct ColorSelectorDock {
     focus_handle: FocusHandle,
     color_selector: Entity<ColorSelectorState>,
     config_editor: Entity<ColorSelectorConfigEditorState>,
+    editor_window: Option<AnyWindowHandle>,
     is_editor_open: bool,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl ColorSelectorDock {
@@ -374,17 +376,47 @@ impl ColorSelectorDock {
                     variable_channels: 0b110,
                     flip_axis: GradientPlaneFlipAxis::empty(),
                     rotation: 0.0,
-                    show_primary_channel_ring: false,
-                    saturated_primary_channel_ring: false,
-                    ring_rotation: 0.0,
+                    show_primary_channel_ring: true,
+                    saturated_primary_channel_ring: true,
+                    ring_rotation: 90.0,
                     reversed_ring: false,
                 },
             ],
-            bars: Vec::new(),
+            bars: vec![
+                GradientBarConfig {
+                    model: ColorModel::Rgb,
+                    channel: 0,
+                    show_channel_label: true,
+                    show_precise_spin_box: true,
+                    show_primary_channel_lock: true,
+                },
+                GradientBarConfig {
+                    model: ColorModel::Rgb,
+                    channel: 1,
+                    show_channel_label: true,
+                    show_precise_spin_box: false,
+                    show_primary_channel_lock: true,
+                },
+                GradientBarConfig {
+                    model: ColorModel::Rgb,
+                    channel: 2,
+                    show_channel_label: false,
+                    show_precise_spin_box: true,
+                    show_primary_channel_lock: true,
+                },
+                GradientBarConfig {
+                    model: ColorModel::Hsv,
+                    channel: 0,
+                    show_channel_label: true,
+                    show_precise_spin_box: true,
+                    show_primary_channel_lock: false,
+                },
+            ],
         };
 
-        let config_editor =
-            cx.new(|cx| ColorSelectorConfigEditorState::new(config.clone(), window, cx));
+        let config_editor = cx.new(|cx| {
+            ColorSelectorConfigEditorState::new(vec![config.clone()], Some(0), window, cx)
+        });
         let color_selector = cx.new(|cx| {
             ColorSelectorState::new(
                 Color::Rgb(Rgb::new(0.0, 0.0, 0.0)),
@@ -395,11 +427,52 @@ impl ColorSelectorDock {
             )
         });
 
+        let dock = cx.entity().downgrade();
+        let subscriptions = vec![
+            cx.subscribe_in(&config_editor, window, Self::on_config_editor_event),
+            cx.on_window_closed(move |cx, window_id| {
+                dock.update(cx, |dock, cx| {
+                    if dock
+                        .editor_window
+                        .is_some_and(|window| window.window_id() == window_id)
+                    {
+                        dock.editor_window = None;
+                        dock.is_editor_open = false;
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }),
+        ];
+
         Self {
             focus_handle: cx.focus_handle(),
             color_selector,
             config_editor,
+            editor_window: None,
             is_editor_open: false,
+            _subscriptions: subscriptions,
+        }
+    }
+
+    fn on_config_editor_event(
+        &mut self,
+        editor: &Entity<ColorSelectorConfigEditorState>,
+        event: &ColorSelectorConfigEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(event, ColorSelectorConfigEvent::Confirm) {
+            let configs = editor.read(cx).configs().to_vec();
+            self.color_selector.update(cx, |selector, cx| {
+                selector.set_configs(configs, cx);
+            });
+        }
+
+        if let Some(editor_window) = self.editor_window {
+            editor_window
+                .update(cx, |_, window, _| window.remove_window())
+                .ok();
         }
     }
 
@@ -407,6 +480,13 @@ impl ColorSelectorDock {
         if self.is_editor_open {
             return;
         }
+
+        let (configs, selected_config) = self.color_selector.read_with(cx, |selector, _| {
+            (selector.configs().to_vec(), selector.selected_config())
+        });
+        self.config_editor.update(cx, |editor, cx| {
+            editor.reset(configs, selected_config, window, cx);
+        });
 
         let parent_center = window.bounds().center();
         let size = Size::new(px(500.0), px(1080.0));
@@ -427,21 +507,7 @@ impl ColorSelectorDock {
             return;
         };
 
-        let editor_window_id = editor_window.window_id();
-        let dock = cx.entity().downgrade();
-        cx.on_window_closed(move |cx, window_id| {
-            if window_id != editor_window_id {
-                return;
-            }
-
-            dock.update(cx, |dock, cx| {
-                dock.is_editor_open = false;
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
-
+        self.editor_window = Some(editor_window.into());
         self.is_editor_open = true;
     }
 }
