@@ -3,8 +3,8 @@ use std::sync::Arc;
 use cyancia_color::{
     Color,
     model::{
-        gray::Gray, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv, oklab::OkLab, oklch::OkLch,
-        rgb::Rgb,
+        gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv,
+        oklab::OkLab, oklch::OkLch, rgb::Rgb,
     },
 };
 use cyancia_render::render_context::RenderContextAppExt;
@@ -39,6 +39,10 @@ pub enum GradientPlaneShape {
 pub enum ColorModel {
     #[display("Gray")]
     Gray,
+    #[display("HSL")]
+    Hsl,
+    #[display("HSV")]
+    Hsv,
     #[display("Lab")]
     Lab,
     #[display("LCh")]
@@ -61,6 +65,8 @@ impl ColorModel {
     pub fn get_reference_color(&self, color: Color) -> Vec3 {
         match color {
             Color::Gray(gray) => Vec3::new(gray.v, 0.0, 0.0),
+            Color::Hsl(hsl) => Vec3::new(hsl.h, hsl.s, hsl.l),
+            Color::Hsv(hsv) => Vec3::new(hsv.h, hsv.s, hsv.v),
             Color::Lab(lab) => Vec3::new(lab.l, lab.a, lab.b),
             Color::Lch(lch) => Vec3::new(lch.l, lch.c, lch.h),
             Color::OkHsl(ok_hsl) => Vec3::new(ok_hsl.h, ok_hsl.s, ok_hsl.l),
@@ -85,7 +91,7 @@ impl ColorModel {
                 Vec2::new(0.0, 150.0),
                 Vec2::new(0.0, 360.0),
             ],
-            ColorModel::OkHsl | ColorModel::OkHsv => [
+            ColorModel::Hsl | ColorModel::Hsv | ColorModel::OkHsl | ColorModel::OkHsv => [
                 Vec2::new(0.0, 360.0),
                 Vec2::new(0.0, 1.0),
                 Vec2::new(0.0, 1.0),
@@ -112,6 +118,12 @@ impl ColorModel {
     pub fn convert_to_self(&self, color: Color, profile: &ColorProfile) -> Color {
         let xyz = match color {
             Color::Gray(gray) => gray.into_xyz(),
+            Color::Hsl(hsl) => hsl
+                .into_rgb()
+                .into_xyz(profile.rgb_to_xyz_matrix().to_f32()),
+            Color::Hsv(hsv) => hsv
+                .into_rgb()
+                .into_xyz(profile.rgb_to_xyz_matrix().to_f32()),
             Color::Lab(lab) => lab.into_xyz(),
             Color::Lch(lch) => lch.into_xyz(),
             Color::OkHsl(ok_hsl) => ok_hsl.into_xyz(),
@@ -124,6 +136,14 @@ impl ColorModel {
 
         match self {
             ColorModel::Gray => Color::Gray(Gray::from_xyz(xyz)),
+            ColorModel::Hsl => Color::Hsl(Hsl::from_rgb(Rgb::from_xyz(
+                xyz,
+                profile.rgb_to_xyz_matrix().to_f32().inverse(),
+            ))),
+            ColorModel::Hsv => Color::Hsv(Hsv::from_rgb(Rgb::from_xyz(
+                xyz,
+                profile.rgb_to_xyz_matrix().to_f32().inverse(),
+            ))),
             ColorModel::Lab => Color::Lab(Lab::from_xyz(xyz)),
             ColorModel::Lch => Color::Lch(Lch::from_xyz(xyz)),
             ColorModel::OkHsl => Color::OkHsl(OkHsl::from_xyz(xyz)),
@@ -174,32 +194,6 @@ impl ColorSelectorState {
         selected_preset: usize,
         cx: &mut Context<Self>,
     ) -> Self {
-        assert!(
-            !presets.is_empty(),
-            "at least one selector preset is required"
-        );
-        assert!(
-            selected_preset < presets.len(),
-            "selected preset index is out of bounds"
-        );
-        for preset in &presets {
-            assert!(
-                !preset.planes.is_empty(),
-                "selector presets must contain at least one plane"
-            );
-            for plane in &preset.planes {
-                assert_eq!(
-                    plane.variable_channels & !0b111,
-                    0,
-                    "variable channel mask contains an invalid channel"
-                );
-                assert!(
-                    plane.variable_channels.count_ones() <= 2,
-                    "a two-dimensional gradient plane supports at most two variable channels"
-                );
-            }
-        }
-
         let device = cx.render_device();
 
         Self {

@@ -1,6 +1,6 @@
 use crate::model::{
-    gray::Gray, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv, oklab::OkLab, oklch::OkLch,
-    rgb::Rgb, xyz::Xyz,
+    gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv,
+    oklab::OkLab, oklch::OkLch, rgb::Rgb, xyz::Xyz,
 };
 
 wesl::wesl_pkg!(pub color);
@@ -12,6 +12,8 @@ pub mod shader;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Color {
     Gray(Gray),
+    Hsl(Hsl),
+    Hsv(Hsv),
     Lab(Lab),
     Lch(Lch),
     OkHsl(OkHsl),
@@ -32,6 +34,8 @@ macro_rules! impl_from {
     };
 }
 impl_from!(Gray, Gray);
+impl_from!(Hsl, Hsl);
+impl_from!(Hsv, Hsv);
 impl_from!(Lab, Lab);
 impl_from!(Lch, Lch);
 impl_from!(OkHsl, OkHsl);

@@ -355,17 +355,24 @@ impl ColorSelectorDock {
                     vec![
                         SelectorModePreset {
                             name: "RGB".to_string(),
-                            planes: vec![GradientPlaneConfig {
-                                model: ColorModel::Rgb,
-                                shape: GradientPlaneShape::Square,
-                                variable_channels: 0b110,
-                            }],
+                            planes: vec![
+                                GradientPlaneConfig {
+                                    model: ColorModel::Rgb,
+                                    shape: GradientPlaneShape::Square,
+                                    variable_channels: 0b110,
+                                },
+                                GradientPlaneConfig {
+                                    model: ColorModel::Hsv,
+                                    shape: GradientPlaneShape::Triangle,
+                                    variable_channels: 0b110,
+                                },
+                            ],
                         },
                         SelectorModePreset {
                             name: "HSV".to_string(),
                             planes: vec![GradientPlaneConfig {
-                                model: ColorModel::OkHsv,
-                                shape: GradientPlaneShape::Triangle,
+                                model: ColorModel::Hsv,
+                                shape: GradientPlaneShape::Square,
                                 variable_channels: 0b110,
                             }],
                         },

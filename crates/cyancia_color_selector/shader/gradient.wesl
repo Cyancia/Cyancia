@@ -1,5 +1,7 @@
 import color::{
     gray::{Gray, gray_into_xyz},
+    hsl::{Hsl, hsl_into_rgb},
+    hsv::{Hsv, hsv_into_rgb},
     lab::{Lab, lab_into_xyz},
     lch::{Lch, lch_into_xyz},
     okhsl::{OkHsl, okhsl_into_xyz},
@@ -26,6 +28,8 @@ struct Settings {
     channel_ranges: array<vec4f, 3>,
     reference: vec3f,
     // Gray,
+    // Hsl,
+    // Hsv,
     // Lab,
     // Lch,
     // OkHsl,
@@ -62,27 +66,33 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
             xyz = gray_into_xyz(Gray(ch[0]));
         }
         case 1: {
-            xyz = lab_into_xyz(Lab(ch[0], ch[1], ch[2]));
+            xyz = rgb_into_xyz(hsl_into_rgb(Hsl(ch[0], ch[1], ch[2])), settings.rgb_to_xyz);
         }
         case 2: {
-            xyz = lch_into_xyz(Lch(ch[0], ch[1], ch[2]));
+            xyz = rgb_into_xyz(hsv_into_rgb(Hsv(ch[0], ch[1], ch[2])), settings.rgb_to_xyz);
         }
         case 3: {
-            xyz = okhsl_into_xyz(OkHsl(ch[0], ch[1], ch[2]));
+            xyz = lab_into_xyz(Lab(ch[0], ch[1], ch[2]));
         }
         case 4: {
-            xyz = okhsv_into_xyz(OkHsv(ch[0], ch[1], ch[2]));
+            xyz = lch_into_xyz(Lch(ch[0], ch[1], ch[2]));
         }
         case 5: {
-            xyz = oklab_into_xyz(OkLab(ch[0], ch[1], ch[2]));
+            xyz = okhsl_into_xyz(OkHsl(ch[0], ch[1], ch[2]));
         }
         case 6: {
-            xyz = oklch_into_xyz(OkLch(ch[0], ch[1], ch[2]));
+            xyz = okhsv_into_xyz(OkHsv(ch[0], ch[1], ch[2]));
         }
         case 7: {
-            xyz = rgb_into_xyz(Rgb(ch[0], ch[1], ch[2]), settings.rgb_to_xyz);
+            xyz = oklab_into_xyz(OkLab(ch[0], ch[1], ch[2]));
         }
         case 8: {
+            xyz = oklch_into_xyz(OkLch(ch[0], ch[1], ch[2]));
+        }
+        case 9: {
+            xyz = rgb_into_xyz(Rgb(ch[0], ch[1], ch[2]), settings.rgb_to_xyz);
+        }
+        case 10: {
             xyz = Xyz(ch[0], ch[1], ch[2]);
         }
         default: {}
