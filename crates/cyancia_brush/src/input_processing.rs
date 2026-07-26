@@ -2,7 +2,6 @@ use std::f32::consts::FRAC_PI_2;
 
 use chrono::{DateTime, Utc};
 use glam::Vec2;
-use gpui::{MouseDownEvent, MouseMoveEvent, MouseUpEvent};
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use winit::event::{Force, TabletToolData};
 

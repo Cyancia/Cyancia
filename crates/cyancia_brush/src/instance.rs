@@ -26,12 +26,11 @@ use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
     render::graph::{
         BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushGraphData,
-        BrushGraphDataTuple, BrushGraphPostprocessData, CurrentPixelColorNode, DrawDirectionNode,
-        DrawDirectionsNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
-        LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
-        OutputSpacingNode, PasteTextureNode, PenAngleNode, PenPositionNode, PenPositionsNode,
-        PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode, StrokeBoundsNode,
-        TimesNode,
+        BrushGraphPostprocessData, CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode,
+        FilterWithinBoundsNode, FilterWithinMaskNode, LayerPixelColorNode, OutputBoundsNode,
+        OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode,
+        PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode,
+        StrokeBoundsNode,
     },
 };
 

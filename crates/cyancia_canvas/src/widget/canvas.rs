@@ -255,7 +255,7 @@ impl CanvasWidget {
 }
 
 impl Focusable for CanvasWidget {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }

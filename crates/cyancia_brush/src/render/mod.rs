@@ -30,7 +30,6 @@ use encase::ShaderType;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use glam::{IVec2, Vec2};
 use gpui::{App, AsyncApp, Entity, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Task, WeakEntity};
-use tracing::Instrument;
 use wgpu::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
     BufferDescriptor, BufferUsages, ComputePassDescriptor, Device, Extent3d, Queue, ShaderStages,
@@ -158,13 +157,12 @@ impl CanvasBrushPresetOperator {
         let renderer = self.renderer.get_or_insert_with(|| {
             // FIXME target layer is initialize once, so strokes on other layers
             //       with the same texel type will be composited with the wrong layer.
-            let renderer = BrushPresetRenderer::new(
+            BrushPresetRenderer::new(
                 compiled_brush,
                 session.target_layer_format,
                 session.selection_layer_format,
                 cx,
-            );
-            renderer
+            )
         });
 
         self.input_processor.reset();

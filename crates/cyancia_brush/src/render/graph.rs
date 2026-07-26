@@ -178,7 +178,7 @@ pub struct PenPressureNode;
 #[stateless]
 impl StatelessCommonGraphNode<BrushGraphData> for PenPressureNode {
     fn name(&self) -> &'static str {
-        "Pen Pressure".into()
+        "Pen Pressure"
     }
 
     fn header_color(&self, cx: &App) -> Rgba {
@@ -187,14 +187,14 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPressureNode {
 
     fn create_inputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Pressure".into())]
     }
@@ -216,7 +216,7 @@ pub struct PenTiltNode;
 #[stateless]
 impl StatelessCommonGraphNode<BrushGraphData> for PenTiltNode {
     fn name(&self) -> &'static str {
-        "Pen Tilt".into()
+        "Pen Tilt"
     }
 
     fn header_color(&self, cx: &App) -> Rgba {
@@ -225,14 +225,14 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenTiltNode {
 
     fn create_inputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>("Tilt".into())]
     }
@@ -251,7 +251,7 @@ pub struct PenAngleNode;
 #[stateless]
 impl StatelessCommonGraphNode<BrushGraphData> for PenAngleNode {
     fn name(&self) -> &'static str {
-        "Pen Angle".into()
+        "Pen Angle"
     }
 
     fn header_color(&self, cx: &App) -> Rgba {
@@ -260,14 +260,14 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenAngleNode {
 
     fn create_inputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>("Altitude".into()),
