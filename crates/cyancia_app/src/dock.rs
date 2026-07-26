@@ -25,7 +25,7 @@ use gpui::{
     Subscription, Window, WindowBounds, WindowOptions, div, px,
 };
 use gpui_component::{
-    IndexPath, Root, Sizable,
+    IconName, IndexPath, Root, Sizable,
     button::Button,
     dock::{Panel, PanelEvent},
     list::{List, ListEvent, ListState},
@@ -466,8 +466,10 @@ impl Panel for ColorSelectorDock {
 
 impl Render for ColorSelectorDock {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .child(ColorSelector::new(&self.color_selector))
-            .child(Button::new("open-editor").on_click(cx.listener(Self::on_open_editor)))
+        div().child(ColorSelector::new(&self.color_selector)).child(
+            Button::new("open-editor")
+                .icon(IconName::Settings)
+                .on_click(cx.listener(Self::on_open_editor)),
+        )
     }
 }
