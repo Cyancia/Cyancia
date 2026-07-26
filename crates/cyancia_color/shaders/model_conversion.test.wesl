@@ -7,7 +7,7 @@ import package::{
     oklch::{OkLch, oklch_into_xyz, oklch_from_xyz},
     okhsl::{OkHsl, okhsl_into_xyz, okhsl_from_xyz},
     okhsv::{OkHsv, okhsv_into_xyz, okhsv_from_xyz},
-    rgb::{Rgb, rgb_to_xyz, rgb_from_xyz},
+    rgb::{Rgb, rgb_into_xyz, rgb_from_xyz},
 };
 
 import wgsl_test::expectWithin;
@@ -162,9 +162,9 @@ fn roundtrip_test_rgb() {
                 let g = f32(b) / f32(TEST_SEGMENTS - 1u);
                 let bl = f32(c) / f32(TEST_SEGMENTS - 1u);
                 let color = Rgb(r, g, bl);
-                let xyz = rgb_to_xyz(color, SRGB_LINEAR_TO_XYZ);
+                let xyz = rgb_into_xyz(color, SRGB_LINEAR_TO_XYZ);
                 let roundtrip = rgb_from_xyz(xyz, XYZ_TO_SRGB_LINEAR);
-                let roundtrip_xyz = rgb_to_xyz(roundtrip, SRGB_LINEAR_TO_XYZ);
+                let roundtrip_xyz = rgb_into_xyz(roundtrip, SRGB_LINEAR_TO_XYZ);
                 expect_xyz_near(xyz, roundtrip_xyz);
             }
         }

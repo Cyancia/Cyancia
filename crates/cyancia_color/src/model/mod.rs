@@ -1,4 +1,6 @@
 pub mod gray;
+pub mod hsl;
+pub mod hsv;
 pub mod lab;
 pub mod lch;
 pub(crate) mod okcolor;
