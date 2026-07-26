@@ -319,15 +319,15 @@ impl Render for ColorSelectorState {
             })
             .child(v_flex().w_full().flex_shrink_0().children(
                 self.plane_targets.chunks(MAX_PLANES_PER_ROW).map(|row| {
-                    h_flex()
-                        .w_full()
-                        .children(row.iter().map(|(_, texture, _)| {
+                    h_flex().w_full().justify_evenly().children(row.iter().map(
+                        |(_, texture, _)| {
                             surface(SurfaceSource::Texture {
                                 texture: texture.clone(),
                                 size: Size::new(texture.width().into(), texture.height().into()),
                             })
                             .size(px(texture.width() as f32))
-                        }))
+                        },
+                    ))
                 }),
             ))
             .child(

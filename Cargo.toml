@@ -90,11 +90,11 @@ flate2 = "1"
 fs_extra = "1"
 futures = "0.3"
 glam = { version = "0.30", features = ["encase", "serde", "bytemuck"] }
-gpui = { git = "https://github.com/443eb9/gpui-ce", rev = "3a90cf3a8d943b52c1adf3cb32b167a5a62a7fae", features = ["wgpu", "winit"] }
-gpui_wgpu = { git = "https://github.com/443eb9/gpui-ce", rev = "3a90cf3a8d943b52c1adf3cb32b167a5a62a7fae" }
+gpui = { git = "https://github.com/443eb9/gpui-ce", rev = "de53e91475147f27b738ed6feb310a01f875a647", features = ["wgpu", "winit"] }
+gpui_wgpu = { git = "https://github.com/443eb9/gpui-ce", rev = "de53e91475147f27b738ed6feb310a01f875a647" }
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "277f220a6196572116a8fd84fba6c36187094cab" }
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "277f220a6196572116a8fd84fba6c36187094cab" }
-gpui_platform = { git = "https://github.com/443eb9/gpui-ce", rev = "3a90cf3a8d943b52c1adf3cb32b167a5a62a7fae", features = ["font-kit", "winit"] }
+gpui_platform = { git = "https://github.com/443eb9/gpui-ce", rev = "de53e91475147f27b738ed6feb310a01f875a647", features = ["font-kit", "winit"] }
 half = "2"
 image = "0.25"
 indexmap = { version = "2", features = ["serde"] }
@@ -139,5 +139,5 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "8"
 
 [patch."https://github.com/zed-industries/zed"]
-gpui = { git = "https://github.com/443eb9/gpui-ce", rev = "3a90cf3a8d943b52c1adf3cb32b167a5a62a7fae" }
-gpui_macros = { git = "https://github.com/443eb9/gpui-ce", rev = "3a90cf3a8d943b52c1adf3cb32b167a5a62a7fae" }
+gpui = { git = "https://github.com/443eb9/gpui-ce", rev = "de53e91475147f27b738ed6feb310a01f875a647" }
+gpui_macros = { git = "https://github.com/443eb9/gpui-ce", rev = "de53e91475147f27b738ed6feb310a01f875a647" }
