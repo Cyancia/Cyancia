@@ -401,6 +401,16 @@ impl ColorSelectorState {
         this
     }
 
+    pub fn color(&self) -> Color {
+        self.color
+    }
+
+    pub fn set_color(&mut self, color: Color, window: &mut Window, cx: &mut Context<Self>) {
+        self.color = color;
+        self.sync_bar_inputs(window, cx);
+        self.redraw_config(cx);
+    }
+
     pub fn configs(&self) -> &[ColorSelectorConfig] {
         &self.presets
     }
