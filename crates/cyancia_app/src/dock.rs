@@ -427,6 +427,21 @@ impl ColorSelectorDock {
             return;
         };
 
+        let editor_window_id = editor_window.window_id();
+        let dock = cx.entity().downgrade();
+        cx.on_window_closed(move |cx, window_id| {
+            if window_id != editor_window_id {
+                return;
+            }
+
+            dock.update(cx, |dock, cx| {
+                dock.is_editor_open = false;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+
         self.is_editor_open = true;
     }
 }
