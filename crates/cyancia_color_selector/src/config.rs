@@ -2,8 +2,8 @@ use std::f32::consts::TAU;
 
 use cyancia_widgets::spin_slider::{SpinSlider, SpinSliderEvent, SpinSliderState};
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
-    ParentElement, Render, RenderOnce, SharedString, Styled, Window, div, px,
+    AnyElement, AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, Styled, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, Disableable, IndexPath, Sizable,
@@ -61,33 +61,27 @@ pub struct GradientBarConfig {
     pub show_primary_channel_lock: bool,
 }
 
-#[derive(Clone)]
-struct ColorModelItem(ColorModel);
-
-impl SearchableListItem for ColorModelItem {
-    type Value = ColorModel;
+impl SearchableListItem for ColorModel {
+    type Value = Self;
 
     fn title(&self) -> SharedString {
-        self.0.to_string().into()
+        self.to_string().into()
     }
 
     fn value(&self) -> &Self::Value {
-        &self.0
+        self
     }
 }
 
-#[derive(Clone)]
-struct PlaneShapeItem(GradientPlaneShape);
-
-impl SearchableListItem for PlaneShapeItem {
-    type Value = GradientPlaneShape;
+impl SearchableListItem for GradientPlaneShape {
+    type Value = Self;
 
     fn title(&self) -> SharedString {
-        self.0.to_string().into()
+        self.to_string().into()
     }
 
     fn value(&self) -> &Self::Value {
-        &self.0
+        self
     }
 }
 
@@ -110,8 +104,8 @@ impl SearchableListItem for ConfigItem {
 }
 
 type ConfigSelectState = SelectState<SearchableVec<ConfigItem>>;
-type ColorModelSelectState = SelectState<SearchableVec<ColorModelItem>>;
-type PlaneShapeSelectState = SelectState<SearchableVec<PlaneShapeItem>>;
+type ColorModelSelectState = SelectState<SearchableVec<ColorModel>>;
+type PlaneShapeSelectState = SelectState<SearchableVec<GradientPlaneShape>>;
 
 #[derive(Clone)]
 struct PlaneEditorControls {
@@ -182,10 +176,6 @@ impl ColorSelectorConfigEditorState {
 
     pub fn configs(&self) -> &[ColorSelectorConfig] {
         &self.configs
-    }
-
-    pub fn selected_config(&self) -> Option<usize> {
-        self.selected_config
     }
 
     pub fn reset(
@@ -306,20 +296,20 @@ impl ColorSelectorConfigEditorState {
 
     fn subscribe_config_layout_controls(&self, window: &mut Window, cx: &mut Context<Self>) {
         cx.subscribe_in(&self.max_plane_size, window, |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(value) = event {
-                if let Some(config) = this.active_config_mut() {
-                    config.max_plane_size = value.round() as u32;
-                    cx.notify();
-                }
+            if let SpinSliderEvent::Change(value) = event
+                && let Some(config) = this.active_config_mut()
+            {
+                config.max_plane_size = value.round() as u32;
+                cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&self.max_planes_per_row, window, |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(value) = event {
-                if let Some(config) = this.active_config_mut() {
-                    config.max_planes_per_row = value.round() as usize;
-                    cx.notify();
-                }
+            if let SpinSliderEvent::Change(value) = event
+                && let Some(config) = this.active_config_mut()
+            {
+                config.max_planes_per_row = value.round() as usize;
+                cx.notify();
             }
         })
         .detach();
@@ -374,23 +364,13 @@ impl ColorSelectorConfigEditorState {
             .and_then(|index| self.configs.get_mut(index))
     }
 
-    fn next_control_id(&mut self) -> u64 {
-        let id = self.next_control_id;
-        self.next_control_id += 1;
-        id
-    }
-
     fn create_model_select(
         models: &[ColorModel],
         selected: ColorModel,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<ColorModelSelectState> {
-        let items = models
-            .iter()
-            .copied()
-            .map(ColorModelItem)
-            .collect::<Vec<_>>();
+        let items = models.to_vec();
         let selected = models.iter().position(|model| *model == selected);
         cx.new(|cx| {
             SelectState::new(
@@ -408,14 +388,11 @@ impl ColorSelectorConfigEditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> PlaneEditorControls {
-        let id = self.next_control_id();
+        let id = self.next_control_id;
+        self.next_control_id += 1;
         let model = Self::create_model_select(&ColorModel::PLANE_MODELS, config.model, window, cx);
         let shapes = [GradientPlaneShape::Square, GradientPlaneShape::Triangle];
-        let shape_items = shapes
-            .iter()
-            .copied()
-            .map(PlaneShapeItem)
-            .collect::<Vec<_>>();
+        let shape_items = shapes.to_vec();
         let selected_shape = shapes.iter().position(|shape| *shape == config.shape);
         let shape = cx.new(|cx| {
             SelectState::new(
@@ -442,48 +419,47 @@ impl ColorSelectorConfigEditorState {
         });
 
         cx.subscribe_in(&model, window, move |this, _, event, _, cx| {
-            if let SelectEvent::Confirm(Some(model)) = event {
-                if let Some(index) = this.plane_index(id) {
-                    this.active_config_mut().unwrap().planes[index].model = *model;
-                    cx.notify();
-                }
+            if let SelectEvent::Confirm(Some(model)) = event
+                && let Some(index) = this.plane_index(id)
+            {
+                this.active_config_mut().unwrap().planes[index].model = *model;
+                cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&shape, window, move |this, _, event, _, cx| {
-            if let SelectEvent::Confirm(Some(shape)) = event {
-                if let Some(index) = this.plane_index(id) {
-                    this.active_config_mut().unwrap().planes[index].shape = *shape;
-                    cx.notify();
-                }
+            if let SelectEvent::Confirm(Some(shape)) = event
+                && let Some(index) = this.plane_index(id)
+            {
+                this.active_config_mut().unwrap().planes[index].shape = *shape;
+                cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&rotation, window, move |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(rotation) = event {
-                if let Some(index) = this.plane_index(id) {
-                    this.active_config_mut().unwrap().planes[index].rotation = *rotation;
-                    cx.notify();
-                }
+            if let SpinSliderEvent::Change(rotation) = event
+                && let Some(index) = this.plane_index(id)
+            {
+                this.active_config_mut().unwrap().planes[index].rotation = *rotation;
+                cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&ring_width, window, move |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(width) = event {
-                if let Some(index) = this.plane_index(id) {
-                    this.active_config_mut().unwrap().planes[index].primary_channel_ring_width =
-                        *width;
-                    cx.notify();
-                }
+            if let SpinSliderEvent::Change(width) = event
+                && let Some(index) = this.plane_index(id)
+            {
+                this.active_config_mut().unwrap().planes[index].primary_channel_ring_width = *width;
+                cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&ring_rotation, window, move |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(rotation) = event {
-                if let Some(index) = this.plane_index(id) {
-                    this.active_config_mut().unwrap().planes[index].ring_rotation = *rotation;
-                    cx.notify();
-                }
+            if let SpinSliderEvent::Change(rotation) = event
+                && let Some(index) = this.plane_index(id)
+            {
+                this.active_config_mut().unwrap().planes[index].ring_rotation = *rotation;
+                cx.notify();
             }
         })
         .detach();
@@ -504,7 +480,8 @@ impl ColorSelectorConfigEditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> BarEditorControls {
-        let id = self.next_control_id();
+        let id = self.next_control_id;
+        self.next_control_id += 1;
         let model = Self::create_model_select(&ColorModel::ALL, config.model, window, cx);
         let bar_height = cx.new(|cx| {
             SpinSliderState::new(10.0, 40.0, window, cx)
@@ -513,24 +490,24 @@ impl ColorSelectorConfigEditorState {
         });
 
         cx.subscribe_in(&model, window, move |this, _, event, _, cx| {
-            if let SelectEvent::Confirm(Some(model)) = event {
-                if let Some(index) = this.bar_index(id) {
-                    let bar = &mut this.active_config_mut().unwrap().bars[index];
-                    bar.model = *model;
-                    bar.channel = bar
-                        .channel
-                        .min(model.channel_labels().len().saturating_sub(1) as u8);
-                    cx.notify();
-                }
+            if let SelectEvent::Confirm(Some(model)) = event
+                && let Some(index) = this.bar_index(id)
+            {
+                let bar = &mut this.active_config_mut().unwrap().bars[index];
+                bar.model = *model;
+                bar.channel = bar
+                    .channel
+                    .min(model.channel_labels().len().saturating_sub(1) as u8);
+                cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&bar_height, window, move |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(height) = event {
-                if let Some(index) = this.bar_index(id) {
-                    this.active_config_mut().unwrap().bars[index].bar_height = *height;
-                    cx.notify();
-                }
+            if let SpinSliderEvent::Change(height) = event
+                && let Some(index) = this.bar_index(id)
+            {
+                this.active_config_mut().unwrap().bars[index].bar_height = *height;
+                cx.notify();
             }
         })
         .detach();
@@ -665,17 +642,13 @@ impl ColorSelectorConfigEditorState {
         cx.notify();
     }
 
-    fn primary_channel(variable_channels: u8) -> usize {
-        (0..3)
-            .find(|channel| variable_channels & (1u8 << channel) == 0)
-            .unwrap_or(0)
-    }
-
     fn render_plane(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
         let config = self.active_config().unwrap().planes[index].clone();
         let controls = self.plane_controls[index].clone();
         let labels = config.model.channel_labels();
-        let primary_channel = Self::primary_channel(config.variable_channels);
+        let primary_channel = (0..3)
+            .find(|channel| config.variable_channels & (1u8 << channel) == 0)
+            .unwrap_or(0);
         let id = controls.id;
 
         v_flex()
@@ -1035,65 +1008,62 @@ impl Render for ColorSelectorConfigEditorState {
                 .into_any_element()
         };
 
-        let content = div().flex_1().min_h_0().overflow_hidden().child(
-            v_flex()
-                .id("color-selector-config-editor-content")
-                .size_full()
-                .gap_3()
-                .p_3()
-                .child(
-                    h_flex()
-                        .gap_2()
-                        .child(div().w(px(110.)).child("Config"))
-                        .child(
-                            div().flex_1().child(
-                                Select::new(&self.config_select)
-                                    .small()
-                                    .placeholder("No configs"),
-                            ),
-                        )
-                        .child(
-                            Button::new("add-color-selector-config")
+        let content = v_flex()
+            .id("color-selector-config-editor-content")
+            .flex_1()
+            .min_h_0()
+            .gap_3()
+            .p_3()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(div().w(px(110.)).child("Config"))
+                    .child(
+                        div().flex_1().child(
+                            Select::new(&self.config_select)
                                 .small()
-                                .label("Add")
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.add_config(window, cx)),
-                                ),
-                        )
-                        .child(
-                            Button::new("move-color-selector-config-up")
-                                .small()
-                                .label("Up")
-                                .disabled(selected.is_none_or(|index| index == 0))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.move_config(-1, window, cx)
-                                })),
-                        )
-                        .child(
-                            Button::new("move-color-selector-config-down")
-                                .small()
-                                .label("Down")
-                                .disabled(
-                                    selected.is_none_or(|index| index + 1 == self.configs.len()),
-                                )
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.move_config(1, window, cx)
-                                })),
-                        )
-                        .child(
-                            Button::new("remove-color-selector-config")
-                                .small()
-                                .danger()
-                                .label("Remove")
-                                .disabled(selected.is_none())
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.remove_config(window, cx)
-                                })),
+                                .placeholder("No configs"),
                         ),
-                )
-                .child(active_content)
-                .overflow_y_scrollbar(),
-        );
+                    )
+                    .child(
+                        Button::new("add-color-selector-config")
+                            .small()
+                            .label("Add")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.add_config(window, cx)),
+                            ),
+                    )
+                    .child(
+                        Button::new("move-color-selector-config-up")
+                            .small()
+                            .label("Up")
+                            .disabled(selected.is_none_or(|index| index == 0))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.move_config(-1, window, cx)),
+                            ),
+                    )
+                    .child(
+                        Button::new("move-color-selector-config-down")
+                            .small()
+                            .label("Down")
+                            .disabled(selected.is_none_or(|index| index + 1 == self.configs.len()))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.move_config(1, window, cx)),
+                            ),
+                    )
+                    .child(
+                        Button::new("remove-color-selector-config")
+                            .small()
+                            .danger()
+                            .label("Remove")
+                            .disabled(selected.is_none())
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.remove_config(window, cx)),
+                            ),
+                    ),
+            )
+            .child(active_content)
+            .overflow_y_scrollbar();
 
         v_flex()
             .size_full()
@@ -1132,22 +1102,3 @@ pub enum ColorSelectorConfigEvent {
 }
 
 impl EventEmitter<ColorSelectorConfigEvent> for ColorSelectorConfigEditorState {}
-
-#[derive(IntoElement)]
-pub struct ColorSelectorConfigEditor {
-    state: Entity<ColorSelectorConfigEditorState>,
-}
-
-impl ColorSelectorConfigEditor {
-    pub fn new(state: &Entity<ColorSelectorConfigEditorState>) -> Self {
-        Self {
-            state: state.clone(),
-        }
-    }
-}
-
-impl RenderOnce for ColorSelectorConfigEditor {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        div().size_full().child(self.state)
-    }
-}

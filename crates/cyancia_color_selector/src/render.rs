@@ -19,7 +19,7 @@ use wgpu::{
 };
 
 use crate::{
-    ColorModel, GradientPlaneShape,
+    GradientPlaneShape,
     config::{GradientBarConfig, GradientPlaneConfig},
 };
 
@@ -214,7 +214,7 @@ impl GradientRingPipeline {
             multiview_mask: Default::default(),
             cache: Default::default(),
         });
-        let mesh = GradientMesh::new(device, GradientShape::Square);
+        let mesh = GradientMesh::new_plane(device, GradientPlaneShape::Square, 1.0);
 
         Self {
             layout,
@@ -268,52 +268,36 @@ impl GradientRingPipeline {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GradientShape {
-    Bar,
-    Square,
-    Triangle,
-}
-
-impl From<GradientPlaneShape> for GradientShape {
-    fn from(value: GradientPlaneShape) -> Self {
-        match value {
-            GradientPlaneShape::Square => Self::Square,
-            GradientPlaneShape::Triangle => Self::Triangle,
-        }
-    }
-}
-
 #[derive(Pod, Zeroable, Clone, Copy)]
 #[repr(C)]
-pub struct Vertex {
-    pub position: Vec2,
-    pub uv: Vec2,
+struct Vertex {
+    position: Vec2,
+    uv: Vec2,
 }
 
 pub struct GradientMesh {
-    pub n_indices: u32,
-    pub vertices: Buffer,
-    pub indices: Buffer,
+    n_indices: u32,
+    vertices: Buffer,
+    indices: Buffer,
 }
 
 impl GradientMesh {
-    pub fn new(device: &Device, shape: GradientShape) -> Self {
-        Self::new_scaled(device, shape, 1.0)
+    pub fn new_bar(device: &Device) -> Self {
+        Self::from_vertices(
+            device,
+            vec![
+                vtx(-1.0, -1.0, 0.0, 0.0),
+                vtx(1.0, -1.0, 1.0, 0.0),
+                vtx(1.0, 1.0, 1.0, 0.0),
+                vtx(-1.0, 1.0, 0.0, 0.0),
+            ],
+            vec![0, 1, 2, 2, 3, 0],
+        )
     }
 
-    pub fn new_scaled(device: &Device, shape: GradientShape, scale: f32) -> Self {
-        let (mut vertices, indices): (Vec<Vertex>, Vec<u16>) = match shape {
-            GradientShape::Bar => (
-                vec![
-                    vtx(-1.0, -1.0, 0.0, 0.0),
-                    vtx(1.0, -1.0, 1.0, 0.0),
-                    vtx(1.0, 1.0, 1.0, 0.0),
-                    vtx(-1.0, 1.0, 0.0, 0.0),
-                ],
-                vec![0, 1, 2, 2, 3, 0],
-            ),
-            GradientShape::Square => (
+    pub fn new_plane(device: &Device, shape: GradientPlaneShape, scale: f32) -> Self {
+        let (mut vertices, indices) = match shape {
+            GradientPlaneShape::Square => (
                 vec![
                     vtx(-1.0, -1.0, 0.0, 0.0),
                     vtx(1.0, -1.0, 1.0, 0.0),
@@ -322,7 +306,7 @@ impl GradientMesh {
                 ],
                 vec![0, 1, 2, 2, 3, 0],
             ),
-            GradientShape::Triangle => (
+            GradientPlaneShape::Triangle => (
                 vec![
                     vtx(0.0, 1.0, 0.5, 0.0),
                     vtx(-3.0_f32.sqrt() * 0.5, -0.5, 0.0, 1.0),
@@ -335,22 +319,22 @@ impl GradientMesh {
         for vertex in &mut vertices {
             vertex.position *= scale;
         }
+        Self::from_vertices(device, vertices, indices)
+    }
 
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("gradient_vertex_buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: BufferUsages::VERTEX,
-        });
-        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("gradient_index_buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: BufferUsages::INDEX,
-        });
-
-        GradientMesh {
+    fn from_vertices(device: &Device, vertices: Vec<Vertex>, indices: Vec<u16>) -> Self {
+        Self {
             n_indices: indices.len() as u32,
-            vertices: vertex_buffer,
-            indices: index_buffer,
+            vertices: device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("gradient_vertex_buffer"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: BufferUsages::VERTEX,
+            }),
+            indices: device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("gradient_index_buffer"),
+                contents: bytemuck::cast_slice(&indices),
+                usage: BufferUsages::INDEX,
+            }),
         }
     }
 }
@@ -365,116 +349,105 @@ fn vtx(px: f32, py: f32, uvx: f32, uvy: f32) -> Vertex {
 
 #[derive(ShaderType, Clone)]
 pub struct GradientSettings {
-    pub rgb_to_xyz: Mat3,
-    pub xyz_to_rgb: Mat3,
-    pub channel_ranges: [Vec4; 3],
-    pub reference: Vec3,
-    pub color_model: u32,
-    pub variable_channels: u32,
-    pub rotation: f32,
-    pub flip_axis: u32,
-    pub primary_channel: u32,
-    pub ring_rotation: f32,
-    pub reversed_ring: u32,
-    pub saturated_primary_channel: u32,
-    pub saturated_bar: u32,
-    pub ring_width: f32,
-    pub texture_size: f32,
+    rgb_to_xyz: Mat3,
+    xyz_to_rgb: Mat3,
+    channel_ranges: [Vec4; 3],
+    base_channels: Vec3,
+    color_model: u32,
+    variable_channels: u32,
+    rotation: f32,
+    flip_axis: u32,
+    primary_channel: u32,
+    ring_rotation: f32,
+    reversed_ring: u32,
+    saturate_primary_channel: u32,
+    ring_width: f32,
+    texture_size: f32,
 }
 
 impl GradientSettings {
     pub fn new_plane(
         profile: &ColorProfile,
-        reference: Vec3,
+        base_channels: Vec3,
         config: &GradientPlaneConfig,
         primary_channel_override: Option<u8>,
-        ring_width: f32,
         texture_size: f32,
     ) -> Self {
         let variable_channels = primary_channel_override
             .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel));
-        Self::new(
-            profile,
-            reference,
-            config.model,
-            variable_channels,
-            config.rotation,
-            u32::from(config.flip_axis.bits()),
-            config.ring_rotation,
-            config.reversed_ring,
-            config.saturated_primary_channel,
-            false,
-            ring_width,
+        let matrix = profile.rgb_to_xyz_matrix().to_f32().v;
+        let rgb_to_xyz = Mat3::from_cols_array(&[
+            matrix[0][0],
+            matrix[1][0],
+            matrix[2][0],
+            matrix[0][1],
+            matrix[1][1],
+            matrix[2][1],
+            matrix[0][2],
+            matrix[1][2],
+            matrix[2][2],
+        ]);
+
+        Self {
+            rgb_to_xyz,
+            xyz_to_rgb: rgb_to_xyz.inverse(),
+            channel_ranges: config
+                .model
+                .channel_ranges()
+                .map(|range| Vec4::new(range.x, range.y, 0.0, 0.0)),
+            base_channels,
+            color_model: config.model as u32,
+            variable_channels: u32::from(variable_channels),
+            rotation: config.rotation,
+            flip_axis: u32::from(config.flip_axis.bits()),
+            primary_channel: (0..3)
+                .find(|channel| variable_channels & (1 << channel) == 0)
+                .unwrap_or(0),
+            ring_rotation: config.ring_rotation,
+            reversed_ring: u32::from(config.reversed_ring),
+            saturate_primary_channel: u32::from(config.saturated_primary_channel),
+            ring_width: config.primary_channel_ring_width,
             texture_size,
-        )
+        }
     }
 
     pub fn new_bar(
         profile: &ColorProfile,
-        reference: Vec3,
+        base_channels: Vec3,
         config: &GradientBarConfig,
-        saturated_primary_channel: bool,
-        texture_size: f32,
+        saturate_primary_channel: bool,
     ) -> Self {
-        Self::new(
-            profile,
-            reference,
-            config.model,
-            1 << config.channel,
-            0.0,
-            0,
-            0.0,
-            false,
-            false,
-            saturated_primary_channel,
-            0.0,
-            texture_size,
-        )
-    }
-
-    fn new(
-        profile: &ColorProfile,
-        reference: Vec3,
-        color_model: ColorModel,
-        variable_channels: u8,
-        rotation: f32,
-        flip_axis: u32,
-        ring_rotation: f32,
-        reversed_ring: bool,
-        saturated_primary_channel: bool,
-        saturated_bar: bool,
-        ring_width: f32,
-        texture_size: f32,
-    ) -> Self {
-        let m = profile.rgb_to_xyz_matrix().to_f32().v;
-
+        let matrix = profile.rgb_to_xyz_matrix().to_f32().v;
         let rgb_to_xyz = Mat3::from_cols_array(&[
-            m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2],
+            matrix[0][0],
+            matrix[1][0],
+            matrix[2][0],
+            matrix[0][1],
+            matrix[1][1],
+            matrix[2][1],
+            matrix[0][2],
+            matrix[1][2],
+            matrix[2][2],
         ]);
-        let xyz_to_rgb = rgb_to_xyz.inverse();
-
-        let channel_ranges = color_model
-            .channel_ranges()
-            .map(|range| Vec4::new(range.x, range.y, 0.0, 0.0));
 
         Self {
             rgb_to_xyz,
-            xyz_to_rgb,
-            channel_ranges,
-            reference,
-            color_model: color_model as u32,
-            variable_channels: u32::from(variable_channels),
-            rotation,
-            flip_axis,
-            primary_channel: (0..3)
-                .find(|channel| variable_channels & (1 << channel) == 0)
-                .unwrap_or(0),
-            ring_rotation,
-            reversed_ring: u32::from(reversed_ring),
-            saturated_primary_channel: u32::from(saturated_primary_channel),
-            saturated_bar: u32::from(saturated_bar),
-            ring_width,
-            texture_size,
+            xyz_to_rgb: rgb_to_xyz.inverse(),
+            channel_ranges: config
+                .model
+                .channel_ranges()
+                .map(|range| Vec4::new(range.x, range.y, 0.0, 0.0)),
+            base_channels,
+            color_model: config.model as u32,
+            variable_channels: 1 << config.channel,
+            rotation: 0.0,
+            flip_axis: 0,
+            primary_channel: 0,
+            ring_rotation: 0.0,
+            reversed_ring: 0,
+            saturate_primary_channel: u32::from(saturate_primary_channel),
+            ring_width: 0.0,
+            texture_size: 1.0,
         }
     }
 }

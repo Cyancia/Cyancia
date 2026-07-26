@@ -10,10 +10,10 @@ use cyancia_color::{
 use cyancia_render::render_context::RenderContextAppExt;
 use glam::{Vec2, Vec3};
 use gpui::{
-    App, AppContext, Bounds, Context, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
+    AppContext, Bounds, Context, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Pixels, Point, Render, RenderOnce, Size, StatefulInteractiveElement, Styled,
-    SurfaceSource, Window, div, px, relative, rgb, surface,
+    ParentElement, Pixels, Point, Render, Size, StatefulInteractiveElement, Styled, SurfaceSource,
+    Window, div, px, relative, rgb, surface,
 };
 use gpui_component::{
     ElementExt, Sizable, h_flex,
@@ -34,7 +34,7 @@ use crate::{
 };
 
 pub mod config;
-pub mod render;
+mod render;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ColorSelectorEvent {
@@ -90,11 +90,11 @@ pub enum ColorModel {
     Lab,
     #[display("LCh")]
     Lch,
-    #[display("Okhsl")]
+    #[display("OkHSL")]
     OkHsl,
-    #[display("Okhsv")]
+    #[display("OkHSV")]
     OkHsv,
-    #[display("Oklab")]
+    #[display("OkLab")]
     OkLab,
     #[display("OkLCh")]
     OkLch,
@@ -148,22 +148,6 @@ impl ColorModel {
         }
     }
 
-    pub fn get_reference_color(&self, color: Color) -> Vec3 {
-        match color {
-            Color::Gray(gray) => Vec3::new(gray.v, 0.0, 0.0),
-            Color::Hsl(hsl) => Vec3::new(hsl.h, hsl.s, hsl.l),
-            Color::Hsv(hsv) => Vec3::new(hsv.h, hsv.s, hsv.v),
-            Color::Lab(lab) => Vec3::new(lab.l, lab.a, lab.b),
-            Color::Lch(lch) => Vec3::new(lch.l, lch.c, lch.h),
-            Color::OkHsl(ok_hsl) => Vec3::new(ok_hsl.h, ok_hsl.s, ok_hsl.l),
-            Color::OkHsv(ok_hsv) => Vec3::new(ok_hsv.h, ok_hsv.s, ok_hsv.v),
-            Color::OkLab(ok_lab) => Vec3::new(ok_lab.l, ok_lab.a, ok_lab.b),
-            Color::OkLch(ok_lch) => Vec3::new(ok_lch.l, ok_lch.c, ok_lch.h),
-            Color::Rgb(rgb) => Vec3::new(rgb.r, rgb.g, rgb.b),
-            Color::Xyz(xyz) => Vec3::new(xyz.x, xyz.y, xyz.z),
-        }
-    }
-
     pub fn channel_ranges(&self) -> [Vec2; 3] {
         match self {
             ColorModel::Gray => [Vec2::new(0.0, 1.0), Vec2::ZERO, Vec2::ZERO],
@@ -214,62 +198,80 @@ impl ColorModel {
         }
     }
 
-    pub fn from_reference_color(self, color: Vec3) -> Color {
-        match self {
-            Self::Gray => Color::Gray(Gray::new(color.x)),
-            Self::Hsl => Color::Hsl(Hsl::new(color.x, color.y, color.z)),
-            Self::Hsv => Color::Hsv(Hsv::new(color.x, color.y, color.z)),
-            Self::Lab => Color::Lab(Lab::new(color.x, color.y, color.z)),
-            Self::Lch => Color::Lch(Lch::new(color.x, color.y, color.z)),
-            Self::OkHsl => Color::OkHsl(OkHsl::new(color.x, color.y, color.z)),
-            Self::OkHsv => Color::OkHsv(OkHsv::new(color.x, color.y, color.z)),
-            Self::OkLab => Color::OkLab(OkLab::new(color.x, color.y, color.z)),
-            Self::OkLch => Color::OkLch(OkLch::new(color.x, color.y, color.z)),
-            Self::Rgb => Color::Rgb(Rgb::new(color.x, color.y, color.z)),
-            Self::Xyz => Color::Xyz(Xyz::new(color.x, color.y, color.z)),
-        }
-    }
-
-    pub fn convert_to_self(&self, color: Color, profile: &ColorProfile) -> Color {
+    pub fn channels(self, color: Color, profile: &ColorProfile) -> Vec3 {
+        let rgb_to_xyz = profile.rgb_to_xyz_matrix().to_f32();
         let xyz = match color {
             Color::Gray(gray) => gray.into_xyz(),
-            Color::Hsl(hsl) => hsl
-                .into_rgb()
-                .into_xyz(profile.rgb_to_xyz_matrix().to_f32()),
-            Color::Hsv(hsv) => hsv
-                .into_rgb()
-                .into_xyz(profile.rgb_to_xyz_matrix().to_f32()),
+            Color::Hsl(hsl) => hsl.into_rgb().into_xyz(rgb_to_xyz),
+            Color::Hsv(hsv) => hsv.into_rgb().into_xyz(rgb_to_xyz),
             Color::Lab(lab) => lab.into_xyz(),
             Color::Lch(lch) => lch.into_xyz(),
             Color::OkHsl(ok_hsl) => ok_hsl.into_xyz(),
             Color::OkHsv(ok_hsv) => ok_hsv.into_xyz(),
             Color::OkLab(ok_lab) => ok_lab.into_xyz(),
             Color::OkLch(ok_lch) => ok_lch.into_xyz(),
-            Color::Rgb(rgb) => rgb.into_xyz(profile.rgb_to_xyz_matrix().to_f32()),
+            Color::Rgb(rgb) => rgb.into_xyz(rgb_to_xyz),
             Color::Xyz(xyz) => xyz,
         };
 
         match self {
-            ColorModel::Gray => Color::Gray(Gray::from_xyz(xyz)),
-            ColorModel::Hsl => Color::Hsl(Hsl::from_rgb(Rgb::from_xyz(
-                xyz,
-                profile.rgb_to_xyz_matrix().to_f32().inverse(),
-            ))),
-            ColorModel::Hsv => Color::Hsv(Hsv::from_rgb(Rgb::from_xyz(
-                xyz,
-                profile.rgb_to_xyz_matrix().to_f32().inverse(),
-            ))),
-            ColorModel::Lab => Color::Lab(Lab::from_xyz(xyz)),
-            ColorModel::Lch => Color::Lch(Lch::from_xyz(xyz)),
-            ColorModel::OkHsl => Color::OkHsl(OkHsl::from_xyz(xyz)),
-            ColorModel::OkHsv => Color::OkHsv(OkHsv::from_xyz(xyz)),
-            ColorModel::OkLab => Color::OkLab(OkLab::from_xyz(xyz)),
-            ColorModel::OkLch => Color::OkLch(OkLch::from_xyz(xyz)),
-            ColorModel::Rgb => Color::Rgb(Rgb::from_xyz(
-                xyz,
-                profile.rgb_to_xyz_matrix().to_f32().inverse(),
-            )),
-            ColorModel::Xyz => Color::Xyz(xyz),
+            Self::Gray => {
+                let gray = Gray::from_xyz(xyz);
+                Vec3::new(gray.v, 0.0, 0.0)
+            }
+            Self::Hsl => {
+                let hsl = Hsl::from_rgb(Rgb::from_xyz(xyz, rgb_to_xyz.inverse()));
+                Vec3::new(hsl.h, hsl.s, hsl.l)
+            }
+            Self::Hsv => {
+                let hsv = Hsv::from_rgb(Rgb::from_xyz(xyz, rgb_to_xyz.inverse()));
+                Vec3::new(hsv.h, hsv.s, hsv.v)
+            }
+            Self::Lab => {
+                let lab = Lab::from_xyz(xyz);
+                Vec3::new(lab.l, lab.a, lab.b)
+            }
+            Self::Lch => {
+                let lch = Lch::from_xyz(xyz);
+                Vec3::new(lch.l, lch.c, lch.h)
+            }
+            Self::OkHsl => {
+                let okhsl = OkHsl::from_xyz(xyz);
+                Vec3::new(okhsl.h, okhsl.s, okhsl.l)
+            }
+            Self::OkHsv => {
+                let okhsv = OkHsv::from_xyz(xyz);
+                Vec3::new(okhsv.h, okhsv.s, okhsv.v)
+            }
+            Self::OkLab => {
+                let oklab = OkLab::from_xyz(xyz);
+                Vec3::new(oklab.l, oklab.a, oklab.b)
+            }
+            Self::OkLch => {
+                let oklch = OkLch::from_xyz(xyz);
+                Vec3::new(oklch.l, oklch.c, oklch.h)
+            }
+            Self::Rgb => {
+                let rgb = Rgb::from_xyz(xyz, rgb_to_xyz.inverse());
+                Vec3::new(rgb.r, rgb.g, rgb.b)
+            }
+            Self::Xyz => Vec3::new(xyz.x, xyz.y, xyz.z),
+        }
+    }
+
+    pub fn color_from_channels(self, channels: Vec3) -> Color {
+        match self {
+            Self::Gray => Color::Gray(Gray::new(channels.x)),
+            Self::Hsl => Color::Hsl(Hsl::new(channels.x, channels.y, channels.z)),
+            Self::Hsv => Color::Hsv(Hsv::new(channels.x, channels.y, channels.z)),
+            Self::Lab => Color::Lab(Lab::new(channels.x, channels.y, channels.z)),
+            Self::Lch => Color::Lch(Lch::new(channels.x, channels.y, channels.z)),
+            Self::OkHsl => Color::OkHsl(OkHsl::new(channels.x, channels.y, channels.z)),
+            Self::OkHsv => Color::OkHsv(OkHsv::new(channels.x, channels.y, channels.z)),
+            Self::OkLab => Color::OkLab(OkLab::new(channels.x, channels.y, channels.z)),
+            Self::OkLch => Color::OkLch(OkLch::new(channels.x, channels.y, channels.z)),
+            Self::Rgb => Color::Rgb(Rgb::new(channels.x, channels.y, channels.z)),
+            Self::Xyz => Color::Xyz(Xyz::new(channels.x, channels.y, channels.z)),
         }
     }
 }
@@ -342,9 +344,8 @@ pub struct ColorSelectorState {
     presets: Vec<ColorSelectorConfig>,
     selected_preset: usize,
 
-    plane_pipeline: GradientPipeline,
+    gradient_pipeline: GradientPipeline,
     ring_pipeline: GradientRingPipeline,
-    bar_pipeline: GradientPipeline,
     plane_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
     bar_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
     bar_inputs: Vec<Entity<InputState>>,
@@ -354,7 +355,6 @@ pub struct ColorSelectorState {
     active_selection: Option<ActiveSelection>,
 
     widget_bounds: Bounds<Pixels>,
-    surface_format: TextureFormat,
 }
 
 impl ColorSelectorState {
@@ -381,9 +381,8 @@ impl ColorSelectorState {
             presets,
             selected_preset,
 
-            plane_pipeline: GradientPipeline::new(device),
+            gradient_pipeline: GradientPipeline::new(device),
             ring_pipeline: GradientRingPipeline::new(device),
-            bar_pipeline: GradientPipeline::new(device),
             plane_targets: Vec::new(),
             bar_targets: Vec::new(),
             bar_inputs: Vec::new(),
@@ -393,7 +392,6 @@ impl ColorSelectorState {
             active_selection: None,
 
             widget_bounds: Bounds::default(),
-            surface_format: TextureFormat::Rgba16Float,
         };
         this.rebuild_bar_inputs(window, cx);
         this
@@ -439,8 +437,7 @@ impl ColorSelectorState {
 
         self.selected_preset = self.selected_preset.min(self.presets.len() - 1);
         self.active_selection = None;
-        self.primary_channel_overrides
-            .resize(self.presets.len(), [None; COLOR_MODEL_COUNT]);
+        self.primary_channel_overrides = vec![[None; COLOR_MODEL_COUNT]; self.presets.len()];
         self.rebuild_bar_inputs(window, cx);
         self.update_targets(cx);
         self.redraw_config(cx);
@@ -454,7 +451,7 @@ impl ColorSelectorState {
         let bars = preset.bars.clone();
 
         for config in bars {
-            let value = self.bar_display_value(&config);
+            let value = self.bar_display_value(config.model, config.channel);
             let input = cx.new(|cx| {
                 InputState::new(window, cx)
                     .mask_pattern(MaskPattern::Number {
@@ -482,7 +479,7 @@ impl ColorSelectorState {
                     NumberInputEvent::Step(StepAction::Increment) => 0.1,
                     NumberInputEvent::Step(StepAction::Decrement) => -0.1,
                 };
-                let value = this.bar_display_value_for(model, channel) + delta;
+                let value = this.bar_display_value(model, channel) + delta;
                 this.set_bar_display_value(model, channel, value, window, cx);
             })
             .detach();
@@ -491,14 +488,9 @@ impl ColorSelectorState {
         }
     }
 
-    fn bar_display_value(&self, config: &GradientBarConfig) -> f32 {
-        self.bar_display_value_for(config.model, config.channel)
-    }
-
-    fn bar_display_value_for(&self, model: ColorModel, channel: u8) -> f32 {
-        let color = model.convert_to_self(self.color, &self.profile);
-        let reference = model.get_reference_color(color);
-        reference[channel as usize] * model.display_scale()[channel as usize]
+    fn bar_display_value(&self, model: ColorModel, channel: u8) -> f32 {
+        model.channels(self.color, &self.profile)[channel as usize]
+            * model.display_scale()[channel as usize]
     }
 
     fn set_bar_display_value(
@@ -512,10 +504,9 @@ impl ColorSelectorState {
         let channel = channel as usize;
         let scale = model.display_scale()[channel];
         let range = model.channel_ranges()[channel];
-        let mut reference =
-            model.get_reference_color(model.convert_to_self(self.color, &self.profile));
-        reference[channel] = (value / scale).clamp(range.x, range.y);
-        self.color = model.from_reference_color(reference);
+        let mut channels = model.channels(self.color, &self.profile);
+        channels[channel] = (value / scale).clamp(range.x, range.y);
+        self.color = model.color_from_channels(channels);
         self.sync_bar_inputs(window, cx);
         self.redraw_config(cx);
     }
@@ -525,7 +516,7 @@ impl ColorSelectorState {
             return;
         };
         for (config, input) in preset.bars.iter().zip(&self.bar_inputs) {
-            let value = self.bar_display_value(config);
+            let value = self.bar_display_value(config.model, config.channel);
             input.update(cx, |input, cx| {
                 input.set_value(format!("{value:.2}"), window, cx);
             });
@@ -617,12 +608,8 @@ impl ColorSelectorState {
         };
 
         let device = cx.render_device();
-        let (texture, view) = self.create_gradient_texture("plane_gradient", size, size, device);
-        let mesh = GradientMesh::new_scaled(
-            device,
-            config.shape.into(),
-            plane_scale(config, size as f32),
-        );
+        let (texture, view) = Self::create_gradient_texture("plane_gradient", size, size, device);
+        let mesh = GradientMesh::new_plane(device, config.shape, plane_scale(config, size as f32));
         self.plane_targets[index] = (mesh, texture, view);
         self.redraw_config(cx);
     }
@@ -756,19 +743,18 @@ impl ColorSelectorState {
                 let Some((uv, _)) = self.plane_uv_from_window_position(index, position) else {
                     return;
                 };
-                let color = config.model.convert_to_self(self.color, &self.profile);
-                let mut reference = config.model.get_reference_color(color);
+                let mut channels = config.model.channels(self.color, &self.profile);
                 let ranges = config.model.channel_ranges();
                 let mut variable_index = 0;
                 let variable_channels = self.plane_variable_channels(&config);
                 for channel in 0..3 {
                     if variable_channels & (1 << channel) != 0 {
-                        reference[channel] = ranges[channel].x
+                        channels[channel] = ranges[channel].x
                             + (ranges[channel].y - ranges[channel].x) * uv[variable_index];
                         variable_index += 1;
                     }
                 }
-                self.color = config.model.from_reference_color(reference);
+                self.color = config.model.color_from_channels(channels);
             }
             ActiveSelection::Ring(index) => {
                 let Some(config) = self
@@ -796,11 +782,10 @@ impl ColorSelectorState {
                 }
                 let factor = (angle / std::f32::consts::TAU).rem_euclid(1.0);
                 let channel = self.plane_primary_channel(&config) as usize;
-                let color = config.model.convert_to_self(self.color, &self.profile);
-                let mut reference = config.model.get_reference_color(color);
+                let mut channels = config.model.channels(self.color, &self.profile);
                 let range = config.model.channel_ranges()[channel];
-                reference[channel] = range.x + (range.y - range.x) * factor;
-                self.color = config.model.from_reference_color(reference);
+                channels[channel] = range.x + (range.y - range.x) * factor;
+                self.color = config.model.color_from_channels(channels);
             }
             ActiveSelection::Bar(index) => {
                 let Some(config) = self
@@ -817,11 +802,10 @@ impl ColorSelectorState {
                 let factor = ((position.x - bounds.origin.x).as_f32() / bounds.size.width.as_f32())
                     .clamp(0.0, 1.0);
                 let channel = config.channel as usize;
-                let color = config.model.convert_to_self(self.color, &self.profile);
-                let mut reference = config.model.get_reference_color(color);
+                let mut channels = config.model.channels(self.color, &self.profile);
                 let range = config.model.channel_ranges()[channel];
-                reference[channel] = range.x + (range.y - range.x) * factor;
-                self.color = config.model.from_reference_color(reference);
+                channels[channel] = range.x + (range.y - range.x) * factor;
+                self.color = config.model.color_from_channels(channels);
             }
         }
 
@@ -854,15 +838,14 @@ impl ColorSelectorState {
     fn plane_indicator_position(&self, index: usize) -> Option<Vec2> {
         let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
         let texture_size = self.plane_targets.get(index)?.1.width() as f32;
-        let color = config.model.convert_to_self(self.color, &self.profile);
-        let reference = config.model.get_reference_color(color);
+        let channels = config.model.channels(self.color, &self.profile);
         let ranges = config.model.channel_ranges();
         let variable_channels = self.plane_variable_channels(config);
         let mut uv = Vec2::ZERO;
         let mut variable_index = 0;
         for channel in 0..3 {
             if variable_channels & (1 << channel) != 0 {
-                uv[variable_index] = ((reference[channel] - ranges[channel].x)
+                uv[variable_index] = ((channels[channel] - ranges[channel].x)
                     / (ranges[channel].y - ranges[channel].x))
                     .clamp(0.0, 1.0);
                 variable_index += 1;
@@ -892,10 +875,9 @@ impl ColorSelectorState {
         }
         let texture_size = self.plane_targets.get(index)?.1.width() as f32;
         let channel = self.plane_primary_channel(config) as usize;
-        let color = config.model.convert_to_self(self.color, &self.profile);
-        let reference = config.model.get_reference_color(color);
+        let channels = config.model.channels(self.color, &self.profile);
         let range = config.model.channel_ranges()[channel];
-        let factor = ((reference[channel] - range.x) / (range.y - range.x)).clamp(0.0, 1.0);
+        let factor = ((channels[channel] - range.x) / (range.y - range.x)).clamp(0.0, 1.0);
         let angle = if config.reversed_ring {
             -factor * std::f32::consts::TAU - config.ring_rotation
         } else {
@@ -914,15 +896,13 @@ impl ColorSelectorState {
 
     fn bar_indicator_position(&self, index: usize) -> Option<f32> {
         let config = self.presets.get(self.selected_preset)?.bars.get(index)?;
-        let color = config.model.convert_to_self(self.color, &self.profile);
-        let reference = config.model.get_reference_color(color);
+        let channels = config.model.channels(self.color, &self.profile);
         let range = config.model.channel_ranges()[config.channel as usize];
-        Some(((reference[config.channel as usize] - range.x) / (range.y - range.x)).clamp(0.0, 1.0))
+        Some(((channels[config.channel as usize] - range.x) / (range.y - range.x)).clamp(0.0, 1.0))
     }
 
     fn indicator_color(&self) -> gpui::Rgba {
-        let gray = ColorModel::Gray.convert_to_self(self.color, &self.profile);
-        let value = ColorModel::Gray.get_reference_color(gray).x;
+        let value = ColorModel::Gray.channels(self.color, &self.profile).x;
         if value > 0.5 {
             rgb(0x000000)
         } else {
@@ -949,21 +929,18 @@ impl ColorSelectorState {
         let queue = cx.render_queue();
 
         for (config, (mesh, texture, view)) in preset.planes.iter().zip(&self.plane_targets) {
-            let reference_color = config.model.convert_to_self(self.color, &self.profile);
-            let reference = config.model.get_reference_color(reference_color);
             let settings = GradientSettings::new_plane(
                 &self.profile,
-                reference,
+                config.model.channels(self.color, &self.profile),
                 config,
                 self.primary_channel_override(config.model),
-                config.primary_channel_ring_width,
                 texture.width() as f32,
             );
 
             if config.show_primary_channel_ring {
                 self.ring_pipeline.draw(device, queue, &settings, view);
             }
-            self.plane_pipeline.draw(
+            self.gradient_pipeline.draw(
                 device,
                 queue,
                 mesh,
@@ -973,17 +950,14 @@ impl ColorSelectorState {
             );
         }
 
-        for (config, (mesh, texture, view)) in preset.bars.iter().zip(&self.bar_targets) {
-            let reference_color = config.model.convert_to_self(self.color, &self.profile);
-            let reference = config.model.get_reference_color(reference_color);
+        for (config, (mesh, _, view)) in preset.bars.iter().zip(&self.bar_targets) {
             let settings = GradientSettings::new_bar(
                 &self.profile,
-                reference,
+                config.model.channels(self.color, &self.profile),
                 config,
                 self.bar_uses_saturated_primary_channel(config),
-                texture.width() as f32,
             );
-            self.bar_pipeline
+            self.gradient_pipeline
                 .draw(device, queue, mesh, &settings, view, false);
         }
 
@@ -1024,9 +998,9 @@ impl ColorSelectorState {
                 .iter()
                 .map(|config| {
                     let (texture, view) =
-                        self.create_gradient_texture("plane_gradient", per_size, per_size, device);
+                        Self::create_gradient_texture("plane_gradient", per_size, per_size, device);
                     let scale = plane_scale(config, per_size as f32);
-                    let mesh = GradientMesh::new_scaled(device, config.shape.into(), scale);
+                    let mesh = GradientMesh::new_plane(device, config.shape, scale);
                     (mesh, texture, view)
                 })
                 .collect();
@@ -1039,8 +1013,8 @@ impl ColorSelectorState {
             .map(|config| {
                 let bar_height = config.bar_height.clamp(10.0, 40.0).round() as u32;
                 let (texture, view) =
-                    self.create_gradient_texture("bar_gradient", bar_width, bar_height, device);
-                let mesh = GradientMesh::new(device, render::GradientShape::Bar);
+                    Self::create_gradient_texture("bar_gradient", bar_width, bar_height, device);
+                let mesh = GradientMesh::new_bar(device);
                 (mesh, texture, view)
             })
             .collect();
@@ -1069,8 +1043,8 @@ impl ColorSelectorState {
         }
 
         let device = cx.render_device();
-        let (texture, view) = self.create_gradient_texture("bar_gradient", width, height, device);
-        let mesh = GradientMesh::new(device, render::GradientShape::Bar);
+        let (texture, view) = Self::create_gradient_texture("bar_gradient", width, height, device);
+        let mesh = GradientMesh::new_bar(device);
         self.bar_targets[index] = (mesh, texture, view);
         self.redraw_config(cx);
     }
@@ -1088,7 +1062,6 @@ impl ColorSelectorState {
     }
 
     fn create_gradient_texture(
-        &self,
         label: &'static str,
         width: u32,
         height: u32,
@@ -1104,7 +1077,7 @@ impl ColorSelectorState {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: self.surface_format,
+            format: TextureFormat::Rgba16Float,
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
@@ -1161,7 +1134,6 @@ impl Render for ColorSelectorState {
                 });
 
                 h_flex()
-                    .w_full()
                     .gap_1()
                     .children(
                         config
@@ -1280,13 +1252,12 @@ impl Render for ColorSelectorState {
                 }
             })
             .child(
-                v_flex().w_full().flex_shrink_0().gap(px(5.0)).children(
+                v_flex().flex_shrink_0().gap(px(5.0)).children(
                     self.plane_targets
                         .chunks(max_planes_per_row)
                         .enumerate()
                         .map(|(row_index, row)| {
                             h_flex()
-                                .w_full()
                                 .justify_evenly()
                                 .children(row.iter().enumerate().map(
                                     |(column_index, (_, texture, _))| {
@@ -1411,14 +1382,7 @@ impl Render for ColorSelectorState {
                         }),
                 ),
             )
-            .child(
-                v_flex()
-                    .w_full()
-                    .flex_shrink_0()
-                    .gap_2()
-                    .p_2()
-                    .children(bars),
-            )
+            .child(v_flex().flex_shrink_0().gap_2().p_2().children(bars))
             .child(
                 div().flex_shrink_0().child(
                     RadioGroup::horizontal("preset-radios")
@@ -1430,24 +1394,5 @@ impl Render for ColorSelectorState {
                 ),
             )
             .into_any_element()
-    }
-}
-
-#[derive(IntoElement)]
-pub struct ColorSelector {
-    state: Entity<ColorSelectorState>,
-}
-
-impl ColorSelector {
-    pub fn new(state: &Entity<ColorSelectorState>) -> Self {
-        Self {
-            state: state.clone(),
-        }
-    }
-}
-
-impl RenderOnce for ColorSelector {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        self.state
     }
 }

@@ -6,11 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bevy_math.workspace = true
 bitflags.workspace = true
 bytemuck.workspace = true
 cyancia_color.workspace = true
-cyancia_math.workspace = true
 cyancia_render.workspace = true
 cyancia_widgets.workspace = true
 encase.workspace = true

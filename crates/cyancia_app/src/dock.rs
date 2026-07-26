@@ -10,13 +10,12 @@ use cyancia_canvas::{
 };
 use cyancia_color::{Color, model::rgb::Rgb};
 use cyancia_color_selector::{
-    ColorModel, ColorSelector, ColorSelectorState, GradientPlaneShape,
+    ColorModel, ColorSelectorState, GradientPlaneShape,
     config::{
         ColorSelectorConfig, ColorSelectorConfigEditorState, ColorSelectorConfigEvent,
         GradientBarConfig, GradientPlaneConfig, GradientPlaneFlipAxis,
     },
 };
-use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolFunction, ToolProxies, ToolProxyId};
 use cyancia_utils::log_err::LogErr;
 use gpui::{
@@ -384,7 +383,7 @@ impl ColorSelectorDock {
                     show_primary_channel_ring: true,
                     primary_channel_ring_width: 20.0,
                     saturated_primary_channel: true,
-                    ring_rotation: 90.0,
+                    ring_rotation: std::f32::consts::FRAC_PI_2,
                     reversed_ring: false,
                 },
             ],
@@ -534,7 +533,7 @@ impl ColorSelectorDock {
 impl EventEmitter<PanelEvent> for ColorSelectorDock {}
 
 impl Focusable for ColorSelectorDock {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
@@ -544,7 +543,7 @@ impl Panel for ColorSelectorDock {
         "color_selector"
     }
 
-    fn title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         "Color Selector"
     }
 }
@@ -556,7 +555,7 @@ impl Render for ColorSelectorDock {
             .min_w_0()
             .min_h_0()
             .overflow_y_scrollbar()
-            .child(ColorSelector::new(&self.color_selector))
+            .child(self.color_selector.clone())
             .child(
                 div().flex_shrink_0().child(
                     Button::new("open-editor")

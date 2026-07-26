@@ -26,7 +26,7 @@ struct Settings {
     rgb_to_xyz: mat3x3f,
     xyz_to_rgb: mat3x3f,
     channel_ranges: array<vec4f, 3>,
-    reference: vec3f,
+    base_channels: vec3f,
     // Gray,
     // Hsl,
     // Hsv,
@@ -45,8 +45,7 @@ struct Settings {
     primary_channel: u32,
     ring_rotation: f32,
     reversed_ring: u32,
-    saturated_primary_channel: u32,
-    saturated_bar: u32,
+    saturate_primary_channel: u32,
     ring_width: f32,
     texture_size: f32,
 }
@@ -139,8 +138,8 @@ fn ring_vertex(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4f {
-    var ch = settings.reference;
-    if (settings.saturated_bar != 0u) {
+    var ch = settings.base_channels;
+    if (settings.saturate_primary_channel != 0u) {
         ch = saturate_primary_channel(ch);
     }
     var j = 0u;
@@ -179,8 +178,8 @@ fn ring_fragment(in: VertexOutput) -> @location(0) vec4f {
     }
     let channel_factor = fract(angle / 6.283185307179586);
 
-    var ch = settings.reference;
-    if (settings.saturated_primary_channel != 0u) {
+    var ch = settings.base_channels;
+    if (settings.saturate_primary_channel != 0u) {
         ch = saturate_primary_channel(ch);
     }
     ch[settings.primary_channel] = mix(
