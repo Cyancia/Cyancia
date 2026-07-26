@@ -967,6 +967,7 @@ pub struct DabInfo {
 // TODO This should be renamed to RendererResources
 pub struct StrokeResources {
     pub external_var_layouts: Vec<BindGroupLayoutEntry>,
+    // FIXME This should be retrieved every time updates. Or the value is never updated.
     pub external_var_buffers: Vec<Buffer>,
     pub referenced_textures: TextureAtlas,
 
