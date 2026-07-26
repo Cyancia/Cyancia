@@ -6,6 +6,23 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+bevy_math.workspace = true
+bytemuck.workspace = true
+cyancia_color.workspace = true
+cyancia_math.workspace = true
+cyancia_render.workspace = true
+encase.workspace = true
+parse-display.workspace = true
+glam.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+moxcms.workspace = true
+wesl.workspace = true
+wgpu.workspace = true
+
+[build-dependencies]
+cyancia_color.workspace = true
+wesl.workspace = true
 
 [lints]
 workspace = true

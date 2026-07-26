@@ -36,7 +36,7 @@ impl Rgb {
         Self::new(rgb.r, rgb.g, rgb.b)
     }
 
-    pub fn to_xyz(&self, rgb_to_xyz: Matrix3f) -> Xyz {
+    pub fn into_xyz(&self, rgb_to_xyz: Matrix3f) -> Xyz {
         let xyz =
             moxcms::Xyz::from_linear_rgb(moxcms::Rgb::new(self.r, self.g, self.b), rgb_to_xyz);
         Xyz::new(xyz.x, xyz.y, xyz.z)
@@ -85,7 +85,7 @@ mod tests {
 
         roundtrip_test(
             Rgb::new,
-            |rgb| rgb.to_xyz(rgb_to_xyz),
+            |rgb| rgb.into_xyz(rgb_to_xyz),
             |xyz| Rgb::from_xyz(xyz, xyz_to_rgb),
         );
     }

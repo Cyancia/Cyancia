@@ -12,3 +12,4 @@ workspace = true
 bevy_math.workspace = true
 glam.workspace = true
 gpui.workspace = true
+moxcms.workspace = true

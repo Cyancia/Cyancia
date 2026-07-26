@@ -1711,6 +1711,8 @@ dependencies = [
  "cyancia_brush",
  "cyancia_bucket_tool",
  "cyancia_canvas",
+ "cyancia_color",
+ "cyancia_color_selector",
  "cyancia_image",
  "cyancia_render",
  "cyancia_selection_tool",
@@ -1730,6 +1732,7 @@ dependencies = [
  "gpui_wgpu",
  "image",
  "log",
+ "moxcms",
  "parking_lot",
  "rfd",
  "thiserror 2.0.18",
@@ -1869,6 +1872,7 @@ name = "cyancia_color"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cyancia_math",
  "cyancia_utils",
  "glam",
  "gpui",
@@ -1882,6 +1886,21 @@ dependencies = [
 [[package]]
 name = "cyancia_color_selector"
 version = "0.1.0"
+dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "cyancia_color",
+ "cyancia_math",
+ "cyancia_render",
+ "encase",
+ "glam",
+ "gpui",
+ "gpui-component",
+ "moxcms",
+ "parse-display",
+ "wesl",
+ "wgpu",
+]
 
 [[package]]
 name = "cyancia_cyan"
@@ -1941,6 +1960,7 @@ dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "glam",
  "gpui",
+ "moxcms",
 ]
 
 [[package]]

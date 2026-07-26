@@ -1,4 +1,5 @@
 use glam::{Mat3, Vec2};
+use moxcms::Matrix3f;
 
 pub trait Mat3ScaleRotattionTranslationWithAnchor {
     fn from_scale_angle_translation_with_anchor(
@@ -27,5 +28,20 @@ impl Mat3ScaleRotattionTranslationWithAnchor for Mat3 {
         let m12 = translation.y - (anchor.x * m10 + anchor.y * m11);
 
         Self::from_cols_array(&[m00, m10, 0.0, m01, m11, 0.0, m02, m12, 1.0])
+    }
+}
+
+pub trait FromMoxcmsMatrix3f {
+    fn from_moxcms(mat: Matrix3f) -> Self;
+}
+
+impl FromMoxcmsMatrix3f for Mat3 {
+    fn from_moxcms(mat: Matrix3f) -> Self {
+        // Convert row major matrix to column major
+        Self::from_cols_array_2d(&[
+            [mat.v[0][0], mat.v[1][0], mat.v[2][0]],
+            [mat.v[0][1], mat.v[1][1], mat.v[2][1]],
+            [mat.v[0][2], mat.v[1][2], mat.v[2][2]],
+        ])
     }
 }

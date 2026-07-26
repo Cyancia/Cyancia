@@ -8,6 +8,12 @@ use cyancia_canvas::{
     tools::PanTool,
     widget::{canvas::CanvasWidget, layer_stack::LayerStackWidget},
 };
+use cyancia_color::{Color, model::rgb::Rgb};
+use cyancia_color_selector::{
+    ColorModel, ColorSelector, ColorSelectorState, GradientPlaneConfig, GradientPlaneShape,
+    SelectorModePreset,
+};
+use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_tools::{ToolFunction, ToolProxies, ToolProxyId};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
@@ -19,6 +25,7 @@ use gpui_component::{
     list::{List, ListEvent, ListState},
 };
 use log::info;
+use moxcms::ColorProfile;
 
 macro_rules! test_dummy_dock {
     ($name:ident) => {
@@ -329,5 +336,68 @@ impl Render for BrushPresetDock {
             .p_1()
             .size_full()
             .child(List::new(&self.list_state).small().size_full())
+    }
+}
+
+pub struct ColorSelectorDock {
+    focus_handle: FocusHandle,
+    color_selector: Entity<ColorSelectorState>,
+}
+
+impl ColorSelectorDock {
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            focus_handle: cx.focus_handle(),
+            color_selector: cx.new(|cx| {
+                ColorSelectorState::new(
+                    Color::Rgb(Rgb::new(0.0, 0.0, 0.0)),
+                    ColorProfile::new_srgb(),
+                    vec![
+                        SelectorModePreset {
+                            name: "RGB".to_string(),
+                            planes: vec![GradientPlaneConfig {
+                                model: ColorModel::Rgb,
+                                shape: GradientPlaneShape::Square,
+                                variable_channels: 0b110,
+                            }],
+                        },
+                        SelectorModePreset {
+                            name: "HSV".to_string(),
+                            planes: vec![GradientPlaneConfig {
+                                model: ColorModel::OkHsv,
+                                shape: GradientPlaneShape::Triangle,
+                                variable_channels: 0b110,
+                            }],
+                        },
+                    ],
+                    0,
+                    cx,
+                )
+            }),
+        }
+    }
+}
+
+impl EventEmitter<PanelEvent> for ColorSelectorDock {}
+
+impl Focusable for ColorSelectorDock {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Panel for ColorSelectorDock {
+    fn panel_name(&self) -> &'static str {
+        "color_selector"
+    }
+
+    fn title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        "Color Selector"
+    }
+}
+
+impl Render for ColorSelectorDock {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        ColorSelector::new(&self.color_selector)
     }
 }

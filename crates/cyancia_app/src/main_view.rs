@@ -17,7 +17,8 @@ use gpui_component::{
 };
 
 use crate::dock::{
-    BrushPresetDock, CanvasDock, CurrentCanvasLayersDock, FiltersDock, LayersDock, ToolOptionsDock,
+    BrushPresetDock, CanvasDock, ColorSelectorDock, CurrentCanvasLayersDock, FiltersDock,
+    LayersDock, ToolOptionsDock,
 };
 
 fn default_dock_layout(
@@ -33,6 +34,7 @@ fn default_dock_layout(
                 Arc::new(cx.new(|cx| ToolOptionsDock::new(window, cx))),
                 Arc::new(cx.new(|cx| CurrentCanvasLayersDock::new(window, cx))),
                 Arc::new(cx.new(|cx| BrushPresetDock::new(window, cx))),
+                Arc::new(cx.new(|cx| ColorSelectorDock::new(cx))),
             ],
             dock_area,
             window,

@@ -11,7 +11,7 @@ fn rgb_from_xyz(xyz: Xyz, xyz_to_rgb: mat3x3f) -> Rgb {
     return Rgb(rgb.x, rgb.y, rgb.z);
 }
 
-fn rgb_to_xyz(rgb: Rgb, rgb_to_xyz: mat3x3f) -> Xyz {
+fn rgb_into_xyz(rgb: Rgb, rgb_to_xyz: mat3x3f) -> Xyz {
     let xyz = rgb_to_xyz * vec3f(rgb.r, rgb.g, rgb.b);
     return Xyz(xyz.x, xyz.y, xyz.z);
 }

@@ -1,3 +1,5 @@
+use crate::model::xyz::Xyz;
+
 /// A single-channel grayscale value.
 ///
 /// Represents a neutral (achromatic) luminance in `[0.0, 1.0]`.
@@ -14,5 +16,13 @@ pub struct Gray {
 impl Gray {
     pub const fn new(v: f32) -> Self {
         Self { v }
+    }
+
+    pub fn from_xyz(xyz: Xyz) -> Self {
+        Self::new(xyz.y)
+    }
+
+    pub fn into_xyz(self) -> Xyz {
+        Xyz::new(0.0, self.v, 0.0)
     }
 }
