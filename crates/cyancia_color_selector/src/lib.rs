@@ -10,8 +10,10 @@ use cyancia_color::{
 use cyancia_render::render_context::RenderContextAppExt;
 use glam::{Vec2, Vec3};
 use gpui::{
-    App, AppContext, Bounds, Context, Entity, IntoElement, ObjectFit, ParentElement, Pixels,
-    Render, RenderOnce, Size, Styled, SurfaceSource, Window, div, px, surface,
+    App, AppContext, Bounds, Context, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
+    ParentElement, Pixels, Point, Render, RenderOnce, Size, StatefulInteractiveElement, Styled,
+    SurfaceSource, Window, div, px, relative, rgb, surface,
 };
 use gpui_component::{
     ElementExt, Sizable, h_flex,
@@ -33,6 +35,38 @@ use crate::{
 
 pub mod config;
 pub mod render;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ColorSelectorEvent {
+    Confirmed(Color),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SurfaceTarget {
+    Plane(usize),
+    Bar(usize),
+}
+
+#[derive(Clone)]
+struct SurfaceDrag {
+    selector: EntityId,
+    target: SurfaceTarget,
+}
+
+struct SurfaceDragPreview;
+
+impl Render for SurfaceDragPreview {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActiveSelection {
+    Plane(usize),
+    Ring(usize),
+    Bar(usize),
+}
 
 const MAX_PLANES_PER_ROW: usize = 2;
 const MAX_PLANE_SIZE: u32 = 256;
@@ -242,6 +276,67 @@ impl ColorModel {
     }
 }
 
+fn plane_scale(config: &GradientPlaneConfig, texture_size: f32) -> f32 {
+    if !config.show_primary_channel_ring {
+        return 1.0;
+    }
+
+    let antialias_width = 1.0 / texture_size;
+    let inner_radius = (0.5
+        - antialias_width
+        - (config.primary_channel_ring_width + GRADIENT_RING_GAP) / texture_size)
+        .max(0.0);
+    let circumradius = match config.shape {
+        GradientPlaneShape::Square => std::f32::consts::SQRT_2,
+        GradientPlaneShape::Triangle => 1.0,
+    };
+    2.0 * inner_radius / circumradius
+}
+
+fn clamp_plane_uv(shape: GradientPlaneShape, uv: Vec2) -> Vec2 {
+    match shape {
+        GradientPlaneShape::Square => uv.clamp(Vec2::ZERO, Vec2::ONE),
+        GradientPlaneShape::Triangle => {
+            let y = uv.y.clamp(0.0, 1.0);
+            let min_x = 0.5 * (1.0 - y);
+            let max_x = 0.5 * (1.0 + y);
+            Vec2::new(uv.x.clamp(min_x, max_x), y)
+        }
+    }
+}
+
+fn plane_position_to_uv(shape: GradientPlaneShape, position: Vec2) -> Vec2 {
+    match shape {
+        GradientPlaneShape::Square => (position + Vec2::ONE) * 0.5,
+        GradientPlaneShape::Triangle => {
+            Vec2::new(0.5 + position.x / 3.0_f32.sqrt(), (1.0 - position.y) / 1.5)
+        }
+    }
+}
+
+fn plane_uv_to_position(shape: GradientPlaneShape, uv: Vec2) -> Vec2 {
+    match shape {
+        GradientPlaneShape::Square => uv * 2.0 - Vec2::ONE,
+        GradientPlaneShape::Triangle => Vec2::new(3.0_f32.sqrt() * (uv.x - 0.5), 1.0 - 1.5 * uv.y),
+    }
+}
+
+fn rotate_clockwise(position: Vec2, rotation: f32) -> Vec2 {
+    let (sin, cos) = rotation.sin_cos();
+    Vec2::new(
+        cos * position.x + sin * position.y,
+        -sin * position.x + cos * position.y,
+    )
+}
+
+fn rotate_counterclockwise(position: Vec2, rotation: f32) -> Vec2 {
+    let (sin, cos) = rotation.sin_cos();
+    Vec2::new(
+        cos * position.x - sin * position.y,
+        sin * position.x + cos * position.y,
+    )
+}
+
 pub struct ColorSelectorState {
     color: Color,
     profile: ColorProfile,
@@ -256,6 +351,9 @@ pub struct ColorSelectorState {
     bar_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
     bar_inputs: Vec<Entity<InputState>>,
     primary_channel_overrides: Vec<[Option<u8>; COLOR_MODEL_COUNT]>,
+    plane_bounds: Vec<Bounds<Pixels>>,
+    bar_bounds: Vec<Bounds<Pixels>>,
+    active_selection: Option<ActiveSelection>,
 
     widget_bounds: Bounds<Pixels>,
     surface_format: TextureFormat,
@@ -292,6 +390,9 @@ impl ColorSelectorState {
             bar_targets: Vec::new(),
             bar_inputs: Vec::new(),
             primary_channel_overrides: vec![[None; COLOR_MODEL_COUNT]; preset_count],
+            plane_bounds: Vec::new(),
+            bar_bounds: Vec::new(),
+            active_selection: None,
 
             widget_bounds: Bounds::default(),
             surface_format: TextureFormat::Rgba16Float,
@@ -321,11 +422,15 @@ impl ColorSelectorState {
             self.bar_targets.clear();
             self.bar_inputs.clear();
             self.primary_channel_overrides.clear();
+            self.plane_bounds.clear();
+            self.bar_bounds.clear();
+            self.active_selection = None;
             cx.notify();
             return;
         }
 
         self.selected_preset = self.selected_preset.min(self.presets.len() - 1);
+        self.active_selection = None;
         self.primary_channel_overrides
             .resize(self.presets.len(), [None; COLOR_MODEL_COUNT]);
         self.rebuild_bar_inputs(window, cx);
@@ -464,6 +569,321 @@ impl ColorSelectorState {
         self.redraw_config(cx);
     }
 
+    fn plane_variable_channels(&self, config: &GradientPlaneConfig) -> u8 {
+        self.primary_channel_override(config.model)
+            .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel))
+    }
+
+    fn update_plane_bounds(&mut self, index: usize, bounds: Bounds<Pixels>) {
+        if self.plane_bounds.len() <= index {
+            self.plane_bounds.resize(index + 1, Bounds::default());
+        }
+        self.plane_bounds[index] = bounds;
+    }
+
+    fn update_bar_bounds(&mut self, index: usize, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
+        if self.bar_bounds.len() <= index {
+            self.bar_bounds.resize(index + 1, Bounds::default());
+        }
+        self.bar_bounds[index] = bounds;
+        self.update_bar_target_width(index, bounds.size.width, cx);
+    }
+
+    fn plane_uv_from_window_position(
+        &self,
+        index: usize,
+        position: Point<Pixels>,
+    ) -> Option<(Vec2, bool)> {
+        let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
+        let bounds = *self.plane_bounds.get(index)?;
+        let width = bounds.size.width.as_f32();
+        let height = bounds.size.height.as_f32();
+        if width <= 0.0 || height <= 0.0 {
+            return None;
+        }
+
+        let output_position = Vec2::new(
+            2.0 * (position.x - bounds.origin.x).as_f32() / width - 1.0,
+            1.0 - 2.0 * (position.y - bounds.origin.y).as_f32() / height,
+        );
+        let mut input_position = rotate_counterclockwise(output_position, config.rotation);
+        if config.flip_axis.contains(config::GradientPlaneFlipAxis::X) {
+            input_position.x = -input_position.x;
+        }
+        if config.flip_axis.contains(config::GradientPlaneFlipAxis::Y) {
+            input_position.y = -input_position.y;
+        }
+
+        let scale = plane_scale(config, width);
+        if scale <= f32::EPSILON {
+            return None;
+        }
+        input_position /= scale;
+        let uv = plane_position_to_uv(config.shape, input_position);
+        let clamped = clamp_plane_uv(config.shape, uv);
+        Some((clamped, (uv - clamped).length_squared() <= 1e-6))
+    }
+
+    fn start_plane_selection(
+        &mut self,
+        index: usize,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(config) = self
+            .presets
+            .get(self.selected_preset)
+            .and_then(|preset| preset.planes.get(index))
+            .cloned()
+        else {
+            return;
+        };
+        let Some(bounds) = self.plane_bounds.get(index).copied() else {
+            return;
+        };
+        let size = bounds.size.width.as_f32();
+        if size <= 0.0 {
+            return;
+        }
+
+        let texture_uv = Vec2::new(
+            (position.x - bounds.origin.x).as_f32() / size,
+            1.0 - (position.y - bounds.origin.y).as_f32() / size,
+        );
+        let radius = (texture_uv - Vec2::splat(0.5)).length();
+        let antialias_width = 1.0 / size;
+        let outer_radius = 0.5 - antialias_width;
+        let inner_radius = (outer_radius - config.primary_channel_ring_width / size).max(0.0);
+
+        self.active_selection = if config.show_primary_channel_ring
+            && radius >= inner_radius - antialias_width
+            && radius <= outer_radius + antialias_width
+        {
+            Some(ActiveSelection::Ring(index))
+        } else if self
+            .plane_uv_from_window_position(index, position)
+            .is_some_and(|(_, inside)| inside)
+        {
+            Some(ActiveSelection::Plane(index))
+        } else {
+            None
+        };
+
+        self.update_active_selection(position, window, cx);
+    }
+
+    fn start_bar_selection(
+        &mut self,
+        index: usize,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if index >= self.bar_bounds.len() {
+            return;
+        }
+        self.active_selection = Some(ActiveSelection::Bar(index));
+        self.update_active_selection(position, window, cx);
+    }
+
+    fn update_active_selection(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(selection) = self.active_selection else {
+            return;
+        };
+
+        match selection {
+            ActiveSelection::Plane(index) => {
+                let Some(config) = self
+                    .presets
+                    .get(self.selected_preset)
+                    .and_then(|preset| preset.planes.get(index))
+                    .cloned()
+                else {
+                    return;
+                };
+                let Some((uv, _)) = self.plane_uv_from_window_position(index, position) else {
+                    return;
+                };
+                let color = config.model.convert_to_self(self.color, &self.profile);
+                let mut reference = config.model.get_reference_color(color);
+                let ranges = config.model.channel_ranges();
+                let mut variable_index = 0;
+                let variable_channels = self.plane_variable_channels(&config);
+                for channel in 0..3 {
+                    if variable_channels & (1 << channel) != 0 {
+                        reference[channel] = ranges[channel].x
+                            + (ranges[channel].y - ranges[channel].x) * uv[variable_index];
+                        variable_index += 1;
+                    }
+                }
+                self.color = config.model.from_reference_color(reference);
+            }
+            ActiveSelection::Ring(index) => {
+                let Some(config) = self
+                    .presets
+                    .get(self.selected_preset)
+                    .and_then(|preset| preset.planes.get(index))
+                    .cloned()
+                else {
+                    return;
+                };
+                let Some(bounds) = self.plane_bounds.get(index).copied() else {
+                    return;
+                };
+                let size = bounds.size.width.as_f32();
+                let centered = Vec2::new(
+                    (position.x - bounds.origin.x).as_f32() / size - 0.5,
+                    0.5 - (position.y - bounds.origin.y).as_f32() / size,
+                );
+                if centered.length_squared() <= f32::EPSILON {
+                    return;
+                }
+                let mut angle = centered.y.atan2(centered.x) + config.ring_rotation;
+                if config.reversed_ring {
+                    angle = -angle;
+                }
+                let factor = (angle / std::f32::consts::TAU).rem_euclid(1.0);
+                let channel = self.plane_primary_channel(&config) as usize;
+                let color = config.model.convert_to_self(self.color, &self.profile);
+                let mut reference = config.model.get_reference_color(color);
+                let range = config.model.channel_ranges()[channel];
+                reference[channel] = range.x + (range.y - range.x) * factor;
+                self.color = config.model.from_reference_color(reference);
+            }
+            ActiveSelection::Bar(index) => {
+                let Some(config) = self
+                    .presets
+                    .get(self.selected_preset)
+                    .and_then(|preset| preset.bars.get(index))
+                    .cloned()
+                else {
+                    return;
+                };
+                let Some(bounds) = self.bar_bounds.get(index).copied() else {
+                    return;
+                };
+                let factor = ((position.x - bounds.origin.x).as_f32() / bounds.size.width.as_f32())
+                    .clamp(0.0, 1.0);
+                let channel = config.channel as usize;
+                let color = config.model.convert_to_self(self.color, &self.profile);
+                let mut reference = config.model.get_reference_color(color);
+                let range = config.model.channel_ranges()[channel];
+                reference[channel] = range.x + (range.y - range.x) * factor;
+                self.color = config.model.from_reference_color(reference);
+            }
+        }
+
+        self.sync_bar_inputs(window, cx);
+        self.redraw_config(cx);
+    }
+
+    fn finish_active_selection(
+        &mut self,
+        target: SurfaceTarget,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let matches_target = matches!(
+            (self.active_selection, target),
+            (Some(ActiveSelection::Plane(active)), SurfaceTarget::Plane(target))
+                | (Some(ActiveSelection::Ring(active)), SurfaceTarget::Plane(target))
+                | (Some(ActiveSelection::Bar(active)), SurfaceTarget::Bar(target))
+                if active == target
+        );
+        if !matches_target {
+            return;
+        }
+        self.update_active_selection(position, window, cx);
+        self.active_selection = None;
+        cx.emit(ColorSelectorEvent::Confirmed(self.color));
+    }
+
+    fn plane_indicator_position(&self, index: usize) -> Option<Vec2> {
+        let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
+        let texture_size = self.plane_targets.get(index)?.1.width() as f32;
+        let color = config.model.convert_to_self(self.color, &self.profile);
+        let reference = config.model.get_reference_color(color);
+        let ranges = config.model.channel_ranges();
+        let variable_channels = self.plane_variable_channels(config);
+        let mut uv = Vec2::ZERO;
+        let mut variable_index = 0;
+        for channel in 0..3 {
+            if variable_channels & (1 << channel) != 0 {
+                uv[variable_index] = ((reference[channel] - ranges[channel].x)
+                    / (ranges[channel].y - ranges[channel].x))
+                    .clamp(0.0, 1.0);
+                variable_index += 1;
+            }
+        }
+        uv = clamp_plane_uv(config.shape, uv);
+
+        let mut position =
+            plane_uv_to_position(config.shape, uv) * plane_scale(config, texture_size);
+        if config.flip_axis.contains(config::GradientPlaneFlipAxis::X) {
+            position.x = -position.x;
+        }
+        if config.flip_axis.contains(config::GradientPlaneFlipAxis::Y) {
+            position.y = -position.y;
+        }
+        position = rotate_clockwise(position, config.rotation);
+        Some(Vec2::new(
+            (position.x + 1.0) * 0.5,
+            (1.0 - position.y) * 0.5,
+        ))
+    }
+
+    fn ring_indicator_position(&self, index: usize) -> Option<Vec2> {
+        let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
+        if !config.show_primary_channel_ring {
+            return None;
+        }
+        let texture_size = self.plane_targets.get(index)?.1.width() as f32;
+        let channel = self.plane_primary_channel(config) as usize;
+        let color = config.model.convert_to_self(self.color, &self.profile);
+        let reference = config.model.get_reference_color(color);
+        let range = config.model.channel_ranges()[channel];
+        let factor = ((reference[channel] - range.x) / (range.y - range.x)).clamp(0.0, 1.0);
+        let angle = if config.reversed_ring {
+            -factor * std::f32::consts::TAU - config.ring_rotation
+        } else {
+            factor * std::f32::consts::TAU - config.ring_rotation
+        };
+        let antialias_width = 1.0 / texture_size;
+        let outer_radius = 0.5 - antialias_width;
+        let inner_radius =
+            (outer_radius - config.primary_channel_ring_width / texture_size).max(0.0);
+        let radius = (inner_radius + outer_radius) * 0.5;
+        Some(Vec2::new(
+            0.5 + angle.cos() * radius,
+            0.5 - angle.sin() * radius,
+        ))
+    }
+
+    fn bar_indicator_position(&self, index: usize) -> Option<f32> {
+        let config = self.presets.get(self.selected_preset)?.bars.get(index)?;
+        let color = config.model.convert_to_self(self.color, &self.profile);
+        let reference = config.model.get_reference_color(color);
+        let range = config.model.channel_ranges()[config.channel as usize];
+        Some(((reference[config.channel as usize] - range.x) / (range.y - range.x)).clamp(0.0, 1.0))
+    }
+
+    fn indicator_color(&self) -> gpui::Rgba {
+        let gray = ColorModel::Gray.convert_to_self(self.color, &self.profile);
+        let value = ColorModel::Gray.get_reference_color(gray).x;
+        if value > 0.5 {
+            rgb(0x000000)
+        } else {
+            rgb(0xffffff)
+        }
+    }
+
     fn update_widget_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
         let width_changed = self.widget_bounds.size.width != bounds.size.width;
         self.widget_bounds = bounds;
@@ -550,22 +970,7 @@ impl ColorSelectorState {
                 .map(|config| {
                     let (texture, view) =
                         self.create_gradient_texture("plane_gradient", per_size, per_size, device);
-                    let scale = if config.show_primary_channel_ring {
-                        let texture_size = per_size as f32;
-                        let antialias_width = 1.0 / texture_size;
-                        let inner_radius = (0.5
-                            - antialias_width
-                            - (config.primary_channel_ring_width + GRADIENT_RING_GAP)
-                                / texture_size)
-                            .max(0.0);
-                        let circumradius = match config.shape {
-                            GradientPlaneShape::Square => std::f32::consts::SQRT_2,
-                            GradientPlaneShape::Triangle => 1.0,
-                        };
-                        2.0 * inner_radius / circumradius
-                    } else {
-                        1.0
-                    };
+                    let scale = plane_scale(config, per_size as f32);
                     let mesh = GradientMesh::new_scaled(device, config.shape.into(), scale);
                     (mesh, texture, view)
                 })
@@ -584,6 +989,9 @@ impl ColorSelectorState {
                 (mesh, texture, view)
             })
             .collect();
+        self.plane_bounds
+            .resize(preset.planes.len(), Bounds::default());
+        self.bar_bounds.resize(preset.bars.len(), Bounds::default());
     }
 
     fn update_bar_target_width(&mut self, index: usize, width: Pixels, cx: &mut Context<Self>) {
@@ -618,6 +1026,7 @@ impl ColorSelectorState {
         }
 
         self.selected_preset = index;
+        self.active_selection = None;
         self.rebuild_bar_inputs(window, cx);
         self.update_targets(cx);
         self.redraw_config(cx);
@@ -650,12 +1059,16 @@ impl ColorSelectorState {
     }
 }
 
+impl EventEmitter<ColorSelectorEvent> for ColorSelectorState {}
+
 impl Render for ColorSelectorState {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.presets.is_empty() {
             return div().into_any_element();
         }
 
+        let indicator_color = self.indicator_color();
+        let selector_id = cx.entity_id();
         let bars = self.presets[self.selected_preset]
             .bars
             .iter()
@@ -687,8 +1100,16 @@ impl Render for ColorSelectorState {
                             .show_channel_label
                             .then(|| div().w(px(12.0)).flex_shrink_0().child(label)),
                     )
-                    .child(
+                    .child({
+                        let target = SurfaceTarget::Bar(index);
+                        let drag = SurfaceDrag {
+                            selector: selector_id,
+                            target,
+                        };
+                        let indicator_position = self.bar_indicator_position(index).unwrap_or(0.0);
                         div()
+                            .id(("color-bar-surface", index))
+                            .relative()
                             .flex_1()
                             .h(px(config.bar_height.clamp(10.0, 40.0)))
                             .on_prepaint({
@@ -696,15 +1117,54 @@ impl Render for ColorSelectorState {
                                 move |bounds, _, cx| {
                                     state
                                         .update(cx, |state, cx| {
-                                            state.update_bar_target_width(
-                                                index,
-                                                bounds.size.width,
-                                                cx,
-                                            );
+                                            state.update_bar_bounds(index, bounds, cx);
                                         })
                                         .ok();
                                 }
                             })
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                    this.start_bar_selection(index, event.position, window, cx);
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_drag(drag, |_, _, _, cx| {
+                                cx.stop_propagation();
+                                cx.new(|_| SurfaceDragPreview)
+                            })
+                            .on_drag_move(cx.listener(
+                                move |this, event: &DragMoveEvent<SurfaceDrag>, window, cx| {
+                                    let drag = event.drag(cx);
+                                    if drag.selector != cx.entity_id() || drag.target != target {
+                                        return;
+                                    }
+                                    this.update_active_selection(event.event.position, window, cx);
+                                    cx.stop_propagation();
+                                },
+                            ))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |this, event: &MouseUpEvent, window, cx| {
+                                    this.finish_active_selection(
+                                        target,
+                                        event.position,
+                                        window,
+                                        cx,
+                                    );
+                                }),
+                            )
+                            .on_mouse_up_out(
+                                MouseButton::Left,
+                                cx.listener(move |this, event: &MouseUpEvent, window, cx| {
+                                    this.finish_active_selection(
+                                        target,
+                                        event.position,
+                                        window,
+                                        cx,
+                                    );
+                                }),
+                            )
                             .child(
                                 surface(SurfaceSource::Texture {
                                     texture: texture.clone(),
@@ -715,8 +1175,19 @@ impl Render for ColorSelectorState {
                                 })
                                 .object_fit(ObjectFit::Fill)
                                 .size_full(),
-                            ),
-                    )
+                            )
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .bottom_0()
+                                    .left(relative(indicator_position))
+                                    .ml(-px(2.0))
+                                    .w(px(4.0))
+                                    .border_1()
+                                    .border_color(indicator_color),
+                            )
+                    })
                     .children(config.show_precise_spin_box.then(|| {
                         div()
                             .w(px(96.0))
@@ -739,19 +1210,143 @@ impl Render for ColorSelectorState {
                         .ok();
                 }
             })
-            .child(v_flex().w_full().flex_shrink_0().children(
-                self.plane_targets.chunks(MAX_PLANES_PER_ROW).map(|row| {
-                    h_flex().w_full().justify_evenly().children(row.iter().map(
-                        |(_, texture, _)| {
-                            surface(SurfaceSource::Texture {
-                                texture: texture.clone(),
-                                size: Size::new(texture.width().into(), texture.height().into()),
-                            })
-                            .size(px(texture.width() as f32))
-                        },
-                    ))
-                }),
-            ))
+            .child(
+                v_flex().w_full().flex_shrink_0().children(
+                    self.plane_targets
+                        .chunks(MAX_PLANES_PER_ROW)
+                        .enumerate()
+                        .map(|(row_index, row)| {
+                            h_flex()
+                                .w_full()
+                                .justify_evenly()
+                                .children(row.iter().enumerate().map(
+                                    |(column_index, (_, texture, _))| {
+                                        let index = row_index * MAX_PLANES_PER_ROW + column_index;
+                                        let target = SurfaceTarget::Plane(index);
+                                        let drag = SurfaceDrag {
+                                            selector: selector_id,
+                                            target,
+                                        };
+                                        let plane_indicator = self.plane_indicator_position(index);
+                                        let ring_indicator = self.ring_indicator_position(index);
+                                        let texture_size = texture.width() as f32;
+
+                                        div()
+                                    .id(("color-plane-surface", index))
+                                    .relative()
+                                    .size(px(texture_size))
+                                    .on_prepaint({
+                                        let state = cx.entity().downgrade();
+                                        move |bounds, _, cx| {
+                                            state
+                                                .update(cx, |state, _| {
+                                                    state.update_plane_bounds(index, bounds);
+                                                })
+                                                .ok();
+                                        }
+                                    })
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &MouseDownEvent, window, cx| {
+                                                this.start_plane_selection(
+                                                    index,
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                );
+                                                cx.stop_propagation();
+                                            },
+                                        ),
+                                    )
+                                    .on_drag(drag, |_, _, _, cx| {
+                                        cx.stop_propagation();
+                                        cx.new(|_| SurfaceDragPreview)
+                                    })
+                                    .on_drag_move(cx.listener(
+                                        move |this,
+                                              event: &DragMoveEvent<SurfaceDrag>,
+                                              window,
+                                              cx| {
+                                            let drag = event.drag(cx);
+                                            if drag.selector != cx.entity_id()
+                                                || drag.target != target
+                                            {
+                                                return;
+                                            }
+                                            this.update_active_selection(
+                                                event.event.position,
+                                                window,
+                                                cx,
+                                            );
+                                            cx.stop_propagation();
+                                        },
+                                    ))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &MouseUpEvent, window, cx| {
+                                                this.finish_active_selection(
+                                                    target,
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ),
+                                    )
+                                    .on_mouse_up_out(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &MouseUpEvent, window, cx| {
+                                                this.finish_active_selection(
+                                                    target,
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ),
+                                    )
+                                    .child(
+                                        surface(SurfaceSource::Texture {
+                                            texture: texture.clone(),
+                                            size: Size::new(
+                                                texture.width().into(),
+                                                texture.height().into(),
+                                            ),
+                                        })
+                                        .size_full(),
+                                    )
+                                    .children(plane_indicator.map(|position| {
+                                        div()
+                                            .absolute()
+                                            .left(relative(position.x))
+                                            .top(relative(position.y))
+                                            .ml(-px(3.0))
+                                            .mt(-px(3.0))
+                                            .size(px(6.0))
+                                            .rounded_full()
+                                            .border_1()
+                                            .border_color(indicator_color)
+                                    }))
+                                    .children(ring_indicator.map(|position| {
+                                        div()
+                                            .absolute()
+                                            .left(relative(position.x))
+                                            .top(relative(position.y))
+                                            .ml(-px(3.0))
+                                            .mt(-px(3.0))
+                                            .size(px(6.0))
+                                            .rounded_full()
+                                            .border_1()
+                                            .border_color(indicator_color)
+                                    }))
+                                    },
+                                ))
+                        }),
+                ),
+            )
             .child(
                 v_flex()
                     .w_full()
