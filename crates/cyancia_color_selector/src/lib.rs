@@ -37,7 +37,6 @@ pub mod render;
 const MAX_PLANES_PER_ROW: usize = 2;
 const MAX_PLANE_SIZE: u32 = 256;
 const GRADIENT_RING_GAP: f32 = 5.0;
-const GRADIENT_BAR_HEIGHT: u32 = 20;
 const COLOR_MODEL_COUNT: usize = ColorModel::ALL.len();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
@@ -551,13 +550,10 @@ impl ColorSelectorState {
         self.bar_targets = preset
             .bars
             .iter()
-            .map(|_| {
-                let (texture, view) = self.create_gradient_texture(
-                    "bar_gradient",
-                    bar_width,
-                    GRADIENT_BAR_HEIGHT,
-                    device,
-                );
+            .map(|config| {
+                let bar_height = config.bar_height.clamp(10.0, 40.0).round() as u32;
+                let (texture, view) =
+                    self.create_gradient_texture("bar_gradient", bar_width, bar_height, device);
                 let mesh = GradientMesh::new(device, render::GradientShape::Bar);
                 (mesh, texture, view)
             })
@@ -565,19 +561,26 @@ impl ColorSelectorState {
     }
 
     fn update_bar_target_width(&mut self, index: usize, width: Pixels, cx: &mut Context<Self>) {
+        let Some(config) = self
+            .presets
+            .get(self.selected_preset)
+            .and_then(|preset| preset.bars.get(index))
+        else {
+            return;
+        };
         let width = width.as_f32().round().max(1.0) as u32;
+        let height = config.bar_height.clamp(10.0, 40.0).round() as u32;
         if self
             .bar_targets
             .get(index)
-            .is_some_and(|(_, texture, _)| texture.width() == width)
+            .is_some_and(|(_, texture, _)| texture.width() == width && texture.height() == height)
             || index >= self.bar_targets.len()
         {
             return;
         }
 
         let device = cx.render_device();
-        let (texture, view) =
-            self.create_gradient_texture("bar_gradient", width, GRADIENT_BAR_HEIGHT, device);
+        let (texture, view) = self.create_gradient_texture("bar_gradient", width, height, device);
         let mesh = GradientMesh::new(device, render::GradientShape::Bar);
         self.bar_targets[index] = (mesh, texture, view);
         self.redraw_config(cx);
@@ -661,7 +664,7 @@ impl Render for ColorSelectorState {
                     .child(
                         div()
                             .flex_1()
-                            .h(px(GRADIENT_BAR_HEIGHT as f32))
+                            .h(px(config.bar_height.clamp(10.0, 40.0)))
                             .on_prepaint({
                                 let state = cx.entity().downgrade();
                                 move |bounds, _, cx| {

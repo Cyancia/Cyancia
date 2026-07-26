@@ -53,6 +53,7 @@ bitflags::bitflags! {
 pub struct GradientBarConfig {
     pub model: ColorModel,
     pub channel: u8,
+    pub bar_height: f32,
     pub show_channel_label: bool,
     pub show_precise_spin_box: bool,
     pub show_primary_channel_lock: bool,
@@ -124,6 +125,7 @@ struct PlaneEditorControls {
 struct BarEditorControls {
     id: u64,
     model: Entity<ColorModelSelectState>,
+    bar_height: Entity<SpinSliderState>,
 }
 
 pub struct ColorSelectorConfigEditorState {
@@ -440,6 +442,11 @@ impl ColorSelectorConfigEditorState {
     ) -> BarEditorControls {
         let id = self.next_control_id();
         let model = Self::create_model_select(&ColorModel::ALL, config.model, window, cx);
+        let bar_height = cx.new(|cx| {
+            SpinSliderState::new(10.0, 40.0, window, cx)
+                .precision(1, window, cx)
+                .value(config.bar_height, window, cx)
+        });
 
         cx.subscribe_in(&model, window, move |this, _, event, _, cx| {
             if let SelectEvent::Confirm(Some(model)) = event {
@@ -454,8 +461,21 @@ impl ColorSelectorConfigEditorState {
             }
         })
         .detach();
+        cx.subscribe_in(&bar_height, window, move |this, _, event, _, cx| {
+            if let SpinSliderEvent::Change(height) = event {
+                if let Some(index) = this.bar_index(id) {
+                    this.active_config_mut().unwrap().bars[index].bar_height = *height;
+                    cx.notify();
+                }
+            }
+        })
+        .detach();
 
-        BarEditorControls { id, model }
+        BarEditorControls {
+            id,
+            model,
+            bar_height,
+        }
     }
 
     fn plane_index(&self, id: u64) -> Option<usize> {
@@ -509,6 +529,7 @@ impl ColorSelectorConfigEditorState {
         let config = GradientBarConfig {
             model: ColorModel::Rgb,
             channel: 0,
+            bar_height: 20.0,
             show_channel_label: true,
             show_precise_spin_box: true,
             show_primary_channel_lock: false,
@@ -812,6 +833,12 @@ impl ColorSelectorConfigEditorState {
                     .gap_2()
                     .child(div().w(px(110.)).child("Model"))
                     .child(div().flex_1().child(Select::new(&controls.model).small())),
+            )
+            .child(
+                SpinSlider::new(&controls.bar_height)
+                    .small()
+                    .prefix("Bar height: ")
+                    .suffix(" px"),
             )
             .child(
                 h_flex()

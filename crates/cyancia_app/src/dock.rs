@@ -388,6 +388,7 @@ impl ColorSelectorDock {
                 GradientBarConfig {
                     model: ColorModel::Rgb,
                     channel: 0,
+                    bar_height: 20.0,
                     show_channel_label: true,
                     show_precise_spin_box: true,
                     show_primary_channel_lock: true,
@@ -395,6 +396,7 @@ impl ColorSelectorDock {
                 GradientBarConfig {
                     model: ColorModel::Rgb,
                     channel: 1,
+                    bar_height: 20.0,
                     show_channel_label: true,
                     show_precise_spin_box: false,
                     show_primary_channel_lock: true,
@@ -402,6 +404,7 @@ impl ColorSelectorDock {
                 GradientBarConfig {
                     model: ColorModel::Rgb,
                     channel: 2,
+                    bar_height: 20.0,
                     show_channel_label: false,
                     show_precise_spin_box: true,
                     show_primary_channel_lock: true,
@@ -409,6 +412,7 @@ impl ColorSelectorDock {
                 GradientBarConfig {
                     model: ColorModel::Hsv,
                     channel: 0,
+                    bar_height: 20.0,
                     show_channel_label: true,
                     show_precise_spin_box: true,
                     show_primary_channel_lock: false,
