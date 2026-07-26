@@ -18,7 +18,7 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-use crate::{ColorModel, GradientPlaneShape};
+use crate::{GradientPlaneShape, config::GradientPlaneConfig};
 
 pub struct GradientPipeline {
     layout: BindGroupLayout,
@@ -98,6 +98,7 @@ impl GradientPipeline {
         mesh: &GradientMesh,
         settings: &GradientSettings,
         output: &TextureView,
+        preserve_output: bool,
     ) {
         let mut settings_buffer = DynamicBuffer::new(
             Some("gradient_settings_buffer".into()),
@@ -122,7 +123,11 @@ impl GradientPipeline {
                     depth_slice: None,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color::TRANSPARENT),
+                        load: if preserve_output {
+                            LoadOp::Load
+                        } else {
+                            LoadOp::Clear(Color::TRANSPARENT)
+                        },
                         store: StoreOp::Store,
                     },
                 })],
@@ -137,6 +142,126 @@ impl GradientPipeline {
         }
 
         queue.submit([ec.finish()]);
+    }
+}
+
+pub struct GradientRingPipeline {
+    layout: BindGroupLayout,
+    pipeline: RenderPipeline,
+    mesh: GradientMesh,
+}
+
+impl GradientRingPipeline {
+    pub fn new(device: &Device) -> Self {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("gradient_ring_layout"),
+            entries: BindGroupLayoutEntries::sequential(
+                ShaderStages::FRAGMENT,
+                (binding_types::uniform_buffer::<GradientSettings>(false),),
+            )
+            .as_ref(),
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("gradient_ring_shader"),
+            source: ShaderSource::Wgsl(include_wesl!("gradient").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("gradient_ring_pipeline_layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("gradient_ring_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("ring_vertex"),
+                compilation_options: Default::default(),
+                buffers: &[VertexBufferLayout {
+                    array_stride: 16,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[
+                        VertexAttribute {
+                            format: VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        VertexAttribute {
+                            format: VertexFormat::Float32x2,
+                            offset: 8,
+                            shader_location: 1,
+                        },
+                    ],
+                }],
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("ring_fragment"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba16Float,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            primitive: Default::default(),
+            depth_stencil: Default::default(),
+            multisample: Default::default(),
+            multiview_mask: Default::default(),
+            cache: Default::default(),
+        });
+        let mesh = GradientMesh::new(device, GradientShape::Square);
+
+        Self {
+            layout,
+            pipeline,
+            mesh,
+        }
+    }
+
+    pub fn draw(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        settings: &GradientSettings,
+        output: &TextureView,
+    ) {
+        let mut settings_buffer = DynamicBuffer::new(
+            Some("gradient_ring_settings_buffer".into()),
+            BufferUsages::UNIFORM,
+        );
+        settings_buffer.push(settings);
+        settings_buffer.write_buffer(device, queue);
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("gradient_ring_bind_group"),
+            layout: &self.layout,
+            entries: BindGroupEntries::sequential((settings_buffer.binding().unwrap(),)).as_ref(),
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("gradient_ring_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: output,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::TRANSPARENT),
+                        store: StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_vertex_buffer(0, self.mesh.vertices.slice(..));
+            pass.set_index_buffer(self.mesh.indices.slice(..), IndexFormat::Uint16);
+            pass.draw_indexed(0..self.mesh.n_indices, 0, 0..1);
+        }
+
+        queue.submit([encoder.finish()]);
     }
 }
 
@@ -171,7 +296,11 @@ pub struct GradientMesh {
 
 impl GradientMesh {
     pub fn new(device: &Device, shape: GradientShape) -> Self {
-        let (vertices, indices): (_, Vec<u16>) = match shape {
+        Self::new_scaled(device, shape, 1.0)
+    }
+
+    pub fn new_scaled(device: &Device, shape: GradientShape, scale: f32) -> Self {
+        let (mut vertices, indices): (Vec<Vertex>, Vec<u16>) = match shape {
             GradientShape::Bar => (
                 vec![
                     vtx(-1.0, -1.0, 0.0, 0.0),
@@ -193,12 +322,16 @@ impl GradientMesh {
             GradientShape::Triangle => (
                 vec![
                     vtx(0.0, 1.0, 0.5, 0.0),
-                    vtx(-1.0, -1.0, 0.0, 1.0),
-                    vtx(1.0, -1.0, 1.0, 1.0),
+                    vtx(-3.0_f32.sqrt() * 0.5, -0.5, 0.0, 1.0),
+                    vtx(3.0_f32.sqrt() * 0.5, -0.5, 1.0, 1.0),
                 ],
                 vec![0, 1, 2],
             ),
         };
+
+        for vertex in &mut vertices {
+            vertex.position *= scale;
+        }
 
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("gradient_vertex_buffer"),
@@ -237,16 +370,21 @@ pub struct GradientSettings {
     pub variable_channels: u32,
     pub rotation: f32,
     pub flip_axis: u32,
+    pub primary_channel: u32,
+    pub ring_rotation: f32,
+    pub reversed_ring: u32,
+    pub saturated_ring: u32,
+    pub ring_width: f32,
+    pub texture_size: f32,
 }
 
 impl GradientSettings {
     pub fn new(
         profile: &ColorProfile,
         reference: Vec3,
-        color_model: ColorModel,
-        variable_channels: u32,
-        rotation: f32,
-        flip_axis: u32,
+        config: &GradientPlaneConfig,
+        ring_width: f32,
+        texture_size: f32,
     ) -> Self {
         let m = profile.rgb_to_xyz_matrix().to_f32().v;
 
@@ -255,7 +393,8 @@ impl GradientSettings {
         ]);
         let xyz_to_rgb = rgb_to_xyz.inverse();
 
-        let channel_ranges = color_model
+        let channel_ranges = config
+            .model
             .channel_ranges()
             .map(|range| Vec4::new(range.x, range.y, 0.0, 0.0));
 
@@ -264,10 +403,18 @@ impl GradientSettings {
             xyz_to_rgb,
             channel_ranges,
             reference,
-            color_model: color_model as u32,
-            variable_channels,
-            rotation,
-            flip_axis,
+            color_model: config.model as u32,
+            variable_channels: u32::from(config.variable_channels),
+            rotation: config.rotation,
+            flip_axis: u32::from(config.flip_axis.bits()),
+            primary_channel: (0..3)
+                .find(|channel| config.variable_channels & (1 << channel) == 0)
+                .unwrap_or(0),
+            ring_rotation: config.ring_rotation,
+            reversed_ring: u32::from(config.reversed_ring),
+            saturated_ring: u32::from(config.saturated_primary_channel_ring),
+            ring_width,
+            texture_size,
         }
     }
 }

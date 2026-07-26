@@ -23,7 +23,7 @@ use wgpu::{
 
 use crate::{
     config::ColorSelectorConfig,
-    render::{GradientMesh, GradientPipeline, GradientSettings},
+    render::{GradientMesh, GradientPipeline, GradientRingPipeline, GradientSettings},
 };
 
 pub mod config;
@@ -31,6 +31,7 @@ pub mod render;
 
 const MAX_PLANES_PER_ROW: usize = 2;
 const MAX_PLANE_SIZE: u32 = 256;
+const GRADIENT_RING_WIDTH: f32 = 20.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 pub enum GradientPlaneShape {
@@ -213,7 +214,8 @@ pub struct ColorSelectorState {
     presets: Vec<ColorSelectorConfig>,
     selected_preset: usize,
 
-    pipeline: GradientPipeline,
+    plane_pipeline: GradientPipeline,
+    ring_pipeline: GradientRingPipeline,
     plane_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
 
     widget_bounds: Bounds<Pixels>,
@@ -242,7 +244,8 @@ impl ColorSelectorState {
             presets,
             selected_preset,
 
-            pipeline: GradientPipeline::new(device),
+            plane_pipeline: GradientPipeline::new(device),
+            ring_pipeline: GradientRingPipeline::new(device),
             plane_targets: Vec::new(),
 
             widget_bounds: Bounds::default(),
@@ -290,19 +293,28 @@ impl ColorSelectorState {
         let device = cx.render_device();
         let queue = cx.render_queue();
 
-        for (config, (mesh, _, view)) in preset.planes.iter().zip(&self.plane_targets) {
+        for (config, (mesh, texture, view)) in preset.planes.iter().zip(&self.plane_targets) {
             let reference_color = config.model.convert_to_self(self.color, &self.profile);
             let reference = config.model.get_reference_color(reference_color);
             let settings = GradientSettings::new(
                 &self.profile,
                 reference,
-                config.model,
-                u32::from(config.variable_channels),
-                config.rotation,
-                u32::from(config.flip_axis.bits()),
+                config,
+                GRADIENT_RING_WIDTH,
+                texture.width() as f32,
             );
 
-            self.pipeline.draw(device, queue, mesh, &settings, view);
+            if config.show_primary_channel_ring {
+                self.ring_pipeline.draw(device, queue, &settings, view);
+            }
+            self.plane_pipeline.draw(
+                device,
+                queue,
+                mesh,
+                &settings,
+                view,
+                config.show_primary_channel_ring,
+            );
         }
 
         cx.notify();
@@ -326,11 +338,24 @@ impl ColorSelectorState {
         self.plane_targets = preset
             .planes
             .iter()
-            .map(|p| {
-                let (t, v) =
+            .map(|config| {
+                let (texture, view) =
                     self.create_gradient_texture("plane_gradient", per_size, per_size, device);
-                let mesh = GradientMesh::new(device, p.shape.into());
-                (mesh, t, v)
+                let scale = if config.show_primary_channel_ring {
+                    let texture_size = per_size as f32;
+                    let antialias_width = 1.0 / texture_size;
+                    let inner_radius =
+                        (0.5 - antialias_width - GRADIENT_RING_WIDTH / texture_size).max(0.0);
+                    let circumradius = match config.shape {
+                        GradientPlaneShape::Square => std::f32::consts::SQRT_2,
+                        GradientPlaneShape::Triangle => 1.0,
+                    };
+                    2.0 * inner_radius / circumradius
+                } else {
+                    1.0
+                };
+                let mesh = GradientMesh::new_scaled(device, config.shape.into(), scale);
+                (mesh, texture, view)
             })
             .collect();
     }

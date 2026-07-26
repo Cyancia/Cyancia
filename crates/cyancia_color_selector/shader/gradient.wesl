@@ -42,6 +42,12 @@ struct Settings {
     variable_channels: u32,
     rotation: f32,
     flip_axis: u32,
+    primary_channel: u32,
+    ring_rotation: f32,
+    reversed_ring: u32,
+    saturated_ring: u32,
+    ring_width: f32,
+    texture_size: f32,
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
@@ -66,17 +72,7 @@ fn vertex(in: VertexInput) -> VertexOutput {
     return VertexOutput(vec4f(position, 0.0, 1.0), in.uv);
 }
 
-@fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4f {
-    var ch = settings.reference;
-    var j = 0u;
-    for (var i = 0u; i < 3u; i += 1u) {
-        if ((settings.variable_channels >> i) & 1u) != 0u {
-            ch[i] = mix(settings.channel_ranges[i].x, settings.channel_ranges[i].y, in.uv[j]);
-            j += 1u;
-        }
-    }
-
+fn channels_into_rgb(ch: vec3f) -> vec3f {
     var xyz = Xyz(0.0, 0.0, 0.0);
     switch settings.color_model {
         case 0: {
@@ -116,5 +112,72 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
     }
 
     let rgb = rgb_from_xyz(xyz, settings.xyz_to_rgb);
-    return vec4f(rgb.r, rgb.g, rgb.b, 1.0);
+    return vec3f(rgb.r, rgb.g, rgb.b);
+}
+
+@vertex
+fn ring_vertex(in: VertexInput) -> VertexOutput {
+    return VertexOutput(vec4f(in.position, 0.0, 1.0), in.uv);
+}
+
+@fragment
+fn fragment(in: VertexOutput) -> @location(0) vec4f {
+    var ch = settings.reference;
+    var j = 0u;
+    for (var i = 0u; i < 3u; i += 1u) {
+        if ((settings.variable_channels >> i) & 1u) != 0u {
+            ch[i] = mix(settings.channel_ranges[i].x, settings.channel_ranges[i].y, in.uv[j]);
+            j += 1u;
+        }
+    }
+
+    return vec4f(channels_into_rgb(ch), 1.0);
+}
+
+@fragment
+fn ring_fragment(in: VertexOutput) -> @location(0) vec4f {
+    let antialias_width = 1.0 / settings.texture_size;
+    let outer_radius = 0.5 - antialias_width;
+    let inner_radius = max(outer_radius - settings.ring_width / settings.texture_size, 0.0);
+    let radius = length(in.uv - vec2f(0.5));
+    let inner_alpha = smoothstep(
+        inner_radius - antialias_width,
+        inner_radius + antialias_width,
+        radius,
+    );
+    let outer_alpha = 1.0 - smoothstep(
+        outer_radius - antialias_width,
+        outer_radius + antialias_width,
+        radius,
+    );
+    let alpha = inner_alpha * outer_alpha;
+
+    let centered = in.uv - vec2f(0.5);
+    var angle = atan2(centered.y, centered.x) + settings.ring_rotation;
+    if (settings.reversed_ring != 0u) {
+        angle = -angle;
+    }
+    let channel_factor = fract(angle / 6.283185307179586);
+
+    var ch = settings.reference;
+    if (settings.saturated_ring != 0u) {
+        switch settings.color_model {
+            case 1, 5: {
+                ch[1] = 1.0;
+                ch[2] = 0.5;
+            }
+            case 2, 6: {
+                ch[1] = 1.0;
+                ch[2] = 1.0;
+            }
+            default: {}
+        }
+    }
+    ch[settings.primary_channel] = mix(
+        settings.channel_ranges[settings.primary_channel].x,
+        settings.channel_ranges[settings.primary_channel].y,
+        channel_factor,
+    );
+
+    return vec4f(channels_into_rgb(ch), alpha);
 }
