@@ -1,6 +1,6 @@
 use gpui::{
-    AnyElement, App, AppContext, ClickEvent, Context, DragMoveEvent, Empty, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, MouseButton,
+    AnyElement, App, AppContext, ClickEvent, Context, DragMoveEvent, Empty, Entity, EntityId,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, MouseButton,
     MouseDownEvent, MouseUpEvent, ParentElement, Render, RenderOnce, StatefulInteractiveElement,
     StyleRefinement, Styled, Subscription, TextAlign, Window, actions, div, prelude::FluentBuilder,
     px, relative,
@@ -25,7 +25,7 @@ pub fn init(cx: &mut App) {
 }
 
 #[derive(Clone)]
-struct DragSlider;
+struct DragSlider(EntityId);
 
 impl Render for DragSlider {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -204,6 +204,10 @@ impl SpinSliderState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if event.drag(cx).0 != cx.entity_id() {
+            return;
+        }
+
         self.pending_edit = false;
         cx.stop_propagation();
         let percentage =
@@ -400,7 +404,7 @@ impl RenderOnce for SpinSlider {
             .when(!editing, |this| {
                 this.when(!disabled, |this| {
                     this.cursor_text()
-                        .on_drag(DragSlider, |drag, _, _, cx| {
+                        .on_drag(DragSlider(self.state.entity_id()), |drag, _, _, cx| {
                             cx.stop_propagation();
                             cx.new(|_| drag.clone())
                         })
