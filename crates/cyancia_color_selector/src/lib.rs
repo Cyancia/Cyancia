@@ -68,8 +68,6 @@ enum ActiveSelection {
     Bar(usize),
 }
 
-const MAX_PLANES_PER_ROW: usize = 2;
-const MAX_PLANE_SIZE: u32 = 256;
 const GRADIENT_RING_GAP: f32 = 5.0;
 const COLOR_MODEL_COUNT: usize = ColorModel::ALL.len();
 
@@ -584,11 +582,49 @@ impl ColorSelectorState {
             .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel))
     }
 
-    fn update_plane_bounds(&mut self, index: usize, bounds: Bounds<Pixels>) {
+    fn update_plane_bounds(
+        &mut self,
+        index: usize,
+        bounds: Bounds<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         if self.plane_bounds.len() <= index {
             self.plane_bounds.resize(index + 1, Bounds::default());
         }
         self.plane_bounds[index] = bounds;
+
+        let size = bounds
+            .size
+            .width
+            .as_f32()
+            .min(bounds.size.height.as_f32())
+            .round()
+            .max(1.0) as u32;
+        if self
+            .plane_targets
+            .get(index)
+            .is_some_and(|(_, texture, _)| texture.width() == size && texture.height() == size)
+            || index >= self.plane_targets.len()
+        {
+            return;
+        }
+        let Some(config) = self
+            .presets
+            .get(self.selected_preset)
+            .and_then(|preset| preset.planes.get(index))
+        else {
+            return;
+        };
+
+        let device = cx.render_device();
+        let (texture, view) = self.create_gradient_texture("plane_gradient", size, size, device);
+        let mesh = GradientMesh::new_scaled(
+            device,
+            config.shape.into(),
+            plane_scale(config, size as f32),
+        );
+        self.plane_targets[index] = (mesh, texture, view);
+        self.redraw_config(cx);
     }
 
     fn update_bar_bounds(&mut self, index: usize, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
@@ -972,8 +1008,15 @@ impl ColorSelectorState {
         if preset.planes.is_empty() {
             self.plane_targets.clear();
         } else {
-            let columns = preset.planes.len().min(MAX_PLANES_PER_ROW);
-            let per_size = ((width / columns as f32).round().max(1.0) as u32).min(MAX_PLANE_SIZE);
+            let columns = preset
+                .planes
+                .len()
+                .min(preset.max_planes_per_row.clamp(1, 5));
+            let per_size = (width / columns as f32)
+                .floor()
+                .max(1.0)
+                .min(preset.max_plane_size.clamp(128, 512) as f32)
+                as u32;
             self.plane_targets = preset
                 .planes
                 .iter()
@@ -1079,6 +1122,18 @@ impl Render for ColorSelectorState {
 
         let indicator_color = self.indicator_color();
         let selector_id = cx.entity_id();
+        let max_planes_per_row = self.presets[self.selected_preset]
+            .max_planes_per_row
+            .clamp(1, 5);
+        let plane_columns = self.presets[self.selected_preset]
+            .planes
+            .len()
+            .min(max_planes_per_row)
+            .max(1);
+        let plane_width = relative(1.0 / plane_columns as f32);
+        let max_plane_size = self.presets[self.selected_preset]
+            .max_plane_size
+            .clamp(128, 512) as f32;
         let bars = self.presets[self.selected_preset]
             .bars
             .iter()
@@ -1209,7 +1264,8 @@ impl Render for ColorSelectorState {
             .collect::<Vec<_>>();
 
         v_flex()
-            .size_full()
+            .w_full()
+            .min_w_0()
             .on_prepaint({
                 let state = cx.entity().downgrade();
                 move |bounds, _, cx| {
@@ -1223,7 +1279,7 @@ impl Render for ColorSelectorState {
             .child(
                 v_flex().w_full().flex_shrink_0().children(
                     self.plane_targets
-                        .chunks(MAX_PLANES_PER_ROW)
+                        .chunks(max_planes_per_row)
                         .enumerate()
                         .map(|(row_index, row)| {
                             h_flex()
@@ -1231,7 +1287,7 @@ impl Render for ColorSelectorState {
                                 .justify_evenly()
                                 .children(row.iter().enumerate().map(
                                     |(column_index, (_, texture, _))| {
-                                        let index = row_index * MAX_PLANES_PER_ROW + column_index;
+                                        let index = row_index * max_planes_per_row + column_index;
                                         let target = SurfaceTarget::Plane(index);
                                         let drag = SurfaceDrag {
                                             selector: selector_id,
@@ -1239,119 +1295,110 @@ impl Render for ColorSelectorState {
                                         };
                                         let plane_indicator = self.plane_indicator_position(index);
                                         let ring_indicator = self.ring_indicator_position(index);
-                                        let texture_size = texture.width() as f32;
-
                                         div()
-                                    .id(("color-plane-surface", index))
-                                    .relative()
-                                    .size(px(texture_size))
-                                    .on_prepaint({
-                                        let state = cx.entity().downgrade();
-                                        move |bounds, _, cx| {
-                                            state
-                                                .update(cx, |state, _| {
-                                                    state.update_plane_bounds(index, bounds);
-                                                })
-                                                .ok();
-                                        }
-                                    })
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(
-                                            move |this, event: &MouseDownEvent, window, cx| {
-                                                this.start_plane_selection(
-                                                    index,
-                                                    event.position,
-                                                    window,
-                                                    cx,
-                                                );
-                                                cx.stop_propagation();
-                                            },
-                                        ),
-                                    )
-                                    .on_drag(drag, |_, _, _, cx| {
+                                .id(("color-plane-surface", index))
+                                .relative()
+                                .w(plane_width)
+                                .max_w(px(max_plane_size))
+                                .aspect_square()
+                                .flex_none()
+                                .on_prepaint({
+                                    let state = cx.entity().downgrade();
+                                    move |bounds, _, cx| {
+                                        state
+                                            .update(cx, |state, cx| {
+                                                state.update_plane_bounds(index, bounds, cx);
+                                            })
+                                            .ok();
+                                    }
+                                })
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                        this.start_plane_selection(
+                                            index,
+                                            event.position,
+                                            window,
+                                            cx,
+                                        );
                                         cx.stop_propagation();
-                                        cx.new(|_| SurfaceDragPreview)
+                                    }),
+                                )
+                                .on_drag(drag, |_, _, _, cx| {
+                                    cx.stop_propagation();
+                                    cx.new(|_| SurfaceDragPreview)
+                                })
+                                .on_drag_move(cx.listener(
+                                    move |this, event: &DragMoveEvent<SurfaceDrag>, window, cx| {
+                                        let drag = event.drag(cx);
+                                        if drag.selector != cx.entity_id() || drag.target != target
+                                        {
+                                            return;
+                                        }
+                                        this.update_active_selection(
+                                            event.event.position,
+                                            window,
+                                            cx,
+                                        );
+                                        cx.stop_propagation();
+                                    },
+                                ))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, event: &MouseUpEvent, window, cx| {
+                                        this.finish_active_selection(
+                                            target,
+                                            event.position,
+                                            window,
+                                            cx,
+                                        );
+                                    }),
+                                )
+                                .on_mouse_up_out(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, event: &MouseUpEvent, window, cx| {
+                                        this.finish_active_selection(
+                                            target,
+                                            event.position,
+                                            window,
+                                            cx,
+                                        );
+                                    }),
+                                )
+                                .child(
+                                    surface(SurfaceSource::Texture {
+                                        texture: texture.clone(),
+                                        size: Size::new(
+                                            texture.width().into(),
+                                            texture.height().into(),
+                                        ),
                                     })
-                                    .on_drag_move(cx.listener(
-                                        move |this,
-                                              event: &DragMoveEvent<SurfaceDrag>,
-                                              window,
-                                              cx| {
-                                            let drag = event.drag(cx);
-                                            if drag.selector != cx.entity_id()
-                                                || drag.target != target
-                                            {
-                                                return;
-                                            }
-                                            this.update_active_selection(
-                                                event.event.position,
-                                                window,
-                                                cx,
-                                            );
-                                            cx.stop_propagation();
-                                        },
-                                    ))
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(
-                                            move |this, event: &MouseUpEvent, window, cx| {
-                                                this.finish_active_selection(
-                                                    target,
-                                                    event.position,
-                                                    window,
-                                                    cx,
-                                                );
-                                            },
-                                        ),
-                                    )
-                                    .on_mouse_up_out(
-                                        MouseButton::Left,
-                                        cx.listener(
-                                            move |this, event: &MouseUpEvent, window, cx| {
-                                                this.finish_active_selection(
-                                                    target,
-                                                    event.position,
-                                                    window,
-                                                    cx,
-                                                );
-                                            },
-                                        ),
-                                    )
-                                    .child(
-                                        surface(SurfaceSource::Texture {
-                                            texture: texture.clone(),
-                                            size: Size::new(
-                                                texture.width().into(),
-                                                texture.height().into(),
-                                            ),
-                                        })
-                                        .size_full(),
-                                    )
-                                    .children(plane_indicator.map(|position| {
-                                        div()
-                                            .absolute()
-                                            .left(relative(position.x))
-                                            .top(relative(position.y))
-                                            .ml(-px(3.0))
-                                            .mt(-px(3.0))
-                                            .size(px(6.0))
-                                            .rounded_full()
-                                            .border_1()
-                                            .border_color(indicator_color)
-                                    }))
-                                    .children(ring_indicator.map(|position| {
-                                        div()
-                                            .absolute()
-                                            .left(relative(position.x))
-                                            .top(relative(position.y))
-                                            .ml(-px(3.0))
-                                            .mt(-px(3.0))
-                                            .size(px(6.0))
-                                            .rounded_full()
-                                            .border_1()
-                                            .border_color(indicator_color)
-                                    }))
+                                    .size_full(),
+                                )
+                                .children(plane_indicator.map(|position| {
+                                    div()
+                                        .absolute()
+                                        .left(relative(position.x))
+                                        .top(relative(position.y))
+                                        .ml(-px(3.0))
+                                        .mt(-px(3.0))
+                                        .size(px(6.0))
+                                        .rounded_full()
+                                        .border_1()
+                                        .border_color(indicator_color)
+                                }))
+                                .children(ring_indicator.map(|position| {
+                                    div()
+                                        .absolute()
+                                        .left(relative(position.x))
+                                        .top(relative(position.y))
+                                        .ml(-px(3.0))
+                                        .mt(-px(3.0))
+                                        .size(px(6.0))
+                                        .rounded_full()
+                                        .border_1()
+                                        .border_color(indicator_color)
+                                }))
                                     },
                                 ))
                         }),
@@ -1394,6 +1441,6 @@ impl ColorSelector {
 
 impl RenderOnce for ColorSelector {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        div().size_full().child(self.state)
+        self.state
     }
 }

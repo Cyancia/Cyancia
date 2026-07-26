@@ -29,6 +29,8 @@ use gpui_component::{
     button::Button,
     dock::{Panel, PanelEvent},
     list::{List, ListEvent, ListState},
+    scroll::ScrollableElement,
+    v_flex,
 };
 use log::info;
 use moxcms::ColorProfile;
@@ -358,6 +360,8 @@ impl ColorSelectorDock {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let config = ColorSelectorConfig {
             name: "RGB".to_string(),
+            max_plane_size: 512,
+            max_planes_per_row: 2,
             planes: vec![
                 GradientPlaneConfig {
                     model: ColorModel::Rgb,
@@ -546,11 +550,19 @@ impl Panel for ColorSelectorDock {
 }
 
 impl Render for ColorSelectorDock {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(ColorSelector::new(&self.color_selector)).child(
-            Button::new("open-editor")
-                .icon(IconName::Settings)
-                .on_click(cx.listener(Self::on_open_editor)),
-        )
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .overflow_y_scrollbar()
+            .child(ColorSelector::new(&self.color_selector))
+            .child(
+                div().flex_shrink_0().child(
+                    Button::new("open-editor")
+                        .icon(IconName::Settings)
+                        .on_click(cx.listener(Self::on_open_editor)),
+                ),
+            )
     }
 }

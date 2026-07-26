@@ -23,6 +23,8 @@ use crate::{ColorModel, GradientPlaneShape};
 #[derive(Debug, Clone)]
 pub struct ColorSelectorConfig {
     pub name: String,
+    pub max_plane_size: u32,
+    pub max_planes_per_row: usize,
     pub planes: Vec<GradientPlaneConfig>,
     pub bars: Vec<GradientBarConfig>,
 }
@@ -133,6 +135,8 @@ pub struct ColorSelectorConfigEditorState {
     selected_config: Option<usize>,
     config_select: Entity<ConfigSelectState>,
     name: Entity<InputState>,
+    max_plane_size: Entity<SpinSliderState>,
+    max_planes_per_row: Entity<SpinSliderState>,
     plane_controls: Vec<PlaneEditorControls>,
     bar_controls: Vec<BarEditorControls>,
     next_control_id: u64,
@@ -151,12 +155,19 @@ impl ColorSelectorConfigEditorState {
             .and_then(|index| configs.get(index))
             .map_or("", |config| config.name.as_str());
         let name = Self::create_name_input(name_value, window, cx);
+        let (max_plane_size, max_planes_per_row) = Self::create_config_layout_controls(
+            selected_config.and_then(|index| configs.get(index)),
+            window,
+            cx,
+        );
 
         let mut this = Self {
             configs,
             selected_config,
             config_select,
             name,
+            max_plane_size,
+            max_planes_per_row,
             plane_controls: Vec::new(),
             bar_controls: Vec::new(),
             next_control_id: 0,
@@ -164,6 +175,7 @@ impl ColorSelectorConfigEditorState {
 
         this.subscribe_config_select(window, cx);
         this.subscribe_name(window, cx);
+        this.subscribe_config_layout_controls(window, cx);
         this.rebuild_active_controls(window, cx);
         this
     }
@@ -239,6 +251,32 @@ impl ColorSelectorConfigEditorState {
         })
     }
 
+    fn create_config_layout_controls(
+        config: Option<&ColorSelectorConfig>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Entity<SpinSliderState>, Entity<SpinSliderState>) {
+        let max_plane_size = cx.new(|cx| {
+            SpinSliderState::new(128.0, 512.0, window, cx)
+                .precision(0, window, cx)
+                .value(
+                    config.map_or(512.0, |config| config.max_plane_size as f32),
+                    window,
+                    cx,
+                )
+        });
+        let max_planes_per_row = cx.new(|cx| {
+            SpinSliderState::new(1.0, 5.0, window, cx)
+                .precision(0, window, cx)
+                .value(
+                    config.map_or(2.0, |config| config.max_planes_per_row as f32),
+                    window,
+                    cx,
+                )
+        });
+        (max_plane_size, max_planes_per_row)
+    }
+
     fn subscribe_config_select(&self, window: &mut Window, cx: &mut Context<Self>) {
         cx.subscribe_in(&self.config_select, window, |this, _, event, window, cx| {
             if let SelectEvent::Confirm(Some(index)) = event {
@@ -266,6 +304,27 @@ impl ColorSelectorConfigEditorState {
         .detach();
     }
 
+    fn subscribe_config_layout_controls(&self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.subscribe_in(&self.max_plane_size, window, |this, _, event, _, cx| {
+            if let SpinSliderEvent::Change(value) = event {
+                if let Some(config) = this.active_config_mut() {
+                    config.max_plane_size = value.round() as u32;
+                    cx.notify();
+                }
+            }
+        })
+        .detach();
+        cx.subscribe_in(&self.max_planes_per_row, window, |this, _, event, _, cx| {
+            if let SpinSliderEvent::Change(value) = event {
+                if let Some(config) = this.active_config_mut() {
+                    config.max_planes_per_row = value.round() as usize;
+                    cx.notify();
+                }
+            }
+        })
+        .detach();
+    }
+
     fn refresh_config_select(&self, window: &mut Window, cx: &mut Context<Self>) {
         let items = Self::config_items(&self.configs);
         self.config_select.update(cx, |state, cx| {
@@ -279,7 +338,12 @@ impl ColorSelectorConfigEditorState {
             .active_config()
             .map_or("", |config| config.name.as_str());
         self.name = Self::create_name_input(name, window, cx);
+        let (max_plane_size, max_planes_per_row) =
+            Self::create_config_layout_controls(self.active_config(), window, cx);
+        self.max_plane_size = max_plane_size;
+        self.max_planes_per_row = max_planes_per_row;
         self.subscribe_name(window, cx);
+        self.subscribe_config_layout_controls(window, cx);
         self.rebuild_active_controls(window, cx);
     }
 
@@ -559,6 +623,8 @@ impl ColorSelectorConfigEditorState {
     fn add_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.configs.push(ColorSelectorConfig {
             name: format!("Config {}", self.configs.len() + 1),
+            max_plane_size: 512,
+            max_planes_per_row: 2,
             planes: Vec::new(),
             bars: Vec::new(),
         });
@@ -918,6 +984,17 @@ impl Render for ColorSelectorConfigEditorState {
                         .gap_2()
                         .child(div().w(px(110.)).child("Name"))
                         .child(div().flex_1().child(Input::new(&self.name).small())),
+                )
+                .child(
+                    SpinSlider::new(&self.max_plane_size)
+                        .small()
+                        .prefix("Max plane size: ")
+                        .suffix(" px"),
+                )
+                .child(
+                    SpinSlider::new(&self.max_planes_per_row)
+                        .small()
+                        .prefix("Max planes per row: "),
                 )
                 .child(
                     v_flex()
