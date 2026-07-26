@@ -32,6 +32,7 @@ pub mod render;
 const MAX_PLANES_PER_ROW: usize = 2;
 const MAX_PLANE_SIZE: u32 = 256;
 const GRADIENT_RING_WIDTH: f32 = 20.0;
+const GRADIENT_RING_GAP: f32 = 5.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 pub enum GradientPlaneShape {
@@ -344,8 +345,10 @@ impl ColorSelectorState {
                 let scale = if config.show_primary_channel_ring {
                     let texture_size = per_size as f32;
                     let antialias_width = 1.0 / texture_size;
-                    let inner_radius =
-                        (0.5 - antialias_width - GRADIENT_RING_WIDTH / texture_size).max(0.0);
+                    let inner_radius = (0.5
+                        - antialias_width
+                        - (GRADIENT_RING_WIDTH + GRADIENT_RING_GAP) / texture_size)
+                        .max(0.0);
                     let circumradius = match config.shape {
                         GradientPlaneShape::Square => std::f32::consts::SQRT_2,
                         GradientPlaneShape::Triangle => 1.0,
