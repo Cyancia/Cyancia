@@ -550,18 +550,23 @@ impl Panel for ColorSelectorDock {
 
 impl Render for ColorSelectorDock {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        div()
             .size_full()
             .min_w_0()
             .min_h_0()
-            .overflow_y_scrollbar()
-            .child(self.color_selector.clone())
+            .overflow_hidden()
             .child(
-                div().flex_shrink_0().child(
-                    Button::new("open-editor")
-                        .icon(IconName::Settings)
-                        .on_click(cx.listener(Self::on_open_editor)),
-                ),
+                v_flex()
+                    .size_full()
+                    .overflow_y_scrollbar()
+                    .child(self.color_selector.clone())
+                    .child(
+                        div().flex_shrink_0().child(
+                            Button::new("open-editor")
+                                .icon(IconName::Settings)
+                                .on_click(cx.listener(Self::on_open_editor)),
+                        ),
+                    ),
             )
     }
 }

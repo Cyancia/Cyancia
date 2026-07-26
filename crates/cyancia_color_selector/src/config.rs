@@ -1008,62 +1008,65 @@ impl Render for ColorSelectorConfigEditorState {
                 .into_any_element()
         };
 
-        let content = v_flex()
-            .id("color-selector-config-editor-content")
-            .flex_1()
-            .min_h_0()
-            .gap_3()
-            .p_3()
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(div().w(px(110.)).child("Config"))
-                    .child(
-                        div().flex_1().child(
-                            Select::new(&self.config_select)
+        let content = div().flex_1().min_h_0().overflow_hidden().child(
+            v_flex()
+                .id("color-selector-config-editor-content")
+                .size_full()
+                .gap_3()
+                .p_3()
+                .child(
+                    h_flex()
+                        .gap_2()
+                        .child(div().w(px(110.)).child("Config"))
+                        .child(
+                            div().flex_1().child(
+                                Select::new(&self.config_select)
+                                    .small()
+                                    .placeholder("No configs"),
+                            ),
+                        )
+                        .child(
+                            Button::new("add-color-selector-config")
                                 .small()
-                                .placeholder("No configs"),
+                                .label("Add")
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.add_config(window, cx)),
+                                ),
+                        )
+                        .child(
+                            Button::new("move-color-selector-config-up")
+                                .small()
+                                .label("Up")
+                                .disabled(selected.is_none_or(|index| index == 0))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.move_config(-1, window, cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("move-color-selector-config-down")
+                                .small()
+                                .label("Down")
+                                .disabled(
+                                    selected.is_none_or(|index| index + 1 == self.configs.len()),
+                                )
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.move_config(1, window, cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("remove-color-selector-config")
+                                .small()
+                                .danger()
+                                .label("Remove")
+                                .disabled(selected.is_none())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.remove_config(window, cx)
+                                })),
                         ),
-                    )
-                    .child(
-                        Button::new("add-color-selector-config")
-                            .small()
-                            .label("Add")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.add_config(window, cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new("move-color-selector-config-up")
-                            .small()
-                            .label("Up")
-                            .disabled(selected.is_none_or(|index| index == 0))
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.move_config(-1, window, cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new("move-color-selector-config-down")
-                            .small()
-                            .label("Down")
-                            .disabled(selected.is_none_or(|index| index + 1 == self.configs.len()))
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.move_config(1, window, cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new("remove-color-selector-config")
-                            .small()
-                            .danger()
-                            .label("Remove")
-                            .disabled(selected.is_none())
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.remove_config(window, cx)),
-                            ),
-                    ),
-            )
-            .child(active_content)
-            .overflow_y_scrollbar();
+                )
+                .child(active_content)
+                .overflow_y_scrollbar(),
+        );
 
         v_flex()
             .size_full()

@@ -1241,6 +1241,7 @@ impl Render for ColorSelectorState {
         v_flex()
             .w_full()
             .min_w_0()
+            .flex_shrink_0()
             .on_prepaint({
                 let state = cx.entity().downgrade();
                 move |bounds, _, cx| {
