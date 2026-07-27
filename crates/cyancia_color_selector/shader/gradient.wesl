@@ -40,6 +40,7 @@ struct Settings {
     // Xyz,
     color_model: u32,
     variable_channels: u32,
+    plane_shape: u32,
     rotation: f32,
     flip_axis: u32,
     primary_channel: u32,
@@ -48,6 +49,8 @@ struct Settings {
     saturate_primary_channel: u32,
     ring_width: f32,
     texture_size: f32,
+    x_range: vec2f,
+    y_range: vec2f,
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
@@ -155,6 +158,18 @@ fn ring_vertex(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4f {
+    var normalized_uv = in.uv;
+    if settings.plane_shape == 1u {
+        normalized_uv.x = select(
+            0.5,
+            (in.uv.x - 0.5 * (1.0 - in.uv.y)) / in.uv.y,
+            in.uv.y > 1e-6,
+        );
+    }
+    let remapped_uv = vec2f(
+        mix(settings.x_range.x, settings.x_range.y, normalized_uv.x),
+        mix(settings.y_range.x, settings.y_range.y, normalized_uv.y),
+    );
     var ch = settings.base_channels;
     if (settings.saturate_primary_channel != 0u) {
         ch = saturate_primary_channel(ch);
@@ -162,7 +177,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
     var j = 0u;
     for (var i = 0u; i < 3u; i += 1u) {
         if ((settings.variable_channels >> i) & 1u) != 0u {
-            ch[i] = mix(settings.channel_ranges[i].x, settings.channel_ranges[i].y, in.uv[j]);
+            ch[i] = mix(
+                settings.channel_ranges[i].x,
+                settings.channel_ranges[i].y,
+                remapped_uv[j],
+            );
             j += 1u;
         }
     }

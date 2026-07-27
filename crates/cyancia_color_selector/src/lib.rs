@@ -30,7 +30,10 @@ use wgpu::{
 
 use crate::{
     config::{ColorSelectorConfig, GradientBarConfig, GradientPlaneConfig},
-    render::{GradientMesh, GradientPipeline, GradientRingPipeline, GradientSettings},
+    render::{
+        ComputeBoundsPipeline, GradientMesh, GradientPipeline, GradientRingPipeline,
+        GradientSettings,
+    },
 };
 
 pub mod config;
@@ -70,8 +73,10 @@ enum ActiveSelection {
 
 const GRADIENT_RING_GAP: f32 = 5.0;
 const COLOR_MODEL_COUNT: usize = ColorModel::ALL.len();
+const NORMALIZED_RANGE: Vec2 = Vec2::new(0.0, 1.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[repr(u32)]
 pub enum GradientPlaneShape {
     Square,
     Triangle,
@@ -293,23 +298,17 @@ fn plane_scale(config: &GradientPlaneConfig, texture_size: f32) -> f32 {
     2.0 * inner_radius / circumradius
 }
 
-fn clamp_plane_uv(shape: GradientPlaneShape, uv: Vec2) -> Vec2 {
-    match shape {
-        GradientPlaneShape::Square => uv.clamp(Vec2::ZERO, Vec2::ONE),
-        GradientPlaneShape::Triangle => {
-            let y = uv.y.clamp(0.0, 1.0);
-            let min_x = 0.5 * (1.0 - y);
-            let max_x = 0.5 * (1.0 + y);
-            Vec2::new(uv.x.clamp(min_x, max_x), y)
-        }
-    }
+fn clamp_plane_uv(uv: Vec2) -> Vec2 {
+    uv.clamp(Vec2::ZERO, Vec2::ONE)
 }
 
 fn plane_position_to_uv(shape: GradientPlaneShape, position: Vec2) -> Vec2 {
     match shape {
         GradientPlaneShape::Square => (position + Vec2::ONE) * 0.5,
         GradientPlaneShape::Triangle => {
-            Vec2::new(0.5 + position.x / 3.0_f32.sqrt(), (1.0 - position.y) / 1.5)
+            let y = (1.0 - position.y) / 1.5;
+            let x = 0.5 + position.x / (3.0_f32.sqrt() * y.max(f32::EPSILON));
+            Vec2::new(x, y)
         }
     }
 }
@@ -317,7 +316,9 @@ fn plane_position_to_uv(shape: GradientPlaneShape, position: Vec2) -> Vec2 {
 fn plane_uv_to_position(shape: GradientPlaneShape, uv: Vec2) -> Vec2 {
     match shape {
         GradientPlaneShape::Square => uv * 2.0 - Vec2::ONE,
-        GradientPlaneShape::Triangle => Vec2::new(3.0_f32.sqrt() * (uv.x - 0.5), 1.0 - 1.5 * uv.y),
+        GradientPlaneShape::Triangle => {
+            Vec2::new(3.0_f32.sqrt() * uv.y * (uv.x - 0.5), 1.0 - 1.5 * uv.y)
+        }
     }
 }
 
@@ -337,6 +338,19 @@ fn rotate_counterclockwise(position: Vec2, rotation: f32) -> Vec2 {
     )
 }
 
+fn remap_normalized(value: f32, range: Vec2) -> f32 {
+    range.x + (range.y - range.x) * value
+}
+
+fn unmap_normalized(value: f32, range: Vec2) -> f32 {
+    let width = range.y - range.x;
+    if width.abs() <= f32::EPSILON {
+        0.5
+    } else {
+        (value - range.x) / width
+    }
+}
+
 pub struct ColorSelectorState {
     color: Color,
     profile: ColorProfile,
@@ -345,9 +359,11 @@ pub struct ColorSelectorState {
     presets: Vec<ColorSelectorConfig>,
     selected_preset: usize,
 
+    compute_bounds_pipeline: ComputeBoundsPipeline,
     gradient_pipeline: GradientPipeline,
     ring_pipeline: GradientRingPipeline,
     plane_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
+    plane_ranges: Vec<(Vec2, Vec2)>,
     bar_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
     bar_inputs: Vec<Entity<InputState>>,
     primary_channel_overrides: Vec<[Option<u8>; COLOR_MODEL_COUNT]>,
@@ -388,9 +404,11 @@ impl ColorSelectorState {
             presets,
             selected_preset,
 
+            compute_bounds_pipeline: ComputeBoundsPipeline::new(device, &profile),
             gradient_pipeline: GradientPipeline::new(device, &profile, &output_profile),
             ring_pipeline: GradientRingPipeline::new(device, &profile, &output_profile),
             plane_targets: Vec::new(),
+            plane_ranges: Vec::new(),
             bar_targets: Vec::new(),
             bar_inputs: Vec::new(),
             primary_channel_overrides: vec![[None; COLOR_MODEL_COUNT]; preset_count],
@@ -453,6 +471,7 @@ impl ColorSelectorState {
         if self.presets.is_empty() {
             self.selected_preset = 0;
             self.plane_targets.clear();
+            self.plane_ranges.clear();
             self.bar_targets.clear();
             self.bar_inputs.clear();
             self.primary_channel_overrides.clear();
@@ -601,6 +620,21 @@ impl ColorSelectorState {
             .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel))
     }
 
+    fn plane_normalized_ranges(&self, index: usize) -> (Vec2, Vec2) {
+        if !self
+            .presets
+            .get(self.selected_preset)
+            .is_some_and(|preset| preset.clip_to_gamut)
+        {
+            return (NORMALIZED_RANGE, NORMALIZED_RANGE);
+        }
+
+        self.plane_ranges
+            .get(index)
+            .copied()
+            .unwrap_or((NORMALIZED_RANGE, NORMALIZED_RANGE))
+    }
+
     fn update_plane_bounds(
         &mut self,
         index: usize,
@@ -639,6 +673,9 @@ impl ColorSelectorState {
         let (texture, view) = Self::create_gradient_texture("plane_gradient", size, size, device);
         let mesh = GradientMesh::new_plane(device, config.shape, plane_scale(config, size as f32));
         self.plane_targets[index] = (mesh, texture, view);
+        if let Some(ranges) = self.plane_ranges.get_mut(index) {
+            *ranges = (NORMALIZED_RANGE, NORMALIZED_RANGE);
+        }
         self.redraw_config(cx);
     }
 
@@ -681,7 +718,7 @@ impl ColorSelectorState {
         }
         input_position /= scale;
         let uv = plane_position_to_uv(config.shape, input_position);
-        let clamped = clamp_plane_uv(config.shape, uv);
+        let clamped = clamp_plane_uv(uv);
         Some((clamped, (uv - clamped).length_squared() <= 1e-6))
     }
 
@@ -771,6 +808,11 @@ impl ColorSelectorState {
                 let Some((uv, _)) = self.plane_uv_from_window_position(index, position) else {
                     return;
                 };
+                let (x_range, y_range) = self.plane_normalized_ranges(index);
+                let uv = Vec2::new(
+                    remap_normalized(uv.x, x_range),
+                    remap_normalized(uv.y, y_range),
+                );
                 let mut channels = config.model.channels(self.color, &self.profile);
                 let ranges = config.model.channel_ranges();
                 let mut variable_index = 0;
@@ -879,7 +921,10 @@ impl ColorSelectorState {
                 variable_index += 1;
             }
         }
-        uv = clamp_plane_uv(config.shape, uv);
+        let (x_range, y_range) = self.plane_normalized_ranges(index);
+        uv.x = unmap_normalized(uv.x, x_range);
+        uv.y = unmap_normalized(uv.y, y_range);
+        uv = clamp_plane_uv(uv);
 
         let mut position =
             plane_uv_to_position(config.shape, uv) * plane_scale(config, texture_size);
@@ -953,10 +998,12 @@ impl ColorSelectorState {
             return;
         };
 
-        let device = cx.render_device();
-        let queue = cx.render_queue();
+        let device = cx.render_device().clone();
+        let queue = cx.render_queue().clone();
 
-        for (config, (mesh, texture, view)) in preset.planes.iter().zip(&self.plane_targets) {
+        for (index, (config, (mesh, texture, view))) in
+            preset.planes.iter().zip(&self.plane_targets).enumerate()
+        {
             let settings = GradientSettings::new_plane(
                 preset.out_of_gamut_color,
                 preset.use_out_of_gamut_color,
@@ -966,17 +1013,60 @@ impl ColorSelectorState {
                 texture.width() as f32,
             );
 
-            if config.show_primary_channel_ring {
-                self.ring_pipeline.draw(device, queue, &settings, view);
+            if preset.clip_to_gamut {
+                let readback = self
+                    .compute_bounds_pipeline
+                    .compute(&device, &queue, &settings);
+                let preserve_output = config.show_primary_channel_ring;
+                cx.spawn(async move |this, cx| {
+                    let Ok(Ok(bounds)) = readback.into_inner().await else {
+                        return;
+                    };
+                    let (x_range, y_range) = bounds
+                        .normalized_ranges()
+                        .unwrap_or((NORMALIZED_RANGE, NORMALIZED_RANGE));
+                    this.update(cx, move |this, cx| {
+                        let Some((mesh, _, view)) = this.plane_targets.get(index) else {
+                            return;
+                        };
+                        if let Some(ranges) = this.plane_ranges.get_mut(index) {
+                            *ranges = (x_range, y_range);
+                        }
+                        let settings = settings.with_ranges(x_range, y_range);
+                        if preserve_output {
+                            this.ring_pipeline.draw(
+                                cx.render_device(),
+                                cx.render_queue(),
+                                &settings,
+                                view,
+                            );
+                        }
+                        this.gradient_pipeline.draw(
+                            cx.render_device(),
+                            cx.render_queue(),
+                            mesh,
+                            &settings,
+                            view,
+                            preserve_output,
+                        );
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .detach();
+            } else {
+                if config.show_primary_channel_ring {
+                    self.ring_pipeline.draw(&device, &queue, &settings, view);
+                }
+                self.gradient_pipeline.draw(
+                    &device,
+                    &queue,
+                    mesh,
+                    &settings,
+                    view,
+                    config.show_primary_channel_ring,
+                );
             }
-            self.gradient_pipeline.draw(
-                device,
-                queue,
-                mesh,
-                &settings,
-                view,
-                config.show_primary_channel_ring,
-            );
         }
 
         for (config, (mesh, _, view)) in preset.bars.iter().zip(&self.bar_targets) {
@@ -988,7 +1078,7 @@ impl ColorSelectorState {
                 self.bar_uses_saturated_primary_channel(config),
             );
             self.gradient_pipeline
-                .draw(device, queue, mesh, &settings, view, false);
+                .draw(&device, &queue, mesh, &settings, view, false);
         }
 
         cx.notify();
@@ -997,6 +1087,7 @@ impl ColorSelectorState {
     fn update_targets(&mut self, cx: &mut Context<Self>) {
         let Some(preset) = self.presets.get(self.selected_preset) else {
             self.plane_targets.clear();
+            self.plane_ranges.clear();
             self.bar_targets.clear();
             return;
         };
@@ -1005,12 +1096,14 @@ impl ColorSelectorState {
         let width = self.widget_bounds.size.width.as_f32();
         if width <= 0.0 {
             self.plane_targets.clear();
+            self.plane_ranges.clear();
             self.bar_targets.clear();
             return;
         }
 
         if preset.planes.is_empty() {
             self.plane_targets.clear();
+            self.plane_ranges.clear();
         } else {
             let columns = preset
                 .planes
@@ -1034,6 +1127,7 @@ impl ColorSelectorState {
                     (mesh, texture, view)
                 })
                 .collect();
+            self.plane_ranges = vec![(NORMALIZED_RANGE, NORMALIZED_RANGE); preset.planes.len()];
         }
 
         let bar_width = width.round().max(1.0) as u32;

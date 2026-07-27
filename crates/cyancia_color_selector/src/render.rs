@@ -2,21 +2,25 @@ use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
 use cyancia_color::{
     model::rgb::Rgb,
-    shader::{IccInputTransformShader, IccOutputTransformShader, IccTransformShader},
+    shader::{IccInputTransformShader, IccOutputTransformShader},
 };
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
+    readback::{
+        AsyncBufferReadback, create_readback_buffer_and_schedule_copy,
+        readback_buffer_on_submit_async,
+    },
     wesl_jit::compile_wesl,
 };
 use encase::ShaderType;
-use glam::{Mat3, Vec2, Vec3, Vec4};
+use glam::{UVec2, Vec2, Vec3, Vec4};
 use moxcms::{ColorProfile, Layout};
-use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, Color,
-    ColorTargetState, ColorWrites, Device, FragmentState, IndexFormat, LoadOp, Operations,
+    ColorTargetState, ColorWrites, ComputePassDescriptor, ComputePipeline,
+    ComputePipelineDescriptor, Device, FragmentState, IndexFormat, LoadOp, Operations,
     PipelineLayoutDescriptor, Queue, RenderPassColorAttachment, RenderPassDescriptor,
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StoreOp, TextureFormat, TextureView, VertexAttribute, VertexBufferLayout, VertexFormat,
@@ -28,6 +32,9 @@ use crate::{
     GradientPlaneShape,
     config::{GradientBarConfig, GradientPlaneConfig},
 };
+
+const COMPUTE_BOUNDS_RESOLUTION: u32 = 256;
+const COMPUTE_BOUNDS_PADDING: u32 = 5;
 
 fn compile_gradient_shader(
     profile: &ColorProfile,
@@ -44,6 +51,171 @@ fn compile_gradient_shader(
             .replace("//CODEGEN_FLAG_PCS_TO_OUTPUT", &output.function),
         &[cyancia_color::color::PACKAGE],
     )
+}
+
+fn compile_compute_bounds_shader(profile: &ColorProfile) -> Result<String> {
+    let input = IccInputTransformShader::new("picker_to_pcs", profile, Layout::Rgb)?;
+    let image = IccOutputTransformShader::new("pcs_to_image", profile, Layout::Rgb)?;
+
+    compile_wesl(
+        include_str!("../shader/compute_bounds.wesl")
+            .replace("//CODEGEN_FLAG_PICKER_TO_PCS", &input.function)
+            .replace("//CODEGEN_FLAG_PCS_TO_IMAGE", &image.function),
+        &[cyancia_color::color::PACKAGE],
+    )
+}
+
+pub struct ComputeBoundsPipeline {
+    layout: BindGroupLayout,
+    pipeline: ComputePipeline,
+}
+
+impl ComputeBoundsPipeline {
+    pub fn new(device: &Device, profile: &ColorProfile) -> Self {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("compute_bounds_layout"),
+            entries: BindGroupLayoutEntries::sequential(
+                ShaderStages::COMPUTE,
+                (
+                    binding_types::uniform_buffer::<GradientSettings>(false),
+                    binding_types::uniform_buffer::<ComputeBoundsParams>(false),
+                    binding_types::storage_buffer::<OutputBounds>(false),
+                ),
+            )
+            .as_ref(),
+        });
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("compute_bounds_shader"),
+            source: ShaderSource::Wgsl(compile_compute_bounds_shader(profile).unwrap().into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("compute_bounds_pipeline_layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("compute_bounds_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        Self { layout, pipeline }
+    }
+
+    pub fn compute(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        settings: &GradientSettings,
+    ) -> AsyncBufferReadback<OutputBounds> {
+        let mut settings_buffer = DynamicBuffer::new(
+            Some("compute_bounds_settings_buffer".into()),
+            BufferUsages::UNIFORM,
+        );
+        settings_buffer.push(settings);
+        settings_buffer.write_buffer(device, queue);
+
+        let mut params_buffer = DynamicBuffer::new(
+            Some("compute_bounds_params_buffer".into()),
+            BufferUsages::UNIFORM,
+        );
+        params_buffer.push(&ComputeBoundsParams {
+            resolution: UVec2::splat(COMPUTE_BOUNDS_RESOLUTION),
+        });
+        params_buffer.write_buffer(device, queue);
+
+        let mut output_buffer = DynamicBuffer::new(
+            Some("compute_bounds_output_buffer".into()),
+            BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        );
+        output_buffer.push(&OutputBounds::empty());
+        output_buffer.write_buffer(device, queue);
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("compute_bounds_bind_group"),
+            layout: &self.layout,
+            entries: BindGroupEntries::sequential((
+                settings_buffer.binding().unwrap(),
+                params_buffer.binding().unwrap(),
+                output_buffer.binding().unwrap(),
+            ))
+            .as_ref(),
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("compute_bounds_pass"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(
+                COMPUTE_BOUNDS_RESOLUTION.div_ceil(16),
+                COMPUTE_BOUNDS_RESOLUTION.div_ceil(16),
+                1,
+            );
+        }
+
+        let readback_buffer = create_readback_buffer_and_schedule_copy(
+            device,
+            &mut encoder,
+            output_buffer.inner_buffer().unwrap(),
+        );
+        let readback =
+            readback_buffer_on_submit_async::<OutputBounds, _>(&mut encoder, &readback_buffer, ..);
+        queue.submit([encoder.finish()]);
+        readback
+    }
+}
+
+#[derive(ShaderType)]
+struct ComputeBoundsParams {
+    resolution: UVec2,
+}
+
+#[derive(Debug, Clone, Copy, ShaderType)]
+pub struct OutputBounds {
+    x_min: u32,
+    y_min: u32,
+    x_max: u32,
+    y_max: u32,
+}
+
+impl OutputBounds {
+    fn empty() -> Self {
+        Self {
+            x_min: COMPUTE_BOUNDS_RESOLUTION - 1,
+            y_min: COMPUTE_BOUNDS_RESOLUTION - 1,
+            x_max: 0,
+            y_max: 0,
+        }
+    }
+
+    pub fn normalized_ranges(self) -> Option<(Vec2, Vec2)> {
+        if self.x_min > self.x_max || self.y_min > self.y_max {
+            return None;
+        }
+
+        let max_index = COMPUTE_BOUNDS_RESOLUTION - 1;
+        let x_min = self.x_min.saturating_sub(COMPUTE_BOUNDS_PADDING);
+        let y_min = self.y_min.saturating_sub(COMPUTE_BOUNDS_PADDING);
+        let x_max = self
+            .x_max
+            .saturating_add(COMPUTE_BOUNDS_PADDING)
+            .min(max_index);
+        let y_max = self
+            .y_max
+            .saturating_add(COMPUTE_BOUNDS_PADDING)
+            .min(max_index);
+        let scale = 1.0 / max_index as f32;
+        Some((
+            Vec2::new(x_min as f32, x_max as f32) * scale,
+            Vec2::new(y_min as f32, y_max as f32) * scale,
+        ))
+    }
 }
 
 pub struct GradientPipeline {
@@ -386,6 +558,7 @@ pub struct GradientSettings {
     use_out_of_gamut_color: u32,
     color_model: u32,
     variable_channels: u32,
+    plane_shape: u32,
     rotation: f32,
     flip_axis: u32,
     primary_channel: u32,
@@ -394,6 +567,8 @@ pub struct GradientSettings {
     saturate_primary_channel: u32,
     ring_width: f32,
     texture_size: f32,
+    x_range: Vec2,
+    y_range: Vec2,
 }
 
 impl GradientSettings {
@@ -422,6 +597,7 @@ impl GradientSettings {
             use_out_of_gamut_color: u32::from(use_out_of_gamut_color),
             color_model: config.model as u32,
             variable_channels: u32::from(variable_channels),
+            plane_shape: config.shape as u32,
             rotation: config.rotation,
             flip_axis: u32::from(config.flip_axis.bits()),
             primary_channel: (0..3)
@@ -432,6 +608,8 @@ impl GradientSettings {
             saturate_primary_channel: u32::from(config.saturated_primary_channel),
             ring_width: config.primary_channel_ring_width,
             texture_size,
+            x_range: Vec2::new(0.0, 1.0),
+            y_range: Vec2::new(0.0, 1.0),
         }
     }
 
@@ -456,6 +634,7 @@ impl GradientSettings {
             use_out_of_gamut_color: u32::from(use_out_of_gamut_color),
             color_model: config.model as u32,
             variable_channels: 1 << config.channel,
+            plane_shape: GradientPlaneShape::Square as u32,
             rotation: 0.0,
             flip_axis: 0,
             primary_channel: 0,
@@ -464,6 +643,14 @@ impl GradientSettings {
             saturate_primary_channel: u32::from(saturate_primary_channel),
             ring_width: 0.0,
             texture_size: 1.0,
+            x_range: Vec2::new(0.0, 1.0),
+            y_range: Vec2::new(0.0, 1.0),
         }
+    }
+
+    pub fn with_ranges(mut self, x_range: Vec2, y_range: Vec2) -> Self {
+        self.x_range = x_range;
+        self.y_range = y_range;
+        self
     }
 }
