@@ -4,6 +4,108 @@ use moxcms::{
     TransformOptions,
 };
 
+pub struct IccInputTransformShader {
+    pub function: String,
+}
+
+impl IccInputTransformShader {
+    pub fn new(ident: &str, profile: &ColorProfile, _: Layout) -> Result<Self> {
+        if !profile.is_matrix_shaper() {
+            bail!("Only matrix shaper profiles are supported yet.");
+        }
+
+        if profile.color_space != DataColorSpace::Rgb {
+            bail!("Only RGB color spaces are supported yet.");
+        }
+
+        let r_trc = profile.red_trc.as_ref().unwrap();
+        let g_trc = profile.green_trc.as_ref().unwrap();
+        let b_trc = profile.blue_trc.as_ref().unwrap();
+
+        let r_trc_inv_fn_ident = format!("_{}_r_trc_inv", ident);
+        let g_trc_inv_fn_ident = format!("_{}_g_trc_inv", ident);
+        let b_trc_inv_fn_ident = format!("_{}_b_trc_inv", ident);
+
+        let r_trc_inv_fn = linear_function(&r_trc_inv_fn_ident, "f32", r_trc)?;
+        let g_trc_inv_fn = linear_function(&g_trc_inv_fn_ident, "f32", g_trc)?;
+        let b_trc_inv_fn = linear_function(&b_trc_inv_fn_ident, "f32", b_trc)?;
+
+        let rgb_to_xyz_fn_ident = format!("_{}_rgb_to_xyz", ident);
+        let rgb_to_xyz_body = matrix_function(&rgb_to_xyz_fn_ident, &profile.rgb_to_xyz_matrix())?;
+
+        let function = format!(
+            "
+            fn {ident}(c: vec3f) -> vec3f {{
+                let _r = {r_trc_inv_fn_ident}(c[0]);
+                let _g = {g_trc_inv_fn_ident}(c[1]);
+                let _b = {b_trc_inv_fn_ident}(c[2]);
+
+                return {rgb_to_xyz_fn_ident}(vec3f(_r, _g, _b));
+            }}
+
+            {r_trc_inv_fn}
+            {g_trc_inv_fn}
+            {b_trc_inv_fn}
+            {rgb_to_xyz_body}
+        "
+        );
+
+        Ok(Self { function })
+    }
+}
+
+pub struct IccOutputTransformShader {
+    pub function: String,
+}
+
+impl IccOutputTransformShader {
+    pub fn new(ident: &str, profile: &ColorProfile, layout: Layout) -> Result<Self> {
+        if !profile.is_matrix_shaper() {
+            bail!("Only matrix shaper profiles are supported yet.");
+        }
+
+        if profile.color_space != DataColorSpace::Rgb {
+            bail!("Only RGB color spaces are supported yet.");
+        }
+
+        let r_trc = profile.red_trc.as_ref().unwrap();
+        let g_trc = profile.green_trc.as_ref().unwrap();
+        let b_trc = profile.blue_trc.as_ref().unwrap();
+
+        let r_trc_fn_ident = format!("_{}_r_trc", ident);
+        let g_trc_fn_ident = format!("_{}_g_trc", ident);
+        let b_trc_fn_ident = format!("_{}_b_trc", ident);
+
+        let r_trc_fn = gamma_function(&r_trc_fn_ident, "f32", r_trc)?;
+        let g_trc_fn = gamma_function(&g_trc_fn_ident, "f32", g_trc)?;
+        let b_trc_fn = gamma_function(&b_trc_fn_ident, "f32", b_trc)?;
+
+        let xyz_to_rgb_fn_ident = format!("_{}_xyz_to_rgb", ident);
+        let xyz_to_rgb_fn =
+            matrix_function(&xyz_to_rgb_fn_ident, &profile.rgb_to_xyz_matrix().inverse())?;
+
+        let function = format!(
+            "
+            fn {ident}(c: vec3f) -> vec3f {{
+                let _xyz = {xyz_to_rgb_fn_ident}(c);
+                let _r = {r_trc_fn_ident}(_xyz[0]);
+                let _g = {g_trc_fn_ident}(_xyz[1]);
+                let _b = {b_trc_fn_ident}(_xyz[2]);
+
+                return vec3f(_r, _g, _b);
+            }}
+
+            {r_trc_fn}
+            {g_trc_fn}
+            {b_trc_fn}
+            {xyz_to_rgb_fn}
+        "
+        );
+
+        Ok(Self { function })
+    }
+}
+
 pub struct IccTransformShader {
     pub function: String,
 }

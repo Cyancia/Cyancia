@@ -23,8 +23,6 @@ struct VertexOutput {
 }
 
 struct Settings {
-    rgb_to_xyz: mat3x3f,
-    xyz_to_rgb: mat3x3f,
     channel_ranges: array<vec4f, 3>,
     base_channels: vec3f,
     // Gray,
@@ -51,6 +49,10 @@ struct Settings {
 }
 
 @group(0) @binding(0) var<uniform> settings: Settings;
+
+//CODEGEN_FLAG_PICKER_TO_PCS
+
+//CODEGEN_FLAG_PCS_TO_OUTPUT
 
 @vertex
 fn vertex(in: VertexInput) -> VertexOutput {
@@ -79,10 +81,14 @@ fn channels_into_rgb(ch: vec3f) -> vec3f {
             xyz = gray_into_xyz(Gray(ch[0]));
         }
         case 1: {
-            xyz = rgb_into_xyz(hsl_into_rgb(Hsl(ch[0], ch[1], ch[2])), settings.rgb_to_xyz);
+            let rgb = hsl_into_rgb(Hsl(ch[0], ch[1], ch[2]));
+            let _xyz = picker_to_pcs(vec3f(rgb.r, rgb.g, rgb.b));
+            xyz = Xyz(_xyz[0], _xyz[1], _xyz[2]);
         }
         case 2: {
-            xyz = rgb_into_xyz(hsv_into_rgb(Hsv(ch[0], ch[1], ch[2])), settings.rgb_to_xyz);
+            let rgb = hsv_into_rgb(Hsv(ch[0], ch[1], ch[2]));
+            let _xyz = picker_to_pcs(vec3f(rgb.r, rgb.g, rgb.b));
+            xyz = Xyz(_xyz[0], _xyz[1], _xyz[2]);
         }
         case 3: {
             xyz = lab_into_xyz(Lab(ch[0], ch[1], ch[2]));
@@ -103,7 +109,8 @@ fn channels_into_rgb(ch: vec3f) -> vec3f {
             xyz = oklch_into_xyz(OkLch(ch[0], ch[1], ch[2]));
         }
         case 9: {
-            xyz = rgb_into_xyz(Rgb(ch[0], ch[1], ch[2]), settings.rgb_to_xyz);
+            let _xyz = picker_to_pcs(ch);
+            xyz = Xyz(_xyz[0], _xyz[1], _xyz[2]);
         }
         case 10: {
             xyz = Xyz(ch[0], ch[1], ch[2]);
@@ -111,8 +118,7 @@ fn channels_into_rgb(ch: vec3f) -> vec3f {
         default: {}
     }
 
-    let rgb = rgb_from_xyz(xyz, settings.xyz_to_rgb);
-    return vec3f(rgb.r, rgb.g, rgb.b);
+    return pcs_to_output(vec3f(xyz.x, xyz.y, xyz.z));
 }
 
 fn saturate_primary_channel(ch: vec3f) -> vec3f {

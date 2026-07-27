@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 bitflags.workspace = true
 bytemuck.workspace = true
 cyancia_color.workspace = true
@@ -19,10 +20,6 @@ gpui-component.workspace = true
 moxcms.workspace = true
 wesl.workspace = true
 wgpu.workspace = true
-
-[build-dependencies]
-cyancia_color.workspace = true
-wesl.workspace = true
 
 [lints]
 workspace = true

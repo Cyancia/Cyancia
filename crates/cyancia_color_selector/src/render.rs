@@ -1,12 +1,17 @@
+use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
+use cyancia_color::shader::{
+    IccInputTransformShader, IccOutputTransformShader, IccTransformShader,
+};
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
+    wesl_jit::compile_wesl,
 };
 use encase::ShaderType;
 use glam::{Mat3, Vec2, Vec3, Vec4};
-use moxcms::ColorProfile;
+use moxcms::{ColorProfile, Layout};
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, Color,
@@ -23,13 +28,28 @@ use crate::{
     config::{GradientBarConfig, GradientPlaneConfig},
 };
 
+fn compile_gradient_shader(
+    profile: &ColorProfile,
+    output_profile: &ColorProfile,
+) -> Result<String> {
+    let input = IccInputTransformShader::new("picker_to_pcs", profile, Layout::Rgb)?;
+    let output = IccOutputTransformShader::new("pcs_to_output", output_profile, Layout::Rgb)?;
+
+    compile_wesl(
+        include_str!("../shader/gradient.wesl")
+            .replace("//CODEGEN_FLAG_PICKER_TO_PCS", &input.function)
+            .replace("//CODEGEN_FLAG_PCS_TO_OUTPUT", &output.function),
+        &[cyancia_color::color::PACKAGE],
+    )
+}
+
 pub struct GradientPipeline {
     layout: BindGroupLayout,
     pipeline: RenderPipeline,
 }
 
 impl GradientPipeline {
-    pub fn new(device: &Device) -> Self {
+    pub fn new(device: &Device, profile: &ColorProfile, output_profile: &ColorProfile) -> Self {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("gradient_layout"),
             entries: BindGroupLayoutEntries::sequential(
@@ -41,7 +61,11 @@ impl GradientPipeline {
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("gradient_shader"),
-            source: ShaderSource::Wgsl(include_wesl!("gradient").into()),
+            source: ShaderSource::Wgsl(
+                compile_gradient_shader(profile, output_profile)
+                    .unwrap()
+                    .into(),
+            ),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -155,7 +179,7 @@ pub struct GradientRingPipeline {
 }
 
 impl GradientRingPipeline {
-    pub fn new(device: &Device) -> Self {
+    pub fn new(device: &Device, profile: &ColorProfile, output_profile: &ColorProfile) -> Self {
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("gradient_ring_layout"),
             entries: BindGroupLayoutEntries::sequential(
@@ -167,7 +191,11 @@ impl GradientRingPipeline {
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("gradient_ring_shader"),
-            source: ShaderSource::Wgsl(include_wesl!("gradient").into()),
+            source: ShaderSource::Wgsl(
+                compile_gradient_shader(profile, output_profile)
+                    .unwrap()
+                    .into(),
+            ),
         });
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("gradient_ring_pipeline_layout"),
@@ -349,8 +377,6 @@ fn vtx(px: f32, py: f32, uvx: f32, uvy: f32) -> Vertex {
 
 #[derive(ShaderType, Clone)]
 pub struct GradientSettings {
-    rgb_to_xyz: Mat3,
-    xyz_to_rgb: Mat3,
     channel_ranges: [Vec4; 3],
     base_channels: Vec3,
     color_model: u32,
@@ -367,7 +393,6 @@ pub struct GradientSettings {
 
 impl GradientSettings {
     pub fn new_plane(
-        profile: &ColorProfile,
         base_channels: Vec3,
         config: &GradientPlaneConfig,
         primary_channel_override: Option<u8>,
@@ -375,22 +400,8 @@ impl GradientSettings {
     ) -> Self {
         let variable_channels = primary_channel_override
             .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel));
-        let matrix = profile.rgb_to_xyz_matrix().to_f32().v;
-        let rgb_to_xyz = Mat3::from_cols_array(&[
-            matrix[0][0],
-            matrix[1][0],
-            matrix[2][0],
-            matrix[0][1],
-            matrix[1][1],
-            matrix[2][1],
-            matrix[0][2],
-            matrix[1][2],
-            matrix[2][2],
-        ]);
 
         Self {
-            rgb_to_xyz,
-            xyz_to_rgb: rgb_to_xyz.inverse(),
             channel_ranges: config
                 .model
                 .channel_ranges()
@@ -412,27 +423,11 @@ impl GradientSettings {
     }
 
     pub fn new_bar(
-        profile: &ColorProfile,
         base_channels: Vec3,
         config: &GradientBarConfig,
         saturate_primary_channel: bool,
     ) -> Self {
-        let matrix = profile.rgb_to_xyz_matrix().to_f32().v;
-        let rgb_to_xyz = Mat3::from_cols_array(&[
-            matrix[0][0],
-            matrix[1][0],
-            matrix[2][0],
-            matrix[0][1],
-            matrix[1][1],
-            matrix[2][1],
-            matrix[0][2],
-            matrix[1][2],
-            matrix[2][2],
-        ]);
-
         Self {
-            rgb_to_xyz,
-            xyz_to_rgb: rgb_to_xyz.inverse(),
             channel_ranges: config
                 .model
                 .channel_ranges()

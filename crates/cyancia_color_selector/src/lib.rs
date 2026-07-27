@@ -10,7 +10,7 @@ use cyancia_color::{
 use cyancia_render::render_context::RenderContextAppExt;
 use glam::{Vec2, Vec3};
 use gpui::{
-    AppContext, Bounds, Context, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
+    AppContext, Bounds, Context, DisplayId, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
     ParentElement, Pixels, Point, Render, Size, StatefulInteractiveElement, Styled, SurfaceSource,
     Window, div, px, relative, rgb, surface,
@@ -340,6 +340,7 @@ fn rotate_counterclockwise(position: Vec2, rotation: f32) -> Vec2 {
 pub struct ColorSelectorState {
     color: Color,
     profile: ColorProfile,
+    output_profile: ColorProfile,
 
     presets: Vec<ColorSelectorConfig>,
     selected_preset: usize,
@@ -355,6 +356,7 @@ pub struct ColorSelectorState {
     active_selection: Option<ActiveSelection>,
 
     widget_bounds: Bounds<Pixels>,
+    last_display: DisplayId,
 }
 
 impl ColorSelectorState {
@@ -373,16 +375,17 @@ impl ColorSelectorState {
             selected_preset.min(presets.len() - 1)
         };
 
+        let output_profile = cyancia_color::platform::get_window_color_profile(window).unwrap();
+
         let preset_count = presets.len();
         let mut this = Self {
             color,
-            profile,
 
             presets,
             selected_preset,
 
-            gradient_pipeline: GradientPipeline::new(device),
-            ring_pipeline: GradientRingPipeline::new(device),
+            gradient_pipeline: GradientPipeline::new(device, &profile, &output_profile),
+            ring_pipeline: GradientRingPipeline::new(device, &profile, &output_profile),
             plane_targets: Vec::new(),
             bar_targets: Vec::new(),
             bar_inputs: Vec::new(),
@@ -392,9 +395,28 @@ impl ColorSelectorState {
             active_selection: None,
 
             widget_bounds: Bounds::default(),
+            last_display: window.display(cx).map(|d| d.id()).unwrap(),
+
+            profile,
+            output_profile,
         };
         this.rebuild_bar_inputs(window, cx);
         this
+    }
+
+    fn on_window_bounds_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(display) = window.display(cx).map(|d| d.id()) else {
+            return;
+        };
+
+        if display == self.last_display {
+            return;
+        }
+
+        let device = cx.render_device();
+        self.output_profile = cyancia_color::platform::get_window_color_profile(window).unwrap();
+        self.gradient_pipeline = GradientPipeline::new(device, &self.profile, &self.output_profile);
+        self.ring_pipeline = GradientRingPipeline::new(device, &self.profile, &self.output_profile);
     }
 
     pub fn color(&self) -> Color {
@@ -930,7 +952,6 @@ impl ColorSelectorState {
 
         for (config, (mesh, texture, view)) in preset.planes.iter().zip(&self.plane_targets) {
             let settings = GradientSettings::new_plane(
-                &self.profile,
                 config.model.channels(self.color, &self.profile),
                 config,
                 self.primary_channel_override(config.model),
@@ -952,7 +973,6 @@ impl ColorSelectorState {
 
         for (config, (mesh, _, view)) in preset.bars.iter().zip(&self.bar_targets) {
             let settings = GradientSettings::new_bar(
-                &self.profile,
                 config.model.channels(self.color, &self.profile),
                 config,
                 self.bar_uses_saturated_primary_channel(config),
