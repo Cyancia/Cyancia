@@ -421,7 +421,8 @@ impl ColorSelectorDock {
                     show_primary_channel_lock: false,
                 },
             ],
-            out_of_gamut_color: None,
+            out_of_gamut_color: Rgb::new(0.5, 0.5, 0.5),
+            use_out_of_gamut_color: true,
             clip_to_gamut: false,
         };
 

@@ -12,8 +12,8 @@ use glam::{Vec2, Vec3};
 use gpui::{
     AppContext, Bounds, Context, DisplayId, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Pixels, Point, Render, Size, StatefulInteractiveElement, Styled, SurfaceSource,
-    Window, div, px, relative, rgb, surface,
+    ParentElement, Pixels, Point, Render, Size, StatefulInteractiveElement, Styled, Subscription,
+    SurfaceSource, Window, div, px, relative, rgb, surface,
 };
 use gpui_component::{
     ElementExt, Sizable, h_flex,
@@ -357,6 +357,8 @@ pub struct ColorSelectorState {
 
     widget_bounds: Bounds<Pixels>,
     last_display: DisplayId,
+
+    _subscriptions: Vec<Subscription>,
 }
 
 impl ColorSelectorState {
@@ -376,6 +378,8 @@ impl ColorSelectorState {
         };
 
         let output_profile = cyancia_color::platform::get_window_color_profile(window).unwrap();
+
+        let _subscriptions = vec![cx.observe_window_bounds(window, Self::on_window_bounds_changed)];
 
         let preset_count = presets.len();
         let mut this = Self {
@@ -399,6 +403,8 @@ impl ColorSelectorState {
 
             profile,
             output_profile,
+
+            _subscriptions,
         };
         this.rebuild_bar_inputs(window, cx);
         this
@@ -952,6 +958,8 @@ impl ColorSelectorState {
 
         for (config, (mesh, texture, view)) in preset.planes.iter().zip(&self.plane_targets) {
             let settings = GradientSettings::new_plane(
+                preset.out_of_gamut_color,
+                preset.use_out_of_gamut_color,
                 config.model.channels(self.color, &self.profile),
                 config,
                 self.primary_channel_override(config.model),
@@ -973,6 +981,8 @@ impl ColorSelectorState {
 
         for (config, (mesh, _, view)) in preset.bars.iter().zip(&self.bar_targets) {
             let settings = GradientSettings::new_bar(
+                preset.out_of_gamut_color,
+                preset.use_out_of_gamut_color,
                 config.model.channels(self.color, &self.profile),
                 config,
                 self.bar_uses_saturated_primary_channel(config),

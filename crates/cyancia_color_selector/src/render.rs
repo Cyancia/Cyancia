@@ -1,7 +1,8 @@
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
-use cyancia_color::shader::{
-    IccInputTransformShader, IccOutputTransformShader, IccTransformShader,
+use cyancia_color::{
+    model::rgb::Rgb,
+    shader::{IccInputTransformShader, IccOutputTransformShader, IccTransformShader},
 };
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
@@ -33,11 +34,13 @@ fn compile_gradient_shader(
     output_profile: &ColorProfile,
 ) -> Result<String> {
     let input = IccInputTransformShader::new("picker_to_pcs", profile, Layout::Rgb)?;
+    let image = IccOutputTransformShader::new("pcs_to_image", profile, Layout::Rgb)?;
     let output = IccOutputTransformShader::new("pcs_to_output", output_profile, Layout::Rgb)?;
 
     compile_wesl(
         include_str!("../shader/gradient.wesl")
             .replace("//CODEGEN_FLAG_PICKER_TO_PCS", &input.function)
+            .replace("//CODEGEN_FLAG_PCS_TO_IMAGE", &image.function)
             .replace("//CODEGEN_FLAG_PCS_TO_OUTPUT", &output.function),
         &[cyancia_color::color::PACKAGE],
     )
@@ -379,6 +382,8 @@ fn vtx(px: f32, py: f32, uvx: f32, uvy: f32) -> Vertex {
 pub struct GradientSettings {
     channel_ranges: [Vec4; 3],
     base_channels: Vec3,
+    out_of_gamut_color: Vec3,
+    use_out_of_gamut_color: u32,
     color_model: u32,
     variable_channels: u32,
     rotation: f32,
@@ -393,6 +398,8 @@ pub struct GradientSettings {
 
 impl GradientSettings {
     pub fn new_plane(
+        out_of_gamut_color: Rgb,
+        use_out_of_gamut_color: bool,
         base_channels: Vec3,
         config: &GradientPlaneConfig,
         primary_channel_override: Option<u8>,
@@ -407,6 +414,12 @@ impl GradientSettings {
                 .channel_ranges()
                 .map(|range| Vec4::new(range.x, range.y, 0.0, 0.0)),
             base_channels,
+            out_of_gamut_color: Vec3::new(
+                out_of_gamut_color.r,
+                out_of_gamut_color.g,
+                out_of_gamut_color.b,
+            ),
+            use_out_of_gamut_color: u32::from(use_out_of_gamut_color),
             color_model: config.model as u32,
             variable_channels: u32::from(variable_channels),
             rotation: config.rotation,
@@ -423,6 +436,8 @@ impl GradientSettings {
     }
 
     pub fn new_bar(
+        out_of_gamut_color: Rgb,
+        use_out_of_gamut_color: bool,
         base_channels: Vec3,
         config: &GradientBarConfig,
         saturate_primary_channel: bool,
@@ -433,6 +448,12 @@ impl GradientSettings {
                 .channel_ranges()
                 .map(|range| Vec4::new(range.x, range.y, 0.0, 0.0)),
             base_channels,
+            out_of_gamut_color: Vec3::new(
+                out_of_gamut_color.r,
+                out_of_gamut_color.g,
+                out_of_gamut_color.b,
+            ),
+            use_out_of_gamut_color: u32::from(use_out_of_gamut_color),
             color_model: config.model as u32,
             variable_channels: 1 << config.channel,
             rotation: 0.0,

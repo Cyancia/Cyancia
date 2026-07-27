@@ -25,6 +25,8 @@ struct VertexOutput {
 struct Settings {
     channel_ranges: array<vec4f, 3>,
     base_channels: vec3f,
+    out_of_gamut_color: vec3f,
+    use_out_of_gamut_color: u32,
     // Gray,
     // Hsl,
     // Hsv,
@@ -51,6 +53,8 @@ struct Settings {
 @group(0) @binding(0) var<uniform> settings: Settings;
 
 //CODEGEN_FLAG_PICKER_TO_PCS
+
+//CODEGEN_FLAG_PCS_TO_IMAGE
 
 //CODEGEN_FLAG_PCS_TO_OUTPUT
 
@@ -118,7 +122,14 @@ fn channels_into_rgb(ch: vec3f) -> vec3f {
         default: {}
     }
 
-    return pcs_to_output(vec3f(xyz.x, xyz.y, xyz.z));
+    let output = pcs_to_output(vec3f(xyz.x, xyz.y, xyz.z));
+    if settings.use_out_of_gamut_color == 0u {
+        return output;
+    }
+
+    let image = pcs_to_image(vec3f(xyz.x, xyz.y, xyz.z));
+    let out_of_gamut = any(image > vec3f(1.0 + 1e-4)) || any(image < vec3f(-1e-4));
+    return select(output, settings.out_of_gamut_color, out_of_gamut);
 }
 
 fn saturate_primary_channel(ch: vec3f) -> vec3f {
