@@ -421,6 +421,8 @@ impl ColorSelectorDock {
                     show_primary_channel_lock: false,
                 },
             ],
+            out_of_gamut_color: None,
+            clip_to_gamut: false,
         };
 
         let config_editor = cx.new(|cx| {

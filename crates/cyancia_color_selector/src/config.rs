@@ -1,14 +1,16 @@
 use std::f32::consts::TAU;
 
+use cyancia_color::model::rgb::Rgb;
 use cyancia_widgets::spin_slider::{SpinSlider, SpinSliderEvent, SpinSliderState};
 use gpui::{
-    AnyElement, AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window, div, px,
+    AnyElement, AppContext, Context, Entity, EventEmitter, Hsla, InteractiveElement, IntoElement,
+    ParentElement, Render, Rgba, SharedString, Styled, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, Disableable, IndexPath, Sizable,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
+    color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState},
     h_flex,
     input::{Input, InputEvent, InputState},
     radio::RadioGroup,
@@ -27,6 +29,8 @@ pub struct ColorSelectorConfig {
     pub max_planes_per_row: usize,
     pub planes: Vec<GradientPlaneConfig>,
     pub bars: Vec<GradientBarConfig>,
+    pub out_of_gamut_color: Option<Rgb>,
+    pub clip_to_gamut: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +135,7 @@ pub struct ColorSelectorConfigEditorState {
     name: Entity<InputState>,
     max_plane_size: Entity<SpinSliderState>,
     max_planes_per_row: Entity<SpinSliderState>,
+    out_of_gamut_color: Entity<ColorPickerState>,
     plane_controls: Vec<PlaneEditorControls>,
     bar_controls: Vec<BarEditorControls>,
     next_control_id: u64,
@@ -149,11 +154,10 @@ impl ColorSelectorConfigEditorState {
             .and_then(|index| configs.get(index))
             .map_or("", |config| config.name.as_str());
         let name = Self::create_name_input(name_value, window, cx);
-        let (max_plane_size, max_planes_per_row) = Self::create_config_layout_controls(
-            selected_config.and_then(|index| configs.get(index)),
-            window,
-            cx,
-        );
+        let active_config = selected_config.and_then(|index| configs.get(index));
+        let (max_plane_size, max_planes_per_row) =
+            Self::create_config_layout_controls(active_config, window, cx);
+        let out_of_gamut_color = Self::create_out_of_gamut_color_control(active_config, window, cx);
 
         let mut this = Self {
             configs,
@@ -162,6 +166,7 @@ impl ColorSelectorConfigEditorState {
             name,
             max_plane_size,
             max_planes_per_row,
+            out_of_gamut_color,
             plane_controls: Vec::new(),
             bar_controls: Vec::new(),
             next_control_id: 0,
@@ -170,6 +175,7 @@ impl ColorSelectorConfigEditorState {
         this.subscribe_config_select(window, cx);
         this.subscribe_name(window, cx);
         this.subscribe_config_layout_controls(window, cx);
+        this.subscribe_out_of_gamut_color(window, cx);
         this.rebuild_active_controls(window, cx);
         this
     }
@@ -267,6 +273,24 @@ impl ColorSelectorConfigEditorState {
         (max_plane_size, max_planes_per_row)
     }
 
+    fn create_out_of_gamut_color_control(
+        config: Option<&ColorSelectorConfig>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ColorPickerState> {
+        let color = config
+            .and_then(|config| config.out_of_gamut_color)
+            .unwrap_or(Rgb::new(0.5, 0.5, 0.5));
+        cx.new(|cx| {
+            ColorPickerState::new(window, cx).default_value(Rgba {
+                r: color.r,
+                g: color.g,
+                b: color.b,
+                a: 1.0,
+            })
+        })
+    }
+
     fn subscribe_config_select(&self, window: &mut Window, cx: &mut Context<Self>) {
         cx.subscribe_in(&self.config_select, window, |this, _, event, window, cx| {
             if let SelectEvent::Confirm(Some(index)) = event {
@@ -315,6 +339,20 @@ impl ColorSelectorConfigEditorState {
         .detach();
     }
 
+    fn subscribe_out_of_gamut_color(&self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.subscribe_in(&self.out_of_gamut_color, window, |this, _, event, _, cx| {
+            let ColorPickerEvent::Change(color) = event;
+            if let Some(config) = this.active_config_mut() {
+                config.out_of_gamut_color = color.map(|c| {
+                    let color = Rgba::from(c);
+                    Rgb::new(color.r, color.g, color.b)
+                });
+                cx.notify();
+            }
+        })
+        .detach();
+    }
+
     fn refresh_config_select(&self, window: &mut Window, cx: &mut Context<Self>) {
         let items = Self::config_items(&self.configs);
         self.config_select.update(cx, |state, cx| {
@@ -332,8 +370,11 @@ impl ColorSelectorConfigEditorState {
             Self::create_config_layout_controls(self.active_config(), window, cx);
         self.max_plane_size = max_plane_size;
         self.max_planes_per_row = max_planes_per_row;
+        self.out_of_gamut_color =
+            Self::create_out_of_gamut_color_control(self.active_config(), window, cx);
         self.subscribe_name(window, cx);
         self.subscribe_config_layout_controls(window, cx);
+        self.subscribe_out_of_gamut_color(window, cx);
         self.rebuild_active_controls(window, cx);
     }
 
@@ -604,6 +645,8 @@ impl ColorSelectorConfigEditorState {
             max_planes_per_row: 2,
             planes: Vec::new(),
             bars: Vec::new(),
+            out_of_gamut_color: None,
+            clip_to_gamut: false,
         });
         self.selected_config = Some(self.configs.len() - 1);
         self.refresh_config_select(window, cx);
@@ -968,6 +1011,39 @@ impl Render for ColorSelectorConfigEditorState {
                     SpinSlider::new(&self.max_planes_per_row)
                         .small()
                         .prefix("Max planes per row: "),
+                )
+                .child(
+                    h_flex()
+                        .gap_4()
+                        .child(
+                            Checkbox::new("color-selector-out-of-gamut-color")
+                                .label("Out-of-gamut color")
+                                .checked(config.out_of_gamut_color.is_some())
+                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                    let color = (*checked).then(|| {
+                                        this.out_of_gamut_color
+                                            .read(cx)
+                                            .value()
+                                            .map(|c| {
+                                                let color = Rgba::from(c);
+                                                Rgb::new(color.r, color.g, color.b)
+                                            })
+                                            .unwrap_or(Rgb::new(0.5, 0.5, 0.5))
+                                    });
+                                    this.active_config_mut().unwrap().out_of_gamut_color = color;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(ColorPicker::new(&self.out_of_gamut_color).small())
+                        .child(
+                            Checkbox::new("color-selector-clip-to-gamut")
+                                .label("Clip to gamut")
+                                .checked(config.clip_to_gamut)
+                                .on_click(cx.listener(|this, checked, _, cx| {
+                                    this.active_config_mut().unwrap().clip_to_gamut = *checked;
+                                    cx.notify();
+                                })),
+                        ),
                 )
                 .child(
                     v_flex()
