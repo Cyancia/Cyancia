@@ -131,7 +131,7 @@ fn channels_into_rgb(ch: vec3f) -> vec3f {
     }
 
     let image = pcs_to_image(vec3f(xyz.x, xyz.y, xyz.z));
-    let out_of_gamut = any(image > vec3f(1.0 + 1e-4)) || any(image < vec3f(-1e-4));
+    let out_of_gamut = any(image > vec3f(1.0 + 1e-2)) || any(image < vec3f(-1e-2));
     return select(output, settings.out_of_gamut_color, out_of_gamut);
 }
 

@@ -140,7 +140,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     }
 
     let image = channels_into_image(ch);
-    let in_gamut = all(image <= vec3f(1.0 + 1e-4)) && all(image >= vec3f(-1e-4));
+    let in_gamut = all(image <= vec3f(1.0 + 1e-2)) && all(image >= vec3f(-1e-2));
     if in_gamut {
         atomicMin(&output_bounds.x_min, global_id.x);
         atomicMin(&output_bounds.y_min, global_id.y);

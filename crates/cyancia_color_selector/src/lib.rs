@@ -30,13 +30,16 @@ use wgpu::{
 
 use crate::{
     config::{ColorSelectorConfig, GradientBarConfig, GradientPlaneConfig},
-    render::{
+    control::{ActiveSelection, SurfaceDrag, SurfaceDragPreview, SurfaceTarget},
+    pipeline::{
         ComputeBoundsPipeline, GradientMesh, GradientPipeline, GradientRingPipeline,
         GradientSettings,
     },
 };
 
 pub mod config;
+mod control;
+mod pipeline;
 mod render;
 
 #[derive(Debug, Clone, Copy)]
@@ -44,36 +47,8 @@ pub enum ColorSelectorEvent {
     Confirmed(Color),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SurfaceTarget {
-    Plane(usize),
-    Bar(usize),
-}
-
-#[derive(Clone)]
-struct SurfaceDrag {
-    selector: EntityId,
-    target: SurfaceTarget,
-}
-
-struct SurfaceDragPreview;
-
-impl Render for SurfaceDragPreview {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Empty
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ActiveSelection {
-    Plane(usize),
-    Ring(usize),
-    Bar(usize),
-}
-
 const GRADIENT_RING_GAP: f32 = 5.0;
 const COLOR_MODEL_COUNT: usize = ColorModel::ALL.len();
-const NORMALIZED_RANGE: Vec2 = Vec2::new(0.0, 1.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[repr(u32)]
@@ -278,76 +253,6 @@ impl ColorModel {
             Self::Rgb => Color::Rgb(Rgb::new(channels.x, channels.y, channels.z)),
             Self::Xyz => Color::Xyz(Xyz::new(channels.x, channels.y, channels.z)),
         }
-    }
-}
-
-fn plane_scale(config: &GradientPlaneConfig, texture_size: f32) -> f32 {
-    if !config.show_primary_channel_ring {
-        return 1.0;
-    }
-
-    let antialias_width = 1.0 / texture_size;
-    let inner_radius = (0.5
-        - antialias_width
-        - (config.primary_channel_ring_width + GRADIENT_RING_GAP) / texture_size)
-        .max(0.0);
-    let circumradius = match config.shape {
-        GradientPlaneShape::Square => std::f32::consts::SQRT_2,
-        GradientPlaneShape::Triangle => 1.0,
-    };
-    2.0 * inner_radius / circumradius
-}
-
-fn clamp_plane_uv(uv: Vec2) -> Vec2 {
-    uv.clamp(Vec2::ZERO, Vec2::ONE)
-}
-
-fn plane_position_to_uv(shape: GradientPlaneShape, position: Vec2) -> Vec2 {
-    match shape {
-        GradientPlaneShape::Square => (position + Vec2::ONE) * 0.5,
-        GradientPlaneShape::Triangle => {
-            let y = (1.0 - position.y) / 1.5;
-            let x = 0.5 + position.x / (3.0_f32.sqrt() * y.max(f32::EPSILON));
-            Vec2::new(x, y)
-        }
-    }
-}
-
-fn plane_uv_to_position(shape: GradientPlaneShape, uv: Vec2) -> Vec2 {
-    match shape {
-        GradientPlaneShape::Square => uv * 2.0 - Vec2::ONE,
-        GradientPlaneShape::Triangle => {
-            Vec2::new(3.0_f32.sqrt() * uv.y * (uv.x - 0.5), 1.0 - 1.5 * uv.y)
-        }
-    }
-}
-
-fn rotate_clockwise(position: Vec2, rotation: f32) -> Vec2 {
-    let (sin, cos) = rotation.sin_cos();
-    Vec2::new(
-        cos * position.x + sin * position.y,
-        -sin * position.x + cos * position.y,
-    )
-}
-
-fn rotate_counterclockwise(position: Vec2, rotation: f32) -> Vec2 {
-    let (sin, cos) = rotation.sin_cos();
-    Vec2::new(
-        cos * position.x - sin * position.y,
-        sin * position.x + cos * position.y,
-    )
-}
-
-fn remap_normalized(value: f32, range: Vec2) -> f32 {
-    range.x + (range.y - range.x) * value
-}
-
-fn unmap_normalized(value: f32, range: Vec2) -> f32 {
-    let width = range.y - range.x;
-    if width.abs() <= f32::EPSILON {
-        0.5
-    } else {
-        (value - range.x) / width
     }
 }
 
@@ -586,14 +491,13 @@ impl ColorSelectorState {
     }
 
     fn bar_uses_saturated_primary_channel(&self, config: &GradientBarConfig) -> bool {
-        self.presets
-            .get(self.selected_preset)
-            .is_some_and(|preset| {
-                preset.planes.iter().any(|plane| {
-                    plane.model == config.model
-                        && plane.saturated_primary_channel
-                        && self.plane_primary_channel(plane) == config.channel
-                })
+        self.presets[self.selected_preset]
+            .planes
+            .iter()
+            .any(|plane| {
+                plane.model == config.model
+                    && plane.saturated_primary_channel
+                    && self.plane_primary_channel(plane) == config.channel
             })
     }
 
@@ -621,556 +525,14 @@ impl ColorSelectorState {
     }
 
     fn plane_normalized_ranges(&self, index: usize) -> (Vec2, Vec2) {
-        if !self
-            .presets
-            .get(self.selected_preset)
-            .is_some_and(|preset| preset.clip_to_gamut)
-        {
-            return (NORMALIZED_RANGE, NORMALIZED_RANGE);
+        if !self.presets[self.selected_preset].clip_to_gamut {
+            return (Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0));
         }
 
         self.plane_ranges
             .get(index)
             .copied()
-            .unwrap_or((NORMALIZED_RANGE, NORMALIZED_RANGE))
-    }
-
-    fn update_plane_bounds(
-        &mut self,
-        index: usize,
-        bounds: Bounds<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.plane_bounds.len() <= index {
-            self.plane_bounds.resize(index + 1, Bounds::default());
-        }
-        self.plane_bounds[index] = bounds;
-
-        let size = bounds
-            .size
-            .width
-            .as_f32()
-            .min(bounds.size.height.as_f32())
-            .round()
-            .max(1.0) as u32;
-        if self
-            .plane_targets
-            .get(index)
-            .is_some_and(|(_, texture, _)| texture.width() == size && texture.height() == size)
-            || index >= self.plane_targets.len()
-        {
-            return;
-        }
-        let Some(config) = self
-            .presets
-            .get(self.selected_preset)
-            .and_then(|preset| preset.planes.get(index))
-        else {
-            return;
-        };
-
-        let device = cx.render_device();
-        let (texture, view) = Self::create_gradient_texture("plane_gradient", size, size, device);
-        let mesh = GradientMesh::new_plane(device, config.shape, plane_scale(config, size as f32));
-        self.plane_targets[index] = (mesh, texture, view);
-        if let Some(ranges) = self.plane_ranges.get_mut(index) {
-            *ranges = (NORMALIZED_RANGE, NORMALIZED_RANGE);
-        }
-        self.redraw_config(cx);
-    }
-
-    fn update_bar_bounds(&mut self, index: usize, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
-        if self.bar_bounds.len() <= index {
-            self.bar_bounds.resize(index + 1, Bounds::default());
-        }
-        self.bar_bounds[index] = bounds;
-        self.update_bar_target_width(index, bounds.size.width, cx);
-    }
-
-    fn plane_uv_from_window_position(
-        &self,
-        index: usize,
-        position: Point<Pixels>,
-    ) -> Option<(Vec2, bool)> {
-        let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
-        let bounds = *self.plane_bounds.get(index)?;
-        let width = bounds.size.width.as_f32();
-        let height = bounds.size.height.as_f32();
-        if width <= 0.0 || height <= 0.0 {
-            return None;
-        }
-
-        let output_position = Vec2::new(
-            2.0 * (position.x - bounds.origin.x).as_f32() / width - 1.0,
-            1.0 - 2.0 * (position.y - bounds.origin.y).as_f32() / height,
-        );
-        let mut input_position = rotate_counterclockwise(output_position, config.rotation);
-        if config.flip_axis.contains(config::GradientPlaneFlipAxis::X) {
-            input_position.x = -input_position.x;
-        }
-        if config.flip_axis.contains(config::GradientPlaneFlipAxis::Y) {
-            input_position.y = -input_position.y;
-        }
-
-        let scale = plane_scale(config, width);
-        if scale <= f32::EPSILON {
-            return None;
-        }
-        input_position /= scale;
-        let uv = plane_position_to_uv(config.shape, input_position);
-        let clamped = clamp_plane_uv(uv);
-        Some((clamped, (uv - clamped).length_squared() <= 1e-6))
-    }
-
-    fn start_plane_selection(
-        &mut self,
-        index: usize,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(config) = self
-            .presets
-            .get(self.selected_preset)
-            .and_then(|preset| preset.planes.get(index))
-            .cloned()
-        else {
-            return;
-        };
-        let Some(bounds) = self.plane_bounds.get(index).copied() else {
-            return;
-        };
-        let size = bounds.size.width.as_f32();
-        if size <= 0.0 {
-            return;
-        }
-
-        let texture_uv = Vec2::new(
-            (position.x - bounds.origin.x).as_f32() / size,
-            1.0 - (position.y - bounds.origin.y).as_f32() / size,
-        );
-        let radius = (texture_uv - Vec2::splat(0.5)).length();
-        let antialias_width = 1.0 / size;
-        let outer_radius = 0.5 - antialias_width;
-        let inner_radius = (outer_radius - config.primary_channel_ring_width / size).max(0.0);
-
-        self.active_selection = if config.show_primary_channel_ring
-            && radius >= inner_radius - antialias_width
-            && radius <= outer_radius + antialias_width
-        {
-            Some(ActiveSelection::Ring(index))
-        } else if self
-            .plane_uv_from_window_position(index, position)
-            .is_some_and(|(_, inside)| inside)
-        {
-            Some(ActiveSelection::Plane(index))
-        } else {
-            None
-        };
-
-        self.update_active_selection(position, window, cx);
-    }
-
-    fn start_bar_selection(
-        &mut self,
-        index: usize,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if index >= self.bar_bounds.len() {
-            return;
-        }
-        self.active_selection = Some(ActiveSelection::Bar(index));
-        self.update_active_selection(position, window, cx);
-    }
-
-    fn update_active_selection(
-        &mut self,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(selection) = self.active_selection else {
-            return;
-        };
-
-        match selection {
-            ActiveSelection::Plane(index) => {
-                let Some(config) = self
-                    .presets
-                    .get(self.selected_preset)
-                    .and_then(|preset| preset.planes.get(index))
-                    .cloned()
-                else {
-                    return;
-                };
-                let Some((uv, _)) = self.plane_uv_from_window_position(index, position) else {
-                    return;
-                };
-                let (x_range, y_range) = self.plane_normalized_ranges(index);
-                let uv = Vec2::new(
-                    remap_normalized(uv.x, x_range),
-                    remap_normalized(uv.y, y_range),
-                );
-                let mut channels = config.model.channels(self.color, &self.profile);
-                let ranges = config.model.channel_ranges();
-                let mut variable_index = 0;
-                let variable_channels = self.plane_variable_channels(&config);
-                for channel in 0..3 {
-                    if variable_channels & (1 << channel) != 0 {
-                        channels[channel] = ranges[channel].x
-                            + (ranges[channel].y - ranges[channel].x) * uv[variable_index];
-                        variable_index += 1;
-                    }
-                }
-                self.color = config.model.color_from_channels(channels);
-            }
-            ActiveSelection::Ring(index) => {
-                let Some(config) = self
-                    .presets
-                    .get(self.selected_preset)
-                    .and_then(|preset| preset.planes.get(index))
-                    .cloned()
-                else {
-                    return;
-                };
-                let Some(bounds) = self.plane_bounds.get(index).copied() else {
-                    return;
-                };
-                let size = bounds.size.width.as_f32();
-                let centered = Vec2::new(
-                    (position.x - bounds.origin.x).as_f32() / size - 0.5,
-                    0.5 - (position.y - bounds.origin.y).as_f32() / size,
-                );
-                if centered.length_squared() <= f32::EPSILON {
-                    return;
-                }
-                let mut angle = centered.y.atan2(centered.x) + config.ring_rotation;
-                if config.reversed_ring {
-                    angle = -angle;
-                }
-                let factor = (angle / std::f32::consts::TAU).rem_euclid(1.0);
-                let channel = self.plane_primary_channel(&config) as usize;
-                let mut channels = config.model.channels(self.color, &self.profile);
-                let range = config.model.channel_ranges()[channel];
-                channels[channel] = range.x + (range.y - range.x) * factor;
-                self.color = config.model.color_from_channels(channels);
-            }
-            ActiveSelection::Bar(index) => {
-                let Some(config) = self
-                    .presets
-                    .get(self.selected_preset)
-                    .and_then(|preset| preset.bars.get(index))
-                    .cloned()
-                else {
-                    return;
-                };
-                let Some(bounds) = self.bar_bounds.get(index).copied() else {
-                    return;
-                };
-                let factor = ((position.x - bounds.origin.x).as_f32() / bounds.size.width.as_f32())
-                    .clamp(0.0, 1.0);
-                let channel = config.channel as usize;
-                let mut channels = config.model.channels(self.color, &self.profile);
-                let range = config.model.channel_ranges()[channel];
-                channels[channel] = range.x + (range.y - range.x) * factor;
-                self.color = config.model.color_from_channels(channels);
-            }
-        }
-
-        self.sync_bar_inputs(window, cx);
-        self.redraw_config(cx);
-    }
-
-    fn finish_active_selection(
-        &mut self,
-        target: SurfaceTarget,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let matches_target = matches!(
-            (self.active_selection, target),
-            (Some(ActiveSelection::Plane(active)), SurfaceTarget::Plane(target))
-                | (Some(ActiveSelection::Ring(active)), SurfaceTarget::Plane(target))
-                | (Some(ActiveSelection::Bar(active)), SurfaceTarget::Bar(target))
-                if active == target
-        );
-        if !matches_target {
-            return;
-        }
-        self.update_active_selection(position, window, cx);
-        self.active_selection = None;
-        cx.emit(ColorSelectorEvent::Confirmed(self.color));
-    }
-
-    fn plane_indicator_position(&self, index: usize) -> Option<Vec2> {
-        let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
-        let texture_size = self.plane_targets.get(index)?.1.width() as f32;
-        let channels = config.model.channels(self.color, &self.profile);
-        let ranges = config.model.channel_ranges();
-        let variable_channels = self.plane_variable_channels(config);
-        let mut uv = Vec2::ZERO;
-        let mut variable_index = 0;
-        for channel in 0..3 {
-            if variable_channels & (1 << channel) != 0 {
-                uv[variable_index] = ((channels[channel] - ranges[channel].x)
-                    / (ranges[channel].y - ranges[channel].x))
-                    .clamp(0.0, 1.0);
-                variable_index += 1;
-            }
-        }
-        let (x_range, y_range) = self.plane_normalized_ranges(index);
-        uv.x = unmap_normalized(uv.x, x_range);
-        uv.y = unmap_normalized(uv.y, y_range);
-        uv = clamp_plane_uv(uv);
-
-        let mut position =
-            plane_uv_to_position(config.shape, uv) * plane_scale(config, texture_size);
-        if config.flip_axis.contains(config::GradientPlaneFlipAxis::X) {
-            position.x = -position.x;
-        }
-        if config.flip_axis.contains(config::GradientPlaneFlipAxis::Y) {
-            position.y = -position.y;
-        }
-        position = rotate_clockwise(position, config.rotation);
-        Some(Vec2::new(
-            (position.x + 1.0) * 0.5,
-            (1.0 - position.y) * 0.5,
-        ))
-    }
-
-    fn ring_indicator_position(&self, index: usize) -> Option<Vec2> {
-        let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
-        if !config.show_primary_channel_ring {
-            return None;
-        }
-        let texture_size = self.plane_targets.get(index)?.1.width() as f32;
-        let channel = self.plane_primary_channel(config) as usize;
-        let channels = config.model.channels(self.color, &self.profile);
-        let range = config.model.channel_ranges()[channel];
-        let factor = ((channels[channel] - range.x) / (range.y - range.x)).clamp(0.0, 1.0);
-        let angle = if config.reversed_ring {
-            -factor * std::f32::consts::TAU - config.ring_rotation
-        } else {
-            factor * std::f32::consts::TAU - config.ring_rotation
-        };
-        let antialias_width = 1.0 / texture_size;
-        let outer_radius = 0.5 - antialias_width;
-        let inner_radius =
-            (outer_radius - config.primary_channel_ring_width / texture_size).max(0.0);
-        let radius = (inner_radius + outer_radius) * 0.5;
-        Some(Vec2::new(
-            0.5 + angle.cos() * radius,
-            0.5 - angle.sin() * radius,
-        ))
-    }
-
-    fn bar_indicator_position(&self, index: usize) -> Option<f32> {
-        let config = self.presets.get(self.selected_preset)?.bars.get(index)?;
-        let channels = config.model.channels(self.color, &self.profile);
-        let range = config.model.channel_ranges()[config.channel as usize];
-        Some(((channels[config.channel as usize] - range.x) / (range.y - range.x)).clamp(0.0, 1.0))
-    }
-
-    fn indicator_color(&self) -> gpui::Rgba {
-        let value = ColorModel::Gray.channels(self.color, &self.profile).x;
-        if value > 0.5 {
-            rgb(0x000000)
-        } else {
-            rgb(0xffffff)
-        }
-    }
-
-    fn update_widget_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
-        let width_changed = self.widget_bounds.size.width != bounds.size.width;
-        self.widget_bounds = bounds;
-
-        if width_changed && !self.presets.is_empty() {
-            self.update_targets(cx);
-            self.redraw_config(cx);
-        }
-    }
-
-    fn redraw_config(&self, cx: &mut Context<Self>) {
-        let Some(preset) = self.presets.get(self.selected_preset) else {
-            return;
-        };
-
-        let device = cx.render_device().clone();
-        let queue = cx.render_queue().clone();
-
-        for (index, (config, (mesh, texture, view))) in
-            preset.planes.iter().zip(&self.plane_targets).enumerate()
-        {
-            let settings = GradientSettings::new_plane(
-                preset.out_of_gamut_color,
-                preset.use_out_of_gamut_color,
-                config.model.channels(self.color, &self.profile),
-                config,
-                self.primary_channel_override(config.model),
-                texture.width() as f32,
-            );
-
-            if preset.clip_to_gamut {
-                let readback = self
-                    .compute_bounds_pipeline
-                    .compute(&device, &queue, &settings);
-                let preserve_output = config.show_primary_channel_ring;
-                cx.spawn(async move |this, cx| {
-                    let Ok(Ok(bounds)) = readback.into_inner().await else {
-                        return;
-                    };
-                    let (x_range, y_range) = bounds
-                        .normalized_ranges()
-                        .unwrap_or((NORMALIZED_RANGE, NORMALIZED_RANGE));
-                    this.update(cx, move |this, cx| {
-                        let Some((mesh, _, view)) = this.plane_targets.get(index) else {
-                            return;
-                        };
-                        if let Some(ranges) = this.plane_ranges.get_mut(index) {
-                            *ranges = (x_range, y_range);
-                        }
-                        let settings = settings.with_ranges(x_range, y_range);
-                        if preserve_output {
-                            this.ring_pipeline.draw(
-                                cx.render_device(),
-                                cx.render_queue(),
-                                &settings,
-                                view,
-                            );
-                        }
-                        this.gradient_pipeline.draw(
-                            cx.render_device(),
-                            cx.render_queue(),
-                            mesh,
-                            &settings,
-                            view,
-                            preserve_output,
-                        );
-                        cx.notify();
-                    })
-                    .ok();
-                })
-                .detach();
-            } else {
-                if config.show_primary_channel_ring {
-                    self.ring_pipeline.draw(&device, &queue, &settings, view);
-                }
-                self.gradient_pipeline.draw(
-                    &device,
-                    &queue,
-                    mesh,
-                    &settings,
-                    view,
-                    config.show_primary_channel_ring,
-                );
-            }
-        }
-
-        for (config, (mesh, _, view)) in preset.bars.iter().zip(&self.bar_targets) {
-            let settings = GradientSettings::new_bar(
-                preset.out_of_gamut_color,
-                preset.use_out_of_gamut_color,
-                config.model.channels(self.color, &self.profile),
-                config,
-                self.bar_uses_saturated_primary_channel(config),
-            );
-            self.gradient_pipeline
-                .draw(&device, &queue, mesh, &settings, view, false);
-        }
-
-        cx.notify();
-    }
-
-    fn update_targets(&mut self, cx: &mut Context<Self>) {
-        let Some(preset) = self.presets.get(self.selected_preset) else {
-            self.plane_targets.clear();
-            self.plane_ranges.clear();
-            self.bar_targets.clear();
-            return;
-        };
-        let device = cx.render_device();
-
-        let width = self.widget_bounds.size.width.as_f32();
-        if width <= 0.0 {
-            self.plane_targets.clear();
-            self.plane_ranges.clear();
-            self.bar_targets.clear();
-            return;
-        }
-
-        if preset.planes.is_empty() {
-            self.plane_targets.clear();
-            self.plane_ranges.clear();
-        } else {
-            let columns = preset
-                .planes
-                .len()
-                .min(preset.max_planes_per_row.clamp(1, 5));
-            let available_width =
-                (width - 5.0 * columns.saturating_sub(1) as f32).max(columns as f32);
-            let per_size = (available_width / columns as f32)
-                .floor()
-                .max(1.0)
-                .min(preset.max_plane_size.clamp(128, 512) as f32)
-                as u32;
-            self.plane_targets = preset
-                .planes
-                .iter()
-                .map(|config| {
-                    let (texture, view) =
-                        Self::create_gradient_texture("plane_gradient", per_size, per_size, device);
-                    let scale = plane_scale(config, per_size as f32);
-                    let mesh = GradientMesh::new_plane(device, config.shape, scale);
-                    (mesh, texture, view)
-                })
-                .collect();
-            self.plane_ranges = vec![(NORMALIZED_RANGE, NORMALIZED_RANGE); preset.planes.len()];
-        }
-
-        let bar_width = width.round().max(1.0) as u32;
-        self.bar_targets = preset
-            .bars
-            .iter()
-            .map(|config| {
-                let bar_height = config.bar_height.clamp(10.0, 40.0).round() as u32;
-                let (texture, view) =
-                    Self::create_gradient_texture("bar_gradient", bar_width, bar_height, device);
-                let mesh = GradientMesh::new_bar(device);
-                (mesh, texture, view)
-            })
-            .collect();
-        self.plane_bounds
-            .resize(preset.planes.len(), Bounds::default());
-        self.bar_bounds.resize(preset.bars.len(), Bounds::default());
-    }
-
-    fn update_bar_target_width(&mut self, index: usize, width: Pixels, cx: &mut Context<Self>) {
-        let Some(config) = self
-            .presets
-            .get(self.selected_preset)
-            .and_then(|preset| preset.bars.get(index))
-        else {
-            return;
-        };
-        let width = width.as_f32().round().max(1.0) as u32;
-        let height = config.bar_height.clamp(10.0, 40.0).round() as u32;
-        if self
-            .bar_targets
-            .get(index)
-            .is_some_and(|(_, texture, _)| texture.width() == width && texture.height() == height)
-            || index >= self.bar_targets.len()
-        {
-            return;
-        }
-
-        let device = cx.render_device();
-        let (texture, view) = Self::create_gradient_texture("bar_gradient", width, height, device);
-        let mesh = GradientMesh::new_bar(device);
-        self.bar_targets[index] = (mesh, texture, view);
-        self.redraw_config(cx);
+            .unwrap_or((Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0)))
     }
 
     fn switch_preset(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -1183,31 +545,6 @@ impl ColorSelectorState {
         self.rebuild_bar_inputs(window, cx);
         self.update_targets(cx);
         self.redraw_config(cx);
-    }
-
-    fn create_gradient_texture(
-        label: &'static str,
-        width: u32,
-        height: u32,
-        device: &Device,
-    ) -> (Arc<Texture>, TextureView) {
-        let texture = device.create_texture(&TextureDescriptor {
-            label: Some(label),
-            size: Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba16Float,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&Default::default());
-
-        (Arc::new(texture), view)
     }
 }
 
@@ -1234,6 +571,146 @@ impl Render for ColorSelectorState {
             .max_plane_size
             .clamp(128, 512) as f32
             + 5.0;
+
+        let planes = self
+            .plane_targets
+            .chunks(max_planes_per_row)
+            .enumerate()
+            .map(|(row_index, row)| {
+                h_flex()
+                    .justify_evenly()
+                    .children(row.iter().enumerate().map(
+                    |(column_index, (_, texture, _))| {
+                        let index = row_index * max_planes_per_row + column_index;
+                        let target = SurfaceTarget::Plane(index);
+                        let drag = SurfaceDrag {
+                            selector: selector_id,
+                            target,
+                        };
+                        let plane_indicator = self.plane_indicator_position(index);
+                        let ring_indicator = self.ring_indicator_position(index);
+                        div()
+                            .w(plane_cell_width)
+                            .max_w(px(max_plane_cell_size))
+                            .px(px(2.5))
+                            .child(
+                                div()
+                                    .id(("color-plane-surface", index))
+                                    .relative()
+                                    .w_full()
+                                    .aspect_square()
+                                    .on_prepaint({
+                                        let state = cx.entity().downgrade();
+                                        move |bounds, _, cx| {
+                                            state
+                                                .update(cx, |state, cx| {
+                                                    state.update_plane_bounds(index, bounds, cx);
+                                                })
+                                                .ok();
+                                        }
+                                    })
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &MouseDownEvent, window, cx| {
+                                                this.start_plane_selection(
+                                                    index,
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                );
+                                                cx.stop_propagation();
+                                            },
+                                        ),
+                                    )
+                                    .on_drag(drag, |_, _, _, cx| {
+                                        cx.stop_propagation();
+                                        cx.new(|_| SurfaceDragPreview)
+                                    })
+                                    .on_drag_move(cx.listener(
+                                        move |this,
+                                              event: &DragMoveEvent<SurfaceDrag>,
+                                              window,
+                                              cx| {
+                                            let drag = event.drag(cx);
+                                            if drag.selector != cx.entity_id()
+                                                || drag.target != target
+                                            {
+                                                return;
+                                            }
+                                            this.update_active_selection(
+                                                event.event.position,
+                                                window,
+                                                cx,
+                                            );
+                                            cx.stop_propagation();
+                                        },
+                                    ))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &MouseUpEvent, window, cx| {
+                                                this.finish_active_selection(
+                                                    target,
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ),
+                                    )
+                                    .on_mouse_up_out(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &MouseUpEvent, window, cx| {
+                                                this.finish_active_selection(
+                                                    target,
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        ),
+                                    )
+                                    .child(
+                                        surface(SurfaceSource::Texture {
+                                            texture: texture.clone(),
+                                            size: Size::new(
+                                                texture.width().into(),
+                                                texture.height().into(),
+                                            ),
+                                        })
+                                        .size_full(),
+                                    )
+                                    .children(plane_indicator.map(|position| {
+                                        div()
+                                            .absolute()
+                                            .left(relative(position.x))
+                                            .top(relative(position.y))
+                                            .ml(-px(3.0))
+                                            .mt(-px(3.0))
+                                            .size(px(6.0))
+                                            .rounded_full()
+                                            .border_1()
+                                            .border_color(indicator_color)
+                                    }))
+                                    .children(ring_indicator.map(|position| {
+                                        div()
+                                            .absolute()
+                                            .left(relative(position.x))
+                                            .top(relative(position.y))
+                                            .ml(-px(3.0))
+                                            .mt(-px(3.0))
+                                            .size(px(6.0))
+                                            .rounded_full()
+                                            .border_1()
+                                            .border_color(indicator_color)
+                                    })),
+                            )
+                    },
+                ))
+            });
+
         let bars = self.presets[self.selected_preset]
             .bars
             .iter()
@@ -1376,137 +853,7 @@ impl Render for ColorSelectorState {
                         .ok();
                 }
             })
-            .child(
-                v_flex().flex_shrink_0().gap(px(5.0)).children(
-                    self.plane_targets
-                        .chunks(max_planes_per_row)
-                        .enumerate()
-                        .map(|(row_index, row)| {
-                            h_flex()
-                                .justify_evenly()
-                                .children(row.iter().enumerate().map(
-                                    |(column_index, (_, texture, _))| {
-                                        let index = row_index * max_planes_per_row + column_index;
-                                        let target = SurfaceTarget::Plane(index);
-                                        let drag = SurfaceDrag {
-                                            selector: selector_id,
-                                            target,
-                                        };
-                                        let plane_indicator = self.plane_indicator_position(index);
-                                        let ring_indicator = self.ring_indicator_position(index);
-                                        div()
-                                            .w(plane_cell_width)
-                                            .max_w(px(max_plane_cell_size))
-                                            .px(px(2.5))
-                                            .child(
-                                                div()
-                                .id(("color-plane-surface", index))
-                                .relative()
-                                .w_full()
-                                .aspect_square()
-                                .on_prepaint({
-                                    let state = cx.entity().downgrade();
-                                    move |bounds, _, cx| {
-                                        state
-                                            .update(cx, |state, cx| {
-                                                state.update_plane_bounds(index, bounds, cx);
-                                            })
-                                            .ok();
-                                    }
-                                })
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                        this.start_plane_selection(
-                                            index,
-                                            event.position,
-                                            window,
-                                            cx,
-                                        );
-                                        cx.stop_propagation();
-                                    }),
-                                )
-                                .on_drag(drag, |_, _, _, cx| {
-                                    cx.stop_propagation();
-                                    cx.new(|_| SurfaceDragPreview)
-                                })
-                                .on_drag_move(cx.listener(
-                                    move |this, event: &DragMoveEvent<SurfaceDrag>, window, cx| {
-                                        let drag = event.drag(cx);
-                                        if drag.selector != cx.entity_id() || drag.target != target
-                                        {
-                                            return;
-                                        }
-                                        this.update_active_selection(
-                                            event.event.position,
-                                            window,
-                                            cx,
-                                        );
-                                        cx.stop_propagation();
-                                    },
-                                ))
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event: &MouseUpEvent, window, cx| {
-                                        this.finish_active_selection(
-                                            target,
-                                            event.position,
-                                            window,
-                                            cx,
-                                        );
-                                    }),
-                                )
-                                .on_mouse_up_out(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event: &MouseUpEvent, window, cx| {
-                                        this.finish_active_selection(
-                                            target,
-                                            event.position,
-                                            window,
-                                            cx,
-                                        );
-                                    }),
-                                )
-                                .child(
-                                    surface(SurfaceSource::Texture {
-                                        texture: texture.clone(),
-                                        size: Size::new(
-                                            texture.width().into(),
-                                            texture.height().into(),
-                                        ),
-                                    })
-                                    .size_full(),
-                                )
-                                .children(plane_indicator.map(|position| {
-                                    div()
-                                        .absolute()
-                                        .left(relative(position.x))
-                                        .top(relative(position.y))
-                                        .ml(-px(3.0))
-                                        .mt(-px(3.0))
-                                        .size(px(6.0))
-                                        .rounded_full()
-                                        .border_1()
-                                        .border_color(indicator_color)
-                                }))
-                                .children(ring_indicator.map(|position| {
-                                    div()
-                                        .absolute()
-                                        .left(relative(position.x))
-                                        .top(relative(position.y))
-                                        .ml(-px(3.0))
-                                        .mt(-px(3.0))
-                                        .size(px(6.0))
-                                        .rounded_full()
-                                        .border_1()
-                                        .border_color(indicator_color)
-                                })),
-                                            )
-                                    },
-                                ))
-                        }),
-                ),
-            )
+            .child(v_flex().flex_shrink_0().gap(px(5.0)).children(planes))
             .child(v_flex().flex_shrink_0().gap_2().p_2().children(bars))
             .child(
                 div().flex_shrink_0().child(
