@@ -191,7 +191,7 @@ impl ColorSelectorState {
         let queue = cx.render_queue().clone();
 
         for (index, (config, plane)) in preset.planes.iter().zip(&self.planes).enumerate() {
-            let settings = GradientSettings::new_plane(
+            let ring_settings = GradientSettings::new_plane(
                 preset.out_of_gamut_color,
                 preset.use_out_of_gamut_color,
                 config.model.channels(self.color, &self.profile),
@@ -199,11 +199,15 @@ impl ColorSelectorState {
                 plane.primary_channel_override,
                 plane.texture.width() as f32,
             );
+            let plane_settings = GradientSettings {
+                saturate_primary_channel: 0,
+                ..ring_settings.clone()
+            };
 
             if preset.clip_to_gamut {
-                let readback = self
-                    .compute_bounds_pipeline
-                    .compute(&device, &queue, &settings);
+                let readback =
+                    self.compute_bounds_pipeline
+                        .compute(&device, &queue, &plane_settings);
                 let preserve_output = config.show_primary_channel_ring;
                 cx.spawn(async move |state, cx| {
                     let Ok(Ok(bounds)) = readback.into_inner().await else {
@@ -218,16 +222,21 @@ impl ColorSelectorState {
                                 return;
                             };
                             plane.ranges = (x_range, y_range);
-                            let settings = GradientSettings {
+                            let plane_settings = GradientSettings {
                                 x_range,
                                 y_range,
-                                ..settings
+                                ..plane_settings
                             };
                             if preserve_output {
+                                let ring_settings = GradientSettings {
+                                    x_range,
+                                    y_range,
+                                    ..ring_settings
+                                };
                                 this.ring_pipeline.draw(
                                     cx.render_device(),
                                     cx.render_queue(),
-                                    &settings,
+                                    &ring_settings,
                                     &plane.texture_view,
                                 );
                             }
@@ -235,7 +244,7 @@ impl ColorSelectorState {
                                 cx.render_device(),
                                 cx.render_queue(),
                                 &plane.mesh,
-                                &settings,
+                                &plane_settings,
                                 &plane.texture_view,
                                 preserve_output,
                             );
@@ -247,13 +256,13 @@ impl ColorSelectorState {
             } else {
                 if config.show_primary_channel_ring {
                     self.ring_pipeline
-                        .draw(&device, &queue, &settings, &plane.texture_view);
+                        .draw(&device, &queue, &ring_settings, &plane.texture_view);
                 }
                 self.gradient_pipeline.draw(
                     &device,
                     &queue,
                     &plane.mesh,
-                    &settings,
+                    &plane_settings,
                     &plane.texture_view,
                     config.show_primary_channel_ring,
                 );

@@ -582,6 +582,9 @@ impl GradientSettings {
     ) -> Self {
         let variable_channels = primary_channel_override
             .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel));
+        let primary_channel = (0..3)
+            .find(|channel| variable_channels & (1 << channel) == 0)
+            .unwrap_or(0);
 
         Self {
             channel_ranges: config
@@ -600,12 +603,13 @@ impl GradientSettings {
             plane_shape: config.shape as u32,
             rotation: config.rotation,
             flip_axis: u32::from(config.flip_axis.bits()),
-            primary_channel: (0..3)
-                .find(|channel| variable_channels & (1 << channel) == 0)
-                .unwrap_or(0),
+            primary_channel,
             ring_rotation: config.ring_rotation,
             reversed_ring: u32::from(config.reversed_ring),
-            saturate_primary_channel: u32::from(config.saturated_primary_channel),
+            saturate_primary_channel: u32::from(
+                config.ring_bar_saturated_hue_channel
+                    && config.model.hue_channel() == Some(primary_channel as u8),
+            ),
             ring_width: config.primary_channel_ring_width,
             texture_size,
             x_range: Vec2::new(0.0, 1.0),

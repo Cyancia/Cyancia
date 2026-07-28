@@ -121,6 +121,14 @@ impl ColorModel {
         }
     }
 
+    pub(crate) const fn hue_channel(self) -> Option<u8> {
+        match self {
+            Self::Hsl | Self::Hsv | Self::OkHsl | Self::OkHsv => Some(0),
+            Self::Lch | Self::OkLch => Some(2),
+            _ => None,
+        }
+    }
+
     pub fn channel_ranges(&self) -> [Vec2; 3] {
         match self {
             ColorModel::Gray => [Vec2::new(0.0, 1.0), Vec2::ZERO, Vec2::ZERO],
@@ -485,15 +493,11 @@ impl ColorSelectorState {
     }
 
     fn bar_uses_saturated_primary_channel(&self, config: &GradientBarConfig) -> bool {
-        self.presets[self.selected_preset]
-            .planes
-            .iter()
-            .enumerate()
-            .any(|(index, plane)| {
-                plane.model == config.model
-                    && plane.saturated_primary_channel
-                    && self.plane_primary_channel(index, plane) == config.channel
-            })
+        config.model.hue_channel() == Some(config.channel)
+            && self.presets[self.selected_preset]
+                .planes
+                .iter()
+                .any(|plane| plane.model == config.model && plane.ring_bar_saturated_hue_channel)
     }
 
     fn bar_primary_channel_locked(&self, model: ColorModel, channel: u8) -> bool {
