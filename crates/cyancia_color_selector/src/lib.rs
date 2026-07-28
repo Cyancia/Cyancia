@@ -42,7 +42,6 @@ pub enum ColorSelectorEvent {
 }
 
 const GRADIENT_RING_GAP: f32 = 5.0;
-const COLOR_MODEL_COUNT: usize = ColorModel::ALL.len();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[repr(u32)]
@@ -256,6 +255,7 @@ struct PlaneState {
     texture_view: TextureView,
     ranges: (Vec2, Vec2),
     bounds: Bounds<Pixels>,
+    primary_channel_override: Option<u8>,
 }
 
 struct BarState {
@@ -277,7 +277,6 @@ pub struct ColorSelectorState {
     compute_bounds_pipeline: ComputeBoundsPipeline,
     gradient_pipeline: GradientPipeline,
     ring_pipeline: GradientRingPipeline,
-    primary_channel_overrides: Vec<[Option<u8>; COLOR_MODEL_COUNT]>,
     active_selection: Option<ActiveSelection>,
 
     planes: Vec<PlaneState>,
@@ -309,7 +308,6 @@ impl ColorSelectorState {
 
         let _subscriptions = vec![cx.observe_window_bounds(window, Self::on_window_bounds_changed)];
 
-        let preset_count = presets.len();
         let mut this = Self {
             color,
 
@@ -319,7 +317,6 @@ impl ColorSelectorState {
             compute_bounds_pipeline: ComputeBoundsPipeline::new(device, &profile),
             gradient_pipeline: GradientPipeline::new(device, &profile, &output_profile),
             ring_pipeline: GradientRingPipeline::new(device, &profile, &output_profile),
-            primary_channel_overrides: vec![[None; COLOR_MODEL_COUNT]; preset_count],
             active_selection: None,
 
             planes: Vec::new(),
@@ -379,7 +376,6 @@ impl ColorSelectorState {
         self.presets = configs;
         if self.presets.is_empty() {
             self.selected_preset = 0;
-            self.primary_channel_overrides.clear();
             self.planes.clear();
             self.bars.clear();
             self.active_selection = None;
@@ -389,7 +385,7 @@ impl ColorSelectorState {
 
         self.selected_preset = self.selected_preset.min(self.presets.len() - 1);
         self.active_selection = None;
-        self.primary_channel_overrides = vec![[None; COLOR_MODEL_COUNT]; self.presets.len()];
+        self.planes.clear();
         self.rebuild_bar_states(window, cx);
         self.update_targets(cx);
         self.redraw_config(cx);
@@ -477,14 +473,10 @@ impl ColorSelectorState {
         }
     }
 
-    fn primary_channel_override(&self, model: ColorModel) -> Option<u8> {
-        self.primary_channel_overrides
-            .get(self.selected_preset)
-            .and_then(|overrides| overrides[model as usize])
-    }
-
-    fn plane_primary_channel(&self, config: &GradientPlaneConfig) -> u8 {
-        self.primary_channel_override(config.model)
+    fn plane_primary_channel(&self, index: usize, config: &GradientPlaneConfig) -> u8 {
+        self.planes
+            .get(index)
+            .and_then(|plane| plane.primary_channel_override)
             .unwrap_or_else(|| {
                 (0..3)
                     .find(|channel| config.variable_channels & (1 << channel) == 0)
@@ -496,10 +488,21 @@ impl ColorSelectorState {
         self.presets[self.selected_preset]
             .planes
             .iter()
-            .any(|plane| {
+            .enumerate()
+            .any(|(index, plane)| {
                 plane.model == config.model
                     && plane.saturated_primary_channel
-                    && self.plane_primary_channel(plane) == config.channel
+                    && self.plane_primary_channel(index, plane) == config.channel
+            })
+    }
+
+    fn bar_primary_channel_locked(&self, model: ColorModel, channel: u8) -> bool {
+        self.presets[self.selected_preset]
+            .planes
+            .iter()
+            .zip(&self.planes)
+            .any(|(config, plane)| {
+                config.model == model && plane.primary_channel_override == Some(channel)
             })
     }
 
@@ -509,20 +512,27 @@ impl ColorSelectorState {
         channel: u8,
         cx: &mut Context<Self>,
     ) {
-        let Some(overrides) = self.primary_channel_overrides.get_mut(self.selected_preset) else {
-            return;
-        };
-        let value = &mut overrides[model as usize];
-        *value = if *value == Some(channel) {
-            None
-        } else {
-            Some(channel)
-        };
-        self.redraw_config(cx);
+        let enabled = self.bar_primary_channel_locked(model, channel);
+        let mut changed = false;
+        for (config, plane) in self.presets[self.selected_preset]
+            .planes
+            .iter()
+            .zip(&mut self.planes)
+        {
+            if config.model == model {
+                plane.primary_channel_override = (!enabled).then_some(channel);
+                changed = true;
+            }
+        }
+        if changed {
+            self.redraw_config(cx);
+        }
     }
 
-    fn plane_variable_channels(&self, config: &GradientPlaneConfig) -> u8 {
-        self.primary_channel_override(config.model)
+    fn plane_variable_channels(&self, index: usize, config: &GradientPlaneConfig) -> u8 {
+        self.planes
+            .get(index)
+            .and_then(|plane| plane.primary_channel_override)
             .map_or(config.variable_channels, |channel| 0b111 & !(1 << channel))
     }
 
@@ -544,6 +554,7 @@ impl ColorSelectorState {
 
         self.selected_preset = index;
         self.active_selection = None;
+        self.planes.clear();
         self.rebuild_bar_states(window, cx);
         self.update_targets(cx);
         self.redraw_config(cx);
@@ -719,7 +730,7 @@ impl Render for ColorSelectorState {
             .map(|(index, (config, bar))| {
                 let channel = config.channel as usize;
                 let label = config.model.channel_labels()[channel];
-                let locked = self.primary_channel_override(config.model) == Some(config.channel);
+                let locked = self.bar_primary_channel_locked(config.model, config.channel);
                 let lock = config.show_primary_channel_lock.then(|| {
                     Radio::new(format!("bar-primary-lock-{index}"))
                         .small()

@@ -101,7 +101,7 @@ impl ColorSelectorState {
         let texture_size = self.planes.get(index)?.texture.width() as f32;
         let channels = config.model.channels(self.color, &self.profile);
         let ranges = config.model.channel_ranges();
-        let variable_channels = self.plane_variable_channels(config);
+        let variable_channels = self.plane_variable_channels(index, config);
         let mut uv = Vec2::ZERO;
         let mut variable_index = 0;
         for channel in 0..3 {
@@ -138,7 +138,7 @@ impl ColorSelectorState {
             return None;
         }
         let texture_size = self.planes.get(index)?.texture.width() as f32;
-        let channel = self.plane_primary_channel(config) as usize;
+        let channel = self.plane_primary_channel(index, config) as usize;
         let channels = config.model.channels(self.color, &self.profile);
         let range = config.model.channel_ranges()[channel];
         let factor = ((channels[channel] - range.x) / (range.y - range.x)).clamp(0.0, 1.0);
@@ -196,7 +196,7 @@ impl ColorSelectorState {
                 preset.use_out_of_gamut_color,
                 config.model.channels(self.color, &self.profile),
                 config,
-                self.primary_channel_override(config.model),
+                plane.primary_channel_override,
                 plane.texture.width() as f32,
             );
 
@@ -323,6 +323,9 @@ impl ColorSelectorState {
                     bounds: old_planes
                         .get(index)
                         .map_or_else(Bounds::default, |plane| plane.bounds),
+                    primary_channel_override: old_planes
+                        .get(index)
+                        .and_then(|plane| plane.primary_channel_override),
                 }
             })
             .collect();
