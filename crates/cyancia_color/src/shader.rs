@@ -59,7 +59,7 @@ pub struct IccOutputTransformShader {
 }
 
 impl IccOutputTransformShader {
-    pub fn new(ident: &str, profile: &ColorProfile, layout: Layout) -> Result<Self> {
+    pub fn new(ident: &str, profile: &ColorProfile, _layout: Layout) -> Result<Self> {
         if !profile.is_matrix_shaper() {
             bail!("Only matrix shaper profiles are supported yet.");
         }

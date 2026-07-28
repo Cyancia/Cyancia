@@ -1,6 +1,6 @@
 use crate::model::{
-    gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv,
-    oklab::OkLab, oklch::OkLch, rgb::Rgb, xyz::Xyz,
+    gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv, oklab::OkLab,
+    oklch::OkLch, rgb::Rgb, xyz::Xyz,
 };
 
 wesl::wesl_pkg!(pub color);

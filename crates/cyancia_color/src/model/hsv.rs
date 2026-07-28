@@ -40,11 +40,7 @@ impl Hsv {
             (rgb.r - rgb.g) / delta + 4.0
         };
 
-        Self::new(
-            (hue_sector * 60.0).rem_euclid(360.0),
-            delta / max,
-            max,
-        )
+        Self::new((hue_sector * 60.0).rem_euclid(360.0), delta / max, max)
     }
 
     pub fn into_rgb(self) -> Rgb {
