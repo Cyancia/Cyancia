@@ -115,7 +115,7 @@ impl ColorSelectorState {
                 let mut channels = config.model.channels(self.color, &self.profile);
                 let ranges = config.model.channel_ranges();
                 let mut variable_index = 0;
-                let variable_channels = self.plane_variable_channels(index, &config);
+                let variable_channels = self.plane_variable_channels(index, config);
                 for channel in 0..3 {
                     if variable_channels & (1 << channel) != 0 {
                         channels[channel] = ranges[channel].x
@@ -144,7 +144,7 @@ impl ColorSelectorState {
                     angle = -angle;
                 }
                 let factor = (angle / std::f32::consts::TAU).rem_euclid(1.0);
-                let channel = self.plane_primary_channel(index, &config) as usize;
+                let channel = self.plane_primary_channel(index, config) as usize;
                 let mut channels = config.model.channels(self.color, &self.profile);
                 let range = config.model.channel_ranges()[channel];
                 channels[channel] = range.x + (range.y - range.x) * factor;
