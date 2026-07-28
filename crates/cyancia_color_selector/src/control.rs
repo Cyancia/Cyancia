@@ -1,41 +1,7 @@
-use std::sync::Arc;
+use glam::Vec2;
+use gpui::{Context, Empty, EntityId, IntoElement, Pixels, Point, Render, Window};
 
-use cyancia_color::{
-    Color,
-    model::{
-        gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv,
-        oklab::OkLab, oklch::OkLch, rgb::Rgb, xyz::Xyz,
-    },
-};
-use cyancia_render::render_context::RenderContextAppExt;
-use glam::{Vec2, Vec3};
-use gpui::{
-    AppContext, Bounds, Context, DisplayId, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Pixels, Point, Render, Size, StatefulInteractiveElement, Styled, Subscription,
-    SurfaceSource, Window, div, px, relative, rgb, surface,
-};
-use gpui_component::{
-    ElementExt, Sizable, h_flex,
-    input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
-    radio::{Radio, RadioGroup},
-    v_flex,
-};
-use moxcms::ColorProfile;
-use parse_display::Display;
-use wgpu::{
-    Device, Extent3d, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    TextureView,
-};
-
-use crate::{
-    ColorSelectorEvent, ColorSelectorState, GradientPlaneShape,
-    config::{ColorSelectorConfig, GradientBarConfig, GradientPlaneConfig},
-    pipeline::{
-        ComputeBoundsPipeline, GradientMesh, GradientPipeline, GradientRingPipeline,
-        GradientSettings,
-    },
-};
+use crate::{ColorSelectorEvent, ColorSelectorState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceTarget {
@@ -77,7 +43,9 @@ impl ColorSelectorState {
         cx: &mut Context<Self>,
     ) {
         let config = &self.presets[self.selected_preset].planes[index];
-        let bounds = self.plane_bounds[index];
+        let Some(bounds) = self.planes.get(index).map(|plane| plane.bounds) else {
+            return;
+        };
         let size = bounds.size.width.as_f32();
         if size <= 0.0 {
             return;
@@ -116,7 +84,7 @@ impl ColorSelectorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if index >= self.bar_bounds.len() {
+        if index >= self.bars.len() {
             return;
         }
         self.active_selection = Some(ActiveSelection::Bar(index));
@@ -159,7 +127,9 @@ impl ColorSelectorState {
             }
             ActiveSelection::Ring(index) => {
                 let config = &self.presets[self.selected_preset].planes[index];
-                let bounds = self.plane_bounds[index];
+                let Some(bounds) = self.planes.get(index).map(|plane| plane.bounds) else {
+                    return;
+                };
 
                 let size = bounds.size.width.as_f32();
                 let centered = Vec2::new(
@@ -182,7 +152,9 @@ impl ColorSelectorState {
             }
             ActiveSelection::Bar(index) => {
                 let config = &self.presets[self.selected_preset].bars[index];
-                let bounds = self.bar_bounds[index];
+                let Some(bounds) = self.bars.get(index).map(|bar| bar.bounds) else {
+                    return;
+                };
 
                 let factor = ((position.x - bounds.origin.x).as_f32() / bounds.size.width.as_f32())
                     .clamp(0.0, 1.0);

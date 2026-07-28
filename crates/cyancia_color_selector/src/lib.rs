@@ -10,33 +10,25 @@ use cyancia_color::{
 use cyancia_render::render_context::RenderContextAppExt;
 use glam::{Vec2, Vec3};
 use gpui::{
-    AppContext, Bounds, Context, DisplayId, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
+    AppContext, Bounds, Context, DisplayId, DragMoveEvent, Entity, EventEmitter,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Pixels, Point, Render, Size, StatefulInteractiveElement, Styled, Subscription,
-    SurfaceSource, Window, div, px, relative, rgb, surface,
+    ParentElement, Pixels, Render, Size, StatefulInteractiveElement, Styled, Subscription,
+    SurfaceSource, Window, div, px, relative, surface,
 };
 use gpui_component::{
     ElementExt, Sizable, h_flex,
-    input::{
-        Input, InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction,
-    },
+    input::{Input, InputEvent, InputState, MaskPattern},
     radio::{Radio, RadioGroup},
     v_flex,
 };
 use moxcms::ColorProfile;
 use parse_display::Display;
-use wgpu::{
-    Device, Extent3d, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    TextureView,
-};
+use wgpu::{Texture, TextureView};
 
 use crate::{
     config::{ColorSelectorConfig, GradientBarConfig, GradientPlaneConfig},
     control::{ActiveSelection, SurfaceDrag, SurfaceDragPreview, SurfaceTarget},
-    pipeline::{
-        ComputeBoundsPipeline, GradientMesh, GradientPipeline, GradientRingPipeline,
-        GradientSettings,
-    },
+    pipeline::{ComputeBoundsPipeline, GradientMesh, GradientPipeline, GradientRingPipeline},
 };
 
 pub mod config;
@@ -258,6 +250,22 @@ impl ColorModel {
     }
 }
 
+struct PlaneState {
+    mesh: GradientMesh,
+    texture: Arc<Texture>,
+    texture_view: TextureView,
+    ranges: (Vec2, Vec2),
+    bounds: Bounds<Pixels>,
+}
+
+struct BarState {
+    mesh: GradientMesh,
+    texture: Arc<Texture>,
+    texture_view: TextureView,
+    bounds: Bounds<Pixels>,
+    input: Entity<InputState>,
+}
+
 pub struct ColorSelectorState {
     color: Color,
     profile: ColorProfile,
@@ -269,14 +277,11 @@ pub struct ColorSelectorState {
     compute_bounds_pipeline: ComputeBoundsPipeline,
     gradient_pipeline: GradientPipeline,
     ring_pipeline: GradientRingPipeline,
-    plane_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
-    plane_ranges: Vec<(Vec2, Vec2)>,
-    bar_targets: Vec<(GradientMesh, Arc<Texture>, TextureView)>,
-    bar_inputs: Vec<Entity<InputState>>,
     primary_channel_overrides: Vec<[Option<u8>; COLOR_MODEL_COUNT]>,
-    plane_bounds: Vec<Bounds<Pixels>>,
-    bar_bounds: Vec<Bounds<Pixels>>,
     active_selection: Option<ActiveSelection>,
+
+    planes: Vec<PlaneState>,
+    bars: Vec<BarState>,
 
     widget_bounds: Bounds<Pixels>,
     last_display: DisplayId,
@@ -314,14 +319,11 @@ impl ColorSelectorState {
             compute_bounds_pipeline: ComputeBoundsPipeline::new(device, &profile),
             gradient_pipeline: GradientPipeline::new(device, &profile, &output_profile),
             ring_pipeline: GradientRingPipeline::new(device, &profile, &output_profile),
-            plane_targets: Vec::new(),
-            plane_ranges: Vec::new(),
-            bar_targets: Vec::new(),
-            bar_inputs: Vec::new(),
             primary_channel_overrides: vec![[None; COLOR_MODEL_COUNT]; preset_count],
-            plane_bounds: Vec::new(),
-            bar_bounds: Vec::new(),
             active_selection: None,
+
+            planes: Vec::new(),
+            bars: Vec::new(),
 
             widget_bounds: Bounds::default(),
             last_display: window.display(cx).map(|d| d.id()).unwrap(),
@@ -331,7 +333,7 @@ impl ColorSelectorState {
 
             _subscriptions,
         };
-        this.rebuild_bar_inputs(window, cx);
+        this.rebuild_bar_states(window, cx);
         this
     }
 
@@ -377,13 +379,9 @@ impl ColorSelectorState {
         self.presets = configs;
         if self.presets.is_empty() {
             self.selected_preset = 0;
-            self.plane_targets.clear();
-            self.plane_ranges.clear();
-            self.bar_targets.clear();
-            self.bar_inputs.clear();
             self.primary_channel_overrides.clear();
-            self.plane_bounds.clear();
-            self.bar_bounds.clear();
+            self.planes.clear();
+            self.bars.clear();
             self.active_selection = None;
             cx.notify();
             return;
@@ -392,13 +390,13 @@ impl ColorSelectorState {
         self.selected_preset = self.selected_preset.min(self.presets.len() - 1);
         self.active_selection = None;
         self.primary_channel_overrides = vec![[None; COLOR_MODEL_COUNT]; self.presets.len()];
-        self.rebuild_bar_inputs(window, cx);
+        self.rebuild_bar_states(window, cx);
         self.update_targets(cx);
         self.redraw_config(cx);
     }
 
-    fn rebuild_bar_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.bar_inputs.clear();
+    fn rebuild_bar_states(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.bars.clear();
         let Some(preset) = self.presets.get(self.selected_preset) else {
             return;
         };
@@ -429,7 +427,18 @@ impl ColorSelectorState {
             })
             .detach();
 
-            self.bar_inputs.push(input);
+            let width = self.widget_bounds.size.width.as_f32().round().max(1.0) as u32;
+            let height = config.bar_height.clamp(10.0, 40.0).round() as u32;
+            let device = cx.render_device();
+            let (texture, texture_view) =
+                Self::create_gradient_texture("bar_gradient", width, height, device);
+            self.bars.push(BarState {
+                mesh: GradientMesh::new_bar(device),
+                texture,
+                texture_view,
+                bounds: Bounds::default(),
+                input,
+            });
         }
     }
 
@@ -460,9 +469,9 @@ impl ColorSelectorState {
         let Some(preset) = self.presets.get(self.selected_preset) else {
             return;
         };
-        for (config, input) in preset.bars.iter().zip(&self.bar_inputs) {
+        for (config, bar) in preset.bars.iter().zip(&self.bars) {
             let value = self.bar_display_value(config.model, config.channel);
-            input.update(cx, |input, cx| {
+            bar.input.update(cx, |input, cx| {
                 input.set_value(format!("{value:.2}"), window, cx);
             });
         }
@@ -522,9 +531,9 @@ impl ColorSelectorState {
             return (Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0));
         }
 
-        self.plane_ranges
+        self.planes
             .get(index)
-            .copied()
+            .map(|plane| plane.ranges)
             .unwrap_or((Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0)))
     }
 
@@ -535,7 +544,7 @@ impl ColorSelectorState {
 
         self.selected_preset = index;
         self.active_selection = None;
-        self.rebuild_bar_inputs(window, cx);
+        self.rebuild_bar_states(window, cx);
         self.update_targets(cx);
         self.redraw_config(cx);
     }
@@ -566,25 +575,22 @@ impl Render for ColorSelectorState {
             + 5.0;
 
         let planes = self
-            .plane_targets
+            .planes
             .chunks(max_planes_per_row)
             .enumerate()
             .map(|(row_index, row)| {
                 h_flex()
                     .justify_evenly()
-                    .children(
-                        row.iter()
-                            .enumerate()
-                            .map(|(column_index, (_, texture, _))| {
-                                let index = row_index * max_planes_per_row + column_index;
-                                let target = SurfaceTarget::Plane(index);
-                                let drag = SurfaceDrag {
-                                    selector: selector_id,
-                                    target,
-                                };
-                                let plane_indicator = self.plane_indicator_position(index);
-                                let ring_indicator = self.ring_indicator_position(index);
-                                div()
+                    .children(row.iter().enumerate().map(|(column_index, plane)| {
+                        let index = row_index * max_planes_per_row + column_index;
+                        let target = SurfaceTarget::Plane(index);
+                        let drag = SurfaceDrag {
+                            selector: selector_id,
+                            target,
+                        };
+                        let plane_indicator = self.plane_indicator_position(index);
+                        let ring_indicator = self.ring_indicator_position(index);
+                        div()
                             .w(plane_cell_width)
                             .max_w(px(max_plane_cell_size))
                             .px(px(2.5))
@@ -669,10 +675,10 @@ impl Render for ColorSelectorState {
                                     )
                                     .child(
                                         surface(SurfaceSource::Texture {
-                                            texture: texture.clone(),
+                                            texture: plane.texture.clone(),
                                             size: Size::new(
-                                                texture.width().into(),
-                                                texture.height().into(),
+                                                plane.texture.width().into(),
+                                                plane.texture.height().into(),
                                             ),
                                         })
                                         .size_full(),
@@ -702,17 +708,15 @@ impl Render for ColorSelectorState {
                                             .border_color(indicator_color)
                                     })),
                             )
-                            }),
-                    )
+                    }))
             });
 
         let bars = self.presets[self.selected_preset]
             .bars
             .iter()
-            .zip(&self.bar_targets)
-            .zip(&self.bar_inputs)
+            .zip(&self.bars)
             .enumerate()
-            .map(|(index, ((config, (_, texture, _)), input))| {
+            .map(|(index, (config, bar))| {
                 let channel = config.channel as usize;
                 let label = config.model.channel_labels()[channel];
                 let locked = self.primary_channel_override(config.model) == Some(config.channel);
@@ -803,10 +807,10 @@ impl Render for ColorSelectorState {
                             )
                             .child(
                                 surface(SurfaceSource::Texture {
-                                    texture: texture.clone(),
+                                    texture: bar.texture.clone(),
                                     size: Size::new(
-                                        texture.width().into(),
-                                        texture.height().into(),
+                                        bar.texture.width().into(),
+                                        bar.texture.height().into(),
                                     ),
                                 })
                                 .object_fit(ObjectFit::Fill)
@@ -827,7 +831,7 @@ impl Render for ColorSelectorState {
                     .children(config.show_precise_spin_box.then(|| {
                         div()
                             .w(px(60.0))
-                            .child(Input::new(input).small().text_center().w_full())
+                            .child(Input::new(&bar.input).small().text_center().w_full())
                     }))
                     .children(lock)
             })

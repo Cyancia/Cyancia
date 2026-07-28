@@ -1,41 +1,17 @@
 use std::sync::Arc;
 
-use cyancia_color::{
-    Color,
-    model::{
-        gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv,
-        oklab::OkLab, oklch::OkLch, rgb::Rgb, xyz::Xyz,
-    },
-};
 use cyancia_render::render_context::RenderContextAppExt;
-use glam::{Mat2, Vec2, Vec3};
-use gpui::{
-    AppContext, Bounds, Context, DisplayId, DragMoveEvent, Empty, Entity, EntityId, EventEmitter,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Pixels, Point, Render, Size, StatefulInteractiveElement, Styled, Subscription,
-    SurfaceSource, Window, div, px, relative, rgb, surface,
-};
-use gpui_component::{
-    ElementExt, Sizable, h_flex,
-    input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
-    radio::{Radio, RadioGroup},
-    v_flex,
-};
-use moxcms::ColorProfile;
-use parse_display::Display;
+use glam::{Mat2, Vec2};
+use gpui::{Bounds, Context, Pixels, Point, rgb};
 use wgpu::{
     Device, Extent3d, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
     TextureView,
 };
 
 use crate::{
-    ColorModel, ColorSelectorState, GRADIENT_RING_GAP, GradientPlaneShape,
-    config::{ColorSelectorConfig, GradientBarConfig, GradientPlaneConfig, GradientPlaneFlipAxis},
-    control::ActiveSelection,
-    pipeline::{
-        ComputeBoundsPipeline, GradientMesh, GradientPipeline, GradientRingPipeline,
-        GradientSettings,
-    },
+    ColorModel, ColorSelectorState, GRADIENT_RING_GAP, GradientPlaneShape, PlaneState,
+    config::{GradientPlaneConfig, GradientPlaneFlipAxis},
+    pipeline::{GradientMesh, GradientSettings},
 };
 
 fn unmap_normalized(value: f32, range: Vec2) -> f32 {
@@ -91,7 +67,7 @@ impl ColorSelectorState {
         position: Point<Pixels>,
     ) -> Option<(Vec2, bool)> {
         let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
-        let bounds = *self.plane_bounds.get(index)?;
+        let bounds = self.planes.get(index)?.bounds;
         let width = bounds.size.width.as_f32();
         let height = bounds.size.height.as_f32();
         if width <= 0.0 || height <= 0.0 {
@@ -122,7 +98,7 @@ impl ColorSelectorState {
 
     pub(crate) fn plane_indicator_position(&self, index: usize) -> Option<Vec2> {
         let config = self.presets.get(self.selected_preset)?.planes.get(index)?;
-        let texture_size = self.plane_targets.get(index)?.1.width() as f32;
+        let texture_size = self.planes.get(index)?.texture.width() as f32;
         let channels = config.model.channels(self.color, &self.profile);
         let ranges = config.model.channel_ranges();
         let variable_channels = self.plane_variable_channels(config);
@@ -161,7 +137,7 @@ impl ColorSelectorState {
         if !config.show_primary_channel_ring {
             return None;
         }
-        let texture_size = self.plane_targets.get(index)?.1.width() as f32;
+        let texture_size = self.planes.get(index)?.texture.width() as f32;
         let channel = self.plane_primary_channel(config) as usize;
         let channels = config.model.channels(self.color, &self.profile);
         let range = config.model.channel_ranges()[channel];
@@ -214,16 +190,14 @@ impl ColorSelectorState {
         let device = cx.render_device().clone();
         let queue = cx.render_queue().clone();
 
-        for (index, (config, (mesh, texture, view))) in
-            preset.planes.iter().zip(&self.plane_targets).enumerate()
-        {
+        for (index, (config, plane)) in preset.planes.iter().zip(&self.planes).enumerate() {
             let settings = GradientSettings::new_plane(
                 preset.out_of_gamut_color,
                 preset.use_out_of_gamut_color,
                 config.model.channels(self.color, &self.profile),
                 config,
                 self.primary_channel_override(config.model),
-                texture.width() as f32,
+                plane.texture.width() as f32,
             );
 
             if preset.clip_to_gamut {
@@ -240,8 +214,10 @@ impl ColorSelectorState {
                         .unwrap_or((Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0)));
                     state
                         .update(cx, move |this, cx| {
-                            let (mesh, _, view) = &this.plane_targets[index];
-                            this.plane_ranges[index] = (x_range, y_range);
+                            let Some(plane) = this.planes.get_mut(index) else {
+                                return;
+                            };
+                            plane.ranges = (x_range, y_range);
                             let settings = GradientSettings {
                                 x_range,
                                 y_range,
@@ -252,15 +228,15 @@ impl ColorSelectorState {
                                     cx.render_device(),
                                     cx.render_queue(),
                                     &settings,
-                                    view,
+                                    &plane.texture_view,
                                 );
                             }
                             this.gradient_pipeline.draw(
                                 cx.render_device(),
                                 cx.render_queue(),
-                                mesh,
+                                &plane.mesh,
                                 &settings,
-                                view,
+                                &plane.texture_view,
                                 preserve_output,
                             );
                             cx.notify();
@@ -270,20 +246,21 @@ impl ColorSelectorState {
                 .detach();
             } else {
                 if config.show_primary_channel_ring {
-                    self.ring_pipeline.draw(&device, &queue, &settings, view);
+                    self.ring_pipeline
+                        .draw(&device, &queue, &settings, &plane.texture_view);
                 }
                 self.gradient_pipeline.draw(
                     &device,
                     &queue,
-                    mesh,
+                    &plane.mesh,
                     &settings,
-                    view,
+                    &plane.texture_view,
                     config.show_primary_channel_ring,
                 );
             }
         }
 
-        for (config, (mesh, _, view)) in preset.bars.iter().zip(&self.bar_targets) {
+        for (config, bar) in preset.bars.iter().zip(&self.bars) {
             let settings = GradientSettings::new_bar(
                 preset.out_of_gamut_color,
                 preset.use_out_of_gamut_color,
@@ -291,8 +268,14 @@ impl ColorSelectorState {
                 config,
                 self.bar_uses_saturated_primary_channel(config),
             );
-            self.gradient_pipeline
-                .draw(&device, &queue, mesh, &settings, view, false);
+            self.gradient_pipeline.draw(
+                &device,
+                &queue,
+                &bar.mesh,
+                &settings,
+                &bar.texture_view,
+                false,
+            );
         }
 
         cx.notify();
@@ -300,22 +283,16 @@ impl ColorSelectorState {
 
     pub(crate) fn update_targets(&mut self, cx: &mut Context<Self>) {
         let Some(preset) = self.presets.get(self.selected_preset) else {
-            self.plane_targets.clear();
-            self.plane_ranges.clear();
-            self.bar_targets.clear();
+            self.planes.clear();
+            self.bars.clear();
             return;
         };
-        let device = cx.render_device();
 
         let width = self.widget_bounds.size.width.as_f32();
         if width <= 0.0 {
-            self.plane_targets.clear();
-            self.plane_ranges.clear();
-            self.bar_targets.clear();
             return;
         }
-
-        // plane targets
+        let device = cx.render_device();
 
         let columns = preset
             .planes
@@ -326,36 +303,39 @@ impl ColorSelectorState {
             .floor()
             .max(1.0)
             .min(preset.max_plane_size.clamp(128, 512) as f32) as u32;
-        self.plane_targets = preset
+        let old_planes = std::mem::take(&mut self.planes);
+        self.planes = preset
             .planes
             .iter()
-            .map(|config| {
-                let (texture, view) =
+            .enumerate()
+            .map(|(index, config)| {
+                let (texture, texture_view) =
                     Self::create_gradient_texture("plane_gradient", per_size, per_size, device);
-                let scale = plane_scale(config, per_size as f32);
-                let mesh = GradientMesh::new_plane(device, config.shape, scale);
-                (mesh, texture, view)
+                PlaneState {
+                    mesh: GradientMesh::new_plane(
+                        device,
+                        config.shape,
+                        plane_scale(config, per_size as f32),
+                    ),
+                    texture,
+                    texture_view,
+                    ranges: (Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0)),
+                    bounds: old_planes
+                        .get(index)
+                        .map_or_else(Bounds::default, |plane| plane.bounds),
+                }
             })
             .collect();
-        self.plane_bounds
-            .resize(preset.planes.len(), Bounds::default());
-        self.plane_ranges = vec![(Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0)); preset.planes.len()];
-
-        // bar targets
 
         let bar_width = width.round().max(1.0) as u32;
-        self.bar_targets = preset
-            .bars
-            .iter()
-            .map(|config| {
-                let bar_height = config.bar_height.clamp(10.0, 40.0).round() as u32;
-                let (texture, view) =
-                    Self::create_gradient_texture("bar_gradient", bar_width, bar_height, device);
-                let mesh = GradientMesh::new_bar(device);
-                (mesh, texture, view)
-            })
-            .collect();
-        self.bar_bounds.resize(preset.bars.len(), Bounds::default());
+        for (config, bar) in preset.bars.iter().zip(&mut self.bars) {
+            let bar_height = config.bar_height.clamp(10.0, 40.0).round() as u32;
+            let (texture, texture_view) =
+                Self::create_gradient_texture("bar_gradient", bar_width, bar_height, device);
+            bar.mesh = GradientMesh::new_bar(device);
+            bar.texture = texture;
+            bar.texture_view = texture_view;
+        }
     }
 
     pub(crate) fn update_bar_target_width(
@@ -371,21 +351,22 @@ impl ColorSelectorState {
         else {
             return;
         };
+        let Some(bar) = self.bars.get(index) else {
+            return;
+        };
         let width = width.as_f32().round().max(1.0) as u32;
         let height = config.bar_height.clamp(10.0, 40.0).round() as u32;
-        if self
-            .bar_targets
-            .get(index)
-            .is_some_and(|(_, texture, _)| texture.width() == width && texture.height() == height)
-            || index >= self.bar_targets.len()
-        {
+        if bar.texture.width() == width && bar.texture.height() == height {
             return;
         }
 
         let device = cx.render_device();
-        let (texture, view) = Self::create_gradient_texture("bar_gradient", width, height, device);
-        let mesh = GradientMesh::new_bar(device);
-        self.bar_targets[index] = (mesh, texture, view);
+        let (texture, texture_view) =
+            Self::create_gradient_texture("bar_gradient", width, height, device);
+        let bar = &mut self.bars[index];
+        bar.mesh = GradientMesh::new_bar(device);
+        bar.texture = texture;
+        bar.texture_view = texture_view;
         self.redraw_config(cx);
     }
 
@@ -395,10 +376,10 @@ impl ColorSelectorState {
         bounds: Bounds<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        if self.plane_bounds.len() <= index {
-            self.plane_bounds.resize(index + 1, Bounds::default());
-        }
-        self.plane_bounds[index] = bounds;
+        let Some(plane) = self.planes.get_mut(index) else {
+            return;
+        };
+        plane.bounds = bounds;
 
         let size = bounds
             .size
@@ -407,23 +388,20 @@ impl ColorSelectorState {
             .min(bounds.size.height.as_f32())
             .round()
             .max(1.0) as u32;
-        if self
-            .plane_targets
-            .get(index)
-            .is_some_and(|(_, texture, _)| texture.width() == size && texture.height() == size)
-            || index >= self.plane_targets.len()
-        {
+        if plane.texture.width() == size && plane.texture.height() == size {
             return;
         }
 
         let config = &self.presets[self.selected_preset].planes[index];
         let device = cx.render_device();
-        let (texture, view) = Self::create_gradient_texture("plane_gradient", size, size, device);
-        let mesh = GradientMesh::new_plane(device, config.shape, plane_scale(config, size as f32));
-        self.plane_targets[index] = (mesh, texture, view);
-        if let Some(ranges) = self.plane_ranges.get_mut(index) {
-            *ranges = (Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0));
-        }
+        let (texture, texture_view) =
+            Self::create_gradient_texture("plane_gradient", size, size, device);
+        let plane = &mut self.planes[index];
+        plane.mesh =
+            GradientMesh::new_plane(device, config.shape, plane_scale(config, size as f32));
+        plane.texture = texture;
+        plane.texture_view = texture_view;
+        plane.ranges = (Vec2::new(0.0, 1.0), Vec2::new(0.0, 1.0));
         self.redraw_config(cx);
     }
 
@@ -433,14 +411,14 @@ impl ColorSelectorState {
         bounds: Bounds<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        if self.bar_bounds.len() <= index {
-            self.bar_bounds.resize(index + 1, Bounds::default());
-        }
-        self.bar_bounds[index] = bounds;
+        let Some(bar) = self.bars.get_mut(index) else {
+            return;
+        };
+        bar.bounds = bounds;
         self.update_bar_target_width(index, bounds.size.width, cx);
     }
 
-    fn create_gradient_texture(
+    pub(crate) fn create_gradient_texture(
         label: &'static str,
         width: u32,
         height: u32,

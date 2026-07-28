@@ -3,7 +3,7 @@ use std::f32::consts::TAU;
 use cyancia_color::model::rgb::Rgb;
 use cyancia_widgets::spin_slider::{SpinSlider, SpinSliderEvent, SpinSliderState};
 use gpui::{
-    AnyElement, AppContext, Context, Entity, EventEmitter, Hsla, InteractiveElement, IntoElement,
+    AnyElement, AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
     ParentElement, Render, Rgba, SharedString, Styled, Window, div, px,
 };
 use gpui_component::{
