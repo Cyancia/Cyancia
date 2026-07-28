@@ -349,9 +349,8 @@ impl Render for BrushPresetDock {
 pub struct ColorSelectorDock {
     focus_handle: FocusHandle,
     color_selector: Entity<ColorSelectorState>,
-    config_editor: Entity<ColorSelectorConfigEditorState>,
+    config_editor: Option<Entity<ColorSelectorConfigEditorState>>,
     editor_window: Option<AnyWindowHandle>,
-    is_editor_open: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -426,9 +425,6 @@ impl ColorSelectorDock {
             clip_to_gamut: false,
         };
 
-        let config_editor = cx.new(|cx| {
-            ColorSelectorConfigEditorState::new(vec![config.clone()], Some(0), window, cx)
-        });
         let color_selector = cx.new(|cx| {
             ColorSelectorState::new(
                 Color::Rgb(Rgb::new(0.0, 0.0, 0.0)),
@@ -441,32 +437,27 @@ impl ColorSelectorDock {
         });
 
         let dock = cx.entity().downgrade();
-        let subscriptions = vec![
-            cx.subscribe_in(&config_editor, window, Self::on_config_editor_event),
-            cx.on_window_closed(move |cx, window_id| {
-                let dock = dock.clone();
-                cx.defer(move |cx| {
-                    dock.update(cx, |dock, cx| {
-                        if dock
-                            .editor_window
-                            .is_some_and(|window| window.window_id() == window_id)
-                        {
-                            dock.editor_window = None;
-                            dock.is_editor_open = false;
-                            cx.notify();
-                        }
-                    })
-                    .ok();
-                });
-            }),
-        ];
+        let subscriptions = vec![cx.on_window_closed(move |cx, window_id| {
+            let dock = dock.clone();
+            cx.defer(move |cx| {
+                dock.update(cx, |dock, cx| {
+                    if dock
+                        .editor_window
+                        .is_some_and(|window| window.window_id() == window_id)
+                    {
+                        dock.editor_window = None;
+                        cx.notify();
+                    }
+                })
+                .ok();
+            });
+        })];
 
         Self {
             focus_handle: cx.focus_handle(),
             color_selector,
-            config_editor,
+            config_editor: None,
             editor_window: None,
-            is_editor_open: false,
             _subscriptions: subscriptions,
         }
     }
@@ -488,7 +479,7 @@ impl ColorSelectorDock {
                 cx.refresh_windows();
             }
             ColorSelectorConfigEvent::Cancel => {
-                if let Some(editor_window) = self.editor_window {
+                if let Some(editor_window) = self.editor_window.take() {
                     editor_window
                         .update(cx, |_, window, _| window.remove_window())
                         .ok();
@@ -498,20 +489,21 @@ impl ColorSelectorDock {
     }
 
     fn on_open_editor(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_editor_open {
+        if self.editor_window.is_some() {
             return;
         }
 
         let (configs, selected_config) = self.color_selector.read_with(cx, |selector, _| {
             (selector.configs().to_vec(), selector.selected_config())
         });
-        self.config_editor =
+        let config_editor =
             cx.new(|cx| ColorSelectorConfigEditorState::new(configs, selected_config, window, cx));
+        cx.subscribe_in(&config_editor, window, Self::on_config_editor_event)
+            .detach();
 
         let parent_center = window.bounds().center();
         let size = Size::new(px(500.0), px(1080.0));
 
-        let config_editor = self.config_editor.clone();
         let editor_window = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -520,15 +512,16 @@ impl ColorSelectorDock {
                 ))),
                 ..Default::default()
             },
-            move |window, cx| cx.new(|cx| Root::new(config_editor.clone(), window, cx)),
+            |window, cx| cx.new(|cx| Root::new(config_editor.clone(), window, cx)),
         );
+
+        self.config_editor = Some(config_editor);
 
         let Ok(editor_window) = editor_window.logged_err() else {
             return;
         };
 
         self.editor_window = Some(editor_window.into());
-        self.is_editor_open = true;
     }
 }
 
