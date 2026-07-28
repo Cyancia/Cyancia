@@ -505,9 +505,8 @@ impl ColorSelectorDock {
         let (configs, selected_config) = self.color_selector.read_with(cx, |selector, _| {
             (selector.configs().to_vec(), selector.selected_config())
         });
-        self.config_editor.update(cx, |editor, cx| {
-            editor.reset(configs, selected_config, window, cx);
-        });
+        self.config_editor =
+            cx.new(|cx| ColorSelectorConfigEditorState::new(configs, selected_config, window, cx));
 
         let parent_center = window.bounds().center();
         let size = Size::new(px(500.0), px(1080.0));

@@ -114,7 +114,6 @@ type PlaneShapeSelectState = SelectState<SearchableVec<GradientPlaneShape>>;
 
 #[derive(Clone)]
 struct PlaneEditorControls {
-    id: u64,
     model: Entity<ColorModelSelectState>,
     shape: Entity<PlaneShapeSelectState>,
     rotation: Entity<SpinSliderState>,
@@ -124,22 +123,24 @@ struct PlaneEditorControls {
 
 #[derive(Clone)]
 struct BarEditorControls {
-    id: u64,
     model: Entity<ColorModelSelectState>,
     bar_height: Entity<SpinSliderState>,
 }
 
-pub struct ColorSelectorConfigEditorState {
-    configs: Vec<ColorSelectorConfig>,
-    selected_config: Option<usize>,
-    config_select: Entity<ConfigSelectState>,
+struct ConfigEditorState {
+    index: usize,
     name: Entity<InputState>,
     max_plane_size: Entity<SpinSliderState>,
     max_planes_per_row: Entity<SpinSliderState>,
     out_of_gamut_color: Entity<ColorPickerState>,
     plane_controls: Vec<PlaneEditorControls>,
     bar_controls: Vec<BarEditorControls>,
-    next_control_id: u64,
+}
+
+pub struct ColorSelectorConfigEditorState {
+    configs: Vec<ColorSelectorConfig>,
+    selected_config: Option<ConfigEditorState>,
+    config_select: Entity<ConfigSelectState>,
 }
 
 impl ColorSelectorConfigEditorState {
@@ -149,35 +150,29 @@ impl ColorSelectorConfigEditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let selected_config = Self::valid_selection(&configs, selected_config);
-        let config_select = Self::create_config_select(&configs, selected_config, window, cx);
-        let name_value = selected_config
-            .and_then(|index| configs.get(index))
-            .map_or("", |config| config.name.as_str());
-        let name = Self::create_name_input(name_value, window, cx);
-        let active_config = selected_config.and_then(|index| configs.get(index));
-        let (max_plane_size, max_planes_per_row) =
-            Self::create_config_layout_controls(active_config, window, cx);
-        let out_of_gamut_color = Self::create_out_of_gamut_color_control(active_config, window, cx);
+        let config_select = cx.new(|cx| {
+            SelectState::new(SearchableVec::new(vec![]), None, window, cx).searchable(false)
+        });
 
         let mut this = Self {
             configs,
-            selected_config,
+            selected_config: None,
             config_select,
-            name,
-            max_plane_size,
-            max_planes_per_row,
-            out_of_gamut_color,
-            plane_controls: Vec::new(),
-            bar_controls: Vec::new(),
-            next_control_id: 0,
         };
 
-        this.subscribe_config_select(window, cx);
-        this.subscribe_name(window, cx);
-        this.subscribe_config_layout_controls(window, cx);
-        this.subscribe_out_of_gamut_color(window, cx);
-        this.rebuild_active_controls(window, cx);
+        cx.subscribe_in(&this.config_select, window, |this, _, event, window, cx| {
+            if let SelectEvent::Confirm(Some(index)) = event {
+                this.rebuild_editor(*index, window, cx);
+                this.refresh_config_select(window, cx);
+                cx.notify();
+            }
+        })
+        .detach();
+
+        if let Some(index) = selected_config {
+            this.rebuild_editor(index, window, cx);
+        }
+        this.refresh_config_select(window, cx);
         this
     }
 
@@ -185,34 +180,9 @@ impl ColorSelectorConfigEditorState {
         &self.configs
     }
 
-    pub fn reset(
-        &mut self,
-        configs: Vec<ColorSelectorConfig>,
-        selected_config: Option<usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.configs = configs;
-        self.selected_config = Self::valid_selection(&self.configs, selected_config);
-        self.refresh_config_select(window, cx);
-        self.rebuild_active_editor(window, cx);
-        cx.notify();
-    }
-
-    fn valid_selection(
-        configs: &[ColorSelectorConfig],
-        selected_config: Option<usize>,
-    ) -> Option<usize> {
-        if configs.is_empty() {
-            None
-        } else {
-            Some(selected_config.unwrap_or(0).min(configs.len() - 1))
-        }
-    }
-
-    fn config_items(configs: &[ColorSelectorConfig]) -> SearchableVec<ConfigItem> {
-        SearchableVec::new(
-            configs
+    fn refresh_config_select(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let items = SearchableVec::new(
+            self.configs
                 .iter()
                 .enumerate()
                 .map(|(index, config)| ConfigItem {
@@ -220,188 +190,158 @@ impl ColorSelectorConfigEditorState {
                     name: config.name.clone().into(),
                 })
                 .collect::<Vec<_>>(),
-        )
-    }
-
-    fn create_config_select(
-        configs: &[ColorSelectorConfig],
-        selected_config: Option<usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<ConfigSelectState> {
-        let items = Self::config_items(configs);
-        cx.new(|cx| {
-            SelectState::new(items, selected_config.map(IndexPath::new), window, cx)
-                .searchable(false)
-        })
-    }
-
-    fn create_name_input(
-        value: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<InputState> {
-        cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(value.to_owned())
-                .placeholder("Config name")
-        })
-    }
-
-    fn create_config_layout_controls(
-        config: Option<&ColorSelectorConfig>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> (Entity<SpinSliderState>, Entity<SpinSliderState>) {
-        let max_plane_size = cx.new(|cx| {
-            SpinSliderState::new(128.0, 512.0, window, cx)
-                .precision(0, window, cx)
-                .value(
-                    config.map_or(512.0, |config| config.max_plane_size as f32),
-                    window,
-                    cx,
-                )
-        });
-        let max_planes_per_row = cx.new(|cx| {
-            SpinSliderState::new(1.0, 5.0, window, cx)
-                .precision(0, window, cx)
-                .value(
-                    config.map_or(2.0, |config| config.max_planes_per_row as f32),
-                    window,
-                    cx,
-                )
-        });
-        (max_plane_size, max_planes_per_row)
-    }
-
-    fn create_out_of_gamut_color_control(
-        config: Option<&ColorSelectorConfig>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<ColorPickerState> {
-        let color = config.map(|config| config.out_of_gamut_color).unwrap();
-        cx.new(|cx| {
-            ColorPickerState::new(window, cx).default_value(Rgba {
-                r: color.r,
-                g: color.g,
-                b: color.b,
-                a: 1.0,
-            })
-        })
-    }
-
-    fn subscribe_config_select(&self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.subscribe_in(&self.config_select, window, |this, _, event, window, cx| {
-            if let SelectEvent::Confirm(Some(index)) = event {
-                this.selected_config = Some(*index);
-                this.rebuild_active_editor(window, cx);
-                cx.notify();
-            }
-        })
-        .detach();
-    }
-
-    fn subscribe_name(&self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.subscribe_in(&self.name, window, |this, input, event, window, cx| {
-            if !matches!(event, InputEvent::Change) {
-                return;
-            }
-
-            let value = input.read(cx).value().to_string();
-            if let Some(config) = this.active_config_mut() {
-                config.name = value;
-                this.refresh_config_select(window, cx);
-                cx.notify();
-            }
-        })
-        .detach();
-    }
-
-    fn subscribe_config_layout_controls(&self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.subscribe_in(&self.max_plane_size, window, |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(value) = event
-                && let Some(config) = this.active_config_mut()
-            {
-                config.max_plane_size = value.round() as u32;
-                cx.notify();
-            }
-        })
-        .detach();
-        cx.subscribe_in(&self.max_planes_per_row, window, |this, _, event, _, cx| {
-            if let SpinSliderEvent::Change(value) = event
-                && let Some(config) = this.active_config_mut()
-            {
-                config.max_planes_per_row = value.round() as usize;
-                cx.notify();
-            }
-        })
-        .detach();
-    }
-
-    fn subscribe_out_of_gamut_color(&self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.subscribe_in(&self.out_of_gamut_color, window, |this, _, event, _, cx| {
-            let ColorPickerEvent::Change(Some(color)) = event else {
-                return;
-            };
-            if let Some(config) = this.active_config_mut() {
-                let color = Rgba::from(*color);
-                config.out_of_gamut_color = Rgb::new(color.r, color.g, color.b);
-                cx.notify();
-            }
-        })
-        .detach();
-    }
-
-    fn refresh_config_select(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let items = Self::config_items(&self.configs);
+        );
         self.config_select.update(cx, |state, cx| {
             state.set_items(items, window, cx);
-            state.set_selected_index(self.selected_config.map(IndexPath::new), window, cx);
+            state.set_selected_index(
+                self.selected_config
+                    .as_ref()
+                    .map(|st| IndexPath::new(st.index)),
+                window,
+                cx,
+            );
         });
     }
 
-    fn rebuild_active_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let name = self
-            .active_config()
-            .map_or("", |config| config.name.as_str());
-        self.name = Self::create_name_input(name, window, cx);
-        let (max_plane_size, max_planes_per_row) =
-            Self::create_config_layout_controls(self.active_config(), window, cx);
-        self.max_plane_size = max_plane_size;
-        self.max_planes_per_row = max_planes_per_row;
-        self.out_of_gamut_color =
-            Self::create_out_of_gamut_color_control(self.active_config(), window, cx);
-        self.subscribe_name(window, cx);
-        self.subscribe_config_layout_controls(window, cx);
-        self.subscribe_out_of_gamut_color(window, cx);
-        self.rebuild_active_controls(window, cx);
-    }
-
-    fn rebuild_active_controls(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.plane_controls.clear();
-        self.bar_controls.clear();
-
-        let Some(config) = self.active_config().cloned() else {
+    fn rebuild_editor(
+        &mut self,
+        selector_config_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(config) = self.configs.get(selector_config_index) else {
+            self.selected_config = None;
             return;
         };
-        for plane in &config.planes {
-            let controls = self.create_plane_controls(plane, window, cx);
-            self.plane_controls.push(controls);
-        }
-        for bar in &config.bars {
-            let controls = self.create_bar_controls(bar, window, cx);
-            self.bar_controls.push(controls);
-        }
+
+        let (max_plane_size, max_planes_per_row) = {
+            let max_plane_size = cx.new(|cx| {
+                SpinSliderState::new(128.0, 512.0, window, cx)
+                    .precision(0, window, cx)
+                    .value(config.max_plane_size as f32, window, cx)
+            });
+            let max_planes_per_row = cx.new(|cx| {
+                SpinSliderState::new(1.0, 5.0, window, cx)
+                    .precision(0, window, cx)
+                    .value(config.max_planes_per_row as f32, window, cx)
+            });
+            (max_plane_size, max_planes_per_row)
+        };
+        let state = ConfigEditorState {
+            index: selector_config_index,
+            name: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .default_value(config.name.to_owned())
+                    .placeholder("Config name")
+            }),
+            max_plane_size,
+            max_planes_per_row,
+            out_of_gamut_color: {
+                let color = config.out_of_gamut_color;
+                cx.new(|cx| {
+                    ColorPickerState::new(window, cx).default_value(Rgba {
+                        r: color.r,
+                        g: color.g,
+                        b: color.b,
+                        a: 1.0,
+                    })
+                })
+            },
+            plane_controls: Vec::new(),
+            bar_controls: Vec::new(),
+        };
+
+        cx.subscribe_in(
+            &state.name,
+            window,
+            move |this, input, event, window, cx| {
+                if !matches!(event, InputEvent::Change) {
+                    return;
+                }
+
+                if let Some(config) = this.configs.get_mut(selector_config_index) {
+                    config.name = input.read(cx).value().to_string();
+                    this.refresh_config_select(window, cx);
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        cx.subscribe_in(
+            &state.max_plane_size,
+            window,
+            move |this, _, event, _, cx| {
+                if let SpinSliderEvent::Change(value) = event
+                    && let Some(config) = this.configs.get_mut(selector_config_index)
+                {
+                    config.max_plane_size = value.round() as u32;
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+        cx.subscribe_in(
+            &state.max_planes_per_row,
+            window,
+            move |this, _, event, _, cx| {
+                if let SpinSliderEvent::Change(value) = event
+                    && let Some(config) = this.configs.get_mut(selector_config_index)
+                {
+                    config.max_planes_per_row = value.round() as usize;
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        cx.subscribe_in(
+            &state.out_of_gamut_color,
+            window,
+            move |this, _, event, _, cx| {
+                let ColorPickerEvent::Change(Some(color)) = event else {
+                    return;
+                };
+                if let Some(config) = this.configs.get_mut(selector_config_index) {
+                    let color = Rgba::from(*color);
+                    config.out_of_gamut_color = Rgb::new(color.r, color.g, color.b);
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        self.selected_config = Some(state);
+        self.rebuild_controls(selector_config_index, window, cx);
     }
 
-    fn active_config(&self) -> Option<&ColorSelectorConfig> {
-        self.selected_config
-            .and_then(|index| self.configs.get(index))
-    }
+    fn rebuild_controls(
+        &mut self,
+        selector_config_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let config = &self.configs[selector_config_index];
+        let n_planes = config.planes.len();
+        let n_bars = config.bars.len();
 
-    fn active_config_mut(&mut self) -> Option<&mut ColorSelectorConfig> {
-        self.selected_config
-            .and_then(|index| self.configs.get_mut(index))
+        let mut plane_controls = Vec::new();
+        for plane_index in 0..n_planes {
+            let controls =
+                self.create_plane_controls(selector_config_index, plane_index, window, cx);
+            plane_controls.push(controls);
+        }
+        let mut bar_controls = Vec::new();
+        for bar_index in 0..n_bars {
+            let controls = self.create_bar_controls(selector_config_index, bar_index, window, cx);
+            bar_controls.push(controls);
+        }
+
+        let Some(state) = self.selected_config.as_mut() else {
+            return;
+        };
+        state.plane_controls = plane_controls;
+        state.bar_controls = bar_controls;
     }
 
     fn create_model_select(
@@ -424,12 +364,12 @@ impl ColorSelectorConfigEditorState {
 
     fn create_plane_controls(
         &mut self,
-        config: &GradientPlaneConfig,
+        selector_config_index: usize,
+        plane_config_index: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> PlaneEditorControls {
-        let id = self.next_control_id;
-        self.next_control_id += 1;
+        let config = &self.configs[selector_config_index].planes[plane_config_index];
         let model = Self::create_model_select(&ColorModel::PLANE_MODELS, config.model, window, cx);
         let shapes = [GradientPlaneShape::Square, GradientPlaneShape::Triangle];
         let shape_items = shapes.to_vec();
@@ -460,52 +400,66 @@ impl ColorSelectorConfigEditorState {
 
         cx.subscribe_in(&model, window, move |this, _, event, _, cx| {
             if let SelectEvent::Confirm(Some(model)) = event
-                && let Some(index) = this.plane_index(id)
+                && let Some(plane) = this
+                    .configs
+                    .get_mut(selector_config_index)
+                    .and_then(|config| config.planes.get_mut(plane_config_index))
             {
-                this.active_config_mut().unwrap().planes[index].model = *model;
+                plane.model = *model;
                 cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&shape, window, move |this, _, event, _, cx| {
             if let SelectEvent::Confirm(Some(shape)) = event
-                && let Some(index) = this.plane_index(id)
+                && let Some(plane) = this
+                    .configs
+                    .get_mut(selector_config_index)
+                    .and_then(|config| config.planes.get_mut(plane_config_index))
             {
-                this.active_config_mut().unwrap().planes[index].shape = *shape;
+                plane.shape = *shape;
                 cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&rotation, window, move |this, _, event, _, cx| {
             if let SpinSliderEvent::Change(rotation) = event
-                && let Some(index) = this.plane_index(id)
+                && let Some(plane) = this
+                    .configs
+                    .get_mut(selector_config_index)
+                    .and_then(|config| config.planes.get_mut(plane_config_index))
             {
-                this.active_config_mut().unwrap().planes[index].rotation = *rotation;
+                plane.rotation = *rotation;
                 cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&ring_width, window, move |this, _, event, _, cx| {
             if let SpinSliderEvent::Change(width) = event
-                && let Some(index) = this.plane_index(id)
+                && let Some(plane) = this
+                    .configs
+                    .get_mut(selector_config_index)
+                    .and_then(|config| config.planes.get_mut(plane_config_index))
             {
-                this.active_config_mut().unwrap().planes[index].primary_channel_ring_width = *width;
+                plane.primary_channel_ring_width = *width;
                 cx.notify();
             }
         })
         .detach();
         cx.subscribe_in(&ring_rotation, window, move |this, _, event, _, cx| {
             if let SpinSliderEvent::Change(rotation) = event
-                && let Some(index) = this.plane_index(id)
+                && let Some(plane) = this
+                    .configs
+                    .get_mut(selector_config_index)
+                    .and_then(|config| config.planes.get_mut(plane_config_index))
             {
-                this.active_config_mut().unwrap().planes[index].ring_rotation = *rotation;
+                plane.ring_rotation = *rotation;
                 cx.notify();
             }
         })
         .detach();
 
         PlaneEditorControls {
-            id,
             model,
             shape,
             rotation,
@@ -516,12 +470,12 @@ impl ColorSelectorConfigEditorState {
 
     fn create_bar_controls(
         &mut self,
-        config: &GradientBarConfig,
+        selector_config_index: usize,
+        bar_config_index: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> BarEditorControls {
-        let id = self.next_control_id;
-        self.next_control_id += 1;
+        let config = &self.configs[selector_config_index].bars[bar_config_index];
         let model = Self::create_model_select(&ColorModel::ALL, config.model, window, cx);
         let bar_height = cx.new(|cx| {
             SpinSliderState::new(10.0, 40.0, window, cx)
@@ -531,9 +485,11 @@ impl ColorSelectorConfigEditorState {
 
         cx.subscribe_in(&model, window, move |this, _, event, _, cx| {
             if let SelectEvent::Confirm(Some(model)) = event
-                && let Some(index) = this.bar_index(id)
+                && let Some(bar) = this
+                    .configs
+                    .get_mut(selector_config_index)
+                    .and_then(|config| config.bars.get_mut(bar_config_index))
             {
-                let bar = &mut this.active_config_mut().unwrap().bars[index];
                 bar.model = *model;
                 bar.channel = bar
                     .channel
@@ -544,34 +500,26 @@ impl ColorSelectorConfigEditorState {
         .detach();
         cx.subscribe_in(&bar_height, window, move |this, _, event, _, cx| {
             if let SpinSliderEvent::Change(height) = event
-                && let Some(index) = this.bar_index(id)
+                && let Some(bar) = this
+                    .configs
+                    .get_mut(selector_config_index)
+                    .and_then(|config| config.bars.get_mut(bar_config_index))
             {
-                this.active_config_mut().unwrap().bars[index].bar_height = *height;
+                bar.bar_height = *height;
                 cx.notify();
             }
         })
         .detach();
 
-        BarEditorControls {
-            id,
-            model,
-            bar_height,
-        }
+        BarEditorControls { model, bar_height }
     }
 
-    fn plane_index(&self, id: u64) -> Option<usize> {
-        self.plane_controls
-            .iter()
-            .position(|controls| controls.id == id)
-    }
-
-    fn bar_index(&self, id: u64) -> Option<usize> {
-        self.bar_controls
-            .iter()
-            .position(|controls| controls.id == id)
-    }
-
-    fn add_plane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn add_plane(
+        &mut self,
+        selector_config_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let config = GradientPlaneConfig {
             model: ColorModel::Hsv,
             shape: GradientPlaneShape::Square,
@@ -584,29 +532,54 @@ impl ColorSelectorConfigEditorState {
             ring_rotation: 0.0,
             reversed_ring: false,
         };
-        let controls = self.create_plane_controls(&config, window, cx);
-        self.active_config_mut().unwrap().planes.push(config);
-        self.plane_controls.push(controls);
+
+        let planes = &mut self.configs[selector_config_index].planes;
+        planes.push(config);
+        let index = planes.len() - 1;
+        let controls = self.create_plane_controls(selector_config_index, index, window, cx);
+        let Some(state) = self.selected_config.as_mut() else {
+            return;
+        };
+        state.plane_controls.push(controls);
         cx.notify();
     }
 
-    fn remove_plane(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.active_config_mut().unwrap().planes.remove(index);
-        self.plane_controls.remove(index);
+    fn remove_plane(
+        &mut self,
+        selector_config_index: usize,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.configs[selector_config_index].planes.remove(index);
+        self.rebuild_controls(selector_config_index, window, cx);
         cx.notify();
     }
 
-    fn move_plane(&mut self, index: usize, offset: isize, cx: &mut Context<Self>) {
+    fn move_plane(
+        &mut self,
+        selector_config_index: usize,
+        index: usize,
+        offset: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let target = index.saturating_add_signed(offset);
-        if target >= self.active_config().unwrap().planes.len() {
+        let planes = &mut self.configs[selector_config_index].planes;
+        if target >= planes.len() {
             return;
         }
-        self.active_config_mut().unwrap().planes.swap(index, target);
-        self.plane_controls.swap(index, target);
+        planes.swap(index, target);
+        self.rebuild_controls(selector_config_index, window, cx);
         cx.notify();
     }
 
-    fn add_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn add_bar(
+        &mut self,
+        selector_config_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let config = GradientBarConfig {
             model: ColorModel::Rgb,
             channel: 0,
@@ -615,25 +588,44 @@ impl ColorSelectorConfigEditorState {
             show_precise_spin_box: true,
             show_primary_channel_lock: false,
         };
-        let controls = self.create_bar_controls(&config, window, cx);
-        self.active_config_mut().unwrap().bars.push(config);
-        self.bar_controls.push(controls);
+        let bars = &mut self.configs[selector_config_index].bars;
+        bars.push(config);
+        let index = bars.len() - 1;
+        let controls = self.create_bar_controls(selector_config_index, index, window, cx);
+        let Some(state) = self.selected_config.as_mut() else {
+            return;
+        };
+        state.bar_controls.push(controls);
         cx.notify();
     }
 
-    fn remove_bar(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.active_config_mut().unwrap().bars.remove(index);
-        self.bar_controls.remove(index);
+    fn remove_bar(
+        &mut self,
+        selector_config_index: usize,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.configs[selector_config_index].bars.remove(index);
+        self.rebuild_controls(selector_config_index, window, cx);
         cx.notify();
     }
 
-    fn move_bar(&mut self, index: usize, offset: isize, cx: &mut Context<Self>) {
+    fn move_bar(
+        &mut self,
+        selector_config_index: usize,
+        index: usize,
+        offset: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let target = index.saturating_add_signed(offset);
-        if target >= self.active_config().unwrap().bars.len() {
+        let bars = &mut self.configs[selector_config_index].bars;
+        if target >= bars.len() {
             return;
         }
-        self.active_config_mut().unwrap().bars.swap(index, target);
-        self.bar_controls.swap(index, target);
+        bars.swap(index, target);
+        self.rebuild_controls(selector_config_index, window, cx);
         cx.notify();
     }
 
@@ -648,30 +640,29 @@ impl ColorSelectorConfigEditorState {
             use_out_of_gamut_color: true,
             clip_to_gamut: false,
         });
-        self.selected_config = Some(self.configs.len() - 1);
+        let index = self.configs.len() - 1;
+        self.rebuild_editor(index, window, cx);
         self.refresh_config_select(window, cx);
-        self.rebuild_active_editor(window, cx);
         cx.notify();
     }
 
     fn remove_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(index) = self.selected_config else {
+        let Some(index) = self.selected_config.as_ref().map(|state| state.index) else {
             return;
         };
 
         self.configs.remove(index);
-        self.selected_config = if self.configs.is_empty() {
-            None
+        if self.configs.is_empty() {
+            self.selected_config = None;
         } else {
-            Some(index.min(self.configs.len() - 1))
-        };
+            self.rebuild_editor(index.min(self.configs.len() - 1), window, cx);
+        }
         self.refresh_config_select(window, cx);
-        self.rebuild_active_editor(window, cx);
         cx.notify();
     }
 
     fn move_config(&mut self, offset: isize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(index) = self.selected_config else {
+        let Some(index) = self.selected_config.as_ref().map(|state| state.index) else {
             return;
         };
         let target = index.saturating_add_signed(offset);
@@ -680,19 +671,27 @@ impl ColorSelectorConfigEditorState {
         }
 
         self.configs.swap(index, target);
-        self.selected_config = Some(target);
+        self.rebuild_editor(target, window, cx);
         self.refresh_config_select(window, cx);
         cx.notify();
     }
 
-    fn render_plane(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
-        let config = self.active_config().unwrap().planes[index].clone();
-        let controls = self.plane_controls[index].clone();
+    fn render_plane(
+        &self,
+        selector_config_index: usize,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(state) = &self.selected_config else {
+            return div().into_any_element();
+        };
+
+        let config = self.configs[selector_config_index].planes[index].clone();
+        let controls = state.plane_controls[index].clone();
         let labels = config.model.channel_labels();
         let primary_channel = (0..3)
             .find(|channel| config.variable_channels & (1u8 << channel) == 0)
             .unwrap_or(0);
-        let id = controls.id;
 
         v_flex()
             .gap_2()
@@ -708,32 +707,39 @@ impl ColorSelectorConfigEditorState {
                         h_flex()
                             .gap_1()
                             .child(
-                                Button::new(format!("plane-up-{id}"))
+                                Button::new(format!("plane-up-{index}"))
                                     .xsmall()
                                     .label("Up")
                                     .disabled(index == 0)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.move_plane(index, -1, cx)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.move_plane(
+                                            selector_config_index,
+                                            index,
+                                            -1,
+                                            window,
+                                            cx,
+                                        )
                                     })),
                             )
                             .child(
-                                Button::new(format!("plane-down-{id}"))
+                                Button::new(format!("plane-down-{index}"))
                                     .xsmall()
                                     .label("Down")
                                     .disabled(
-                                        index + 1 == self.active_config().unwrap().planes.len(),
+                                        index + 1
+                                            == self.configs[selector_config_index].planes.len(),
                                     )
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.move_plane(index, 1, cx)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.move_plane(selector_config_index, index, 1, window, cx)
                                     })),
                             )
                             .child(
-                                Button::new(format!("plane-remove-{id}"))
+                                Button::new(format!("plane-remove-{index}"))
                                     .xsmall()
                                     .danger()
                                     .label("Remove")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.remove_plane(index, cx)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.remove_plane(selector_config_index, index, window, cx)
                                     })),
                             ),
                     ),
@@ -755,15 +761,13 @@ impl ColorSelectorConfigEditorState {
                     .gap_2()
                     .child(div().w(px(110.)).child("Primary channel"))
                     .child(
-                        RadioGroup::horizontal(format!("plane-primary-{id}"))
+                        RadioGroup::horizontal(format!("plane-primary-{index}"))
                             .children(labels.iter().copied())
                             .selected_index(Some(primary_channel))
                             .on_click(cx.listener(move |this, channel: &usize, _, cx| {
-                                if let Some(index) = this.plane_index(id) {
-                                    this.active_config_mut().unwrap().planes[index]
-                                        .variable_channels = 0b111u8 & !(1u8 << *channel);
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].planes[index]
+                                    .variable_channels = 0b111u8 & !(1u8 << *channel);
+                                cx.notify();
                             })),
                     ),
             )
@@ -771,29 +775,25 @@ impl ColorSelectorConfigEditorState {
                 h_flex()
                     .gap_4()
                     .child(
-                        Checkbox::new(format!("plane-flip-x-{id}"))
+                        Checkbox::new(format!("plane-flip-x-{index}"))
                             .label("Flip X")
                             .checked(config.flip_axis.contains(GradientPlaneFlipAxis::X))
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.plane_index(id) {
-                                    this.active_config_mut().unwrap().planes[index]
-                                        .flip_axis
-                                        .set(GradientPlaneFlipAxis::X, *checked);
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].planes[index]
+                                    .flip_axis
+                                    .set(GradientPlaneFlipAxis::X, *checked);
+                                cx.notify();
                             })),
                     )
                     .child(
-                        Checkbox::new(format!("plane-flip-y-{id}"))
+                        Checkbox::new(format!("plane-flip-y-{index}"))
                             .label("Flip Y")
                             .checked(config.flip_axis.contains(GradientPlaneFlipAxis::Y))
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.plane_index(id) {
-                                    this.active_config_mut().unwrap().planes[index]
-                                        .flip_axis
-                                        .set(GradientPlaneFlipAxis::Y, *checked);
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].planes[index]
+                                    .flip_axis
+                                    .set(GradientPlaneFlipAxis::Y, *checked);
+                                cx.notify();
                             })),
                     ),
             )
@@ -807,40 +807,34 @@ impl ColorSelectorConfigEditorState {
                 h_flex()
                     .gap_4()
                     .child(
-                        Checkbox::new(format!("plane-show-ring-{id}"))
+                        Checkbox::new(format!("plane-show-ring-{index}"))
                             .label("Primary channel ring")
                             .checked(config.show_primary_channel_ring)
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.plane_index(id) {
-                                    this.active_config_mut().unwrap().planes[index]
-                                        .show_primary_channel_ring = *checked;
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].planes[index]
+                                    .show_primary_channel_ring = *checked;
+                                cx.notify();
                             })),
                     )
                     .child(
-                        Checkbox::new(format!("plane-saturated-primary-channel-{id}"))
+                        Checkbox::new(format!("plane-saturated-primary-channel-{index}"))
                             .label("Saturated primary channel")
                             .checked(config.ring_bar_saturated_hue_channel)
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.plane_index(id) {
-                                    this.active_config_mut().unwrap().planes[index]
-                                        .ring_bar_saturated_hue_channel = *checked;
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].planes[index]
+                                    .ring_bar_saturated_hue_channel = *checked;
+                                cx.notify();
                             })),
                     )
                     .child(
-                        Checkbox::new(format!("plane-reversed-ring-{id}"))
+                        Checkbox::new(format!("plane-reversed-ring-{index}"))
                             .label("Reversed ring")
                             .checked(config.reversed_ring)
                             .disabled(!config.show_primary_channel_ring)
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.plane_index(id) {
-                                    this.active_config_mut().unwrap().planes[index].reversed_ring =
-                                        *checked;
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].planes[index].reversed_ring =
+                                    *checked;
+                                cx.notify();
                             })),
                     ),
             )
@@ -861,11 +855,18 @@ impl ColorSelectorConfigEditorState {
             .into_any_element()
     }
 
-    fn render_bar(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
-        let config = self.active_config().unwrap().bars[index].clone();
-        let controls = self.bar_controls[index].clone();
+    fn render_bar(
+        &self,
+        selector_config_index: usize,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let config = self.configs[selector_config_index].bars[index].clone();
         let labels = config.model.channel_labels();
-        let id = controls.id;
+        let Some(state) = self.selected_config.as_ref() else {
+            return div().into_any_element();
+        };
+        let controls = state.bar_controls[index].clone();
 
         v_flex()
             .gap_2()
@@ -881,30 +882,32 @@ impl ColorSelectorConfigEditorState {
                         h_flex()
                             .gap_1()
                             .child(
-                                Button::new(format!("bar-up-{id}"))
+                                Button::new(format!("bar-up-{index}"))
                                     .xsmall()
                                     .label("Up")
                                     .disabled(index == 0)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.move_bar(index, -1, cx)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.move_bar(selector_config_index, index, -1, window, cx)
                                     })),
                             )
                             .child(
-                                Button::new(format!("bar-down-{id}"))
+                                Button::new(format!("bar-down-{index}"))
                                     .xsmall()
                                     .label("Down")
-                                    .disabled(index + 1 == self.active_config().unwrap().bars.len())
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.move_bar(index, 1, cx)
+                                    .disabled(
+                                        index + 1 == self.configs[selector_config_index].bars.len(),
+                                    )
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.move_bar(selector_config_index, index, 1, window, cx)
                                     })),
                             )
                             .child(
-                                Button::new(format!("bar-remove-{id}"))
+                                Button::new(format!("bar-remove-{index}"))
                                     .xsmall()
                                     .danger()
                                     .label("Remove")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.remove_bar(index, cx)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.remove_bar(selector_config_index, index, window, cx)
                                     })),
                             ),
                     ),
@@ -926,15 +929,13 @@ impl ColorSelectorConfigEditorState {
                     .gap_2()
                     .child(div().w(px(110.)).child("Channel"))
                     .child(
-                        RadioGroup::horizontal(format!("bar-channel-{id}"))
+                        RadioGroup::horizontal(format!("bar-channel-{index}"))
                             .children(labels.iter().copied())
                             .selected_index(Some(config.channel as usize))
                             .on_click(cx.listener(move |this, channel: &usize, _, cx| {
-                                if let Some(index) = this.bar_index(id) {
-                                    this.active_config_mut().unwrap().bars[index].channel =
-                                        *channel as u8;
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].bars[index].channel =
+                                    *channel as u8;
+                                cx.notify();
                             })),
                     ),
             )
@@ -942,39 +943,33 @@ impl ColorSelectorConfigEditorState {
                 h_flex()
                     .gap_4()
                     .child(
-                        Checkbox::new(format!("bar-label-{id}"))
+                        Checkbox::new(format!("bar-label-{index}"))
                             .label("Channel label")
                             .checked(config.show_channel_label)
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.bar_index(id) {
-                                    this.active_config_mut().unwrap().bars[index]
-                                        .show_channel_label = *checked;
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].bars[index]
+                                    .show_channel_label = *checked;
+                                cx.notify();
                             })),
                     )
                     .child(
-                        Checkbox::new(format!("bar-spin-{id}"))
+                        Checkbox::new(format!("bar-spin-{index}"))
                             .label("Precise spin box")
                             .checked(config.show_precise_spin_box)
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.bar_index(id) {
-                                    this.active_config_mut().unwrap().bars[index]
-                                        .show_precise_spin_box = *checked;
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].bars[index]
+                                    .show_precise_spin_box = *checked;
+                                cx.notify();
                             })),
                     )
                     .child(
-                        Checkbox::new(format!("bar-lock-{id}"))
+                        Checkbox::new(format!("bar-lock-{index}"))
                             .label("Primary channel lock")
                             .checked(config.show_primary_channel_lock)
                             .on_click(cx.listener(move |this, checked, _, cx| {
-                                if let Some(index) = this.bar_index(id) {
-                                    this.active_config_mut().unwrap().bars[index]
-                                        .show_primary_channel_lock = *checked;
-                                    cx.notify();
-                                }
+                                this.configs[selector_config_index].bars[index]
+                                    .show_primary_channel_lock = *checked;
+                                cx.notify();
                             })),
                     ),
             )
@@ -984,13 +979,14 @@ impl ColorSelectorConfigEditorState {
 
 impl Render for ColorSelectorConfigEditorState {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let selected = self.selected_config;
-        let active_content = if let Some(config) = self.active_config() {
+        let active_content = if let Some(state) = self.selected_config.as_ref() {
+            let selector_config_index = state.index;
+            let config = &self.configs[state.index];
             let planes = (0..config.planes.len())
-                .map(|index| self.render_plane(index, cx))
+                .map(|plane_index| self.render_plane(state.index, plane_index, cx))
                 .collect::<Vec<_>>();
             let bars = (0..config.bars.len())
-                .map(|index| self.render_bar(index, cx))
+                .map(|bar_index| self.render_bar(state.index, bar_index, cx))
                 .collect::<Vec<_>>();
 
             v_flex()
@@ -999,16 +995,16 @@ impl Render for ColorSelectorConfigEditorState {
                     h_flex()
                         .gap_2()
                         .child(div().w(px(110.)).child("Name"))
-                        .child(div().flex_1().child(Input::new(&self.name).small())),
+                        .child(div().flex_1().child(Input::new(&state.name).small())),
                 )
                 .child(
-                    SpinSlider::new(&self.max_plane_size)
+                    SpinSlider::new(&state.max_plane_size)
                         .small()
                         .prefix("Max plane size: ")
                         .suffix(" px"),
                 )
                 .child(
-                    SpinSlider::new(&self.max_planes_per_row)
+                    SpinSlider::new(&state.max_planes_per_row)
                         .small()
                         .prefix("Max planes per row: "),
                 )
@@ -1019,19 +1015,19 @@ impl Render for ColorSelectorConfigEditorState {
                             Checkbox::new("color-selector-out-of-gamut-color")
                                 .label("Out-of-gamut color")
                                 .checked(config.use_out_of_gamut_color)
-                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                    this.active_config_mut().unwrap().use_out_of_gamut_color =
+                                .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                                    this.configs[selector_config_index].use_out_of_gamut_color =
                                         *checked;
                                     cx.notify();
                                 })),
                         )
-                        .child(ColorPicker::new(&self.out_of_gamut_color).small())
+                        .child(ColorPicker::new(&state.out_of_gamut_color).small())
                         .child(
                             Checkbox::new("color-selector-clip-to-gamut")
                                 .label("Clip to gamut")
                                 .checked(config.clip_to_gamut)
-                                .on_click(cx.listener(|this, checked, _, cx| {
-                                    this.active_config_mut().unwrap().clip_to_gamut = *checked;
+                                .on_click(cx.listener(move |this, checked, _, cx| {
+                                    this.configs[selector_config_index].clip_to_gamut = *checked;
                                     cx.notify();
                                 })),
                         ),
@@ -1044,8 +1040,8 @@ impl Render for ColorSelectorConfigEditorState {
                                 Button::new("add-color-selector-plane")
                                     .small()
                                     .label("Add plane")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.add_plane(window, cx)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.add_plane(selector_config_index, window, cx)
                                     })),
                             ),
                         )
@@ -1059,9 +1055,9 @@ impl Render for ColorSelectorConfigEditorState {
                                 Button::new("add-color-selector-bar")
                                     .small()
                                     .label("Add bar")
-                                    .on_click(
-                                        cx.listener(|this, _, window, cx| this.add_bar(window, cx)),
-                                    ),
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.add_bar(selector_config_index, window, cx)
+                                    })),
                             ),
                         )
                         .children(bars),
@@ -1104,7 +1100,11 @@ impl Render for ColorSelectorConfigEditorState {
                             Button::new("move-color-selector-config-up")
                                 .small()
                                 .label("Up")
-                                .disabled(selected.is_none_or(|index| index == 0))
+                                .disabled(
+                                    self.selected_config
+                                        .as_ref()
+                                        .is_none_or(|index| index.index == 0),
+                                )
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.move_config(-1, window, cx)
                                 })),
@@ -1114,7 +1114,9 @@ impl Render for ColorSelectorConfigEditorState {
                                 .small()
                                 .label("Down")
                                 .disabled(
-                                    selected.is_none_or(|index| index + 1 == self.configs.len()),
+                                    self.selected_config
+                                        .as_ref()
+                                        .is_none_or(|st| st.index + 1 == self.configs.len()),
                                 )
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.move_config(1, window, cx)
@@ -1125,7 +1127,7 @@ impl Render for ColorSelectorConfigEditorState {
                                 .small()
                                 .danger()
                                 .label("Remove")
-                                .disabled(selected.is_none())
+                                .disabled(self.selected_config.is_none())
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.remove_config(window, cx)
                                 })),
