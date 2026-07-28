@@ -17,7 +17,9 @@ use gpui::{
 };
 use gpui_component::{
     ElementExt, Sizable, h_flex,
-    input::{InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction},
+    input::{
+        Input, InputEvent, InputState, MaskPattern, NumberInput, NumberInputEvent, StepAction,
+    },
     radio::{Radio, RadioGroup},
     v_flex,
 };
@@ -426,15 +428,6 @@ impl ColorSelectorState {
                 this.set_bar_display_value(model, channel, value, window, cx);
             })
             .detach();
-            cx.subscribe_in(&input, window, move |this, _, event, window, cx| {
-                let delta = match event {
-                    NumberInputEvent::Step(StepAction::Increment) => 0.1,
-                    NumberInputEvent::Step(StepAction::Decrement) => -0.1,
-                };
-                let value = this.bar_display_value(model, channel) + delta;
-                this.set_bar_display_value(model, channel, value, window, cx);
-            })
-            .detach();
 
             self.bar_inputs.push(input);
         }
@@ -579,17 +572,19 @@ impl Render for ColorSelectorState {
             .map(|(row_index, row)| {
                 h_flex()
                     .justify_evenly()
-                    .children(row.iter().enumerate().map(
-                    |(column_index, (_, texture, _))| {
-                        let index = row_index * max_planes_per_row + column_index;
-                        let target = SurfaceTarget::Plane(index);
-                        let drag = SurfaceDrag {
-                            selector: selector_id,
-                            target,
-                        };
-                        let plane_indicator = self.plane_indicator_position(index);
-                        let ring_indicator = self.ring_indicator_position(index);
-                        div()
+                    .children(
+                        row.iter()
+                            .enumerate()
+                            .map(|(column_index, (_, texture, _))| {
+                                let index = row_index * max_planes_per_row + column_index;
+                                let target = SurfaceTarget::Plane(index);
+                                let drag = SurfaceDrag {
+                                    selector: selector_id,
+                                    target,
+                                };
+                                let plane_indicator = self.plane_indicator_position(index);
+                                let ring_indicator = self.ring_indicator_position(index);
+                                div()
                             .w(plane_cell_width)
                             .max_w(px(max_plane_cell_size))
                             .px(px(2.5))
@@ -707,8 +702,8 @@ impl Render for ColorSelectorState {
                                             .border_color(indicator_color)
                                     })),
                             )
-                    },
-                ))
+                            }),
+                    )
             });
 
         let bars = self.presets[self.selected_preset]
@@ -831,9 +826,8 @@ impl Render for ColorSelectorState {
                     })
                     .children(config.show_precise_spin_box.then(|| {
                         div()
-                            .w(px(96.0))
-                            .flex_none()
-                            .child(NumberInput::new(input).small().w_full())
+                            .w(px(60.0))
+                            .child(Input::new(input).small().text_center().w_full())
                     }))
                     .children(lock)
             })
