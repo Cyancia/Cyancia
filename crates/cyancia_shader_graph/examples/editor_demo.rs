@@ -1,8 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 use cyancia_shader_graph::{
     editor::GraphEditor,
-    graph::{Graph, GraphData, GraphResources},
+    graph::{
+        Graph, GraphData, GraphResources, node::GraphNodeRegistry, variable::GraphTypeRegistry,
+    },
     wgsl_std::{
         builtin_nodes, builtin_types,
         nodes::{GraphInputNode, GraphOutputNode},
@@ -20,7 +22,27 @@ use gpui_platform::application;
 #[derive(Default, Clone)]
 struct DemoData {}
 
-impl GraphData for DemoData {}
+impl GraphData for DemoData {
+    fn type_registry() -> &'static GraphTypeRegistry {
+        LazyLock::force(&TYPE_REGISTRY)
+    }
+
+    fn node_registry() -> &'static GraphNodeRegistry<Self> {
+        LazyLock::force(&NODE_REGISTRY)
+    }
+}
+
+static NODE_REGISTRY: LazyLock<GraphNodeRegistry<DemoData>> = LazyLock::new(|| {
+    let mut nodes = builtin_nodes();
+    nodes.register::<GraphInputNode>();
+    nodes.register::<GraphOutputNode>();
+    nodes
+});
+
+static TYPE_REGISTRY: LazyLock<GraphTypeRegistry> = LazyLock::new(|| {
+    let types = builtin_types();
+    types
+});
 
 struct DemoEditor {
     menu_bar: Entity<AppMenuBar>,
@@ -29,14 +51,10 @@ struct DemoEditor {
 
 impl DemoEditor {
     fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
-        let mut nodes = builtin_nodes();
-        nodes.register::<GraphInputNode>();
-        nodes.register::<GraphOutputNode>();
-
-        let graph = cx.new(|_| Graph::new(GraphResources::default(), builtin_types().into()));
+        let graph = cx.new(|_| Graph::new(GraphResources::default()));
         Self {
             menu_bar: menu_bar_init(cx),
-            editor: cx.new(|cx| GraphEditor::new(graph.clone(), nodes.into(), cx)),
+            editor: cx.new(|cx| GraphEditor::new(graph.clone(), cx)),
         }
     }
 }

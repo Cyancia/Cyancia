@@ -1702,7 +1702,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
     ) -> Vec<GraphDefaultOutputSlot> {
         let Some(ty) = state
             .ty
-            .and_then(|ty| ctx.type_registry.get_type(ty))
+            .and_then(|ty| Data::type_registry().get_type(ty))
             .map(dyn_clone::clone_box)
         else {
             return vec![];
@@ -1731,13 +1731,13 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
                 let name_state = cx.new(|cx| InputState::new(window, cx));
                 let ty_state = cx.new(|cx| {
                     SelectState::new(
-                        ctx.type_registry
+                        Data::type_registry()
                             .all_types()
                             .keys()
                             .cloned()
                             .collect::<Vec<_>>(),
                         state.ty.and_then(|ty| {
-                            ctx.type_registry
+                            Data::type_registry()
                                 .all_types()
                                 .keys()
                                 .position(|k| *k == ty)
@@ -1836,7 +1836,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
     ) -> Vec<GraphDefaultInputSlot> {
         let Some(ty) = state
             .ty
-            .and_then(|ty| ctx.type_registry.get_type(ty))
+            .and_then(|ty| Data::type_registry().get_type(ty))
             .map(dyn_clone::clone_box)
         else {
             return vec![];
@@ -1873,13 +1873,13 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
                 let name_state = cx.new(|cx| InputState::new(window, cx));
                 let ty_state = cx.new(|cx| {
                     SelectState::new(
-                        ctx.type_registry
+                        Data::type_registry()
                             .all_types()
                             .keys()
                             .cloned()
                             .collect::<Vec<_>>(),
                         state.ty.and_then(|ty| {
-                            ctx.type_registry
+                            Data::type_registry()
                                 .all_types()
                                 .keys()
                                 .position(|k| *k == ty)

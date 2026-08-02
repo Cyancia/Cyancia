@@ -48,7 +48,6 @@ const CONNECTION_STROKE_WIDTH: Pixels = px(2.0);
 
 pub struct GraphEditor<Data: GraphData> {
     graph: Entity<Graph<Data>>,
-    node_registry: Arc<GraphNodeRegistry<Data>>,
     node_drag_state: Option<DragState>,
     marquee_state: Option<MarqueeState>,
     slot_connect_state: Option<SlotConnectState>,
@@ -65,14 +64,9 @@ pub struct GraphEditor<Data: GraphData> {
 }
 
 impl<Data: GraphData> GraphEditor<Data> {
-    pub fn new(
-        graph: Entity<Graph<Data>>,
-        node_registry: Arc<GraphNodeRegistry<Data>>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(graph: Entity<Graph<Data>>, cx: &mut Context<Self>) -> Self {
         Self {
             graph,
-            node_registry,
             node_drag_state: None,
             marquee_state: None,
             slot_connect_state: None,
@@ -95,7 +89,7 @@ impl<Data: GraphData> GraphEditor<Data> {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(node) = self.node_registry.get(&event.name) else {
+        let Some(node) = Data::node_registry().get(&event.name) else {
             log::error!("Node type '{}' not found in registry", event.name);
             return;
         };
@@ -496,7 +490,6 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
                     *id,
                     &graph.slots,
                     &graph.resources,
-                    &graph.type_registry,
                     editor.clone(),
                     window,
                     cx,
@@ -655,7 +648,11 @@ impl<Data: GraphData> Render for GraphEditor<Data> {
         .absolute()
         .size_full();
 
-        let all_nodes = self.node_registry.all().keys().cloned().collect::<Vec<_>>();
+        let all_nodes = Data::node_registry()
+            .all()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
         let focus_handle = self.focus_handle.clone();
         div()
             .w_full()

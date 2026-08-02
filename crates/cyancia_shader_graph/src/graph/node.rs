@@ -64,12 +64,8 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     fn serialize_state(&self, state: &Self::State) -> Result<toml::Value, toml::ser::Error> {
         state.to_toml()
     }
-    fn deserialize_state(
-        &self,
-        value: toml::Value,
-        type_registry: &GraphTypeRegistry,
-    ) -> Result<Self::State, toml::de::Error> {
-        Self::State::from_toml(value, type_registry)
+    fn deserialize_state(&self, value: toml::Value) -> Result<Self::State, toml::de::Error> {
+        Self::State::from_toml(value, Data::type_registry())
     }
 }
 
@@ -115,7 +111,6 @@ pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     fn deserialize_state(
         &self,
         value: toml::Value,
-        type_registry: &GraphTypeRegistry,
     ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error>;
 }
 
@@ -202,9 +197,8 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
     fn deserialize_state(
         &self,
         value: toml::Value,
-        type_registry: &GraphTypeRegistry,
     ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error> {
-        let state = self.deserialize_state(value, type_registry)?;
+        let state = self.deserialize_state(value)?;
         Ok(Box::new(state))
     }
 }
@@ -253,12 +247,8 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         self.data.serialize_state(&self.state)
     }
 
-    pub fn deserialize_and_set_state(
-        &mut self,
-        value: toml::Value,
-        type_registry: &GraphTypeRegistry,
-    ) -> Result<(), toml::de::Error> {
-        let state = self.data.deserialize_state(value, type_registry)?;
+    pub fn deserialize_and_set_state(&mut self, value: toml::Value) -> Result<(), toml::de::Error> {
+        let state = self.data.deserialize_state(value)?;
         self.state = state;
         Ok(())
     }
@@ -319,7 +309,6 @@ impl<Data: GraphData> GraphNodeData<Data> {
         node_id: GraphNodeId,
         graph_slots: &GraphSlots,
         resources: &GraphResources<Data>,
-        type_registry: &GraphTypeRegistry,
         editor: WeakEntity<GraphEditor<Data>>,
         window: &mut Window,
         cx: &mut Context<'_, Graph<Data>>,
@@ -330,7 +319,6 @@ impl<Data: GraphData> GraphNodeData<Data> {
             outputs: &self.outputs,
             graph_slots,
             resources,
-            type_registry,
             editor,
             window,
             cx,
@@ -340,7 +328,6 @@ impl<Data: GraphData> GraphNodeData<Data> {
 
 pub struct GraphNodeCreateSlotsContext<'a, Data: GraphData> {
     pub resources: &'a GraphResources<Data>,
-    pub type_registry: &'a GraphTypeRegistry,
     pub cx: &'a App,
 }
 
@@ -349,7 +336,6 @@ pub struct GraphNodeUpdateSignatureContext<'a, Data: GraphData> {
     pub outputs: &'a [GraphOutputSlotId],
     pub slots: &'a GraphSlots,
     pub signature: &'a mut GraphSignature,
-    pub type_registry: &'a GraphTypeRegistry,
     pub resources: &'a GraphResources<Data>,
 }
 
@@ -389,7 +375,6 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
     pub outputs: &'a [GraphOutputSlotId],
     pub graph_slots: &'a GraphSlots,
     pub resources: &'a GraphResources<Data>,
-    pub type_registry: &'a GraphTypeRegistry,
     pub editor: WeakEntity<GraphEditor<Data>>,
     pub window: &'a mut Window,
     pub cx: &'a mut Context<'app, Graph<Data>>,
@@ -527,7 +512,6 @@ pub struct GraphNodeCodeGenContext<'a, Data: GraphData> {
     pub output_slot_idents: &'a mut HashMap<GraphOutputSlotId, String>,
     pub ident_generator: &'a mut GraphVarIdentGenerator,
     pub resources: &'a GraphResources<Data>,
-    pub type_registry: &'a GraphTypeRegistry,
     pub texture_usage: &'a mut GraphTextureUsageRecorder,
     pub cx: &'a App,
 }
@@ -565,7 +549,7 @@ impl<Data: GraphData> GraphNodeCodeGenContext<'_, Data> {
             .ok_or(GraphNodeCodeGenError::MissingOutputSlot)?;
 
         if output_slot.data_ty.name() != slot.data.ty().name() {
-            self.type_registry
+            Data::type_registry()
                 .try_wgsl_cast(&*output_slot.data_ty, slot.data.ty(), ident)
                 .ok_or(GraphNodeCodeGenError::FailedToCastVariable)
         } else {

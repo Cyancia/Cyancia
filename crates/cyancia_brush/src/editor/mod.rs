@@ -9,7 +9,7 @@ use cyancia_render::texture::Image;
 use cyancia_shader_graph::{
     editor::GraphEditor,
     graph::{
-        Graph, GraphResources,
+        Graph, GraphData, GraphResources,
         external::{ExternalVariable, ExternalVariableId},
         function::{GraphFunction, GraphFunctionId, GraphFunctionStorage},
         node::GraphNodeRegistry,
@@ -239,9 +239,10 @@ impl BrushEditor {
                 self.name_input_state.update(cx, |st, cx| {
                     st.set_value(instance.metadata().name.clone(), window, cx);
                 });
-                self.editor_state = Some(EditorState::Main(cx.new(|cx| {
-                    GraphEditor::new(instance.main_graph().clone(), MAIN_GRAPH_NODES.clone(), cx)
-                })));
+                self.editor_state =
+                    Some(EditorState::Main(cx.new(|cx| {
+                        GraphEditor::new(instance.main_graph().clone(), cx)
+                    })));
                 self.selected = Some(Selected::Brush(SelectedBrush {
                     asset_id: brush.id(),
                     instance,
@@ -298,9 +299,9 @@ impl BrushEditor {
                 self.name_input_state.update(cx, |st, cx| {
                     st.set_value(func.name.clone(), window, cx);
                 });
-                self.editor_state = Some(EditorState::Main(cx.new(|cx| {
-                    GraphEditor::new(func.graph.clone(), FUNCTION_GRAPH_NODE_REGISTRY.clone(), cx)
-                })));
+                self.editor_state = Some(EditorState::Main(
+                    cx.new(|cx| GraphEditor::new(func.graph.clone(), cx)),
+                ));
                 self.selected = Some(Selected::Function(SelectedFunction {
                     asset_id: func.asset_id.unwrap(),
                     id: func.id,
@@ -510,13 +511,10 @@ impl BrushEditor {
                     id,
                     name: "[Unnamed Function]".to_string(),
                     graph: cx.new(|_| {
-                        Graph::new(
-                            GraphResources {
-                                functions: self.main_function_storage.clone(),
-                                ..Default::default()
-                            },
-                            FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
-                        )
+                        Graph::new(GraphResources {
+                            functions: self.main_function_storage.clone(),
+                            ..Default::default()
+                        })
                     }),
                 });
 
@@ -563,14 +561,7 @@ impl BrushEditor {
             .new_ext_var_type_select_state
             .read(cx)
             .selected_value()
-            .and_then(|ty_name| {
-                brush
-                    .instance
-                    .main_graph()
-                    .read(cx)
-                    .type_registry()
-                    .get_type(ty_name)
-            })
+            .and_then(|ty_name| BrushGraphData::type_registry().get_type(ty_name))
         else {
             return;
         };
@@ -829,13 +820,7 @@ impl BrushEditor {
             return;
         };
         brush.viewing_graph = BrushPresetGraph::RequiredSpacing;
-        let st = cx.new(|cx| {
-            GraphEditor::new(
-                brush.instance.required_spacing_graph().clone(),
-                REQUIRED_SPACING_GRAPH_NODES.clone(),
-                cx,
-            )
-        });
+        let st = cx.new(|cx| GraphEditor::new(brush.instance.required_spacing_graph().clone(), cx));
         self.editor_state = Some(EditorState::Main(st));
     }
 
@@ -844,13 +829,7 @@ impl BrushEditor {
             return;
         };
         brush.viewing_graph = BrushPresetGraph::Main;
-        let st = cx.new(|cx| {
-            GraphEditor::new(
-                brush.instance.main_graph().clone(),
-                MAIN_GRAPH_NODES.clone(),
-                cx,
-            )
-        });
+        let st = cx.new(|cx| GraphEditor::new(brush.instance.main_graph().clone(), cx));
         self.editor_state = Some(EditorState::Main(st));
     }
 
@@ -868,8 +847,7 @@ impl BrushEditor {
             return;
         };
         brush.viewing_graph = BrushPresetGraph::StrokePostprocess { index };
-        let st = cx
-            .new(|cx| GraphEditor::new(graph.clone(), STROKE_POSTPROCESS_GRAPH_NODES.clone(), cx));
+        let st = cx.new(|cx| GraphEditor::new(graph.clone(), cx));
         self.editor_state = Some(EditorState::Postprocess(st));
     }
 }
@@ -1024,18 +1002,14 @@ pub enum EditorState {
 
 impl EditorState {
     pub fn new_main(graph: Entity<Graph<BrushGraphData>>, cx: &mut App) -> Self {
-        EditorState::Main(cx.new(|cx| GraphEditor::new(graph, MAIN_GRAPH_NODES.clone(), cx)))
+        EditorState::Main(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 
     pub fn new_postprocess(graph: Entity<Graph<BrushGraphPostprocessData>>, cx: &mut App) -> Self {
-        EditorState::Postprocess(
-            cx.new(|cx| GraphEditor::new(graph, STROKE_POSTPROCESS_GRAPH_NODES.clone(), cx)),
-        )
+        EditorState::Postprocess(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 
     pub fn new_function(graph: Entity<Graph<BrushGraphData>>, cx: &mut App) -> Self {
-        EditorState::Function(
-            cx.new(|cx| GraphEditor::new(graph, FUNCTION_GRAPH_NODE_REGISTRY.clone(), cx)),
-        )
+        EditorState::Function(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 }

@@ -13,8 +13,8 @@ use crate::graph::{
     function::GraphFunctionStorage,
     node::{
         ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
-        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeUpdateSignatureContext,
-        StatefulGraphNode,
+        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
+        GraphNodeUpdateSignatureContext, StatefulGraphNode,
     },
     slot::{
         GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
@@ -35,18 +35,16 @@ pub struct Graph<Data: GraphData> {
     pub(crate) nodes: HashMap<GraphNodeId, GraphNodeData<Data>>,
     pub(crate) slots: GraphSlots,
     pub(crate) resources: GraphResources<Data>,
-    pub(crate) type_registry: Arc<GraphTypeRegistry>,
     pub(crate) cached_run_order: RwLock<Option<Vec<GraphNodeId>>>,
     pub(crate) cached_signature: RwLock<Option<GraphSignature>>,
 }
 
 impl<Data: GraphData> Graph<Data> {
-    pub fn new(resources: GraphResources<Data>, type_registry: Arc<GraphTypeRegistry>) -> Self {
+    pub fn new(resources: GraphResources<Data>) -> Self {
         Self {
             nodes: HashMap::new(),
             slots: GraphSlots::default(),
             resources,
-            type_registry,
             cached_run_order: Default::default(),
             cached_signature: Default::default(),
         }
@@ -76,7 +74,6 @@ impl<Data: GraphData> Graph<Data> {
             node_id,
             node.create_inputs(GraphNodeCreateSlotsContext {
                 resources: &self.resources,
-                type_registry: &self.type_registry,
                 cx,
             }),
         )
@@ -86,7 +83,6 @@ impl<Data: GraphData> Graph<Data> {
             node_id,
             node.create_outputs(GraphNodeCreateSlotsContext {
                 resources: &self.resources,
-                type_registry: &self.type_registry,
                 cx,
             }),
         )
@@ -149,7 +145,7 @@ impl<Data: GraphData> Graph<Data> {
 
         if let (Some(from), Some(to)) = (from_slot, to_slot) {
             from.data_ty.name() == to.data.ty().name()
-                || self.type_registry.can_cast(&*from.data_ty, to.data.ty())
+                || Data::type_registry().can_cast(&*from.data_ty, to.data.ty())
         } else {
             false
         }
@@ -369,7 +365,6 @@ impl<Data: GraphData> Graph<Data> {
                 slots: &self.slots,
                 signature: &mut signature,
                 resources: &self.resources,
-                type_registry: &self.type_registry,
             };
             node.data.update_signature(ctx);
         }
@@ -383,7 +378,6 @@ impl<Data: GraphData> Graph<Data> {
 
         let new_input_defs = node.data.create_inputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
-            type_registry: &self.type_registry,
             cx,
         });
         let mut new_input_ids = Vec::with_capacity(new_input_defs.len());
@@ -440,7 +434,6 @@ impl<Data: GraphData> Graph<Data> {
 
         let new_output_defs = node.data.create_outputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
-            type_registry: &self.type_registry,
             cx,
         });
         let mut new_output_ids = Vec::with_capacity(new_output_defs.len());
@@ -544,7 +537,6 @@ impl<Data: GraphData> Graph<Data> {
                 output_slot_idents: &mut output_slot_idents,
                 ident_generator: &mut ident_generator,
                 resources: &self.resources,
-                type_registry: &self.type_registry,
                 texture_usage,
                 cx,
             };
@@ -587,10 +579,6 @@ impl<Data: GraphData> Graph<Data> {
 
     pub fn resources(&self) -> &GraphResources<Data> {
         &self.resources
-    }
-
-    pub fn type_registry(&self) -> &Arc<GraphTypeRegistry> {
-        &self.type_registry
     }
 }
 
@@ -709,4 +697,7 @@ impl GraphVarIdentGenerator {
     }
 }
 
-pub trait GraphData: Send + Sync + 'static {}
+pub trait GraphData: Send + Sync + 'static + Sized {
+    fn type_registry() -> &'static GraphTypeRegistry;
+    fn node_registry() -> &'static GraphNodeRegistry<Self>;
+}

@@ -116,7 +116,7 @@ impl BrushPresetInstance {
             .external_vars
             .iter()
             .filter_map(|var| {
-                var.deserialize(BRUSH_GRAPH_TYPES.as_ref())
+                var.deserialize(&BRUSH_GRAPH_TYPES)
                     .inspect_err(|err| {
                         log::error!(
                             "Error deserializing external variable '{}': {}",
@@ -139,8 +139,6 @@ impl BrushPresetInstance {
                     functions: main_functions.clone(),
                     external_vars: external_vars.clone(),
                 },
-                BRUSH_GRAPH_TYPES.clone(),
-                REQUIRED_SPACING_GRAPH_NODES.as_ref(),
                 cx,
             );
             errors.extend(e);
@@ -158,8 +156,6 @@ impl BrushPresetInstance {
                     functions: main_functions.clone(),
                     external_vars: external_vars.clone(),
                 },
-                BRUSH_GRAPH_TYPES.clone(),
-                MAIN_GRAPH_NODES.as_ref(),
                 cx,
             );
             errors.extend(e);
@@ -179,8 +175,6 @@ impl BrushPresetInstance {
                     functions: stroke_pp_functions.clone(),
                     external_vars: external_vars.clone(),
                 },
-                BRUSH_GRAPH_TYPES.clone(),
-                STROKE_POSTPROCESS_GRAPH_NODES.as_ref(),
                 cx,
             );
             errors.extend(e);
@@ -303,14 +297,11 @@ impl BrushPresetInstance {
 
     pub fn new_stroke_postprocess_graph(&mut self, cx: &mut App) -> usize {
         let graph = cx.new(|_| {
-            Graph::new(
-                GraphResources {
-                    textures: self.textures.clone(),
-                    functions: self.stroke_pp_functions.clone(),
-                    external_vars: self.external_vars.clone(),
-                },
-                BRUSH_GRAPH_TYPES.clone(),
-            )
+            Graph::new(GraphResources {
+                textures: self.textures.clone(),
+                functions: self.stroke_pp_functions.clone(),
+                external_vars: self.external_vars.clone(),
+            })
         });
         self.stroke_postprocess_graphs.push(graph);
         self.stroke_postprocess_graphs.len() - 1
@@ -514,23 +505,22 @@ fn compile_template_stroke_postprocess<'a>(
     Ok(compiled_brshes)
 }
 
-pub static BRUSH_GRAPH_TYPES: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(brush_graph_types);
-pub static REQUIRED_SPACING_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+pub static BRUSH_GRAPH_TYPES: LazyLock<GraphTypeRegistry> = LazyLock::new(brush_graph_types);
+pub static REQUIRED_SPACING_GRAPH_NODES: LazyLock<GraphNodeRegistry<BrushGraphData>> =
     LazyLock::new(required_spacing_graph_nodes);
-pub static MAIN_GRAPH_NODES: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+pub static MAIN_GRAPH_NODES: LazyLock<GraphNodeRegistry<BrushGraphData>> =
     LazyLock::new(main_graph_nodes);
-pub static STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<
-    Arc<GraphNodeRegistry<BrushGraphPostprocessData>>,
-> = LazyLock::new(stroke_postprocess_graph_nodes);
+pub static STROKE_POSTPROCESS_GRAPH_NODES: LazyLock<GraphNodeRegistry<BrushGraphPostprocessData>> =
+    LazyLock::new(stroke_postprocess_graph_nodes);
 
-fn brush_graph_types() -> Arc<GraphTypeRegistry> {
+fn brush_graph_types() -> GraphTypeRegistry {
     let mut types = GraphTypeRegistry::default();
     types.merge(builtin_types());
 
-    types.into()
+    types
 }
 
-fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
+fn required_spacing_graph_nodes() -> GraphNodeRegistry<BrushGraphData> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
@@ -542,10 +532,10 @@ fn required_spacing_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     nodes.register::<TimeNode>();
     nodes.register::<OutputRequiredSpacingNode>();
 
-    nodes.into()
+    nodes
 }
 
-fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
+fn main_graph_nodes() -> GraphNodeRegistry<BrushGraphData> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
@@ -569,10 +559,10 @@ fn main_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphData>> {
     nodes.register::<BlendWithLayerNode>();
     nodes.register::<SelectionMaskNode>();
 
-    nodes.into()
+    nodes
 }
 
-fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphPostprocessData>> {
+fn stroke_postprocess_graph_nodes() -> GraphNodeRegistry<BrushGraphPostprocessData> {
     let mut nodes = GraphNodeRegistry::default();
     nodes.merge(builtin_nodes());
 
@@ -591,7 +581,7 @@ fn stroke_postprocess_graph_nodes() -> Arc<GraphNodeRegistry<BrushGraphPostproce
     nodes.register::<BlendWithLayerNode>();
     nodes.register::<SelectionMaskNode>();
 
-    nodes.into()
+    nodes
 }
 
 pub struct GraphFunctionInstance {
