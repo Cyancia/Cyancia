@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use crate::graph::{GraphData, node::GraphNodeRegistry, variable::GraphTypeRegistry};
 
 pub mod casters;

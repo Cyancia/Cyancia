@@ -13,12 +13,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::{
     Graph, GraphData, GraphResources,
-    external::{ExternalVariable, ExternalVariableId, GraphExternalVariableStorage},
-    function::{GraphFunction, GraphFunctionId, GraphFunctionStorage, SharedGraphFunctionStorage},
-    node::{
-        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
-        StatefulGraphNode,
-    },
+    external::{ExternalVariable, ExternalVariableId},
+    function::{GraphFunction, GraphFunctionId, SharedGraphFunctionStorage},
+    node::{GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, StatefulGraphNode},
     slot::{
         GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
     },

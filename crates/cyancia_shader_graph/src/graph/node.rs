@@ -25,7 +25,7 @@ use crate::{
             GraphInputSlotId, GraphOutputSlotId, GraphSlots,
         },
         texture::GraphTextureUsageRecorder,
-        variable::{GraphLiteralValue, GraphTypeRegistry, GraphVariable},
+        variable::{GraphLiteralValue, GraphVariable},
     },
     save::GraphSerializable,
 };

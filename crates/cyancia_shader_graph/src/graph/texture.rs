@@ -6,7 +6,7 @@ use std::{
 use arc_swap::ArcSwap;
 use cyancia_assets::asset::{AssetHandle, AssetId};
 use cyancia_render::texture::Image;
-use cyancia_utils::{log_err::LogErr, wrapper};
+use cyancia_utils::wrapper;
 use gpui::SharedString;
 use gpui_component::searchable_list::SearchableListItem;
 use indexmap::IndexMap;

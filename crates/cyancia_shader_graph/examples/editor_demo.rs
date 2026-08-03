@@ -39,10 +39,7 @@ static NODE_REGISTRY: LazyLock<GraphNodeRegistry<DemoData>> = LazyLock::new(|| {
     nodes
 });
 
-static TYPE_REGISTRY: LazyLock<GraphTypeRegistry> = LazyLock::new(|| {
-    let types = builtin_types();
-    types
-});
+static TYPE_REGISTRY: LazyLock<GraphTypeRegistry> = LazyLock::new(builtin_types);
 
 struct DemoEditor {
     menu_bar: Entity<AppMenuBar>,

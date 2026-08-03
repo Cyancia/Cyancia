@@ -1,8 +1,5 @@
 use cyancia_assets::asset::AssetHandle;
-use cyancia_shader_graph::{
-    graph::function::{GraphFunction, GraphFunctionId},
-    save::SerializableGraphFunction,
-};
+use cyancia_shader_graph::graph::function::{GraphFunction, GraphFunctionId};
 use gpui::{App, Context, IntoElement, ParentElement, RenderOnce, SharedString, Window};
 use gpui_component::{
     IndexPath, Selectable,

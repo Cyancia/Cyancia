@@ -5,7 +5,7 @@ use std::sync::{
 
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
-use cyancia_assets::{AssetAppExt, asset::AssetId, store::AssetRegistry};
+use cyancia_assets::{AssetAppExt, store::AssetRegistry};
 use cyancia_canvas::{CCanvas, command::TileReplaceCommand, event::CanvasUpdated};
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
@@ -24,7 +24,6 @@ use cyancia_render::{
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
 };
-use cyancia_shader_graph::graph::texture::TextureId;
 use cyancia_undo::QueuedUndoCommand;
 use encase::ShaderType;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};

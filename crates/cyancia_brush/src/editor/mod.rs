@@ -1,11 +1,6 @@
-use std::{
-    collections::HashMap,
-    rc::Rc,
-    sync::{Arc, LazyLock},
-};
+use std::{rc::Rc, sync::Arc};
 
 use cyancia_assets::{AssetAppExt, asset::AssetId};
-use cyancia_render::texture::Image;
 use cyancia_shader_graph::{
     editor::GraphEditor,
     graph::{
@@ -13,18 +8,13 @@ use cyancia_shader_graph::{
         external::{ExternalVariable, ExternalVariableId},
         function::{
             ASSET_GRAPH_FUNCTION_STORAGE, FunctionGraph, GraphFunction, GraphFunctionData,
-            GraphFunctionId, GraphFunctionStorage,
+            GraphFunctionId,
         },
-        node::GraphNodeRegistry,
         slot::GraphInlineLiteralRenderContext,
-        texture::{ASSET_GRAPH_TEXTURE_STORAGE, GraphTextureStorage},
-        variable::{GraphLiteral, GraphTypeRegistry},
+        texture::ASSET_GRAPH_TEXTURE_STORAGE,
+        variable::GraphLiteral,
     },
     save::{SerializableGraph, SerializableGraphFunction},
-    wgsl_std::{
-        builtin_nodes, builtin_types,
-        nodes::{GraphInputNode, GraphOutputNode},
-    },
 };
 use gpui::{
     Action, App, AppContext, Axis, BorrowAppContext, ClickEvent, Context, Entity,
@@ -47,10 +37,7 @@ use uuid::Uuid;
 
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
-    instance::{
-        BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES,
-        REQUIRED_SPACING_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
-    },
+    instance::{BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance},
     render::graph::{
         BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData,
     },

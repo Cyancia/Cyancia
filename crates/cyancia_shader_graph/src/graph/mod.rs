@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
     marker::PhantomData,
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 use gpui::{App, Point};
@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::graph::{
     external::GraphExternalVariableStorage,
-    function::{GraphFunctionStorage, SharedGraphFunctionStorage},
+    function::SharedGraphFunctionStorage,
     node::{
         ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
         GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
@@ -21,7 +21,7 @@ use crate::graph::{
         GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
         GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
     },
-    texture::{GraphTextureStorage, GraphTextureUsageRecorder, SharedGraphTextureStorage},
+    texture::{GraphTextureUsageRecorder, SharedGraphTextureStorage},
     variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
 };
 

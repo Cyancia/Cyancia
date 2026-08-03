@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 
 use cyancia_math::point::PointExt;
 use gpui::{
@@ -16,7 +13,7 @@ use serde::Deserialize;
 
 use crate::graph::{
     Graph, GraphData,
-    node::{GraphNodeId, GraphNodeRegistry},
+    node::GraphNodeId,
     slot::{GraphInputSlotId, GraphOutputSlotId},
 };
 

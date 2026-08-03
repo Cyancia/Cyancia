@@ -5,8 +5,7 @@ use cyancia_utils::random_oklch;
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles};
 use gpui::{
-    AnyElement, App, AppContext, Entity, IntoElement, ParentElement, Pixels, Rgba, SharedString,
-    Styled, div, px,
+    AnyElement, App, AppContext, Entity, ParentElement, Pixels, Rgba, SharedString, Styled, div, px,
 };
 use gpui_component::{
     IndexPath, Sizable,
@@ -1687,7 +1686,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
     fn create_outputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         let Some(ty) = state
             .ty
@@ -1821,7 +1820,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         let Some(ty) = state
             .ty
