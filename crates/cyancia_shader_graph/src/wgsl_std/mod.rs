@@ -6,9 +6,6 @@ pub mod casters;
 pub mod nodes;
 pub mod types;
 
-pub static BUILTIN_NODES: LazyLock<GraphNodeRegistry<()>> = LazyLock::new(builtin_nodes);
-pub static BUILTIN_TYPES: LazyLock<GraphTypeRegistry> = LazyLock::new(builtin_types);
-
 pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
     use nodes::*;
 

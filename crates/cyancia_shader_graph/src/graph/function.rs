@@ -16,9 +16,39 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    graph::{Graph, GraphData, texture::SharedGraphTextureStorage},
+    graph::{
+        Graph, GraphData, node::GraphNodeRegistry, texture::SharedGraphTextureStorage,
+        variable::GraphTypeRegistry,
+    },
     save::SerializableGraphFunction,
+    wgsl_std::{
+        builtin_nodes, builtin_types,
+        nodes::{GraphInputNode, GraphOutputNode},
+    },
 };
+
+pub struct GraphFunctionData {}
+
+pub static GRAPH_FUNCTION_TYPE_REGISTRY: LazyLock<GraphTypeRegistry> = LazyLock::new(builtin_types);
+pub static GRAPH_FUNCTION_NODE_REGISTRY: LazyLock<GraphNodeRegistry<GraphFunctionData>> =
+    LazyLock::new(|| {
+        let mut nodes = builtin_nodes();
+
+        nodes.register::<GraphInputNode>();
+        nodes.register::<GraphOutputNode>();
+
+        nodes
+    });
+
+impl GraphData for GraphFunctionData {
+    fn type_registry() -> &'static GraphTypeRegistry {
+        LazyLock::force(&GRAPH_FUNCTION_TYPE_REGISTRY)
+    }
+
+    fn node_registry() -> &'static GraphNodeRegistry<Self> {
+        LazyLock::force(&GRAPH_FUNCTION_NODE_REGISTRY)
+    }
+}
 
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
@@ -26,13 +56,15 @@ wrapper! {
     pub GraphFunctionId : Uuid
 }
 
+pub type FunctionGraph = Graph<GraphFunctionData>;
+
 #[derive(Clone)]
 pub struct GraphFunction {
     // FIXME This should always exist
     pub asset_id: Option<AssetId<SerializableGraphFunction>>,
     pub id: GraphFunctionId,
     pub name: String,
-    pub graph: Entity<Graph<()>>,
+    pub graph: Entity<FunctionGraph>,
 }
 
 #[allow(type_alias_bounds)]

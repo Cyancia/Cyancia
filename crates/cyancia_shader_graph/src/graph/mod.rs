@@ -9,23 +9,20 @@ use indexmap::IndexMap;
 use parking_lot::RwLock;
 use uuid::Uuid;
 
-use crate::{
-    graph::{
-        external::GraphExternalVariableStorage,
-        function::{GraphFunctionStorage, SharedGraphFunctionStorage},
-        node::{
-            ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
-            GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
-            GraphNodeUpdateSignatureContext, StatefulGraphNode,
-        },
-        slot::{
-            GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
-            GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
-        },
-        texture::{GraphTextureStorage, GraphTextureUsageRecorder, SharedGraphTextureStorage},
-        variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
+use crate::graph::{
+    external::GraphExternalVariableStorage,
+    function::{GraphFunctionStorage, SharedGraphFunctionStorage},
+    node::{
+        ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
+        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
+        GraphNodeUpdateSignatureContext, StatefulGraphNode,
     },
-    wgsl_std::{BUILTIN_NODES, BUILTIN_TYPES},
+    slot::{
+        GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
+        GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
+    },
+    texture::{GraphTextureStorage, GraphTextureUsageRecorder, SharedGraphTextureStorage},
+    variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
 };
 
 pub mod external;
@@ -710,14 +707,4 @@ impl GraphVarIdentGenerator {
 pub trait GraphData: Send + Sync + 'static + Sized {
     fn type_registry() -> &'static GraphTypeRegistry;
     fn node_registry() -> &'static GraphNodeRegistry<Self>;
-}
-
-impl GraphData for () {
-    fn type_registry() -> &'static GraphTypeRegistry {
-        LazyLock::force(&BUILTIN_TYPES)
-    }
-
-    fn node_registry() -> &'static GraphNodeRegistry<Self> {
-        LazyLock::force(&BUILTIN_NODES)
-    }
 }

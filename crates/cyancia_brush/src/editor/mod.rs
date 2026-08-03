@@ -12,7 +12,8 @@ use cyancia_shader_graph::{
         Graph, GraphData, GraphResources,
         external::{ExternalVariable, ExternalVariableId},
         function::{
-            ASSET_GRAPH_FUNCTION_STORAGE, GraphFunction, GraphFunctionId, GraphFunctionStorage,
+            ASSET_GRAPH_FUNCTION_STORAGE, FunctionGraph, GraphFunction, GraphFunctionData,
+            GraphFunctionId, GraphFunctionStorage,
         },
         node::GraphNodeRegistry,
         slot::GraphInlineLiteralRenderContext,
@@ -933,7 +934,7 @@ pub enum EditorState {
     RequiredSpacing(Entity<GraphEditor<BrushRequiredSpacingGraphData>>),
     Main(Entity<GraphEditor<BrushMainGraphData>>),
     Postprocess(Entity<GraphEditor<BrushStrokePostprocessGraphData>>),
-    Function(Entity<GraphEditor<()>>),
+    Function(Entity<GraphEditor<GraphFunctionData>>),
 }
 
 impl EditorState {
@@ -948,7 +949,7 @@ impl EditorState {
         EditorState::Postprocess(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 
-    pub fn new_function(graph: Entity<Graph<()>>, cx: &mut App) -> Self {
+    pub fn new_function(graph: Entity<FunctionGraph>, cx: &mut App) -> Self {
         EditorState::Function(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 }
