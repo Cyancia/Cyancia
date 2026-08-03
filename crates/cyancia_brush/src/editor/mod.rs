@@ -48,12 +48,12 @@ use crate::{
         BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES,
         REQUIRED_SPACING_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
-    render::graph::{BrushGraphData, BrushGraphPostprocessData, RequiredSpacingGraphData},
+    render::graph::{BrushMainGraphData, BrushStrokePostprocessGraphData, BrushRequiredSpacingGraphData},
     tool::CurrentBrushPresetHandle,
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
 
-pub static FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushGraphData>>> =
+pub static FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushMainGraphData>>> =
     LazyLock::new(|| {
         let mut registry = GraphNodeRegistry::default();
 
@@ -93,8 +93,8 @@ struct DeleteExternalVariable {
 // TODO: Tag filtering.
 pub struct BrushEditor {
     texture_storage: Arc<GraphTextureStorage>,
-    main_function_storage: Arc<GraphFunctionStorage<BrushGraphData>>,
-    stroke_pp_function_storage: Arc<GraphFunctionStorage<BrushGraphPostprocessData>>,
+    main_function_storage: Arc<GraphFunctionStorage<BrushMainGraphData>>,
+    stroke_pp_function_storage: Arc<GraphFunctionStorage<BrushStrokePostprocessGraphData>>,
 
     selected: Option<Selected>,
 
@@ -532,7 +532,7 @@ impl BrushEditor {
             .new_ext_var_type_select_state
             .read(cx)
             .selected_value()
-            .and_then(|ty_name| BrushGraphData::type_registry().get_type(ty_name))
+            .and_then(|ty_name| BrushMainGraphData::type_registry().get_type(ty_name))
         else {
             return;
         };
@@ -967,22 +967,22 @@ pub enum Selected {
 }
 
 pub enum EditorState {
-    RequiredSpacing(Entity<GraphEditor<RequiredSpacingGraphData>>),
-    Main(Entity<GraphEditor<BrushGraphData>>),
-    Postprocess(Entity<GraphEditor<BrushGraphPostprocessData>>),
-    Function(Entity<GraphEditor<BrushGraphData>>),
+    RequiredSpacing(Entity<GraphEditor<BrushRequiredSpacingGraphData>>),
+    Main(Entity<GraphEditor<BrushMainGraphData>>),
+    Postprocess(Entity<GraphEditor<BrushStrokePostprocessGraphData>>),
+    Function(Entity<GraphEditor<BrushMainGraphData>>),
 }
 
 impl EditorState {
-    pub fn new_main(graph: Entity<Graph<BrushGraphData>>, cx: &mut App) -> Self {
+    pub fn new_main(graph: Entity<Graph<BrushMainGraphData>>, cx: &mut App) -> Self {
         EditorState::Main(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 
-    pub fn new_postprocess(graph: Entity<Graph<BrushGraphPostprocessData>>, cx: &mut App) -> Self {
+    pub fn new_postprocess(graph: Entity<Graph<BrushStrokePostprocessGraphData>>, cx: &mut App) -> Self {
         EditorState::Postprocess(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 
-    pub fn new_function(graph: Entity<Graph<BrushGraphData>>, cx: &mut App) -> Self {
+    pub fn new_function(graph: Entity<Graph<BrushMainGraphData>>, cx: &mut App) -> Self {
         EditorState::Function(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 }

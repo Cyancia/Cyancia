@@ -52,12 +52,12 @@ impl SearchableListItem for BlendModeItem {
 }
 
 #[derive(Default, Clone)]
-pub struct BrushGraphPostprocessData {
+pub struct BrushStrokePostprocessGraphData {
     pub accumulated_pixel_bounds: IRect,
     pub time: Time,
 }
 
-impl GraphData for BrushGraphPostprocessData {
+impl GraphData for BrushStrokePostprocessGraphData {
     fn type_registry() -> &'static GraphTypeRegistry {
         LazyLock::force(&BRUSH_GRAPH_TYPES)
     }
@@ -67,11 +67,11 @@ impl GraphData for BrushGraphPostprocessData {
     }
 }
 
-pub struct RequiredSpacingGraphData {
+pub struct BrushRequiredSpacingGraphData {
     pub pen_input: ComputedPenInput,
 }
 
-impl GraphData for RequiredSpacingGraphData {
+impl GraphData for BrushRequiredSpacingGraphData {
     fn type_registry() -> &'static GraphTypeRegistry {
         LazyLock::force(&BRUSH_GRAPH_TYPES)
     }
@@ -82,11 +82,11 @@ impl GraphData for RequiredSpacingGraphData {
 }
 
 #[derive(Default, Clone)]
-pub struct BrushGraphData {
+pub struct BrushMainGraphData {
     pub pen_input: ComputedPenInput,
 }
 
-impl GraphData for BrushGraphData {
+impl GraphData for BrushMainGraphData {
     fn type_registry() -> &'static GraphTypeRegistry {
         LazyLock::force(&BRUSH_GRAPH_TYPES)
     }
@@ -101,31 +101,31 @@ pub trait GraphDataWithPenInput: GraphData {
 }
 
 // TODO This is kinda mess
-impl GraphDataWithPenInput for BrushGraphData {
+impl GraphDataWithPenInput for BrushMainGraphData {
     fn pen_input_field() -> String {
         "graph_input".into()
     }
 }
 
-impl GraphDataWithPenInput for RequiredSpacingGraphData {
+impl GraphDataWithPenInput for BrushRequiredSpacingGraphData {
     fn pen_input_field() -> String {
         "graph_input".into()
     }
 }
 
-impl GraphDataWithTime for BrushGraphData {
+impl GraphDataWithTime for BrushMainGraphData {
     fn time_field() -> String {
         "graph_input.time".into()
     }
 }
 
-impl GraphDataWithTime for RequiredSpacingGraphData {
+impl GraphDataWithTime for BrushRequiredSpacingGraphData {
     fn time_field() -> String {
         "graph_input.time".into()
     }
 }
 
-impl GraphDataWithTime for BrushGraphPostprocessData {
+impl GraphDataWithTime for BrushStrokePostprocessGraphData {
     fn time_field() -> String {
         "graph_input.time".into()
     }
@@ -905,7 +905,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
 pub struct StrokeBoundsNode;
 
 #[stateless]
-impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
+impl StatelessCommonGraphNode<BrushStrokePostprocessGraphData> for StrokeBoundsNode {
     fn name(&self) -> &'static str {
         "Stroke Bounds"
     }
@@ -916,21 +916,21 @@ impl StatelessCommonGraphNode<BrushGraphPostprocessData> for StrokeBoundsNode {
 
     fn create_inputs(
         &self,
-        _: GraphNodeCreateSlotsContext<'_, BrushGraphPostprocessData>,
+        _: GraphNodeCreateSlotsContext<'_, BrushStrokePostprocessGraphData>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _: GraphNodeCreateSlotsContext<'_, BrushGraphPostprocessData>,
+        _: GraphNodeCreateSlotsContext<'_, BrushStrokePostprocessGraphData>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<RectType>("Bounds".into())]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphPostprocessData>,
+        mut ctx: GraphNodeCodeGenContext<'_, BrushStrokePostprocessGraphData>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
             "let {} = Rect(vec2f(graph_input.accumulated_pixel_bound.min), vec2f(graph_input.accumulated_pixel_bound.max));",
