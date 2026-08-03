@@ -1,6 +1,9 @@
 use cyancia_assets::asset::AssetHandle;
-use cyancia_shader_graph::save::SerializableGraphFunction;
-use gpui::{App, Context, IntoElement, ParentElement, RenderOnce, Window};
+use cyancia_shader_graph::{
+    graph::function::{GraphFunction, GraphFunctionId},
+    save::SerializableGraphFunction,
+};
+use gpui::{App, Context, IntoElement, ParentElement, RenderOnce, SharedString, Window};
 use gpui_component::{
     IndexPath, Selectable,
     list::{ListDelegate, ListItem, ListState},
@@ -101,15 +104,17 @@ impl ListDelegate for BrushPresetListDelegate {
 #[derive(IntoElement)]
 pub struct BrushFunctionItem {
     base: ListItem,
-    pub handle: AssetHandle<SerializableGraphFunction>,
+    pub id: GraphFunctionId,
+    pub name: SharedString,
     is_selected: bool,
 }
 
 impl BrushFunctionItem {
-    pub fn new(func: AssetHandle<SerializableGraphFunction>) -> Self {
+    pub fn new(id: GraphFunctionId, name: SharedString) -> Self {
         Self {
-            base: ListItem::new(*func.clone().id()),
-            handle: func,
+            base: ListItem::new(*id),
+            id,
+            name,
             is_selected: false,
         }
     }
@@ -128,15 +133,9 @@ impl Selectable for BrushFunctionItem {
 
 impl RenderOnce for BrushFunctionItem {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let Ok(func) = self.handle.get() else {
-            return self.base.child(format!(
-                "Unable to load brush function {}",
-                self.handle.id()
-            ));
-        };
         self.base
             .selected(self.is_selected)
-            .child(func.name.clone())
+            .child(self.name.clone())
     }
 }
 
@@ -146,9 +145,12 @@ pub struct BrushFunctionListDelegate {
 }
 
 impl BrushFunctionListDelegate {
-    pub fn new(funcs: Vec<AssetHandle<SerializableGraphFunction>>) -> Self {
+    pub fn new<'a>(funcs: impl IntoIterator<Item = &'a GraphFunction>) -> Self {
         Self {
-            items: funcs.into_iter().map(BrushFunctionItem::new).collect(),
+            items: funcs
+                .into_iter()
+                .map(|f| BrushFunctionItem::new(f.id, f.name.clone().into()))
+                .collect(),
             selected_index: None,
         }
     }
@@ -172,7 +174,7 @@ impl ListDelegate for BrushFunctionListDelegate {
         _: &mut Context<ListState<Self>>,
     ) -> Option<Self::Item> {
         let item = self.items.get(ix.row)?;
-        Some(BrushFunctionItem::new(item.handle.clone()))
+        Some(BrushFunctionItem::new(item.id, item.name.clone()))
     }
 
     fn set_selected_index(

@@ -52,6 +52,7 @@ fn init_after_window_created(window: &Window, cx: &mut App) {
     cyancia_actions::finish(cx);
     cyancia_theme::finish(cx);
     cyancia_tools::finish(cx);
+    cyancia_shader_graph::finish(cx);
 }
 
 fn main() {

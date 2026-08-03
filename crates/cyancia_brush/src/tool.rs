@@ -5,8 +5,9 @@ use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
 use cyancia_render::{render_context::RenderContextAppExt, texture::Image};
 use cyancia_shader_graph::{
     graph::{
-        function::GraphFunctionStorage, slot::GraphInlineLiteralRenderContext,
-        texture::GraphTextureStorage,
+        function::{ASSET_GRAPH_FUNCTION_STORAGE, GraphFunctionStorage},
+        slot::GraphInlineLiteralRenderContext,
+        texture::{ASSET_GRAPH_TEXTURE_STORAGE, GraphTextureStorage},
     },
     save::SerializableGraphFunction,
 };
@@ -21,7 +22,6 @@ use log::error;
 
 use crate::{
     asset::BrushPreset,
-    editor::{FUNCTION_GRAPH_NODE_REGISTRY, FUNCTION_GRAPH_TYPE_REGISTRY},
     input_processing::{BasicStabilizer, InputProcessor},
     instance::BrushPresetInstance,
     render::CanvasBrushPresetOperator,
@@ -34,7 +34,12 @@ pub(crate) fn init(cx: &mut App) {
             return;
         };
 
-        let (instance, err) = BrushPresetInstance::from_asset(&handle.0, cx);
+        let (instance, err) = BrushPresetInstance::from_asset(
+            &handle.0,
+            ASSET_GRAPH_TEXTURE_STORAGE.clone(),
+            ASSET_GRAPH_FUNCTION_STORAGE.clone(),
+            cx,
+        );
 
         for err in err {
             error!("{}", err);

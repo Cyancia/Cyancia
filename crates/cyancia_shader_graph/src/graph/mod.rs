@@ -1,5 +1,7 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque, hash_map::Entry}, marker::PhantomData, sync::Arc
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
+    marker::PhantomData,
+    sync::{Arc, LazyLock},
 };
 
 use gpui::{App, Point};
@@ -7,20 +9,23 @@ use indexmap::IndexMap;
 use parking_lot::RwLock;
 use uuid::Uuid;
 
-use crate::graph::{
-    external::GraphExternalVariableStorage,
-    function::{GraphFunctionStorage, SharedGraphFunctionStorage},
-    node::{
-        ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
-        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
-        GraphNodeUpdateSignatureContext, StatefulGraphNode,
+use crate::{
+    graph::{
+        external::GraphExternalVariableStorage,
+        function::{GraphFunctionStorage, SharedGraphFunctionStorage},
+        node::{
+            ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
+            GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
+            GraphNodeUpdateSignatureContext, StatefulGraphNode,
+        },
+        slot::{
+            GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
+            GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
+        },
+        texture::{GraphTextureStorage, GraphTextureUsageRecorder, SharedGraphTextureStorage},
+        variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
     },
-    slot::{
-        GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
-        GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
-    },
-    texture::{GraphTextureStorage, GraphTextureUsageRecorder},
-    variable::{GraphLiteral, GraphLiteralValue, GraphTypeRegistry, GraphVariable},
+    wgsl_std::{BUILTIN_NODES, BUILTIN_TYPES},
 };
 
 pub mod external;
@@ -660,6 +665,8 @@ fn delete_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[GraphOutputSlot
 
 #[derive(Default, Clone)]
 pub struct GraphResources {
+    pub textures: SharedGraphTextureStorage,
+    pub functions: SharedGraphFunctionStorage,
     pub external_vars: Arc<GraphExternalVariableStorage>,
 }
 
@@ -703,7 +710,14 @@ impl GraphVarIdentGenerator {
 pub trait GraphData: Send + Sync + 'static + Sized {
     fn type_registry() -> &'static GraphTypeRegistry;
     fn node_registry() -> &'static GraphNodeRegistry<Self>;
-    fn function_registry() -> SharedGraphFunctionStorage<Self> {
-        GraphFunctionStorage::get_shared()
+}
+
+impl GraphData for () {
+    fn type_registry() -> &'static GraphTypeRegistry {
+        LazyLock::force(&BUILTIN_TYPES)
+    }
+
+    fn node_registry() -> &'static GraphNodeRegistry<Self> {
+        LazyLock::force(&BUILTIN_NODES)
     }
 }

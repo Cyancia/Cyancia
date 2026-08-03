@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::graph::{
     Graph, GraphData, GraphResources,
     external::{ExternalVariable, ExternalVariableId, GraphExternalVariableStorage},
-    function::{GraphFunction, GraphFunctionId, GraphFunctionStorage},
+    function::{GraphFunction, GraphFunctionId, GraphFunctionStorage, SharedGraphFunctionStorage},
     node::{
         GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
         StatefulGraphNode,
@@ -22,6 +22,7 @@ use crate::graph::{
     slot::{
         GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
     },
+    texture::SharedGraphTextureStorage,
     variable::{GraphLiteral, GraphTypeRegistry},
 };
 
@@ -447,10 +448,7 @@ pub struct SerializableGraphFunction {
 }
 
 impl SerializableGraphFunction {
-    pub fn serialize_func<Data: GraphData>(
-        func: &GraphFunction<Data>,
-        cx: &App,
-    ) -> Result<Self, anyhow::Error> {
+    pub fn serialize_func(func: &GraphFunction, cx: &App) -> Result<Self, anyhow::Error> {
         Ok(SerializableGraphFunction {
             id: func.id,
             name: func.name.clone(),
@@ -458,13 +456,17 @@ impl SerializableGraphFunction {
         })
     }
 
-    pub fn deserialize_func<Data: GraphData>(
+    pub fn deserialize_func(
         &self,
+        textures: SharedGraphTextureStorage,
+        functions: SharedGraphFunctionStorage,
         asset_id: Option<AssetId<SerializableGraphFunction>>,
         cx: &mut App,
-    ) -> (Option<GraphFunction<Data>>, Vec<GraphDeserializeError>) {
+    ) -> (Option<GraphFunction>, Vec<GraphDeserializeError>) {
         // Graph functions don't have external variables
         let resources = GraphResources {
+            textures,
+            functions,
             external_vars: Arc::new(Default::default()),
         };
 

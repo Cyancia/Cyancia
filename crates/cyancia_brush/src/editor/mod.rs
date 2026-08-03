@@ -11,10 +11,12 @@ use cyancia_shader_graph::{
     graph::{
         Graph, GraphData, GraphResources,
         external::{ExternalVariable, ExternalVariableId},
-        function::{GraphFunction, GraphFunctionId, GraphFunctionStorage},
+        function::{
+            ASSET_GRAPH_FUNCTION_STORAGE, GraphFunction, GraphFunctionId, GraphFunctionStorage,
+        },
         node::GraphNodeRegistry,
         slot::GraphInlineLiteralRenderContext,
-        texture::GraphTextureStorage,
+        texture::{ASSET_GRAPH_TEXTURE_STORAGE, GraphTextureStorage},
         variable::{GraphLiteral, GraphTypeRegistry},
     },
     save::{SerializableGraph, SerializableGraphFunction},
@@ -48,29 +50,12 @@ use crate::{
         BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES,
         REQUIRED_SPACING_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
-    render::graph::{BrushMainGraphData, BrushStrokePostprocessGraphData, BrushRequiredSpacingGraphData},
+    render::graph::{
+        BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData,
+    },
     tool::CurrentBrushPresetHandle,
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
-
-pub static FUNCTION_GRAPH_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<BrushMainGraphData>>> =
-    LazyLock::new(|| {
-        let mut registry = GraphNodeRegistry::default();
-
-        registry.merge(builtin_nodes());
-        registry.register::<GraphInputNode>();
-        registry.register::<GraphOutputNode>();
-
-        registry.into()
-    });
-
-pub static FUNCTION_GRAPH_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> = LazyLock::new(|| {
-    let mut registry = GraphTypeRegistry::default();
-
-    registry.merge(builtin_types());
-
-    registry.into()
-});
 
 pub const BRUSH_EDITOR_CONTEXT: &str = "brush_editor";
 
@@ -92,10 +77,6 @@ struct DeleteExternalVariable {
 
 // TODO: Tag filtering.
 pub struct BrushEditor {
-    texture_storage: Arc<GraphTextureStorage>,
-    main_function_storage: Arc<GraphFunctionStorage<BrushMainGraphData>>,
-    stroke_pp_function_storage: Arc<GraphFunctionStorage<BrushStrokePostprocessGraphData>>,
-
     selected: Option<Selected>,
 
     editor_state: Option<EditorState>,
@@ -112,31 +93,17 @@ pub struct BrushEditor {
 impl BrushEditor {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let brush_assets = cx.assets().all_handles_of::<BrushPreset>().unwrap();
-        let function_assets = cx
-            .assets()
-            .all_handles_of::<SerializableGraphFunction>()
-            .unwrap();
-        let functions = function_assets
-            .iter()
-            .map(|handle| {
-                let func = handle.get().unwrap();
-                // TODO err handling
-                (
-                    func.id,
-                    func.deserialize_func(Some(handle.id()), cx).0.unwrap(),
-                )
-            })
-            .collect();
-        let function_storage = Arc::new(GraphFunctionStorage::new(functions));
-
-        // TODO: Update this storage when asset changes.
-        let textures = cx.assets().all_handles_of::<Image>().unwrap();
-        let texture_storage = Arc::new(GraphTextureStorage::new(textures));
 
         let brushes =
             cx.new(|cx| ListState::new(BrushPresetListDelegate::new(brush_assets), window, cx));
-        let functions = cx
-            .new(|cx| ListState::new(BrushFunctionListDelegate::new(function_assets), window, cx));
+        let functions = ASSET_GRAPH_FUNCTION_STORAGE.load();
+        let functions = cx.new(|cx| {
+            ListState::new(
+                BrushFunctionListDelegate::new(functions.all().values()),
+                window,
+                cx,
+            )
+        });
         let name_input_state = cx.new(|cx| InputState::new(window, cx));
 
         cx.subscribe_in(&brushes, window, Self::on_brush_list_event)
@@ -175,9 +142,6 @@ impl BrushEditor {
 
         Self {
             selected: None,
-            texture_storage,
-            main_function_storage: function_storage,
-            stroke_pp_function_storage: Arc::new(GraphFunctionStorage::new(HashMap::new())), // TODO
 
             editor_state: None,
             brushes,
@@ -212,7 +176,12 @@ impl BrushEditor {
                     return;
                 };
 
-                let (maybe_instance, errs) = BrushPresetInstance::from_asset(&brush, cx);
+                let (maybe_instance, errs) = BrushPresetInstance::from_asset(
+                    &brush,
+                    ASSET_GRAPH_TEXTURE_STORAGE.clone(),
+                    ASSET_GRAPH_FUNCTION_STORAGE.clone(),
+                    cx,
+                );
 
                 for err in errs {
                     log::error!("Error deserializing brush preset {}: {}", brush.id(), err);
@@ -254,34 +223,23 @@ impl BrushEditor {
                     brushes.set_selected_index(None, window, cx);
                 });
 
-                let Some(func) = functions_entity.update(cx, |funcs, _| {
+                let Some(id) = functions_entity.update(cx, |funcs, _| {
                     let item = funcs.delegate().get(*ix)?;
-                    Some(item.handle.clone())
+                    Some(item.id)
                 }) else {
                     return;
                 };
 
-                let ser_func = match func.get() {
-                    Ok(ser_func) => ser_func,
-                    Err(err) => {
-                        log::error!("Failed reading function {}: {:?}", func.id(), err);
-                        return;
-                    }
-                };
-                let (maybe_func, errs) = ser_func.deserialize_func(Some(func.id()), cx);
-
-                for err in errs {
-                    log::error!("Error deserializing function {:?}: {:?}", func.id(), err);
-                }
-                let Some(func) = maybe_func else {
-                    log::error!("Failed to load function {}", func.id());
+                let functions = ASSET_GRAPH_FUNCTION_STORAGE.load();
+                // FIXME This can be incorrect since the cloned instance is referencing the same graph
+                //       entity.
+                let Some(func) = functions.get(&id).cloned() else {
                     return;
                 };
-
                 self.name_input_state.update(cx, |st, cx| {
                     st.set_value(func.name.clone(), window, cx);
                 });
-                self.editor_state = Some(EditorState::Main(
+                self.editor_state = Some(EditorState::Function(
                     cx.new(|cx| GraphEditor::new(func.graph.clone(), cx)),
                 ));
                 self.selected = Some(Selected::Function(SelectedFunction {
@@ -456,7 +414,12 @@ impl BrushEditor {
                     external_vars: Vec::new(),
                 };
 
-                let (instance, _) = BrushPresetInstance::new(&new_brush, cx);
+                let (instance, _) = BrushPresetInstance::new(
+                    &new_brush,
+                    ASSET_GRAPH_TEXTURE_STORAGE.clone(),
+                    ASSET_GRAPH_FUNCTION_STORAGE.clone(),
+                    cx,
+                );
                 let Some(instance) = instance else {
                     return;
                 };
@@ -970,7 +933,7 @@ pub enum EditorState {
     RequiredSpacing(Entity<GraphEditor<BrushRequiredSpacingGraphData>>),
     Main(Entity<GraphEditor<BrushMainGraphData>>),
     Postprocess(Entity<GraphEditor<BrushStrokePostprocessGraphData>>),
-    Function(Entity<GraphEditor<BrushMainGraphData>>),
+    Function(Entity<GraphEditor<()>>),
 }
 
 impl EditorState {
@@ -978,11 +941,14 @@ impl EditorState {
         EditorState::Main(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 
-    pub fn new_postprocess(graph: Entity<Graph<BrushStrokePostprocessGraphData>>, cx: &mut App) -> Self {
+    pub fn new_postprocess(
+        graph: Entity<Graph<BrushStrokePostprocessGraphData>>,
+        cx: &mut App,
+    ) -> Self {
         EditorState::Postprocess(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 
-    pub fn new_function(graph: Entity<Graph<BrushMainGraphData>>, cx: &mut App) -> Self {
+    pub fn new_function(graph: Entity<Graph<()>>, cx: &mut App) -> Self {
         EditorState::Function(cx.new(|cx| GraphEditor::new(graph, cx)))
     }
 }

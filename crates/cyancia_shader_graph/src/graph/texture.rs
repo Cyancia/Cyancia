@@ -4,36 +4,35 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use cyancia_assets::asset::AssetHandle;
+use cyancia_assets::asset::{AssetHandle, AssetId};
 use cyancia_render::texture::Image;
-use cyancia_utils::wrapper;
+use cyancia_utils::{log_err::LogErr, wrapper};
 use gpui::SharedString;
 use gpui_component::searchable_list::SearchableListItem;
 use indexmap::IndexMap;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
-    #[display("{0}")]
-    pub TextureId : Uuid
+    #[display("{0:?}")]
+    pub TextureId : Option<AssetId<Image>>
 }
 
 impl TextureId {
     // Null texture should have a default fallback, so they're also valid.
-    pub const NULL: Self = Self(Uuid::nil());
+    pub const NULL: Self = Self(None);
 }
 
 #[derive(Clone)]
 pub struct TextureObject {
-    pub external_id: TextureId,
+    pub external_id: AssetId<Image>,
     pub name: String,
     pub handle: AssetHandle<Image>,
 }
 
 impl SearchableListItem for TextureObject {
-    type Value = TextureId;
+    type Value = AssetId<Image>;
 
     fn title(&self) -> SharedString {
         self.name.clone().into()
@@ -49,18 +48,21 @@ pub struct GraphTextureStorage {
     textures: HashMap<TextureId, TextureObject>,
 }
 
-pub static GLOBAL_GRAPH_TEXTURE_STORAGE: LazyLock<ArcSwap<GraphTextureStorage>> =
-    LazyLock::new(|| ArcSwap::new(Arc::new(GraphTextureStorage::default())));
+pub static ASSET_GRAPH_TEXTURE_STORAGE: LazyLock<SharedGraphTextureStorage> =
+    LazyLock::new(Default::default);
+
+pub type SharedGraphTextureStorage = Arc<ArcSwap<GraphTextureStorage>>;
 
 impl GraphTextureStorage {
     pub fn new(textures: Vec<AssetHandle<Image>>) -> Self {
         let textures = textures
             .into_iter()
             .map(|t| {
-                let id = (*t.id()).into();
+                let external_id = t.id();
+                let id = TextureId(Some(external_id));
                 let name = t.get().unwrap().metadata.name.clone();
                 let object = TextureObject {
-                    external_id: id,
+                    external_id,
                     name,
                     handle: t.clone(),
                 };
