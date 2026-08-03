@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     collections::{BTreeMap, HashMap, hash_map::Entry},
+    marker::PhantomData,
     rc::Rc,
     sync::Arc,
 };
@@ -308,7 +309,7 @@ impl<Data: GraphData> GraphNodeData<Data> {
         &self,
         node_id: GraphNodeId,
         graph_slots: &GraphSlots,
-        resources: &GraphResources<Data>,
+        resources: &GraphResources,
         editor: WeakEntity<GraphEditor<Data>>,
         window: &mut Window,
         cx: &mut Context<'_, Graph<Data>>,
@@ -327,8 +328,9 @@ impl<Data: GraphData> GraphNodeData<Data> {
 }
 
 pub struct GraphNodeCreateSlotsContext<'a, Data: GraphData> {
-    pub resources: &'a GraphResources<Data>,
+    pub resources: &'a GraphResources,
     pub cx: &'a App,
+    pub _marker: PhantomData<Data>,
 }
 
 pub struct GraphNodeUpdateSignatureContext<'a, Data: GraphData> {
@@ -336,7 +338,8 @@ pub struct GraphNodeUpdateSignatureContext<'a, Data: GraphData> {
     pub outputs: &'a [GraphOutputSlotId],
     pub slots: &'a GraphSlots,
     pub signature: &'a mut GraphSignature,
-    pub resources: &'a GraphResources<Data>,
+    pub resources: &'a GraphResources,
+    pub _marker: PhantomData<Data>,
 }
 
 impl<Data: GraphData> GraphNodeUpdateSignatureContext<'_, Data> {
@@ -374,7 +377,7 @@ pub struct GraphNodeRenderContext<'a, 'app, Data: GraphData> {
     pub inputs: &'a [GraphInputSlotId],
     pub outputs: &'a [GraphOutputSlotId],
     pub graph_slots: &'a GraphSlots,
-    pub resources: &'a GraphResources<Data>,
+    pub resources: &'a GraphResources,
     pub editor: WeakEntity<GraphEditor<Data>>,
     pub window: &'a mut Window,
     pub cx: &'a mut Context<'app, Graph<Data>>,
@@ -511,9 +514,10 @@ pub struct GraphNodeCodeGenContext<'a, Data: GraphData> {
     pub graph_slots: &'a GraphSlots,
     pub output_slot_idents: &'a mut HashMap<GraphOutputSlotId, String>,
     pub ident_generator: &'a mut GraphVarIdentGenerator,
-    pub resources: &'a GraphResources<Data>,
+    pub resources: &'a GraphResources,
     pub texture_usage: &'a mut GraphTextureUsageRecorder,
     pub cx: &'a App,
+    pub _marker: PhantomData<Data>,
 }
 
 impl<Data: GraphData> GraphNodeCodeGenContext<'_, Data> {
@@ -622,9 +626,16 @@ impl std::fmt::Display for ContextualGraphNodeCodeGenError {
     }
 }
 
-#[derive(Default)]
 pub struct GraphNodeRegistry<Data: GraphData> {
     nodes: BTreeMap<&'static str, Box<dyn ErasedGraphNode<Data>>>,
+}
+
+impl<Data: GraphData> Default for GraphNodeRegistry<Data> {
+    fn default() -> Self {
+        Self {
+            nodes: Default::default(),
+        }
+    }
 }
 
 impl<Data: GraphData> Clone for GraphNodeRegistry<Data> {

@@ -67,16 +67,17 @@ impl GraphData for BrushGraphPostprocessData {
     }
 }
 
-impl GraphDataWithTime for BrushGraphPostprocessData {
-    fn time(&self) -> GraphTimes {
-        GraphTimes {
-            now: self.time.now,
-            stroke_begin: self.time.stroke_begin,
-        }
+pub struct RequiredSpacingGraphData {
+    pub pen_input: ComputedPenInput,
+}
+
+impl GraphData for RequiredSpacingGraphData {
+    fn type_registry() -> &'static GraphTypeRegistry {
+        LazyLock::force(&BRUSH_GRAPH_TYPES)
     }
 
-    fn wgsl_variable() -> String {
-        "graph_input.time".into()
+    fn node_registry() -> &'static GraphNodeRegistry<Self> {
+        LazyLock::force(&REQUIRED_SPACING_GRAPH_NODES)
     }
 }
 
@@ -95,15 +96,37 @@ impl GraphData for BrushGraphData {
     }
 }
 
-impl GraphDataWithTime for BrushGraphData {
-    fn time(&self) -> GraphTimes {
-        GraphTimes {
-            now: self.pen_input.time.now,
-            stroke_begin: self.pen_input.time.stroke_begin,
-        }
-    }
+pub trait GraphDataWithPenInput: GraphData {
+    fn pen_input_field() -> String;
+}
 
-    fn wgsl_variable() -> String {
+// TODO This is kinda mess
+impl GraphDataWithPenInput for BrushGraphData {
+    fn pen_input_field() -> String {
+        "graph_input".into()
+    }
+}
+
+impl GraphDataWithPenInput for RequiredSpacingGraphData {
+    fn pen_input_field() -> String {
+        "graph_input".into()
+    }
+}
+
+impl GraphDataWithTime for BrushGraphData {
+    fn time_field() -> String {
+        "graph_input.time".into()
+    }
+}
+
+impl GraphDataWithTime for RequiredSpacingGraphData {
+    fn time_field() -> String {
+        "graph_input.time".into()
+    }
+}
+
+impl GraphDataWithTime for BrushGraphPostprocessData {
+    fn time_field() -> String {
         "graph_input.time".into()
     }
 }
@@ -112,7 +135,7 @@ impl GraphDataWithTime for BrushGraphData {
 pub struct PenPositionNode;
 
 #[stateless]
-impl StatelessCommonGraphNode<BrushGraphData> for PenPositionNode {
+impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for PenPositionNode {
     fn name(&self) -> &'static str {
         "Pen Position"
     }
@@ -123,25 +146,26 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPositionNode {
 
     fn create_inputs(
         &self,
-        _: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>("Position".into())]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphData>,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = graph_input.position;",
-            ctx.get_output(0)?
+            "let {} = {}.position;",
+            ctx.get_output(0)?,
+            Data::pen_input_field()
         ))
     }
 }
@@ -150,7 +174,7 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPositionNode {
 pub struct DrawDirectionNode;
 
 #[stateless]
-impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
+impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for DrawDirectionNode {
     fn name(&self) -> &'static str {
         "Draw Direction"
     }
@@ -161,14 +185,14 @@ impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
 
     fn create_inputs(
         &self,
-        _: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>("Angle".into()),
@@ -178,10 +202,11 @@ impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphData>,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let pen_input = Data::pen_input_field();
         Ok(format!(
-            "let {} = graph_input.draw_direction_angle;\nlet {} = graph_input.draw_direction_vec;\n",
+            "let {} = {pen_input}.draw_direction_angle;\nlet {} = {pen_input}.draw_direction_vec;\n",
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))
@@ -192,7 +217,7 @@ impl StatelessCommonGraphNode<BrushGraphData> for DrawDirectionNode {
 pub struct PenPressureNode;
 
 #[stateless]
-impl StatelessCommonGraphNode<BrushGraphData> for PenPressureNode {
+impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for PenPressureNode {
     fn name(&self) -> &'static str {
         "Pen Pressure"
     }
@@ -203,25 +228,26 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPressureNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<F32Type>("Pressure".into())]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphData>,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = graph_input.pressure;\n",
-            ctx.get_output(0)?
+            "let {} = {}.pressure;\n",
+            ctx.get_output(0)?,
+            Data::pen_input_field()
         ))
     }
 }
@@ -230,7 +256,7 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenPressureNode {
 pub struct PenTiltNode;
 
 #[stateless]
-impl StatelessCommonGraphNode<BrushGraphData> for PenTiltNode {
+impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for PenTiltNode {
     fn name(&self) -> &'static str {
         "Pen Tilt"
     }
@@ -241,23 +267,27 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenTiltNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<Vec2FType>("Tilt".into())]
     }
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphData>,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        Ok(format!("let {} = graph_input.tilt;\n", ctx.get_output(0)?))
+        Ok(format!(
+            "let {} = {}.tilt;\n",
+            ctx.get_output(0)?,
+            Data::pen_input_field()
+        ))
     }
 }
 
@@ -265,7 +295,7 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenTiltNode {
 pub struct PenAngleNode;
 
 #[stateless]
-impl StatelessCommonGraphNode<BrushGraphData> for PenAngleNode {
+impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for PenAngleNode {
     fn name(&self) -> &'static str {
         "Pen Angle"
     }
@@ -276,14 +306,14 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenAngleNode {
 
     fn create_inputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        _ctx: GraphNodeCreateSlotsContext<'_, BrushGraphData>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![
             GraphDefaultOutputSlot::new::<F32Type>("Altitude".into()),
@@ -293,10 +323,11 @@ impl StatelessCommonGraphNode<BrushGraphData> for PenAngleNode {
 
     fn generate_code(
         &self,
-        mut ctx: GraphNodeCodeGenContext<'_, BrushGraphData>,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
+        let pen_input = Data::pen_input_field();
         Ok(format!(
-            "let {} = graph_input.angle.x;\nlet {} = graph_input.angle.y;\n",
+            "let {} = {pen_input}.angle.x;\nlet {} = {pen_input}.angle.y;\n",
             ctx.get_output(0)?,
             ctx.get_output(1)?
         ))

@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
+arc-swap.workspace = true
 bevy_math.workspace = true
 cyancia_assets.workspace = true
 cyancia_math.workspace = true

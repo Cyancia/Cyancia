@@ -48,7 +48,7 @@ use crate::{
         BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance, MAIN_GRAPH_NODES,
         REQUIRED_SPACING_GRAPH_NODES, STROKE_POSTPROCESS_GRAPH_NODES,
     },
-    render::graph::{BrushGraphData, BrushGraphPostprocessData},
+    render::graph::{BrushGraphData, BrushGraphPostprocessData, RequiredSpacingGraphData},
     tool::CurrentBrushPresetHandle,
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
@@ -123,14 +123,7 @@ impl BrushEditor {
                 // TODO err handling
                 (
                     func.id,
-                    func.deserialize_func(
-                        Some(handle.id()),
-                        FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
-                        FUNCTION_GRAPH_NODE_REGISTRY.as_ref(),
-                        cx,
-                    )
-                    .0
-                    .unwrap(),
+                    func.deserialize_func(Some(handle.id()), cx).0.unwrap(),
                 )
             })
             .collect();
@@ -219,13 +212,7 @@ impl BrushEditor {
                     return;
                 };
 
-                let (maybe_instance, errs) = BrushPresetInstance::from_asset(
-                    &brush,
-                    self.texture_storage.clone(),
-                    self.main_function_storage.clone(),
-                    self.stroke_pp_function_storage.clone(),
-                    cx,
-                );
+                let (maybe_instance, errs) = BrushPresetInstance::from_asset(&brush, cx);
 
                 for err in errs {
                     log::error!("Error deserializing brush preset {}: {}", brush.id(), err);
@@ -281,12 +268,7 @@ impl BrushEditor {
                         return;
                     }
                 };
-                let (maybe_func, errs) = ser_func.deserialize_func(
-                    Some(func.id()),
-                    FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
-                    FUNCTION_GRAPH_NODE_REGISTRY.as_ref(),
-                    cx,
-                );
+                let (maybe_func, errs) = ser_func.deserialize_func(Some(func.id()), cx);
 
                 for err in errs {
                     log::error!("Error deserializing function {:?}: {:?}", func.id(), err);
@@ -474,13 +456,7 @@ impl BrushEditor {
                     external_vars: Vec::new(),
                 };
 
-                let (instance, _) = BrushPresetInstance::new(
-                    &new_brush,
-                    self.texture_storage.clone(),
-                    self.main_function_storage.clone(),
-                    self.stroke_pp_function_storage.clone(),
-                    cx,
-                );
+                let (instance, _) = BrushPresetInstance::new(&new_brush, cx);
                 let Some(instance) = instance else {
                     return;
                 };
@@ -510,12 +486,7 @@ impl BrushEditor {
                     asset_id: None,
                     id,
                     name: "[Unnamed Function]".to_string(),
-                    graph: cx.new(|_| {
-                        Graph::new(GraphResources {
-                            functions: self.main_function_storage.clone(),
-                            ..Default::default()
-                        })
-                    }),
+                    graph: cx.new(|_| Graph::new(GraphResources::default())),
                 });
 
                 let ser_func =
@@ -821,7 +792,7 @@ impl BrushEditor {
         };
         brush.viewing_graph = BrushPresetGraph::RequiredSpacing;
         let st = cx.new(|cx| GraphEditor::new(brush.instance.required_spacing_graph().clone(), cx));
-        self.editor_state = Some(EditorState::Main(st));
+        self.editor_state = Some(EditorState::RequiredSpacing(st));
     }
 
     fn on_select_main_graph(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -910,6 +881,7 @@ impl Render for BrushEditor {
                 .child("Name")
                 .child(Input::new(&self.name_input_state).w_full());
             let graph_view = match &self.editor_state {
+                Some(EditorState::RequiredSpacing(e)) => e.clone().into_any_element(),
                 Some(EditorState::Main(e)) => e.clone().into_any_element(),
                 Some(EditorState::Postprocess(e)) => e.clone().into_any_element(),
                 Some(EditorState::Function(e)) => e.clone().into_any_element(),
@@ -995,6 +967,7 @@ pub enum Selected {
 }
 
 pub enum EditorState {
+    RequiredSpacing(Entity<GraphEditor<RequiredSpacingGraphData>>),
     Main(Entity<GraphEditor<BrushGraphData>>),
     Postprocess(Entity<GraphEditor<BrushGraphPostprocessData>>),
     Function(Entity<GraphEditor<BrushGraphData>>),

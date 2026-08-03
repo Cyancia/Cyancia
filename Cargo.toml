@@ -70,6 +70,7 @@ cyancia_view = { version = "0.1.0", path = "crates/cyancia_view" }
 cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
 
 anyhow = "1"
+arc-swap = "1"
 atomicow = "1"
 bevy_color = "0.18"
 bevy_math = { version = "0.18", git = "https://github.com/443eb9/bevy.git", branch = "release-0.18.1", features = [

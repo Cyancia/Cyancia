@@ -5,7 +5,8 @@ use cyancia_utils::random_oklch;
 use cyancia_widgets::curve_edit::{CurveEdit, CurveEditEvent, CurveEditState};
 use glam::{Vec2, Vec3, Vec3Swizzles};
 use gpui::{
-    AnyElement, App, AppContext, Entity, ParentElement, Pixels, Rgba, SharedString, Styled, div, px,
+    AnyElement, App, AppContext, Entity, IntoElement, ParentElement, Pixels, Rgba, SharedString,
+    Styled, div, px,
 };
 use gpui_component::{
     IndexPath, Sizable,
@@ -846,8 +847,7 @@ pub struct GraphTimes {
 }
 
 pub trait GraphDataWithTime: GraphData {
-    fn time(&self) -> GraphTimes;
-    fn wgsl_variable() -> String;
+    fn time_field() -> String;
 }
 
 #[stateless]
@@ -883,7 +883,7 @@ impl<Data: GraphDataWithTime> StatelessCommonGraphNode<Data> for TimeNode {
     ) -> Result<String, GraphNodeCodeGenError> {
         let now = ctx.get_output(0)?;
         let stroke_begin = ctx.get_output(1)?;
-        let accessor = Data::wgsl_variable();
+        let accessor = Data::time_field();
 
         Ok(format!(
             "
@@ -1314,53 +1314,54 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let graph = ctx.cx.entity().downgrade();
-        let node_id = ctx.node_id;
-        let all_textures = ctx
-            .resources
-            .textures
-            .all()
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        let selected = all_textures
-            .iter()
-            .position(|r| r.external_id == *state)
-            .map(IndexPath::new);
+        // let graph = ctx.cx.entity().downgrade();
+        // let node_id = ctx.node_id;
+        // let all_textures = ctx
+        //     .resources
+        //     .textures
+        //     .all()
+        //     .values()
+        //     .cloned()
+        //     .collect::<Vec<_>>();
+        // let selected = all_textures
+        //     .iter()
+        //     .position(|r| r.external_id == *state)
+        //     .map(IndexPath::new);
 
-        let select_state = ctx
-            .window
-            .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
-                let select_state =
-                    cx.new(|cx| SelectState::new(all_textures.clone(), selected, window, cx));
+        // let select_state = ctx
+        //     .window
+        //     .use_keyed_state(*ctx.node_id, ctx.cx, |window, cx| {
+        //         let select_state =
+        //             cx.new(|cx| SelectState::new(all_textures.clone(), selected, window, cx));
 
-                cx.subscribe_in(
-                    &select_state,
-                    window,
-                    move |_: &mut Entity<SelectState<_>>, _, event: &SelectEvent<_>, _, cx| {
-                        if let SelectEvent::Confirm(Some(val)) = event {
-                            graph
-                                .update(cx, |graph, cx| {
-                                    graph.update_node_state::<Self>(cx, node_id, move |state| {
-                                        *state = *val;
-                                    });
-                                })
-                                .ok();
-                        }
-                    },
-                )
-                .detach();
+        //         cx.subscribe_in(
+        //             &select_state,
+        //             window,
+        //             move |_: &mut Entity<SelectState<_>>, _, event: &SelectEvent<_>, _, cx| {
+        //                 if let SelectEvent::Confirm(Some(val)) = event {
+        //                     graph
+        //                         .update(cx, |graph, cx| {
+        //                             graph.update_node_state::<Self>(cx, node_id, move |state| {
+        //                                 *state = *val;
+        //                             });
+        //                         })
+        //                         .ok();
+        //                 }
+        //             },
+        //         )
+        //         .detach();
 
-                select_state
-            });
+        //         select_state
+        //     });
 
-        let select_state = select_state.read(ctx.cx).clone();
-        select_state.update(ctx.cx, |state, cx| {
-            state.set_items(all_textures, ctx.window, cx);
-            state.set_selected_index(selected, ctx.window, cx);
-        });
+        // let select_state = select_state.read(ctx.cx).clone();
+        // select_state.update(ctx.cx, |state, cx| {
+        //     state.set_items(all_textures, ctx.window, cx);
+        //     state.set_selected_index(selected, ctx.window, cx);
+        // });
 
-        ctx.render_all_slots_with_header(Select::new(&select_state).small())
+        // ctx.render_all_slots_with_header(Select::new(&select_state).small())
+        div().into_any_element()
     }
 
     fn generate_code(
@@ -1519,11 +1520,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         state: &Self::State,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        let Some(func) = state
-            .id
-            .as_ref()
-            .and_then(|id| ctx.resources.functions.get(id))
-        else {
+        let funcs = Data::function_registry().load();
+        let Some(func) = state.id.as_ref().and_then(|id| funcs.get(id)) else {
             return Vec::new();
         };
 
@@ -1546,11 +1544,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         state: &Self::State,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
-        let Some(func) = state
-            .id
-            .as_ref()
-            .and_then(|id| ctx.resources.functions.get(id))
-        else {
+        let funcs = Data::function_registry().load();
+        let Some(func) = state.id.as_ref().and_then(|id| funcs.get(id)) else {
             return Vec::new();
         };
 
@@ -1573,9 +1568,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         state: &Self::State,
         mut ctx: GraphNodeRenderContext<'_, '_, Data>,
     ) -> AnyElement {
-        let all_refs = ctx
-            .resources
-            .functions
+        let funcs = Data::function_registry().load();
+        let all_refs = funcs
             .all()
             .iter()
             .map(|(id, graph)| GraphFunctionReference {
@@ -1628,7 +1622,8 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         let Some(id) = state.id.as_ref() else {
             return Ok(Default::default());
         };
-        let Some(func) = ctx.resources.functions.get(id) else {
+        let funcs = Data::function_registry().load();
+        let Some(func) = funcs.get(id) else {
             return Ok(Default::default());
         };
 

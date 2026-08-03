@@ -1,6 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
-    sync::Arc,
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry}, marker::PhantomData, sync::Arc
 };
 
 use gpui::{App, Point};
@@ -10,7 +9,7 @@ use uuid::Uuid;
 
 use crate::graph::{
     external::GraphExternalVariableStorage,
-    function::GraphFunctionStorage,
+    function::{GraphFunctionStorage, SharedGraphFunctionStorage},
     node::{
         ContextualGraphNodeCodeGenError, ErasedGraphNode, GraphNode, GraphNodeCodeGenContext,
         GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, GraphNodeRegistry,
@@ -34,13 +33,13 @@ pub mod variable;
 pub struct Graph<Data: GraphData> {
     pub(crate) nodes: HashMap<GraphNodeId, GraphNodeData<Data>>,
     pub(crate) slots: GraphSlots,
-    pub(crate) resources: GraphResources<Data>,
+    pub(crate) resources: GraphResources,
     pub(crate) cached_run_order: RwLock<Option<Vec<GraphNodeId>>>,
     pub(crate) cached_signature: RwLock<Option<GraphSignature>>,
 }
 
 impl<Data: GraphData> Graph<Data> {
-    pub fn new(resources: GraphResources<Data>) -> Self {
+    pub fn new(resources: GraphResources) -> Self {
         Self {
             nodes: HashMap::new(),
             slots: GraphSlots::default(),
@@ -75,6 +74,7 @@ impl<Data: GraphData> Graph<Data> {
             node.create_inputs(GraphNodeCreateSlotsContext {
                 resources: &self.resources,
                 cx,
+                _marker: PhantomData,
             }),
         )
         .into();
@@ -84,6 +84,7 @@ impl<Data: GraphData> Graph<Data> {
             node.create_outputs(GraphNodeCreateSlotsContext {
                 resources: &self.resources,
                 cx,
+                _marker: PhantomData,
             }),
         )
         .into();
@@ -365,6 +366,7 @@ impl<Data: GraphData> Graph<Data> {
                 slots: &self.slots,
                 signature: &mut signature,
                 resources: &self.resources,
+                _marker: PhantomData,
             };
             node.data.update_signature(ctx);
         }
@@ -379,6 +381,7 @@ impl<Data: GraphData> Graph<Data> {
         let new_input_defs = node.data.create_inputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
             cx,
+            _marker: PhantomData,
         });
         let mut new_input_ids = Vec::with_capacity(new_input_defs.len());
         let mut old_input_ids = node.inputs.to_vec();
@@ -435,6 +438,7 @@ impl<Data: GraphData> Graph<Data> {
         let new_output_defs = node.data.create_outputs(GraphNodeCreateSlotsContext {
             resources: &self.resources,
             cx,
+            _marker: PhantomData,
         });
         let mut new_output_ids = Vec::with_capacity(new_output_defs.len());
         let mut old_output_ids = node.outputs.to_vec();
@@ -539,6 +543,7 @@ impl<Data: GraphData> Graph<Data> {
                 resources: &self.resources,
                 texture_usage,
                 cx,
+                _marker: PhantomData,
             };
 
             match node.data.generate_code(context) {
@@ -577,7 +582,7 @@ impl<Data: GraphData> Graph<Data> {
         Ok((graph_output_idents, code))
     }
 
-    pub fn resources(&self) -> &GraphResources<Data> {
+    pub fn resources(&self) -> &GraphResources {
         &self.resources
     }
 }
@@ -654,9 +659,7 @@ fn delete_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[GraphOutputSlot
 }
 
 #[derive(Default, Clone)]
-pub struct GraphResources<Data: GraphData> {
-    pub textures: Arc<GraphTextureStorage>,
-    pub functions: Arc<GraphFunctionStorage<Data>>,
+pub struct GraphResources {
     pub external_vars: Arc<GraphExternalVariableStorage>,
 }
 
@@ -700,4 +703,7 @@ impl GraphVarIdentGenerator {
 pub trait GraphData: Send + Sync + 'static + Sized {
     fn type_registry() -> &'static GraphTypeRegistry;
     fn node_registry() -> &'static GraphNodeRegistry<Self>;
+    fn function_registry() -> SharedGraphFunctionStorage<Self> {
+        GraphFunctionStorage::get_shared()
+    }
 }

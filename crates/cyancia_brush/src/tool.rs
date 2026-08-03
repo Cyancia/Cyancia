@@ -34,40 +34,7 @@ pub(crate) fn init(cx: &mut App) {
             return;
         };
 
-        let function_assets = cx
-            .assets()
-            .all_handles_of::<SerializableGraphFunction>()
-            .unwrap();
-        let functions = function_assets
-            .iter()
-            .map(|handle| {
-                let func = handle.get().unwrap();
-                // TODO err handling
-                (
-                    func.id,
-                    func.deserialize_func(
-                        Some(handle.id()),
-                        FUNCTION_GRAPH_TYPE_REGISTRY.clone(),
-                        FUNCTION_GRAPH_NODE_REGISTRY.as_ref(),
-                        cx,
-                    )
-                    .0
-                    .unwrap(),
-                )
-            })
-            .collect();
-        let function_storage = Arc::new(GraphFunctionStorage::new(functions));
-
-        // TODO: Update this storage when asset changes.
-        let textures = cx.assets().all_handles_of::<Image>().unwrap();
-        let texture_storage = Arc::new(GraphTextureStorage::new(textures));
-        let (instance, err) = BrushPresetInstance::from_asset(
-            &handle.0,
-            texture_storage,
-            function_storage,
-            Arc::new(Default::default()), // TODO
-            cx,
-        );
+        let (instance, err) = BrushPresetInstance::from_asset(&handle.0, cx);
 
         for err in err {
             error!("{}", err);

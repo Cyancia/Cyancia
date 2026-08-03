@@ -1,5 +1,9 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
+use arc_swap::ArcSwap;
 use cyancia_assets::asset::AssetHandle;
 use cyancia_render::texture::Image;
 use cyancia_utils::wrapper;
@@ -44,6 +48,9 @@ impl SearchableListItem for TextureObject {
 pub struct GraphTextureStorage {
     textures: HashMap<TextureId, TextureObject>,
 }
+
+pub static GLOBAL_GRAPH_TEXTURE_STORAGE: LazyLock<ArcSwap<GraphTextureStorage>> =
+    LazyLock::new(|| ArcSwap::new(Arc::new(GraphTextureStorage::default())));
 
 impl GraphTextureStorage {
     pub fn new(textures: Vec<AssetHandle<Image>>) -> Self {

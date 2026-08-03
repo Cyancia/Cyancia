@@ -2019,6 +2019,7 @@ name = "cyancia_shader_graph"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "cyancia_assets",
  "cyancia_math",
