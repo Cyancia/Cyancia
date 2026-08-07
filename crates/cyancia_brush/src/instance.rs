@@ -425,7 +425,7 @@ fn compile_template_input_sampling(
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
 ) -> anyhow::Result<String> {
-    let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
+    let (_, _, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
 
     let shader = include_str!("render/brush_sample.wesl")
         .replace("//CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING", &shader)
@@ -453,7 +453,7 @@ fn compile_template_main(
     texture_usage: &mut GraphTextureUsageRecorder,
     external_variable_bindings: &str,
 ) -> anyhow::Result<CompiledGraph> {
-    let (_, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
+    let (_, _, shader) = graph.compile(Vec::new(), Default::default(), texture_usage)?;
 
     Ok(CompiledGraph {
         main: compile_template(&shader, external_variable_bindings, false, false)?,
@@ -473,7 +473,7 @@ fn compile_template_stroke_postprocess<'a>(
 
     let compiled_brshes = compiled_graphs
         .into_iter()
-        .map(|(_, shader)| {
+        .map(|(_, _, shader)| {
             Ok(CompiledGraph {
                 main: compile_template(&shader, external_variable_bindings, true, false)?,
                 bounds_eval: compile_template(&shader, external_variable_bindings, true, true)?,

@@ -46,6 +46,10 @@ pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
     nodes.register::<GraphFunctionNode>();
     nodes.register::<ExternalVariableNode>();
     nodes.register::<CurveNode>();
+    nodes.register::<WhileNode>();
+    nodes.register::<WhileNodeInput>();
+    nodes.register::<WhileNodeOutput>();
+    nodes.register::<BreakBeforeNextIterationNode>();
 
     nodes
 }

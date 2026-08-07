@@ -513,7 +513,10 @@ impl<Data: GraphData> Graph<Data> {
         graph_input_idents: Vec<String>,
         mut ident_generator: GraphVarIdentGenerator,
         texture_usage: &mut GraphTextureUsageRecorder,
-    ) -> Result<(Vec<String>, String), GraphCompileError> {
+    ) -> Result<
+        (Vec<String>, HashMap<GraphOutputSlotId, String>, String),
+        GraphCompileError,
+    > {
         if self.cached_run_order.read().is_none() {
             self.update_run_order_cache();
         }
@@ -586,7 +589,7 @@ impl<Data: GraphData> Graph<Data> {
             "This should never fail."
         );
 
-        Ok((graph_output_idents, code))
+        Ok((graph_output_idents, output_slot_idents, code))
     }
 
     pub fn resources(&self) -> &GraphResources {
