@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::Result;
 use cyancia_assets::{
     asset::{Asset, AssetId},
     loader::AssetSerializer,
@@ -24,23 +25,17 @@ use crate::graph::{
 };
 
 pub trait GraphSerializable: Sized {
-    fn to_toml(&self) -> Result<toml::Value, toml::ser::Error>;
-    fn from_toml(
-        value: toml::Value,
-        type_registry: &GraphTypeRegistry,
-    ) -> Result<Self, toml::de::Error>;
+    fn to_toml(&self) -> Result<toml::Value>;
+    fn from_toml(value: toml::Value, resources: &GraphResources) -> Result<Self>;
 }
 
 impl<'de, T: Serialize + Deserialize<'de>> GraphSerializable for T {
-    fn to_toml(&self) -> Result<toml::Value, toml::ser::Error> {
-        toml::Value::try_from(self)
+    fn to_toml(&self) -> Result<toml::Value> {
+        Ok(toml::Value::try_from(self)?)
     }
 
-    fn from_toml(
-        value: toml::Value,
-        __registry: &GraphTypeRegistry,
-    ) -> Result<Self, toml::de::Error> {
-        Self::deserialize(value)
+    fn from_toml(value: toml::Value, resources: &GraphResources) -> Result<Self> {
+        Ok(Self::deserialize(value)?)
     }
 }
 
@@ -74,7 +69,7 @@ pub enum GraphDeserializeError {
     #[error("Failed to deserialize literal data: {0}")]
     LiteralDeserializeError(toml::de::Error),
     #[error("Failed to deserialize node state: {0}")]
-    NodeStateDeserializeError(toml::de::Error),
+    NodeStateDeserializeError(anyhow::Error),
     #[error("Deserialization error: {0}")]
     DeserializerError(toml::de::Error),
 }
@@ -124,7 +119,7 @@ impl<Data: GraphData> Graph<Data> {
             };
 
             let mut node = StatefulGraphNode::new(node_inst);
-            match node.deserialize_and_set_state(ser_node.state.clone()) {
+            match node.deserialize_and_set_state(ser_node.state.clone(), &resources) {
                 Ok(_) => {}
                 Err(e) => {
                     errs.push(GraphDeserializeError::NodeStateDeserializeError(e));

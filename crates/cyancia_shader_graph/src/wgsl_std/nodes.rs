@@ -1,17 +1,23 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+};
 
 use cyancia_math::curve::CubicCurve;
+use cyancia_utils::wrapper;
 use cyancia_widgets::curve_edit::CurveEdit;
 use glam::{Vec2, Vec3, Vec3Swizzles};
 use iced_core::{Color, Length};
 use iced_widget::{column, pick_list, text_input};
+use parking_lot::RwLock;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     GraphElement,
     graph::{
-        GraphData, GraphVarIdentGenerator,
+        Graph, GraphData, GraphVarIdentGenerator,
         external::{ExternalVariableId, generate_external_variable_name},
         function::GraphFunctionId,
         node::{
@@ -19,9 +25,14 @@ use crate::{
             GraphNodeUpdateContext, GraphNodeUpdateSignatureContext, GraphNodeViewContext,
             StatelessCommonGraphNode,
         },
-        slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
+        slot::{
+            ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
+            GraphValueType,
+        },
         texture::TextureId,
+        variable::GraphTypeRegistry,
     },
+    save::{GraphSerializable, SerializableGraph},
     wgsl_std::{
         themed_color,
         types::{ColorType, F32Type, RectType, TextureType, Vec2FType},

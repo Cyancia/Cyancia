@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::Result;
 use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
 use dyn_clone::DynClone;
 use iced_core::{Color, Length, Point};
@@ -69,11 +70,15 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         state: &Self::State,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn serialize_state(&self, state: &Self::State) -> Result<toml::Value, toml::ser::Error> {
+    fn serialize_state(&self, state: &Self::State) -> Result<toml::Value> {
         state.to_toml()
     }
-    fn deserialize_state(&self, value: toml::Value) -> Result<Self::State, toml::de::Error> {
-        Self::State::from_toml(value, Data::type_registry())
+    fn deserialize_state(
+        &self,
+        value: toml::Value,
+        resources: &GraphResources,
+    ) -> Result<Self::State> {
+        Self::State::from_toml(value, resources)
     }
 }
 
@@ -127,14 +132,12 @@ pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         state: &Box<dyn Any + Send + Sync>,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn serialize_state(
-        &self,
-        state: &Box<dyn Any + Send + Sync>,
-    ) -> Result<toml::Value, toml::ser::Error>;
+    fn serialize_state(&self, state: &Box<dyn Any + Send + Sync>) -> Result<toml::Value>;
     fn deserialize_state(
         &self,
         value: toml::Value,
-    ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error>;
+        resources: &GraphResources,
+    ) -> Result<Box<dyn Any + Send + Sync>>;
 }
 
 dyn_clone::clone_trait_object!(<Data> ErasedGraphNode<Data>);
@@ -238,10 +241,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
         )
     }
 
-    fn serialize_state(
-        &self,
-        state: &Box<dyn Any + Send + Sync>,
-    ) -> Result<toml::Value, toml::ser::Error> {
+    fn serialize_state(&self, state: &Box<dyn Any + Send + Sync>) -> Result<toml::Value> {
         self.serialize_state(
             state
                 .downcast_ref::<T::State>()
@@ -252,8 +252,9 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
     fn deserialize_state(
         &self,
         value: toml::Value,
-    ) -> Result<Box<dyn Any + Send + Sync>, toml::de::Error> {
-        Ok(Box::new(self.deserialize_state(value)?))
+        resources: &GraphResources,
+    ) -> Result<Box<dyn Any + Send + Sync>> {
+        Ok(Box::new(self.deserialize_state(value, resources)?))
     }
 }
 
@@ -301,12 +302,16 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         self.data.generate_code(&self.state, ctx)
     }
 
-    pub fn serialize_state(&self) -> Result<toml::Value, toml::ser::Error> {
+    pub fn serialize_state(&self) -> Result<toml::Value> {
         self.data.serialize_state(&self.state)
     }
 
-    pub fn deserialize_and_set_state(&mut self, value: toml::Value) -> Result<(), toml::de::Error> {
-        self.state = self.data.deserialize_state(value)?;
+    pub fn deserialize_and_set_state(
+        &mut self,
+        value: toml::Value,
+        resources: &GraphResources,
+    ) -> Result<()> {
+        self.state = self.data.deserialize_state(value, resources)?;
         Ok(())
     }
 
