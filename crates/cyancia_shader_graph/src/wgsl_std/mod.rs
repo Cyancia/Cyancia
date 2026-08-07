@@ -57,6 +57,8 @@ pub fn builtin_types() -> GraphTypeRegistry {
     let mut types = GraphTypeRegistry::default();
 
     types.register_type::<F32Type>();
+    types.register_type::<I32Type>();
+    types.register_type::<BoolType>();
     types.register_type::<Vec2FType>();
     types.register_type::<ColorType>();
     types.register_type::<TextureType>();

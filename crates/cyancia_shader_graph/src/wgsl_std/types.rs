@@ -5,7 +5,7 @@ use cyancia_render::buffer::DynamicBuffer;
 use cyancia_widgets::spin_slider::SpinSlider;
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element};
-use iced_widget::{column, space};
+use iced_widget::{checkbox, column, space};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -13,8 +13,6 @@ use crate::{
     graph::{slot::GraphValueType, texture::TextureId},
     wgsl_std::themed_color,
 };
-
-// TODO: Boolean and rectangle types
 
 #[derive(Default, Clone)]
 pub struct F32Type;
@@ -128,6 +126,99 @@ impl GraphValueType for Vec2FType {
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
         Some(format!("vec2f({:.5}, {:.5})", data.x, data.y))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct I32Type;
+
+impl GraphValueType for I32Type {
+    type AssociatedLiteralType = i32;
+
+    type Message = i32;
+
+    fn color(&self, is_dark: bool) -> Color {
+        themed_color(stringify!(I32Type), is_dark)
+    }
+
+    fn name(&self) -> &'static str {
+        "Integer"
+    }
+
+    fn default_literal(&self) -> Self::AssociatedLiteralType {
+        0
+    }
+
+    fn wgsl_type(&self) -> Option<&'static str> {
+        Some("i32")
+    }
+
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+    ) -> Option<Vec<u8>> {
+        let mut buf = DynamicBuffer::default();
+        buf.push(literal);
+        Some(buf.into_inner())
+    }
+
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        Some(format!("{data}i"))
+    }
+
+    fn view_literal(
+        &self,
+        data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        SpinSlider::new(-10..=10, *data).on_confirm(identity).into()
+    }
+
+    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
+        *data = message;
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct BoolType;
+
+impl GraphValueType for BoolType {
+    type AssociatedLiteralType = bool;
+
+    type Message = bool;
+
+    fn color(&self, is_dark: bool) -> Color {
+        themed_color(stringify!(BoolType), is_dark)
+    }
+
+    fn name(&self) -> &'static str {
+        "Bool"
+    }
+
+    fn default_literal(&self) -> Self::AssociatedLiteralType {
+        false
+    }
+
+    fn wgsl_type(&self) -> Option<&'static str> {
+        Some("bool")
+    }
+
+    fn try_write_into_shader_buffer(&self, _: &Self::AssociatedLiteralType) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
+        Some(data.to_string())
+    }
+
+    fn view_literal(
+        &self,
+        data: &Self::AssociatedLiteralType,
+    ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
+        checkbox(*data).on_toggle(std::convert::identity).into()
+    }
+
+    fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {
+        *data = message;
     }
 }
 
