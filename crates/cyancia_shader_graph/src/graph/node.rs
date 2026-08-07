@@ -17,7 +17,7 @@ use crate::{
     GraphElement,
     editor::slot::{input_slot, output_slot},
     graph::{
-        GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
+        Graph, GraphData, GraphResources, GraphSignature, GraphVarIdentGenerator,
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
             GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId,
@@ -80,6 +80,9 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     ) -> Result<Self::State> {
         Self::State::from_toml(value, resources)
     }
+    fn subgraphs<'a>(&self, _state: &'a Self::State) -> Vec<&'a Graph<Data>> {
+        Vec::new()
+    }
 }
 
 #[derive(Clone)]
@@ -138,6 +141,7 @@ pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         value: toml::Value,
         resources: &GraphResources,
     ) -> Result<Box<dyn Any + Send + Sync>>;
+    fn subgraphs<'a>(&self, state: &'a Box<dyn Any + Send + Sync>) -> Vec<&'a Graph<Data>>;
 }
 
 dyn_clone::clone_trait_object!(<Data> ErasedGraphNode<Data>);
@@ -256,6 +260,14 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
     ) -> Result<Box<dyn Any + Send + Sync>> {
         Ok(Box::new(self.deserialize_state(value, resources)?))
     }
+
+    fn subgraphs<'a>(&self, state: &'a Box<dyn Any + Send + Sync>) -> Vec<&'a Graph<Data>> {
+        self.subgraphs(
+            state
+                .downcast_ref::<T::State>()
+                .expect("failed to downcast graph node state"),
+        )
+    }
 }
 
 pub struct StatefulGraphNode<Data: GraphData> {
@@ -313,6 +325,10 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
     ) -> Result<()> {
         self.state = self.data.deserialize_state(value, resources)?;
         Ok(())
+    }
+
+    pub fn subgraphs<'a>(&'a self) -> Vec<&'a Graph<Data>> {
+        self.data.subgraphs(&self.state)
     }
 
     pub fn create_inputs(

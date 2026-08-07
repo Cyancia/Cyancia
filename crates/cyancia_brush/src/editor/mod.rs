@@ -14,6 +14,7 @@ use cyancia_shader_graph::{
         function::{
             ASSET_GRAPH_FUNCTION_STORAGE, GraphFunction, GraphFunctionId, GraphFunctionStorage,
         },
+        node::GraphNodeId,
         slot::ErasedGraphLiteralUpdateMessage,
         texture::ASSET_GRAPH_TEXTURE_STORAGE,
         variable::GraphLiteral,
@@ -45,6 +46,7 @@ pub struct BrushEditor {
     new_external_name: String,
     new_external_type: Option<&'static str>,
     dirty: bool,
+    graph_editor_path: Vec<GraphEditorPathComponent>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -122,6 +124,7 @@ impl WindowView for BrushEditor {
                 new_external_name: String::new(),
                 new_external_type: None,
                 dirty: false,
+                graph_editor_path: Vec::new(),
             },
             open.discard(),
         )
@@ -193,6 +196,7 @@ impl WindowView for BrushEditor {
                 title,
                 Element::from(GraphEditor::new(
                     &function.instance.graph_function().graph,
+                    &self.graph_editor_path,
                     true,
                 ))
                 .map(BrushEditorMessage::Graph),
@@ -227,6 +231,16 @@ impl WindowView for BrushEditor {
                 }
             }
             BrushEditorMessage::Save => self.save(services),
+            BrushEditorMessage::Graph(GraphEditorMessage::EnterSubgraph(path_component, _)) => {
+                self.graph_editor_path.push(path_component);
+            }
+            BrushEditorMessage::Graph(GraphEditorMessage::BackToSubgraphOrMain(maybe_subgraph)) => {
+                if let Some(subgraph_path_index) = maybe_subgraph {
+                    self.graph_editor_path.truncate(subgraph_path_index + 1);
+                } else {
+                    self.graph_editor_path.clear();
+                }
+            }
             BrushEditorMessage::Graph(message) => {
                 self.update_graph(message);
                 self.dirty = true;
@@ -234,6 +248,7 @@ impl WindowView for BrushEditor {
             BrushEditorMessage::SwitchGraph(graph) => {
                 if let Some(Selected::Brush(brush)) = self.selected.as_mut() {
                     brush.viewing_graph = graph;
+                    self.graph_editor_path.clear();
                 }
             }
             BrushEditorMessage::NewStrokePostprocess => {
@@ -241,6 +256,7 @@ impl WindowView for BrushEditor {
                     let index = brush.instance.new_stroke_postprocess_graph();
                     brush.viewing_graph = BrushPresetGraph::StrokePostprocess { index };
                     self.dirty = true;
+                    self.graph_editor_path.clear();
                 }
             }
             BrushEditorMessage::RemoveStrokePostprocess(index) => {
@@ -248,6 +264,7 @@ impl WindowView for BrushEditor {
                     brush.instance.remove_stroke_postprocess_graph(index);
                     brush.viewing_graph = BrushPresetGraph::Main;
                     self.dirty = true;
+                    self.graph_editor_path.clear();
                 }
             }
             BrushEditorMessage::MoveStrokePostprocess { index, up } => {
@@ -258,6 +275,7 @@ impl WindowView for BrushEditor {
                     brush.viewing_graph =
                         BrushPresetGraph::StrokePostprocess { index: destination };
                     self.dirty = true;
+                    self.graph_editor_path.clear();
                 }
             }
             BrushEditorMessage::ExternalNameChanged(name) => self.new_external_name = name,
@@ -330,11 +348,17 @@ impl WindowView for BrushEditor {
 }
 
 impl BrushEditor {
-    fn view_brush<'a>(
-        &'a self,
-        brush: &'a SelectedBrush,
-    ) -> Element<'a, BrushEditorMessage, GraphTheme, GraphRenderer> {
-        let title = row![
+    fn resolve_subgraph<'a, Data: GraphData>(&'a self, main: &'a Graph<Data>) -> &'a Graph<Data> {
+        let mut graph = main;
+        for comp in &self.graph_editor_path {
+            let subgraphs = graph.get_node(&comp.node_id).unwrap().data.subgraphs();
+            graph = subgraphs.get(comp.subgraph_index).unwrap();
+        }
+        graph
+    }
+
+    fn view_brush<'a>(&'a self, brush: &'a SelectedBrush) -> EditorElement<'a, BrushEditorMessage> {
+        let title: EditorElement<'a, BrushEditorMessage> = row![
             text_input("Name", &self.name_buffer)
                 .on_input(BrushEditorMessage::NameChanged)
                 .width(Length::Fill),
@@ -342,20 +366,27 @@ impl BrushEditor {
         ]
         .spacing(6);
 
-        let graph: Element<'_, _, _, _> = match brush.viewing_graph {
-            BrushPresetGraph::RequiredSpacing => {
-                GraphEditor::new(brush.instance.required_spacing_graph(), true).into()
-            }
-            BrushPresetGraph::Main => GraphEditor::new(brush.instance.main_graph(), true).into(),
-            BrushPresetGraph::StrokePostprocess { index } => GraphEditor::new(
-                brush
-                    .instance
-                    .stroke_postprocess_graph(index)
-                    .expect("Selected stroke postprocess graph should exist"),
-                true,
-            )
-            .into(),
-        };
+        let graph: Element<'_, GraphEditorMessage, iced::Theme, iced_wgpu::Renderer> =
+            match brush.viewing_graph {
+                BrushPresetGraph::RequiredSpacing => GraphEditor::new(
+                    self.resolve_subgraph(brush.instance.required_spacing_graph()),
+                    &self.graph_editor_path,
+                    true,
+                )
+                .into(),
+                BrushPresetGraph::Main => GraphEditor::new(
+                    self.resolve_subgraph(brush.instance.main_graph()),
+                    &self.graph_editor_path,
+                    true,
+                )
+                .into(),
+                BrushPresetGraph::StrokePostprocess { index } => GraphEditor::new(
+                    self.resolve_subgraph(brush.instance.stroke_postprocess_graph(index).unwrap()),
+                    &self.graph_editor_path,
+                    true,
+                )
+                .into(),
+            };
 
         let mut graph_list = column![
             button("Required Spacing").width(Length::Fill).on_press(
@@ -483,6 +514,7 @@ impl BrushEditor {
             viewing_graph: BrushPresetGraph::Main,
         }));
         self.dirty = false;
+        self.graph_editor_path.clear();
         services.set_current_brush_preset(handle);
     }
 
@@ -514,6 +546,7 @@ impl BrushEditor {
             id: function.id,
             instance: GraphFunctionInstance::new(function),
         }));
+        self.graph_editor_path.clear();
         self.dirty = false;
     }
 
@@ -575,6 +608,7 @@ impl BrushEditor {
             id,
             instance: GraphFunctionInstance::new(function),
         }));
+        self.graph_editor_path.clear();
         self.dirty = true;
     }
 

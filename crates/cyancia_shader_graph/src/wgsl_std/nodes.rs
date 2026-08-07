@@ -2950,4 +2950,8 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
 
         Ok(code)
     }
+
+    fn subgraphs<'a>(&self, state: &'a Self::State) -> Vec<&'a Graph<Data>> {
+        vec![&state.body]
+    }
 }
