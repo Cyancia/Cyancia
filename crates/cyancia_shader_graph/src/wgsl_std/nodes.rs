@@ -10,7 +10,7 @@ use cyancia_utils::wrapper;
 use cyancia_widgets::{curve_edit::CurveEdit, fluent_builder::When, popover::Popover};
 use glam::{Vec2, Vec3, Vec3Swizzles};
 use iced_core::{Color, Length, Vector};
-use iced_widget::{button, column, container, pick_list, row, text, text_input};
+use iced_widget::{Float, button, column, container, float, pick_list, row, text, text_input};
 use indexmap::IndexMap;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
@@ -2645,7 +2645,7 @@ fn while_schema_editor_view<Data: GraphData>(
 
     let panel = column(rows)
         .width(Length::Fixed(300.0))
-        .padding(2)
+        .padding(4)
         .spacing(6)
         .push(row![button("Add Variable").on_press(WhileNodeMessage::EditorAddLocal)].spacing(6))
         .push(
@@ -2656,7 +2656,12 @@ fn while_schema_editor_view<Data: GraphData>(
             .spacing(4),
         );
 
-    container(panel).into()
+    container(panel)
+        .style(|theme| container::Style {
+            background: Some(theme.extended_palette().background.base.color.into()),
+            ..container::transparent(theme)
+        })
+        .into()
 }
 
 impl<Data: GraphData> GraphNode<Data> for WhileNode {
