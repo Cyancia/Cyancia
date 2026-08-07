@@ -2320,20 +2320,16 @@ pub struct WhileNodeInputState {
     pub locals: IndexMap<WhileVariableId, WhileLocalSchema>,
 }
 
+impl WhileNodeInputState {
+    pub fn local(&self) -> Option<&WhileLocalSchema> {
+        self.locals.get(&self.variable?)
+    }
+}
+
 #[derive(Clone)]
 pub enum WhileNodeInputMessage {
     VariableChanged(WhileVariableId),
     LiteralUpdate(ErasedGraphLiteralUpdateMessage),
-}
-
-impl WhileNodeInput {
-    fn local<'a>(
-        &self,
-        state: &'a WhileNodeInputState,
-        variable: Option<WhileVariableId>,
-    ) -> Option<&'a WhileLocalSchema> {
-        state.locals.get(variable.as_ref()?)
-    }
 }
 
 impl<Data: GraphData> GraphNode<Data> for WhileNodeInput {
@@ -2365,7 +2361,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeInput {
         state: &Self::State,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
-        let Some(local) = self.local(state, state.variable) else {
+        let Some(local) = state.local() else {
             return Vec::new();
         };
         let Some(ty) = Data::type_registry().get_type(&local.ty) else {
@@ -2382,7 +2378,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeInput {
         state: &Self::State,
         mut ctx: GraphNodeUpdateSignatureContext<'_, Data>,
     ) {
-        let Some(local) = self.local(state, state.variable) else {
+        let Some(local) = state.local() else {
             return;
         };
         ctx.require_output_slot_as_graph_input(0, local.name.clone());
@@ -2436,20 +2432,16 @@ pub struct WhileNodeOutputState {
     pub locals: IndexMap<WhileVariableId, WhileLocalSchema>,
 }
 
+impl WhileNodeOutputState {
+    pub fn local(&self) -> Option<&WhileLocalSchema> {
+        self.locals.get(self.variable.as_ref()?)
+    }
+}
+
 #[derive(Clone)]
 pub enum WhileNodeOutputMessage {
     VariableChanged(WhileVariableId),
     LiteralUpdate(ErasedGraphLiteralUpdateMessage),
-}
-
-impl WhileNodeOutput {
-    fn local<'a>(
-        &self,
-        state: &'a WhileNodeOutputState,
-        variable: Option<WhileVariableId>,
-    ) -> Option<&'a WhileLocalSchema> {
-        state.locals.get(variable.as_ref()?)
-    }
 }
 
 impl<Data: GraphData> GraphNode<Data> for WhileNodeOutput {
@@ -2473,7 +2465,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeOutput {
         state: &Self::State,
         _: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        let Some(local) = self.local(state, state.variable) else {
+        let Some(local) = state.local() else {
             return Vec::new();
         };
         let Some(ty) = Data::type_registry().get_type(&local.ty) else {
@@ -2498,7 +2490,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeOutput {
         state: &Self::State,
         mut ctx: GraphNodeUpdateSignatureContext<'_, Data>,
     ) {
-        let Some(local) = self.local(state, state.variable) else {
+        let Some(local) = state.local() else {
             return;
         };
         ctx.require_input_slot_as_graph_output(0, local.name.clone());
