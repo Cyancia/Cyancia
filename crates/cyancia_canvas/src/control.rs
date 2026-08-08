@@ -44,6 +44,11 @@ impl CanvasTransform {
         self
     }
 
+    pub fn pixel_to_window(&self, point: Vec2) -> Vec2 {
+        let widget = self.pixel_to_widget.transform_point2(point);
+        widget + self.widget_bounds.min
+    }
+
     // TODO Make these methods always return an vec2
     pub fn window_to_widget(&self, point: Vec2) -> Option<Vec2> {
         if self.widget_bounds.contains(point) {

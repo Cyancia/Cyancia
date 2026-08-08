@@ -516,7 +516,7 @@ impl ToolFunction for FreeTransformTool {
         session.result_buffer.allocate_tiles(session.tile_bounds);
         let transformed_tiles =
             GpuTileStorage::pixel_rect_to_tile(session.transformed_aabb_ps().as_irect());
-        session.result_buffer.allocate_pixels(transformed_tiles);
+        session.result_buffer.allocate_tiles(transformed_tiles);
 
         let device = services.render_device();
         let queue = services.render_queue();
@@ -655,7 +655,7 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
         let corners = self
             .session
             .quad_ps()
-            .map(|p| self.canvas_transform.pixel_to_widget.transform_point2(p));
+            .map(|p| self.canvas_transform.pixel_to_window(p));
         let [top_left, top_right, bottom_right, bottom_left] = corners;
 
         let mut frame = Frame::new(renderer, layout.bounds().size());
