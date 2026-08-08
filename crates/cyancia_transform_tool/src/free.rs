@@ -710,6 +710,44 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
 
         iced_graphics::geometry::Renderer::draw_geometry(renderer, frame.into_geometry());
     }
+
+    fn mouse_interaction(
+        &self,
+        _tree: &widget::Tree,
+        _layout: layout::Layout<'_>,
+        cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+        _renderer: &Renderer,
+    ) -> mouse::Interaction {
+        let Some(cursor_ps) = cursor
+            .position()
+            .and_then(|p| self.canvas_transform.window_to_pixel(Vec2::new(p.x, p.y)))
+        else {
+            return mouse::Interaction::None;
+        };
+
+        let Some(ty) = hit_test(self.session.quad_ps(), cursor_ps) else {
+            return mouse::Interaction::None;
+        };
+
+        match ty {
+            InteractionType::Translate => mouse::Interaction::Move,
+            // TODO
+            InteractionType::Rotate(_ty) => mouse::Interaction::None,
+            InteractionType::Scale(ty) => match ty {
+                ScaleType::Left | ScaleType::Right => mouse::Interaction::ResizingRow,
+                ScaleType::Top | ScaleType::Bottom => mouse::Interaction::ResizingColumn,
+                ScaleType::TopLeft | ScaleType::BottomRight => {
+                    mouse::Interaction::ResizingDiagonallyDown
+                }
+                ScaleType::TopRight | ScaleType::BottomLeft => {
+                    mouse::Interaction::ResizingDiagonallyUp
+                }
+            },
+            // TODO
+            InteractionType::Shear(_ty) => mouse::Interaction::None,
+        }
+    }
 }
 
 pub struct FreeTransformPipeline {
