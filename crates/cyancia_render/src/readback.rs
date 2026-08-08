@@ -1,8 +1,10 @@
 use std::ops::RangeBounds;
 
+use anyhow::Result;
 use cyancia_utils::{Deref, DerefMut};
 use encase::{ShaderType, internal::CreateFrom};
 use futures::channel::oneshot::{Receiver, Sender};
+use iced_runtime::Task;
 use wgpu::{
     Buffer, BufferAddress, BufferAsyncError, BufferUsages, CommandEncoder, Device, MapMode,
 };
@@ -34,6 +36,17 @@ impl<T> AsyncBufferReadback<T> {
 
     pub fn into_inner(self) -> Receiver<anyhow::Result<T>> {
         self.rx
+    }
+}
+
+impl<T: Send + 'static> AsyncBufferReadback<T> {
+    pub fn into_task(self) -> Task<Result<T>> {
+        Task::future(async move {
+            match self.rx.await {
+                Ok(r) => r,
+                Err(e) => Err(e.into()),
+            }
+        })
     }
 }
 

@@ -55,6 +55,10 @@
     {
       "shortcut": "w",
       "tool": "magic_wand_selection_tool"
+    },
+    {
+      "shortcut": "ctrl-t",
+      "tool": "free_transform_tool"
     }
   ]
 }

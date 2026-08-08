@@ -17,6 +17,7 @@ cyancia_runtime.workspace = true
 cyancia_utils.workspace = true
 encase.workspace = true
 futures.workspace = true
+iced_runtime.workspace = true
 image.workspace = true
 log.workspace = true
 parse-display.workspace = true

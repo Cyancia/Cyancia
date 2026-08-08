@@ -15,7 +15,11 @@ use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use wgpu::{Buffer, ComputePassDescriptor, Device, Queue, TextureView};
 
-use crate::{CImage, layer::LayerId, tile::GpuTileStorage};
+use crate::{
+    CImage,
+    layer::LayerId,
+    tile::{DynamicLayerStorage, GpuTileStorage},
+};
 
 pub trait BlendFunction: Send + Sync + DynClone + 'static {
     fn id(&self) -> BlendFunctionId;
@@ -206,6 +210,16 @@ impl Service for LayerPreviewOverriders {}
 pub struct PixelPreviewOverrider {
     pub texture: TextureView,
     pub tile_info_buffer: Buffer,
+}
+
+impl PixelPreviewOverrider {
+    pub fn from_layer_storage(layer: &DynamicLayerStorage) -> Self {
+        let binding = layer.binding_or_empty();
+        Self {
+            texture: binding.texture,
+            tile_info_buffer: binding.tile_info_buffer,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ShaderType)]

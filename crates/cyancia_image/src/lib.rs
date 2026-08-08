@@ -35,6 +35,7 @@ pub mod convert;
 pub mod cyan;
 pub mod dynamic_intermediate_buffer;
 pub mod layer;
+pub mod layer_bounds;
 pub mod scan_pixels;
 pub mod texel;
 pub mod tile;

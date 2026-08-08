@@ -24,6 +24,7 @@ cyancia_input.workspace = true
 cyancia_render.workspace = true
 cyancia_runtime.workspace = true
 cyancia_selection_tool.workspace = true
+cyancia_transform_tool.workspace = true
 cyancia_shader_graph.workspace = true
 cyancia_tools.workspace = true
 cyancia_undo.workspace = true

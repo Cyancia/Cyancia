@@ -1446,6 +1446,7 @@ dependencies = [
  "cyancia_selection_tool",
  "cyancia_shader_graph",
  "cyancia_tools",
+ "cyancia_transform_tool",
  "cyancia_undo",
  "cyancia_utils",
  "fs_extra",
@@ -1740,6 +1741,7 @@ dependencies = [
  "cyancia_utils",
  "encase",
  "futures",
+ "iced_runtime",
  "image",
  "log",
  "parse-display",
@@ -1877,6 +1879,30 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+ "wgpu",
+]
+
+[[package]]
+name = "cyancia_transform_tool"
+version = "0.1.0"
+dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bitflags 2.13.1",
+ "cyancia_canvas",
+ "cyancia_image",
+ "cyancia_input",
+ "cyancia_math",
+ "cyancia_render",
+ "cyancia_runtime",
+ "cyancia_tools",
+ "cyancia_utils",
+ "encase",
+ "glam 0.30.10",
+ "iced_core",
+ "iced_graphics",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
  "wgpu",
 ]
 
