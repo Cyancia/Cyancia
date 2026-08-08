@@ -383,6 +383,7 @@ impl ToolFunction for FreeTransformTool {
             return Task::none();
         };
 
+        // TODO change session if active layer is changed
         let canvas_id = canvas.id();
         let target_layer_id = canvas.active_layer_id();
         let selection_layer_id = canvas.image.selection_layer();
@@ -550,6 +551,20 @@ impl ToolFunction for FreeTransformTool {
             dirty_tiles: transformed_tiles.union(session.tile_bounds),
         });
 
+        Task::none()
+    }
+
+    fn end(
+        &mut self,
+        _keyboard: &KeyboardState,
+        mouse: &PressedMouseState,
+        services: &mut Services,
+    ) -> Task<Self::Message> {
+        let Some(session) = &mut self.session else {
+            return Task::none();
+        };
+
+        session.ongoing_transform = None;
         Task::none()
     }
 
@@ -726,7 +741,13 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
             return mouse::Interaction::None;
         };
 
-        let Some(ty) = hit_test(self.session.quad_ps(), cursor_ps) else {
+        let Some(ty) = self
+            .session
+            .ongoing_transform
+            .as_ref()
+            .map(|t| t.ty)
+            .or_else(|| hit_test(self.session.quad_ps(), cursor_ps))
+        else {
             return mouse::Interaction::None;
         };
 
