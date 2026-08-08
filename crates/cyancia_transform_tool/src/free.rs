@@ -276,21 +276,35 @@ pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
         return Some(InteractionType::Scale(ScaleType::BottomLeft));
     }
 
-    if (p - center).dot(y_hat).abs() < h_abs.min(10.0) {
-        if dl.abs() < 10.0 {
+    let shear = (p - center).dot(y_hat).abs() < h_abs.min(10.0);
+    if dl.abs() < 10.0 {
+        if shear {
             return Some(InteractionType::Shear(ShearType::Left));
+        } else {
+            return Some(InteractionType::Scale(ScaleType::Left));
         }
-        if dr.abs() < 10.0 {
+    }
+    if dr.abs() < 10.0 {
+        if shear {
             return Some(InteractionType::Shear(ShearType::Right));
+        } else {
+            return Some(InteractionType::Scale(ScaleType::Right));
         }
     }
 
-    if (p - center).dot(x_hat).abs() < w_abs.min(10.0) {
-        if dt.abs() < 10.0 {
+    let shear = (p - center).dot(x_hat).abs() < w_abs.min(10.0);
+    if dt.abs() < 10.0 {
+        if shear {
             return Some(InteractionType::Shear(ShearType::Top));
+        } else {
+            return Some(InteractionType::Scale(ScaleType::Top));
         }
-        if db.abs() < 10.0 {
+    }
+    if db.abs() < 10.0 {
+        if shear {
             return Some(InteractionType::Shear(ShearType::Bottom));
+        } else {
+            return Some(InteractionType::Scale(ScaleType::Bottom));
         }
     }
 
@@ -751,15 +765,13 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
             return mouse::Interaction::None;
         };
 
-        dbg!(ty);
-
         match ty {
             InteractionType::Translate => mouse::Interaction::Move,
             // TODO
             InteractionType::Rotate(_ty) => mouse::Interaction::None,
             InteractionType::Scale(ty) => match ty {
-                ScaleType::Left | ScaleType::Right => mouse::Interaction::ResizingRow,
-                ScaleType::Top | ScaleType::Bottom => mouse::Interaction::ResizingColumn,
+                ScaleType::Left | ScaleType::Right => mouse::Interaction::ResizingColumn,
+                ScaleType::Top | ScaleType::Bottom => mouse::Interaction::ResizingRow,
                 ScaleType::TopLeft | ScaleType::BottomRight => {
                     mouse::Interaction::ResizingDiagonallyDown
                 }
