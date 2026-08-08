@@ -2954,4 +2954,8 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
     fn subgraphs<'a>(&self, state: &'a Self::State) -> Vec<&'a Graph<Data>> {
         vec![&state.body]
     }
+
+    fn subgraphs_mut<'a>(&mut self, state: &'a mut Self::State) -> Vec<&'a mut Graph<Data>> {
+        vec![&mut state.body]
+    }
 }

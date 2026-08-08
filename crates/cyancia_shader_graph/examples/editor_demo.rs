@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
 use cyancia_shader_graph::{
-    editor::{GraphEditor, GraphEditorMessage},
+    editor::{GraphEditorView, GraphEditorMessage, GraphEditorState},
     graph::{
         Graph, GraphData, GraphResources, node::GraphNodeRegistry, variable::GraphTypeRegistry,
     },
@@ -35,21 +35,23 @@ static TYPE_REGISTRY: LazyLock<GraphTypeRegistry> = LazyLock::new(builtin_types)
 
 struct DemoEditor {
     graph: Graph<DemoData>,
+    editor_state: GraphEditorState,
 }
 
 impl DemoEditor {
     fn new() -> Self {
         Self {
             graph: Graph::new(GraphResources::default()),
+            editor_state: GraphEditorState::default(),
         }
     }
 
     fn view(&self) -> iced_core::Element<'_, GraphEditorMessage, iced::Theme, iced_wgpu::Renderer> {
-        GraphEditor::new(&self.graph, &[], false).into()
+        GraphEditorView::new(&self.graph, &self.editor_state, false).into()
     }
 
     fn update(&mut self, message: GraphEditorMessage) {
-        self.graph.update(message);
+        self.editor_state.update(&mut self.graph, message);
     }
 }
 

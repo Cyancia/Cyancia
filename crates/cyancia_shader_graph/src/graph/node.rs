@@ -83,6 +83,9 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
     fn subgraphs<'a>(&self, _state: &'a Self::State) -> Vec<&'a Graph<Data>> {
         Vec::new()
     }
+    fn subgraphs_mut<'a>(&mut self, _state: &'a mut Self::State) -> Vec<&'a mut Graph<Data>> {
+        Vec::new()
+    }
 }
 
 #[derive(Clone)]
@@ -142,6 +145,10 @@ pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         resources: &GraphResources,
     ) -> Result<Box<dyn Any + Send + Sync>>;
     fn subgraphs<'a>(&self, state: &'a Box<dyn Any + Send + Sync>) -> Vec<&'a Graph<Data>>;
+    fn subgraphs_mut<'a>(
+        &mut self,
+        state: &'a mut Box<dyn Any + Send + Sync>,
+    ) -> Vec<&'a mut Graph<Data>>;
 }
 
 dyn_clone::clone_trait_object!(<Data> ErasedGraphNode<Data>);
@@ -268,6 +275,17 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
                 .expect("failed to downcast graph node state"),
         )
     }
+
+    fn subgraphs_mut<'a>(
+        &mut self,
+        state: &'a mut Box<dyn Any + Send + Sync>,
+    ) -> Vec<&'a mut Graph<Data>> {
+        self.subgraphs_mut(
+            state
+                .downcast_mut::<T::State>()
+                .expect("failed to downcast graph node state"),
+        )
+    }
 }
 
 pub struct StatefulGraphNode<Data: GraphData> {
@@ -329,6 +347,10 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
 
     pub fn subgraphs<'a>(&'a self) -> Vec<&'a Graph<Data>> {
         self.data.subgraphs(&self.state)
+    }
+
+    pub fn subgraphs_mut<'a>(&'a mut self) -> Vec<&'a mut Graph<Data>> {
+        self.data.subgraphs_mut(&mut self.state)
     }
 
     pub fn create_inputs(

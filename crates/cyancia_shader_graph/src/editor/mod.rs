@@ -21,10 +21,10 @@ use iced_graphics::{
     gradient::Linear,
 };
 use iced_widget::{
-    column, container,
+    Row, button, column, container,
     core::{Rectangle, Widget, mouse::Cursor},
     overlay::menu,
-    text,
+    row, stack, text,
 };
 use indexmap::IndexMap;
 use uuid::Uuid;
@@ -44,55 +44,180 @@ pub mod slot;
 pub const NODE_WIDTH: f32 = 200.0;
 const NODE_BORDER_RADIUS: f32 = 5.0;
 
+#[derive(Default)]
+pub struct GraphEditorState {
+    pub path: Vec<GraphEditorPathComponent>,
+}
+
+impl GraphEditorState {
+    pub fn update<Data: GraphData>(
+        &mut self,
+        graph: &mut Graph<Data>,
+        message: GraphEditorMessage,
+    ) {
+        match message {
+            GraphEditorMessage::Graph(message) => {
+                let target = self.resolve_subgraph_mut(graph);
+                target.update(message);
+            }
+            GraphEditorMessage::Editor(GraphEditorEditorMessage::EnterSubgraph(
+                comp,
+                _snapshot,
+            )) => {
+                self.path.push(comp);
+            }
+            GraphEditorMessage::Editor(GraphEditorEditorMessage::BackToSubgraphOrMain(
+                maybe_index,
+            )) => {
+                if let Some(index) = maybe_index {
+                    self.path.truncate(index + 1);
+                } else {
+                    self.path.pop();
+                }
+            }
+        }
+    }
+
+    pub fn resolve_subgraph<'a, Data: GraphData>(&self, main: &'a Graph<Data>) -> &'a Graph<Data> {
+        let mut current = main;
+        for comp in &self.path {
+            let node = current.get_node(&comp.node_id).unwrap();
+            current = node
+                .data
+                .subgraphs()
+                .into_iter()
+                .nth(comp.subgraph_index)
+                .unwrap();
+        }
+        current
+    }
+
+    pub fn resolve_subgraph_mut<'a, Data: GraphData>(
+        &self,
+        main: &'a mut Graph<Data>,
+    ) -> &'a mut Graph<Data> {
+        let mut current = main;
+        for comp in &self.path {
+            let node = current.get_node_mut(&comp.node_id).unwrap();
+            let subgraph = node
+                .data
+                .subgraphs_mut()
+                .into_iter()
+                .nth(comp.subgraph_index)
+                .unwrap();
+            current = subgraph;
+        }
+        current
+    }
+}
+
+pub struct GraphEditor<'a, Data: GraphData> {
+    graph: &'a Graph<Data>,
+    editor_state: &'a GraphEditorState,
+}
+
+impl<'a, Data: GraphData> GraphEditor<'a, Data> {
+    pub fn new(graph: &'a Graph<Data>, editor_state: &'a GraphEditorState) -> Self {
+        Self {
+            graph,
+            editor_state,
+        }
+    }
+}
+
+impl<'a, Data: GraphData> From<GraphEditor<'a, Data>>
+    for Element<'a, GraphEditorMessage, GraphTheme, GraphRenderer>
+{
+    fn from(value: GraphEditor<'a, Data>) -> Self {
+        let GraphEditor {
+            graph,
+            editor_state,
+        } = value;
+        let editor_view =
+            GraphEditorView::new(editor_state.resolve_subgraph(graph), editor_state, true);
+
+        let mut cur_graph = graph;
+        let subgraph_path = editor_state.path.iter().enumerate().map(|(index, comp)| {
+            let node = cur_graph.get_node(&comp.node_id).unwrap();
+            cur_graph = node
+                .data
+                .subgraphs()
+                .into_iter()
+                .nth(comp.subgraph_index)
+                .unwrap();
+            button(node.data.name())
+                .on_press(GraphEditorMessage::Editor(
+                    GraphEditorEditorMessage::BackToSubgraphOrMain(Some(index)),
+                ))
+                .into()
+        });
+        let main_graph_path = button("Main Graph").on_press(GraphEditorMessage::Editor(
+            GraphEditorEditorMessage::BackToSubgraphOrMain(None),
+        ));
+        let path_breadcrumb = row![main_graph_path].extend(subgraph_path);
+        stack!(editor_view, path_breadcrumb).into()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphEditorSnapshot {
+    pub translation: Vector,
+    pub selected_nodes: Vec<GraphNodeId>,
+}
+
 #[derive(Debug, Clone)]
 pub enum GraphEditorMessage {
+    Graph(GraphEditorGraphMessage),
+    Editor(GraphEditorEditorMessage),
+}
+
+#[derive(Debug, Clone)]
+pub enum GraphEditorGraphMessage {
     NodeCreateRequest(Point, &'static str, GraphNodeId),
     NodeMoveRequest(Point, GraphNodeId),
     NodeDeleteRequest(GraphNodeId),
     EdgeCreateRequest(GraphOutputSlotId, GraphInputSlotId),
     EdgeRemoveRequest(GraphInputSlotId),
     NodeUpdate(ErasedGraphNodeMessage),
+}
+
+#[derive(Debug, Clone)]
+pub enum GraphEditorEditorMessage {
     EnterSubgraph(GraphEditorPathComponent, GraphEditorSnapshot),
     BackToSubgraphOrMain(Option<usize>),
 }
 
 impl<Data: GraphData> Graph<Data> {
-    pub fn update(&mut self, message: GraphEditorMessage) {
+    pub fn update(&mut self, message: GraphEditorGraphMessage) {
         match message {
-            GraphEditorMessage::NodeCreateRequest(position, name, node_id) => {
+            GraphEditorGraphMessage::NodeCreateRequest(position, name, node_id) => {
                 let node = Data::node_registry().get(name).unwrap();
                 self.insert_boxed_node(node_id, position, node);
             }
-            GraphEditorMessage::NodeMoveRequest(position, id) => {
+            GraphEditorGraphMessage::NodeMoveRequest(position, id) => {
                 self.get_node_mut(&id).unwrap().position = position;
             }
-            GraphEditorMessage::NodeDeleteRequest(id) => self.delete_node(&id),
-            GraphEditorMessage::EdgeCreateRequest(from, to) => {
+            GraphEditorGraphMessage::NodeDeleteRequest(id) => self.delete_node(&id),
+            GraphEditorGraphMessage::EdgeCreateRequest(from, to) => {
                 self.connect_slots(from, to);
             }
-            GraphEditorMessage::EdgeRemoveRequest(to) => self.disconnect_slot(to),
-            GraphEditorMessage::NodeUpdate(message) => self.update_node(message),
-            GraphEditorMessage::EnterSubgraph(..) | GraphEditorMessage::BackToSubgraphOrMain(_) => {
-            }
+            GraphEditorGraphMessage::EdgeRemoveRequest(to) => self.disconnect_slot(to),
+            GraphEditorGraphMessage::NodeUpdate(message) => self.update_node(message),
         }
     }
 }
 
-pub struct GraphEditor<'a, Data: GraphData> {
+pub struct GraphEditorView<'a, Data: GraphData> {
     graph: DrawableGraph,
     node_creation_menu_items: Vec<NodeCreationMenuItem>,
     node_creation_menu_class: <GraphTheme as menu::Catalog>::Class<'a>,
     snapshot: Option<GraphEditorSnapshot>,
     subgraphs: HashMap<GraphNodeId, Vec<&'a Graph<Data>>>,
-    path: &'a [GraphEditorPathComponent],
+    _state: &'a GraphEditorState,
 }
 
-impl<'a, Data: GraphData> GraphEditor<'a, Data> {
-    pub fn new(
-        graph: &'a Graph<Data>,
-        path: &'a [GraphEditorPathComponent],
-        is_dark: bool,
-    ) -> Self {
+impl<'a, Data: GraphData> GraphEditorView<'a, Data> {
+    pub fn new(graph: &'a Graph<Data>, state: &'a GraphEditorState, is_dark: bool) -> Self {
         Self {
             graph: DrawableGraph::new(graph, is_dark),
             node_creation_menu_items: Data::node_registry()
@@ -101,7 +226,7 @@ impl<'a, Data: GraphData> GraphEditor<'a, Data> {
                 .map(|title| NodeCreationMenuItem { node_title: title })
                 .collect(),
             node_creation_menu_class: <GraphTheme as menu::Catalog>::default(),
-            path,
+            _state: state,
             snapshot: None,
             subgraphs: graph
                 .nodes
@@ -275,7 +400,7 @@ impl DrawableNode {
             column![
                 header,
                 node.view(node_id, slots, resources, is_dark)
-                    .map(GraphEditorMessage::NodeUpdate),
+                    .map(|m| GraphEditorMessage::Graph(GraphEditorGraphMessage::NodeUpdate(m))),
             ]
             .width(NODE_WIDTH),
         )
@@ -296,7 +421,7 @@ impl DrawableNode {
 }
 
 impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
-    for GraphEditor<'a, Data>
+    for GraphEditorView<'a, Data>
 {
     fn children(&self) -> Vec<Tree> {
         self.graph
@@ -465,7 +590,9 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
 
                     let resolved_source = match slot_id {
                         GraphSlotId::Input(id) => {
-                            shell.publish(GraphEditorMessage::EdgeRemoveRequest(*id));
+                            shell.publish(GraphEditorMessage::Graph(
+                                GraphEditorGraphMessage::EdgeRemoveRequest(*id),
+                            ));
 
                             self.graph
                                 .edges
@@ -497,16 +624,18 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                         && last_click_on_node.elapsed().as_secs_f32() < 0.2
                         && let Some(_) = self.subgraphs.get(&node_id)
                     {
-                        shell.publish(GraphEditorMessage::EnterSubgraph(
-                            GraphEditorPathComponent {
-                                node_id,
-                                // TODO add support for multiple subgraphs
-                                subgraph_index: 0,
-                            },
-                            GraphEditorSnapshot {
-                                translation: state.view_translation,
-                                selected_nodes: state.selected_nodes.iter().copied().collect(),
-                            },
+                        shell.publish(GraphEditorMessage::Editor(
+                            GraphEditorEditorMessage::EnterSubgraph(
+                                GraphEditorPathComponent {
+                                    node_id,
+                                    // TODO add support for multiple subgraphs
+                                    subgraph_index: 0,
+                                },
+                                GraphEditorSnapshot {
+                                    translation: state.view_translation,
+                                    selected_nodes: state.selected_nodes.iter().copied().collect(),
+                                },
+                            ),
                         ));
                         return;
                     }
@@ -586,7 +715,9 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                             match (resolved_source, end) {
                                 (GraphSlotId::Input(to), GraphSlotId::Output(from))
                                 | (GraphSlotId::Output(from), GraphSlotId::Input(to)) => {
-                                    shell.publish(GraphEditorMessage::EdgeCreateRequest(from, to));
+                                    shell.publish(GraphEditorMessage::Graph(
+                                        GraphEditorGraphMessage::EdgeCreateRequest(from, to),
+                                    ));
                                 }
                                 _ => {}
                             }
@@ -644,11 +775,13 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     };
                     for selected in &state.selected_nodes {
                         if let Some(node_origin) = node_origin.get(selected) {
-                            shell.publish(GraphEditorMessage::NodeMoveRequest(
-                                *node_origin + (cursor - *cursor_origin)
-                                    - Vector::new(layout.position().x, layout.position().y)
-                                    - state.view_translation,
-                                *selected,
+                            shell.publish(GraphEditorMessage::Graph(
+                                GraphEditorGraphMessage::NodeMoveRequest(
+                                    *node_origin + (cursor - *cursor_origin)
+                                        - Vector::new(layout.position().x, layout.position().y)
+                                        - state.view_translation,
+                                    *selected,
+                                ),
                             ));
                         }
                     }
@@ -710,7 +843,9 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                 match key {
                     key::Code::Delete => {
                         for node_id in state.selected_nodes.drain() {
-                            shell.publish(GraphEditorMessage::NodeDeleteRequest(node_id));
+                            shell.publish(GraphEditorMessage::Graph(
+                                GraphEditorGraphMessage::NodeDeleteRequest(node_id),
+                            ));
                         }
                         shell.capture_event();
                         shell.request_redraw();
@@ -957,11 +1092,11 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                         node_origin: HashMap::from([(node_id, position)]),
                         skip_next_release: true,
                     };
-                    GraphEditorMessage::NodeCreateRequest(
+                    GraphEditorMessage::Graph(GraphEditorGraphMessage::NodeCreateRequest(
                         position - state.view_translation,
                         name.node_title,
                         node_id,
-                    )
+                    ))
                 },
                 None,
                 &self.node_creation_menu_class,
@@ -976,10 +1111,10 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
     }
 }
 
-impl<'a, Data: GraphData> From<GraphEditor<'a, Data>>
+impl<'a, Data: GraphData> From<GraphEditorView<'a, Data>>
     for Element<'a, GraphEditorMessage, GraphTheme, GraphRenderer>
 {
-    fn from(value: GraphEditor<'a, Data>) -> Self {
+    fn from(value: GraphEditorView<'a, Data>) -> Self {
         Element::new(value)
     }
 }
