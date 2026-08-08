@@ -243,11 +243,6 @@ pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
     let d = p - tl;
     let u = (d.x * y.y - d.y * y.x) / det;
     let v = (x.x * d.y - x.y * d.x) / det;
-    let inside = u >= 0.0 && u <= 1.0 && v >= 0.0 && v <= 1.0;
-    let closest = tl + x * u.clamp(0.0, 1.0) + y * v.clamp(0.0, 1.0);
-    if closest.distance(p) > 20.0 && !inside {
-        return None;
-    }
 
     let x_hat = x.normalize();
     let y_hat = y.normalize();
@@ -306,6 +301,11 @@ pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
         } else {
             return Some(InteractionType::Scale(ScaleType::Bottom));
         }
+    }
+
+    let closest = tl + x * u.clamp(0.0, 1.0) + y * v.clamp(0.0, 1.0);
+    if closest.distance(p) > 40.0 {
+        return None;
     }
 
     if u < 0.0 {
@@ -764,6 +764,8 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
         else {
             return mouse::Interaction::None;
         };
+
+        dbg!(ty);
 
         match ty {
             InteractionType::Translate => mouse::Interaction::Move,
