@@ -78,8 +78,8 @@ impl TransformSession {
             scale: 1.0,
             shear: 0.0,
             last_shear: None,
-            tile_bounds: init.tile_bounds,
-            pixel_bounds: GpuTileStorage::tile_rect_to_pixel(init.tile_bounds),
+            tile_bounds: GpuTileStorage::pixel_rect_to_tile(init.pixel_bounds),
+            pixel_bounds: init.pixel_bounds,
             result_buffer: DynamicLayerStorage::new(
                 device.clone(),
                 queue.clone(),
@@ -357,7 +357,7 @@ pub struct InitTransform {
     pub selection_layer_id: LayerId,
     pub has_selection: Buffer,
     pub target_layer_texel: TexelType,
-    pub tile_bounds: IRect,
+    pub pixel_bounds: IRect,
 }
 
 pub enum FreeTransformToolMessage {
@@ -446,7 +446,7 @@ impl ToolFunction for FreeTransformTool {
                     selection_layer_id,
                     has_selection,
                     target_layer_texel,
-                    tile_bounds: GpuTileStorage::pixel_rect_to_tile(bounds),
+                    pixel_bounds: bounds,
                 }))
             }
             _ => Task::none(),
@@ -750,6 +750,8 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
         else {
             return mouse::Interaction::None;
         };
+
+        dbg!(ty);
 
         match ty {
             InteractionType::Translate => mouse::Interaction::Move,
