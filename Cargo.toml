@@ -23,6 +23,7 @@ members = [
     "crates/cyancia_shader_graph",
     "crates/cyancia_shader_graph_derive",
     "crates/cyancia_tools",
+    "crates/cyancia_transform_tool",
     "crates/cyancia_undo",
     "crates/cyancia_utils",
     "crates/cyancia_utils_derive",
@@ -69,6 +70,7 @@ cyancia_selection_tool = { version = "0.1.0", path = "crates/cyancia_selection_t
 cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
 cyancia_shader_graph_derive = { version = "0.1.0", path = "crates/cyancia_shader_graph_derive" }
 cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
+cyancia_transform_tool = { version = "0.1.0", path = "crates/cyancia_transform_tool" }
 cyancia_undo = { version = "0.1.0", path = "crates/cyancia_undo" }
 cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
 cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
