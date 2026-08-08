@@ -206,7 +206,10 @@ impl Program for Application {
     }
 
     fn subscription(&self, state: &Self::State) -> Subscription<Self::Message> {
-        let windows = state.wm.subscription().map(ApplicationMessage::Window);
+        let windows = state
+            .wm
+            .subscription(&state.services)
+            .map(ApplicationMessage::Window);
         let window_closed = close_events().map(ApplicationMessage::WindowClosed);
 
         Subscription::batch([windows, window_closed])

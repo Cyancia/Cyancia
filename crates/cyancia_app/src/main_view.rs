@@ -246,18 +246,21 @@ impl WindowView for MainView {
                 let tool_proxy_id = services
                     .service::<CanvasManager>()
                     .get(&e.id)
-                    .map(|canvas| canvas.tool_proxy_id());
-                if let Some(tool_proxy_id) = tool_proxy_id {
-                    let _ = services.service_scope::<ToolProxies, _>(|tool_proxies, services| {
+                    .unwrap()
+                    .tool_proxy_id();
+                let tool_task =
+                    services.service_scope::<ToolProxies, _>(|tool_proxies, services| {
                         tool_proxies
                             .get_mut(&tool_proxy_id)
                             .switch_tool(PanTool::id(), services)
                     });
-                }
-                let dock = CanvasDock::new(e.id, self.dock_manager.main_window().id);
+                let dock = CanvasDock::new(e.id, tool_proxy_id, self.dock_manager.main_window().id);
                 let id = <CanvasDock as Dock<Theme, Renderer>>::id(&dock);
                 self.dock_manager.register_dock(dock);
-                self.dock_manager.open_dock(id).map(MainViewMessage::Dock)
+                Task::batch([
+                    tool_task.map(MainViewMessage::ToolFunctionMessage),
+                    self.dock_manager.open_dock(id).map(MainViewMessage::Dock),
+                ])
             }
             MainViewMessage::CanvasRemoved(e) => {
                 log::info!("Canvas removed: {}", e.id);
@@ -301,7 +304,7 @@ impl WindowView for MainView {
         iced::exit()
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
+    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
         let external = iced::event::listen_with(|event, _status, window| match event {
             iced::Event::Window(e) => Some(MainViewMessage::WindowEvent(window, e)),
             iced::Event::Keyboard(e) => Some(MainViewMessage::KeyboardEvent(window, e)),
@@ -309,7 +312,10 @@ impl WindowView for MainView {
             _ => None,
         });
 
-        let dock = self.dock_manager.subscription().map(MainViewMessage::Dock);
+        let dock = self
+            .dock_manager
+            .subscription(services)
+            .map(MainViewMessage::Dock);
         let canvas_create = CanvasCreated::listen_to().map(MainViewMessage::CanvasCreated);
         let canvas_remove = CanvasRemoved::listen_to().map(MainViewMessage::CanvasRemoved);
 

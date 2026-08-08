@@ -32,7 +32,7 @@ use cyancia_image::{
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_render::render_context::RenderContextAppExt;
 use cyancia_runtime::{Services, event::Event};
-use cyancia_tools::{ErasedToolFunctionMessage, ToolProxies};
+use cyancia_tools::{ErasedToolFunctionMessage, ToolProxies, ToolProxyId};
 use cyancia_utils::log_err::LogErr;
 use iced::{
     Element, Length, Size, Subscription, Task, Theme,
@@ -246,7 +246,7 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
         Task::done(ColorSelectorDockMessage::WindowMoved)
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
+    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
         let cur_window = *self.window_id.borrow();
 
         let window_moved =
@@ -533,7 +533,7 @@ impl Dock<Theme, Renderer> for LayersDock {
         Task::none()
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
+    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
         listen_with(|event, _status, _window| match event {
             iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(keyboard::key::Named::Escape),
@@ -553,6 +553,7 @@ pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
 
 pub struct CanvasDock {
     canvas: CanvasId,
+    tool_proxy: ToolProxyId,
 
     compositor: ImageCompositor,
     cursor_position: Point,
@@ -563,9 +564,10 @@ pub struct CanvasDock {
 }
 
 impl CanvasDock {
-    pub fn new(canvas: CanvasId, window_id: window::Id) -> Self {
+    pub fn new(canvas: CanvasId, tool_proxy: ToolProxyId, window_id: window::Id) -> Self {
         Self {
             canvas,
+            tool_proxy,
             compositor: ImageCompositor::default(),
             cursor_position: Point::default(),
             window_id: RefCell::new(window_id),
@@ -668,13 +670,8 @@ impl Dock<Theme, Renderer> for CanvasDock {
                     return Task::none();
                 }
 
-                let Some(canvas) = canvas_manager.current() else {
-                    return Task::none();
-                };
-                let tool_proxy_id = canvas.tool_proxy_id();
-
                 let task = services.service_scope::<ToolProxies, _>(|tool_proxies, services| {
-                    let tool_proxy = tool_proxies.get_mut(&tool_proxy_id);
+                    let tool_proxy = tool_proxies.get_mut(&self.tool_proxy);
                     let keyboard_state = services.service::<KeyboardState>().clone();
 
                     match event {
@@ -779,7 +776,7 @@ impl Dock<Theme, Renderer> for CanvasDock {
         Task::none()
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
+    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
         let cur_window = *self.window_id.borrow();
 
         let canvas_update = CanvasUpdated::listen_to()
@@ -794,8 +791,14 @@ impl Dock<Theme, Renderer> for CanvasDock {
                         None
                     }
                 });
+        let tool = services
+            .service::<ToolProxies>()
+            .get(&self.tool_proxy)
+            .subscription()
+            .unwrap_or_else(Subscription::none)
+            .map(CanvasDockMessage::ToolFunctionMessage);
 
-        Subscription::batch([canvas_update, window_moved])
+        Subscription::batch([canvas_update, window_moved, tool])
     }
 }
 

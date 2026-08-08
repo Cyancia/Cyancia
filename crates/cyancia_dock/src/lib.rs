@@ -725,9 +725,9 @@ where
         task
     }
 
-    pub fn subscription(&self) -> Subscription<DockMessage> {
+    pub fn subscription(&self, services: &Services) -> Subscription<DockMessage> {
         Subscription::batch(self.docks.iter().map(|(id, dock)| {
-            dock.subscription()
+            dock.subscription(services)
                 .with(id.clone())
                 .map(|(dock, message)| DockMessage::Dock(dock, message))
         }))

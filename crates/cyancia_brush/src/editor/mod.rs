@@ -285,7 +285,7 @@ impl WindowView for BrushEditor {
         Task::none()
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
+    fn subscription(&self, _services: &Services) -> Subscription<Self::Message> {
         let main_window = self.main_window;
         iced_futures::subscription::filter_map(("brush_editor", main_window), move |event| {
             match event {

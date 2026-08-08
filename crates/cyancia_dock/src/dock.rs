@@ -31,7 +31,7 @@ where
         services: &'a Services,
     ) -> Element<'a, Self::Message, Theme, Renderer>;
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message>;
-    fn subscription(&self) -> Subscription<Self::Message> {
+    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
         Subscription::none()
     }
     fn on_open(&mut self) -> Task<Self::Message> {
@@ -57,7 +57,7 @@ pub trait ErasedDock<Theme, Renderer>: 'static {
         message: Box<dyn Any + Send>,
         services: &mut Services,
     ) -> Task<Box<dyn Any + Send>>;
-    fn subscription(&self) -> Subscription<Box<dyn Any + Send>>;
+    fn subscription(&self, services: &Services) -> Subscription<Box<dyn Any + Send>>;
     fn on_open(&mut self) -> Task<Box<dyn Any + Send>>;
     fn on_close(&mut self) -> Task<Box<dyn Any + Send>>;
     fn sub_windows(&self) -> Vec<window::Id>;
@@ -94,8 +94,8 @@ where
             .map(|m| Box::new(m) as Box<dyn Any + Send>)
     }
 
-    fn subscription(&self) -> Subscription<Box<dyn Any + Send>> {
-        self.subscription()
+    fn subscription(&self, services: &Services) -> Subscription<Box<dyn Any + Send>> {
+        self.subscription(services)
             .map(|m| Box::new(m) as Box<dyn Any + Send>)
     }
 

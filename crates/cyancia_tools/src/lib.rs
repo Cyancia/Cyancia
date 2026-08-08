@@ -8,7 +8,7 @@ use cyancia_input::{
 use cyancia_runtime::{Application, Services, plugin::Plugin, service::Service};
 use cyancia_utils::wrapper;
 use iced_core::{Element, Point, Theme};
-use iced_runtime::Task;
+use iced_runtime::{Task, futures::Subscription};
 use iced_wgpu::Renderer;
 use iced_widget::space;
 use parse_display::Display;
@@ -128,6 +128,9 @@ pub trait ToolFunction: 'static {
     ) -> Element<'a, Self::Message, Theme, Renderer> {
         space().into()
     }
+    fn subscription(&self) -> Subscription<Self::Message> {
+        Subscription::none()
+    }
 }
 
 pub trait ErasedToolFunction: 'static {
@@ -171,6 +174,7 @@ pub trait ErasedToolFunction: 'static {
         &'a self,
         services: &'a Services,
     ) -> Element<'a, ErasedToolFunctionMessage, Theme, Renderer>;
+    fn subscription(&self) -> Subscription<ErasedToolFunctionMessage>;
 }
 
 impl<T: ToolFunction> ErasedToolFunction for T {
@@ -278,6 +282,14 @@ impl<T: ToolFunction> ErasedToolFunction for T {
         services: &'a Services,
     ) -> Element<'a, ErasedToolFunctionMessage, Theme, Renderer> {
         self.canvas_overlay(services)
+            .map(move |message| ErasedToolFunctionMessage {
+                tool_id: T::id(),
+                message: Box::new(message),
+            })
+    }
+
+    fn subscription(&self) -> Subscription<ErasedToolFunctionMessage> {
+        self.subscription()
             .map(move |message| ErasedToolFunctionMessage {
                 tool_id: T::id(),
                 message: Box::new(message),
@@ -515,6 +527,19 @@ impl ToolProxy {
             .get(&state.function)
             .unwrap()
             .canvas_overlay(services)
+    }
+
+    pub fn subscription(&self) -> Option<Subscription<ErasedToolFunctionMessage>> {
+        let state = self
+            .override_state
+            .as_ref()
+            .or(self.current_state.as_ref())?;
+        Some(
+            self.tool_functions
+                .get(&state.function)
+                .unwrap()
+                .subscription(),
+        )
     }
 
     pub fn current_tool(&self) -> Option<&ToolId> {

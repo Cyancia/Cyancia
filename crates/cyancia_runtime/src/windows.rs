@@ -36,7 +36,7 @@ pub trait WindowView: 'static + Sized {
         services: &mut Services,
     ) -> impl Into<Task<Self::Message>>;
     fn close(self, services: &mut Services) -> Task<()>;
-    fn subscription(&self) -> Subscription<Self::Message> {
+    fn subscription(&self, _services: &Services) -> Subscription<Self::Message> {
         Subscription::none()
     }
     fn windows(&self) -> Arc<[window::Id]>;
@@ -58,7 +58,7 @@ pub trait ErasedWindowView: 'static {
         services: &mut Services,
     ) -> Task<Box<dyn Any + Send>>;
     fn close(self: Box<Self>, services: &mut Services) -> Task<()>;
-    fn subscription(&self) -> Subscription<Box<dyn Any + Send>>;
+    fn subscription(&self, services: &Services) -> Subscription<Box<dyn Any + Send>>;
     fn windows(&self) -> Arc<[window::Id]>;
     fn root_window(&self) -> Option<window::Id>;
 }
@@ -98,8 +98,9 @@ where
         <T as WindowView>::close(*self, services)
     }
 
-    fn subscription(&self) -> Subscription<Box<dyn Any + Send>> {
-        <T as WindowView>::subscription(self).map(|msg| Box::new(msg) as Box<dyn Any + Send>)
+    fn subscription(&self, services: &Services) -> Subscription<Box<dyn Any + Send>> {
+        <T as WindowView>::subscription(self, services)
+            .map(|msg| Box::new(msg) as Box<dyn Any + Send>)
     }
 
     fn windows(&self) -> Arc<[window::Id]> {
@@ -242,11 +243,14 @@ where
         }
     }
 
-    pub fn subscription(&self) -> Subscription<WindowViewManagerMessage> {
+    pub fn subscription(&self, services: &Services) -> Subscription<WindowViewManagerMessage> {
         Subscription::batch(self.opened_views.iter().map(|(id, view)| {
-            view.state.subscription().with(*id).map(|(view, message)| {
-                WindowViewManagerMessage::ViewUpdate(ErasedWindowViewMessage { view, message })
-            })
+            view.state
+                .subscription(services)
+                .with(*id)
+                .map(|(view, message)| {
+                    WindowViewManagerMessage::ViewUpdate(ErasedWindowViewMessage { view, message })
+                })
         }))
     }
 
