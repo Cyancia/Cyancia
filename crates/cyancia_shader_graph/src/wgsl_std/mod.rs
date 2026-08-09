@@ -67,6 +67,12 @@ pub fn builtin_types() -> GraphTypeRegistry {
 
     types.register_caster::<F32ToVec2FCaster>();
     types.register_caster::<Vec2FToF32Caster>();
+    types.register_caster::<BoolToI32Caster>();
+    types.register_caster::<I32ToBoolCaster>();
+    types.register_caster::<F32ToI32Caster>();
+    types.register_caster::<I32ToF32Caster>();
+    types.register_caster::<Vec2FToI32Caster>();
+    types.register_caster::<I32ToVec2FCaster>();
 
     types
 }
