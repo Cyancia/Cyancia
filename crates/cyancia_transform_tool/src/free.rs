@@ -1,7 +1,7 @@
 use std::collections::{HashMap, hash_map::Entry};
 
 use anyhow::Result;
-use bevy_math::{IRect, Rect};
+use bevy_math::{IRect, Rect, VectorSpace};
 use cyancia_canvas::{
     CanvasAppExt, CanvasId, CanvasUndoStackAppExt,
     command::TileReplaceCommand,
@@ -68,6 +68,7 @@ pub struct TransformSession {
     pub shear: f32,
     pub last_shear: Option<ShearType>,
     pub pivot: Vec2,
+    pub anchor: Vec2,
     pub tile_bounds: IRect,
     pub pixel_bounds: IRect,
     pub result_buffers: HashMap<LayerId, DynamicLayerStorage>,
@@ -131,6 +132,7 @@ impl TransformSession {
             shear: 0.0,
             last_shear: None,
             pivot: init.pixel_bounds.as_rect().center(),
+            anchor: Vec2::splat(0.5),
             tile_bounds: GpuTileStorage::pixel_rect_to_tile(init.pixel_bounds),
             pixel_bounds: init.pixel_bounds,
             result_buffers,
@@ -143,6 +145,16 @@ impl TransformSession {
         let Some(ongoing) = self.ongoing_transform else {
             return;
         };
+
+        if matches!(ongoing.ty, InteractionType::Anchor) {
+            let size = self.pixel_bounds.size().as_vec2();
+            let delta = ongoing
+                .base_matrix
+                .inverse()
+                .transform_vector2(cursor_ps - ongoing.cursor_origin_ps);
+            self.anchor = ongoing.base_anchor + delta / size;
+            return;
+        }
 
         let pivot = self.op_pivot_ps(ongoing.ty, modifiers.alt());
         let origin = ongoing.base_matrix.transform_point2(Vec2::ZERO);
@@ -157,6 +169,7 @@ impl TransformSession {
 
         let delta = cursor_ps - ongoing.cursor_origin_ps;
         match ongoing.ty {
+            InteractionType::Anchor => unreachable!(),
             InteractionType::Translate => {
                 let d = if modifiers.shift() {
                     if delta.x.abs() > delta.y.abs() {
@@ -224,7 +237,12 @@ impl TransformSession {
                     ShearType::Top | ShearType::Left => -1.0,
                     ShearType::Bottom | ShearType::Right => 1.0,
                 };
-                self.shear = ongoing.base_shear + sign * projection / extent.max(1.0);
+                let extent = if extent >= 0.0 {
+                    extent.max(1.0)
+                } else {
+                    extent.min(-1.0)
+                };
+                self.shear = ongoing.base_shear + sign * projection / extent;
                 self.last_shear = Some(ty);
             }
         }
@@ -285,20 +303,21 @@ impl TransformSession {
     }
 
     fn op_pivot_ps(&self, ty: InteractionType, symmetric: bool) -> Vec2 {
+        let b = self.pixel_bounds;
+        let anchor = b.min.as_vec2() + self.anchor * b.size().as_vec2();
         match ty {
-            InteractionType::Translate | InteractionType::Rotate(_) => {
-                self.pixel_bounds_center_ps()
-            }
+            InteractionType::Anchor | InteractionType::Rotate(_) => anchor,
+            InteractionType::Translate => self.pixel_bounds_center_ps(),
             InteractionType::Scale(ty) => {
                 if symmetric {
-                    self.pixel_bounds_center_ps()
+                    anchor
                 } else {
                     self.scale_anchor_ps(ty)
                 }
             }
             InteractionType::Shear(ty) => {
                 if symmetric {
-                    self.pixel_bounds_center_ps()
+                    anchor
                 } else {
                     self.shear_pivot_ps(ty)
                 }
@@ -370,9 +389,15 @@ pub struct OngoingTransform {
     pub base_scale: Vec2,
     pub base_shear: f32,
     pub base_last_shear: Option<ShearType>,
+    pub base_anchor: Vec2,
 }
 
-pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
+pub fn hit_test(quad: [Vec2; 4], p: Vec2, anchor: Vec2) -> Option<InteractionType> {
+    const ANCHOR_HIT_RADIUS: f32 = 20.0;
+    const EDGE_HIT_RADIUS: f32 = 10.0;
+    const SHEAR_HIT_MAX_DISTANCE: f32 = 30.0;
+    const ROTATE_HIT_RADIUS: f32 = 40.0;
+
     let [tl, tr, br, bl] = quad;
     let x = tr - tl;
     let y = bl - tl;
@@ -381,13 +406,14 @@ pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
         return None;
     }
 
+    let anchor = tl + anchor.x * x + anchor.y * y;
+    if anchor.distance(p) < ANCHOR_HIT_RADIUS {
+        return Some(InteractionType::Anchor);
+    }
+
     let d = p - tl;
     let u = (d.x * y.y - d.y * y.x) / det;
     let v = (x.x * d.y - x.y * d.x) / det;
-
-    const EDGE_HIT_RADIUS: f32 = 10.0;
-    const SHEAR_HIT_MAX_DISTANCE: f32 = 30.0;
-    const ROTATE_HIT_RADIUS: f32 = 40.0;
 
     let w_abs = x.length();
     let h_abs = y.length();
@@ -480,6 +506,7 @@ pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum InteractionType {
+    Anchor,
     Translate,
     Rotate(RotateType),
     Scale(ScaleType),
@@ -562,7 +589,7 @@ impl ToolFunction for FreeTransformTool {
         else {
             return Task::none();
         };
-        let Some(ty) = hit_test(session.quad_ps(), cursor_ps) else {
+        let Some(ty) = hit_test(session.quad_ps(), cursor_ps, session.anchor) else {
             return Task::none();
         };
 
@@ -577,6 +604,7 @@ impl ToolFunction for FreeTransformTool {
             base_scale: session.scale,
             base_shear: session.shear,
             base_last_shear: session.last_shear,
+            base_anchor: session.anchor,
         });
 
         Task::none()
@@ -966,6 +994,23 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
                 },
             );
 
+            let anchor = self.session.anchor.x * x + self.session.anchor.y * y + tl;
+            let anchor_mark = Path::new(|b| {
+                const ANCHOR_SIZE: f32 = 12.0;
+                let h = ANCHOR_SIZE * 0.5;
+                b.move_to(Point::new(anchor.x - h, anchor.y));
+                b.line_to(Point::new(anchor.x + h, anchor.y));
+                b.move_to(Point::new(anchor.x, anchor.y - h));
+                b.line_to(Point::new(anchor.x, anchor.y + h));
+            });
+            let stroke = Stroke {
+                style: color.into(),
+                width: 1.0,
+                ..Default::default()
+            };
+            frame.stroke(&Path::circle(Point::new(anchor.x, anchor.y), 10.0), stroke);
+            frame.stroke(&anchor_mark, stroke);
+
             frame.pop_transform();
         }
 
@@ -992,15 +1037,13 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
             .ongoing_transform
             .as_ref()
             .map(|t| t.ty)
-            .or_else(|| hit_test(self.session.quad_ps(), cursor_ps))
+            .or_else(|| hit_test(self.session.quad_ps(), cursor_ps, self.session.anchor))
         else {
             return mouse::Interaction::None;
         };
 
-        dbg!(ty);
-
         match ty {
-            InteractionType::Translate => mouse::Interaction::Move,
+            InteractionType::Anchor | InteractionType::Translate => mouse::Interaction::Move,
             // TODO
             InteractionType::Rotate(_ty) => mouse::Interaction::None,
             InteractionType::Scale(ty) => match ty {
