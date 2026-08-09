@@ -42,6 +42,7 @@ use iced_widget::{
     canvas::{Frame, Path, Stroke},
     space,
 };
+use tracing::warn;
 use wgpu::{
     BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
@@ -635,11 +636,9 @@ impl ToolFunction for FreeTransformTool {
                 let canvas_id = canvas.id();
                 let target_layer_id = canvas.active_layer_id();
                 let selection_layer_id = canvas.image.selection_layer();
-                let target_layer_texel = {
-                    let tiles = services.tile_storage();
-                    let target_layer = tiles.get_layer(target_layer_id).unwrap();
-                    target_layer.layer_info().texel_type
-                };
+                let tiles = services.tile_storage();
+                let target_layer = tiles.get_layer(target_layer_id).unwrap();
+                let target_layer_texel = target_layer.layer_info().texel_type;
 
                 let device = services.render_device();
                 let queue = services.render_queue();
@@ -656,8 +655,7 @@ impl ToolFunction for FreeTransformTool {
                 }
                 let scan_pipeline = self.scan_pipeline.as_ref().unwrap();
 
-                let tiles = services.tile_storage();
-                let target_layer = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
+                let target_layer_binding = target_layer.binding_or_empty();
                 let selection_binding = tiles
                     .get_layer_binding_or_empty(selection_layer_id)
                     .unwrap();
@@ -669,7 +667,7 @@ impl ToolFunction for FreeTransformTool {
                     device,
                     queue,
                     &mut ec,
-                    target_layer,
+                    target_layer_binding,
                     Some(selection_binding),
                 );
                 let bounds_buffer_staging =
@@ -707,6 +705,7 @@ impl ToolFunction for FreeTransformTool {
             }
             FreeTransformToolMessage::InitTransform(init) => {
                 if init.pixel_bounds.is_empty() {
+                    warn!("Unable to transform on empty layer.");
                     self.session = None;
                 } else {
                     let device = services.render_device();

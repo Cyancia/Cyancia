@@ -21,6 +21,7 @@ cyancia_runtime.workspace = true
 cyancia_utils.workspace = true
 encase.workspace = true
 glam.workspace = true
+tracing.workspace = true
 iced_core.workspace = true
 iced_graphics.workspace = true
 iced_wgpu.workspace = true
