@@ -25,24 +25,17 @@ use crate::{
 
 pub struct GraphFunctionData;
 
-pub static GRAPH_FUNCTION_TYPE_REGISTRY: LazyLock<GraphTypeRegistry> = LazyLock::new(builtin_types);
-pub static GRAPH_FUNCTION_NODE_REGISTRY: LazyLock<GraphNodeRegistry<GraphFunctionData>> =
+pub static GRAPH_FUNCTION_TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> =
+    LazyLock::new(|| Arc::new(builtin_types()));
+pub static GRAPH_FUNCTION_NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<GraphFunctionData>>> =
     LazyLock::new(|| {
         let mut nodes = builtin_nodes();
         nodes.register::<GraphInputNode>();
         nodes.register::<GraphOutputNode>();
-        nodes
+        Arc::new(nodes)
     });
 
-impl GraphData for GraphFunctionData {
-    fn type_registry() -> &'static GraphTypeRegistry {
-        LazyLock::force(&GRAPH_FUNCTION_TYPE_REGISTRY)
-    }
-
-    fn node_registry() -> &'static GraphNodeRegistry<Self> {
-        LazyLock::force(&GRAPH_FUNCTION_NODE_REGISTRY)
-    }
-}
+impl GraphData for GraphFunctionData {}
 
 wrapper! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]

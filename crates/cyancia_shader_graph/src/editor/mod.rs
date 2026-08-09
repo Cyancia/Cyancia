@@ -191,7 +191,7 @@ impl<Data: GraphData> Graph<Data> {
     pub fn update(&mut self, message: GraphEditorGraphMessage) {
         match message {
             GraphEditorGraphMessage::NodeCreateRequest(position, name, node_id) => {
-                let node = Data::node_registry().get(name).unwrap();
+                let node = self.resources.node_registry.get(name).unwrap();
                 self.insert_boxed_node(node_id, position, node);
             }
             GraphEditorGraphMessage::NodeMoveRequest(position, id) => {
@@ -220,7 +220,9 @@ impl<'a, Data: GraphData> GraphEditorView<'a, Data> {
     pub fn new(graph: &'a Graph<Data>, state: &'a GraphEditorState, is_dark: bool) -> Self {
         Self {
             graph: DrawableGraph::new(graph, is_dark),
-            node_creation_menu_items: Data::node_registry()
+            node_creation_menu_items: graph
+                .resources
+                .node_registry
                 .all()
                 .keys()
                 .map(|title| NodeCreationMenuItem { node_title: title })
@@ -376,7 +378,7 @@ impl DrawableNode {
         node_id: GraphNodeId,
         node: &GraphNodeData<Data>,
         slots: &GraphSlots,
-        resources: &GraphResources,
+        resources: &GraphResources<Data>,
         is_dark: bool,
     ) -> Self {
         let header_color = node.data.header_color(is_dark);

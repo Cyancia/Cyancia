@@ -1,4 +1,4 @@
-use std::{fmt, sync::LazyLock};
+use std::fmt;
 
 use bevy_math::IRect;
 use cyancia_image::blend_modes::BlendMode;
@@ -8,11 +8,11 @@ use cyancia_shader_graph::{
         GraphData,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeRegistry, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
-            GraphNodeViewContext, StatelessCommonGraphNode, stateless,
+            GraphNodeDefaultStateContext, GraphNodeUpdateContext,
+            GraphNodeUpdateSignatureContext, GraphNodeViewContext, StatelessCommonGraphNode,
+            stateless,
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
-        variable::GraphTypeRegistry,
     },
     wgsl_std::{
         nodes::{GraphDataWithTime, GraphTimes},
@@ -26,13 +26,7 @@ use iced_core::{Color, Length};
 use iced_widget::pick_list;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    instance::{
-        BRUSH_GRAPH_TYPES, MAIN_GRAPH_NODES, REQUIRED_SPACING_GRAPH_NODES,
-        STROKE_POSTPROCESS_GRAPH_NODES,
-    },
-    render::{ComputedPenInput, Time},
-};
+use crate::render::{ComputedPenInput, Time};
 
 // TODO We may move to another crate.
 #[derive(Default, Clone, ShaderType)]
@@ -52,30 +46,14 @@ pub struct BrushStrokePostprocessGraphData {
     pub resources: CanvasResources,
 }
 
-impl GraphData for BrushStrokePostprocessGraphData {
-    fn type_registry() -> &'static GraphTypeRegistry {
-        LazyLock::force(&BRUSH_GRAPH_TYPES)
-    }
-
-    fn node_registry() -> &'static GraphNodeRegistry<Self> {
-        LazyLock::force(&STROKE_POSTPROCESS_GRAPH_NODES)
-    }
-}
+impl GraphData for BrushStrokePostprocessGraphData {}
 
 pub struct BrushRequiredSpacingGraphData {
     pub pen_input: ComputedPenInput,
     pub resources: CanvasResources,
 }
 
-impl GraphData for BrushRequiredSpacingGraphData {
-    fn type_registry() -> &'static GraphTypeRegistry {
-        LazyLock::force(&BRUSH_GRAPH_TYPES)
-    }
-
-    fn node_registry() -> &'static GraphNodeRegistry<Self> {
-        LazyLock::force(&REQUIRED_SPACING_GRAPH_NODES)
-    }
-}
+impl GraphData for BrushRequiredSpacingGraphData {}
 
 #[derive(Default, Clone)]
 pub struct BrushMainGraphData {
@@ -83,15 +61,7 @@ pub struct BrushMainGraphData {
     pub resources: CanvasResources,
 }
 
-impl GraphData for BrushMainGraphData {
-    fn type_registry() -> &'static GraphTypeRegistry {
-        LazyLock::force(&BRUSH_GRAPH_TYPES)
-    }
-
-    fn node_registry() -> &'static GraphNodeRegistry<Self> {
-        LazyLock::force(&MAIN_GRAPH_NODES)
-    }
-}
+impl GraphData for BrushMainGraphData {}
 
 pub trait GraphDataWithPenInput: GraphData {
     fn pen_input_field() -> String;
@@ -642,7 +612,7 @@ impl<Data: GraphData> GraphNode<Data> for PasteTextureNode {
         "Paste Texture"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         Default::default()
     }
 
@@ -822,7 +792,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
         "Blend Color"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         BlendColorNodeState {
             blend_mode: BlendMode::Normal,
         }
@@ -1002,7 +972,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithInputNode {
         "Blend With Input"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         BlendWithBufferNodeState {
             blend_mode: BlendMode::Normal,
         }
@@ -1089,7 +1059,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
         "Blend With Layer"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         BlendWithLayerNodeState {
             blend_mode: BlendMode::Normal,
         }

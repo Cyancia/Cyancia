@@ -49,7 +49,10 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
                 <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::name(self)
             }
 
-            fn default_state(&self) -> Self::State {
+            fn default_state(
+                &self,
+                _ctx: #crate_path::graph::node::GraphNodeDefaultStateContext<'_, #data_ty>,
+            ) -> Self::State {
                 #crate_path::graph::node::StatelessState::default()
             }
 

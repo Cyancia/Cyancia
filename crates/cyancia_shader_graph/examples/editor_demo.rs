@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use cyancia_shader_graph::{
     editor::{GraphEditorView, GraphEditorMessage, GraphEditorState},
@@ -14,24 +14,17 @@ use cyancia_shader_graph::{
 #[derive(Default, Clone)]
 struct DemoData;
 
-impl GraphData for DemoData {
-    fn type_registry() -> &'static GraphTypeRegistry {
-        LazyLock::force(&TYPE_REGISTRY)
-    }
+impl GraphData for DemoData {}
 
-    fn node_registry() -> &'static GraphNodeRegistry<Self> {
-        LazyLock::force(&NODE_REGISTRY)
-    }
-}
-
-static NODE_REGISTRY: LazyLock<GraphNodeRegistry<DemoData>> = LazyLock::new(|| {
+static NODE_REGISTRY: LazyLock<Arc<GraphNodeRegistry<DemoData>>> = LazyLock::new(|| {
     let mut nodes = builtin_nodes();
     nodes.register::<GraphInputNode>();
     nodes.register::<GraphOutputNode>();
-    nodes
+    Arc::new(nodes)
 });
 
-static TYPE_REGISTRY: LazyLock<GraphTypeRegistry> = LazyLock::new(builtin_types);
+static TYPE_REGISTRY: LazyLock<Arc<GraphTypeRegistry>> =
+    LazyLock::new(|| Arc::new(builtin_types()));
 
 struct DemoEditor {
     graph: Graph<DemoData>,
@@ -41,7 +34,11 @@ struct DemoEditor {
 impl DemoEditor {
     fn new() -> Self {
         Self {
-            graph: Graph::new(GraphResources::default()),
+            graph: Graph::new(GraphResources {
+                type_registry: TYPE_REGISTRY.clone(),
+                node_registry: NODE_REGISTRY.clone(),
+                ..Default::default()
+            }),
             editor_state: GraphEditorState::default(),
         }
     }

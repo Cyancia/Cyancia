@@ -14,9 +14,9 @@ use crate::graph::{
     function::SharedGraphFunctionStorage,
     node::{
         ContextualGraphNodeCodeGenError, ErasedGraphNode, ErasedGraphNodeMessage, GraphNode,
-        GraphNodeCodeGenContext, GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId,
-        GraphNodeRegistry, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
-        StatefulGraphNode,
+        GraphNodeCodeGenContext, GraphNodeCreateSlotsContext, GraphNodeData,
+        GraphNodeDefaultStateContext, GraphNodeId, GraphNodeRegistry, GraphNodeUpdateContext,
+        GraphNodeUpdateSignatureContext, StatefulGraphNode,
     },
     slot::{
         GraphDefaultInputSlot, GraphDefaultOutputSlot, GraphInputSlotData, GraphInputSlotId,
@@ -36,13 +36,13 @@ pub mod variable;
 pub struct Graph<Data: GraphData> {
     pub(crate) nodes: HashMap<GraphNodeId, GraphNodeData<Data>>,
     pub(crate) slots: GraphSlots,
-    pub(crate) resources: GraphResources,
+    pub(crate) resources: GraphResources<Data>,
     pub(crate) cached_run_order: RwLock<Option<Vec<GraphNodeId>>>,
     pub(crate) cached_signature: RwLock<Option<GraphSignature>>,
 }
 
 impl<Data: GraphData> Graph<Data> {
-    pub fn new(resources: GraphResources) -> Self {
+    pub fn new(resources: GraphResources<Data>) -> Self {
         Self {
             nodes: HashMap::new(),
             slots: GraphSlots::default(),
@@ -68,7 +68,13 @@ impl<Data: GraphData> Graph<Data> {
         position: Point,
         node: Box<dyn ErasedGraphNode<Data>>,
     ) {
-        let node = StatefulGraphNode::new(node);
+        let node = StatefulGraphNode::new(
+            node,
+            GraphNodeDefaultStateContext {
+                resources: &self.resources,
+                _marker: PhantomData,
+            },
+        );
         let inputs = create_input_slots(
             &mut self.slots,
             node_id,
@@ -140,7 +146,10 @@ impl<Data: GraphData> Graph<Data> {
 
         if let (Some(from), Some(to)) = (from_slot, to_slot) {
             from.data_ty.name() == to.data.ty().name()
-                || Data::type_registry().can_cast(&*from.data_ty, to.data.ty())
+                || self
+                    .resources
+                    .type_registry
+                    .can_cast(&*from.data_ty, to.data.ty())
         } else {
             false
         }
@@ -513,10 +522,7 @@ impl<Data: GraphData> Graph<Data> {
         graph_input_idents: Vec<String>,
         mut ident_generator: GraphVarIdentGenerator,
         texture_usage: &mut GraphTextureUsageRecorder,
-    ) -> Result<
-        (Vec<String>, HashMap<GraphOutputSlotId, String>, String),
-        GraphCompileError,
-    > {
+    ) -> Result<(Vec<String>, HashMap<GraphOutputSlotId, String>, String), GraphCompileError> {
         if self.cached_run_order.read().is_none() {
             self.update_run_order_cache();
         }
@@ -592,7 +598,7 @@ impl<Data: GraphData> Graph<Data> {
         Ok((graph_output_idents, output_slot_idents, code))
     }
 
-    pub fn resources(&self) -> &GraphResources {
+    pub fn resources(&self) -> &GraphResources<Data> {
         &self.resources
     }
 }
@@ -668,11 +674,36 @@ fn delete_all_outputs(slots: &mut GraphSlots, output_slot_ids: &[GraphOutputSlot
     }
 }
 
-#[derive(Default, Clone)]
-pub struct GraphResources {
+pub struct GraphResources<Data: GraphData> {
+    pub type_registry: Arc<GraphTypeRegistry>,
+    pub node_registry: Arc<GraphNodeRegistry<Data>>,
     pub textures: SharedGraphTextureStorage,
     pub functions: SharedGraphFunctionStorage,
     pub external_vars: Arc<GraphExternalVariableStorage>,
+}
+
+impl<Data: GraphData> Clone for GraphResources<Data> {
+    fn clone(&self) -> Self {
+        Self {
+            type_registry: self.type_registry.clone(),
+            node_registry: self.node_registry.clone(),
+            textures: self.textures.clone(),
+            functions: self.functions.clone(),
+            external_vars: self.external_vars.clone(),
+        }
+    }
+}
+
+impl<Data: GraphData> Default for GraphResources<Data> {
+    fn default() -> Self {
+        Self {
+            type_registry: Arc::new(GraphTypeRegistry::default()),
+            node_registry: Arc::new(GraphNodeRegistry::with_capacity()),
+            textures: Default::default(),
+            functions: Default::default(),
+            external_vars: Default::default(),
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -712,7 +743,4 @@ impl GraphVarIdentGenerator {
     }
 }
 
-pub trait GraphData: Send + Sync + 'static + Sized {
-    fn type_registry() -> &'static GraphTypeRegistry;
-    fn node_registry() -> &'static GraphNodeRegistry<Self>;
-}
+pub trait GraphData: Send + Sync + 'static + Sized {}

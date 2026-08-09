@@ -6,15 +6,17 @@ use cyancia_runtime::{
     windows::{WindowView, WindowViewId},
 };
 use cyancia_shader_graph::{
+    GraphRenderer, GraphTheme,
     editor::{
         GraphEditor, GraphEditorMessage, GraphEditorPathComponent, GraphEditorState,
         GraphEditorView,
     },
     graph::{
-        Graph, GraphData, GraphResources,
+        Graph, GraphResources,
         external::{ExternalVariable, ExternalVariableId},
         function::{
-            ASSET_GRAPH_FUNCTION_STORAGE, GraphFunction, GraphFunctionId, GraphFunctionStorage,
+            ASSET_GRAPH_FUNCTION_STORAGE, GRAPH_FUNCTION_NODE_REGISTRY,
+            GRAPH_FUNCTION_TYPE_REGISTRY, GraphFunction, GraphFunctionId, GraphFunctionStorage,
         },
         node::GraphNodeId,
         slot::ErasedGraphLiteralUpdateMessage,
@@ -32,8 +34,7 @@ use uuid::Uuid;
 
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
-    instance::{BrushPresetInstance, GraphFunctionInstance},
-    render::graph::BrushMainGraphData,
+    instance::{BRUSH_GRAPH_TYPES, BrushPresetInstance, GraphFunctionInstance},
     tool::BrushServicesExt,
     widget::{BrushFunctionListDelegate, BrushPresetListDelegate},
 };
@@ -339,8 +340,11 @@ impl WindowView for BrushEditor {
 }
 
 impl BrushEditor {
-    fn view_brush<'a>(&'a self, brush: &'a SelectedBrush) -> EditorElement<'a, BrushEditorMessage> {
-        let title: EditorElement<'a, BrushEditorMessage> = row![
+    fn view_brush<'a>(
+        &'a self,
+        brush: &'a SelectedBrush,
+    ) -> Element<'a, BrushEditorMessage, GraphTheme, GraphRenderer> {
+        let title = row![
             text_input("Name", &self.name_buffer)
                 .on_input(BrushEditorMessage::NameChanged)
                 .width(Length::Fill),
@@ -348,7 +352,7 @@ impl BrushEditor {
         ]
         .spacing(6);
 
-        let graph: Element<'_, GraphEditorMessage, iced::Theme, iced_wgpu::Renderer> =
+        let graph: Element<'_, GraphEditorMessage, GraphTheme, GraphRenderer> =
             match brush.viewing_graph {
                 BrushPresetGraph::RequiredSpacing => GraphEditor::new(
                     brush.instance.required_spacing_graph(),
@@ -427,7 +431,7 @@ impl BrushEditor {
                 .into()
             })
             .collect::<Vec<_>>();
-        let types = BrushMainGraphData::type_registry()
+        let types = BRUSH_GRAPH_TYPES
             .all_types()
             .keys()
             .copied()
@@ -561,6 +565,8 @@ impl BrushEditor {
             id,
             name: "[Unnamed Function]".into(),
             graph: Graph::new(GraphResources {
+                type_registry: GRAPH_FUNCTION_TYPE_REGISTRY.clone(),
+                node_registry: GRAPH_FUNCTION_NODE_REGISTRY.clone(),
                 textures: ASSET_GRAPH_TEXTURE_STORAGE.clone(),
                 functions: ASSET_GRAPH_FUNCTION_STORAGE.clone(),
                 ..Default::default()
@@ -658,7 +664,7 @@ impl BrushEditor {
         let Some(Selected::Brush(brush)) = self.selected.as_mut() else {
             return;
         };
-        let ty = BrushMainGraphData::type_registry()
+        let ty = BRUSH_GRAPH_TYPES
             .get_type(
                 self.new_external_type
                     .expect("New external variable type should be selected"),

@@ -1,6 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use anyhow::anyhow;
@@ -24,15 +27,14 @@ use crate::{
         function::GraphFunctionId,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeUpdateContext, GraphNodeUpdateSignatureContext, GraphNodeViewContext,
-            StatelessCommonGraphNode,
+            GraphNodeDefaultStateContext, GraphNodeRegistry, GraphNodeUpdateContext,
+            GraphNodeUpdateSignatureContext, GraphNodeViewContext, StatelessCommonGraphNode,
         },
         slot::{
             ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
             GraphValueType,
         },
         texture::TextureId,
-        variable::GraphTypeRegistry,
     },
     save::{GraphSerializable, SerializableGraph},
     wgsl_std::{
@@ -139,7 +141,7 @@ impl<Data: GraphData> GraphNode<Data> for ScalarMathNode {
         "Scalar Math"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         ScalarMathNodeMode::Add
     }
 
@@ -406,7 +408,7 @@ impl<Data: GraphData> GraphNode<Data> for VectorMathNode {
         "Vector Math"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         VectorMathNodeMode::Add
     }
 
@@ -663,7 +665,7 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
         "Rect Math"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         RectMathNodeMode::Union
     }
 
@@ -1233,7 +1235,7 @@ impl<Data: GraphData> GraphNode<Data> for TextureNode {
         "Texture"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         TextureId::NULL
     }
 
@@ -1433,7 +1435,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphFunctionNode {
         "Function"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         GraphFunctionNodeState { id: None }
     }
 
@@ -1592,7 +1594,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         "Graph Input"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         GraphInputNodeState::default()
     }
 
@@ -1611,11 +1613,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
     fn create_outputs(
         &self,
         state: &Self::State,
-        _: GraphNodeCreateSlotsContext<'_, Data>,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         let Some(ty) = state
             .ty
-            .and_then(|ty| Data::type_registry().get_type(ty))
+            .and_then(|ty| ctx.resources.type_registry.get_type(ty))
             .map(dyn_clone::clone_box)
         else {
             return vec![];
@@ -1637,7 +1639,9 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
         state: &Self::State,
         ctx: GraphNodeViewContext<'_, Data>,
     ) -> GraphElement<'static, Self::Message> {
-        let types = Data::type_registry()
+        let types = ctx
+            .resources
+            .type_registry
             .all_types()
             .keys()
             .copied()
@@ -1698,7 +1702,7 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         "Graph Output"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         GraphOutputNodeState::default()
     }
 
@@ -1709,11 +1713,11 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        _: GraphNodeCreateSlotsContext<'_, Data>,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         let Some(ty) = state
             .ty
-            .and_then(|ty| Data::type_registry().get_type(ty))
+            .and_then(|ty| ctx.resources.type_registry.get_type(ty))
             .map(dyn_clone::clone_box)
         else {
             return vec![];
@@ -1743,7 +1747,9 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
         state: &Self::State,
         ctx: GraphNodeViewContext<'_, Data>,
     ) -> GraphElement<'static, Self::Message> {
-        let types = Data::type_registry()
+        let types = ctx
+            .resources
+            .type_registry
             .all_types()
             .keys()
             .copied()
@@ -1883,7 +1889,7 @@ impl<Data: GraphData> GraphNode<Data> for ExternalVariableNode {
         ))
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         None
     }
 
@@ -1966,7 +1972,7 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
         "Curve"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         Default::default()
     }
 
@@ -2259,7 +2265,7 @@ struct SerializableWhileNodeState {
     body: SerializableGraph,
 }
 
-impl<Data: GraphData> GraphSerializable for WhileNodeState<Data> {
+impl<Data: GraphData> GraphSerializable<Data> for WhileNodeState<Data> {
     fn to_toml(&self) -> anyhow::Result<toml::Value> {
         let locals = self
             .locals
@@ -2277,7 +2283,10 @@ impl<Data: GraphData> GraphSerializable for WhileNodeState<Data> {
         })?)
     }
 
-    fn from_toml(value: toml::Value, resources: &GraphResources) -> anyhow::Result<Self> {
+    fn from_toml(
+        value: toml::Value,
+        resources: &GraphResources<Data>,
+    ) -> anyhow::Result<Self> {
         let serialized = SerializableWhileNodeState::deserialize(value)?;
         let locals = serialized
             .locals
@@ -2340,7 +2349,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeInput {
         "While Node Input"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         WhileNodeInputState::default()
     }
 
@@ -2359,12 +2368,12 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeInput {
     fn create_outputs(
         &self,
         state: &Self::State,
-        _: GraphNodeCreateSlotsContext<'_, Data>,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         let Some(local) = state.local() else {
             return Vec::new();
         };
-        let Some(ty) = Data::type_registry().get_type(&local.ty) else {
+        let Some(ty) = ctx.resources.type_registry.get_type(&local.ty) else {
             return Vec::new();
         };
         vec![GraphDefaultOutputSlot::new_boxed(
@@ -2452,7 +2461,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeOutput {
         "While Node Output"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
         WhileNodeOutputState::default()
     }
 
@@ -2463,12 +2472,12 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeOutput {
     fn create_inputs(
         &self,
         state: &Self::State,
-        _: GraphNodeCreateSlotsContext<'_, Data>,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         let Some(local) = state.local() else {
             return Vec::new();
         };
-        let Some(ty) = Data::type_registry().get_type(&local.ty) else {
+        let Some(ty) = ctx.resources.type_registry.get_type(&local.ty) else {
             return Vec::new();
         };
         vec![GraphDefaultInputSlot::new_boxed(
@@ -2584,8 +2593,10 @@ pub enum WhileNodeMessage {
 
 fn while_schema_editor_view<Data: GraphData>(
     state: &WhileNodeState<Data>,
+    resources: &GraphResources<Data>,
 ) -> GraphElement<'static, WhileNodeMessage> {
-    let type_names = Data::type_registry()
+    let type_names = resources
+        .type_registry
         .all_types()
         .keys()
         .copied()
@@ -2664,11 +2675,19 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
         "While"
     }
 
-    fn default_state(&self) -> Self::State {
+    fn default_state(&self, ctx: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
+        let mut node_registry = (*ctx.resources.node_registry).clone();
+        node_registry.register::<WhileNodeInput>();
+        node_registry.register::<WhileNodeOutput>();
+        node_registry.register::<BreakBeforeNextIterationNode>();
+
+        let mut resources = ctx.resources.clone();
+        resources.node_registry = Arc::new(node_registry);
+
         WhileNodeState {
             locals: IndexMap::new(),
             revision: 0,
-            body: Graph::new(GraphResources::default()),
+            body: Graph::new(resources),
             schema_draft: None,
         }
     }
@@ -2680,13 +2699,13 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        _: GraphNodeCreateSlotsContext<'_, Data>,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         state
             .locals
             .values()
             .filter_map(|local| {
-                let ty = Data::type_registry().get_type(&local.ty)?;
+                let ty = ctx.resources.type_registry.get_type(&local.ty)?;
                 Some(GraphDefaultInputSlot::new_boxed(
                     format!("{} In", local.name),
                     dyn_clone::clone_box(ty),
@@ -2698,13 +2717,13 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
     fn create_outputs(
         &self,
         state: &Self::State,
-        _: GraphNodeCreateSlotsContext<'_, Data>,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         state
             .locals
             .values()
             .filter_map(|local| {
-                let ty = Data::type_registry().get_type(&local.ty)?;
+                let ty = ctx.resources.type_registry.get_type(&local.ty)?;
                 Some(GraphDefaultOutputSlot::new_boxed(
                     format!("{} Out", local.name),
                     dyn_clone::clone_box(ty),
@@ -2722,7 +2741,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
         let content = state
             .schema_draft
             .as_ref()
-            .map(|_| while_schema_editor_view::<Data>(state));
+            .map(|_| while_schema_editor_view(state, ctx.resources));
         let popover = Popover::new(trigger).content(content);
         ctx.view_all_slots_with_header(popover, WhileNodeMessage::LiteralUpdate)
     }

@@ -15,8 +15,14 @@ use serde::{Deserialize, Serialize};
 use crate::graph::{
     Graph, GraphData, GraphResources,
     external::{ExternalVariable, ExternalVariableId},
-    function::{GraphFunction, GraphFunctionId, SharedGraphFunctionStorage},
-    node::{GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeId, StatefulGraphNode},
+    function::{
+        GRAPH_FUNCTION_NODE_REGISTRY, GRAPH_FUNCTION_TYPE_REGISTRY, GraphFunction,
+        GraphFunctionId, SharedGraphFunctionStorage,
+    },
+    node::{
+        GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeDefaultStateContext, GraphNodeId,
+        StatefulGraphNode,
+    },
     slot::{
         GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData, GraphOutputSlotId, GraphSlots,
     },
@@ -24,17 +30,17 @@ use crate::graph::{
     variable::{GraphLiteral, GraphTypeRegistry},
 };
 
-pub trait GraphSerializable: Sized {
+pub trait GraphSerializable<Data: GraphData>: Sized {
     fn to_toml(&self) -> Result<toml::Value>;
-    fn from_toml(value: toml::Value, resources: &GraphResources) -> Result<Self>;
+    fn from_toml(value: toml::Value, resources: &GraphResources<Data>) -> Result<Self>;
 }
 
-impl<'de, T: Serialize + Deserialize<'de>> GraphSerializable for T {
+impl<'de, T: Serialize + Deserialize<'de>, Data: GraphData> GraphSerializable<Data> for T {
     fn to_toml(&self) -> Result<toml::Value> {
         Ok(toml::Value::try_from(self)?)
     }
 
-    fn from_toml(value: toml::Value, resources: &GraphResources) -> Result<Self> {
+    fn from_toml(value: toml::Value, _resources: &GraphResources<Data>) -> Result<Self> {
         Ok(Self::deserialize(value)?)
     }
 }
@@ -82,7 +88,7 @@ impl<Data: GraphData> Graph<Data> {
 
     pub fn from_toml(
         s: &str,
-        resources: GraphResources,
+        resources: GraphResources<Data>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let graph = match toml::from_str::<SerializableGraph>(s) {
             Ok(g) => g,
@@ -95,7 +101,7 @@ impl<Data: GraphData> Graph<Data> {
 
     pub fn from_serialized(
         serialized: &SerializableGraph,
-        resources: GraphResources,
+        resources: GraphResources<Data>,
     ) -> (Option<Self>, Vec<GraphDeserializeError>) {
         let SerializableGraph {
             nodes,
@@ -111,14 +117,20 @@ impl<Data: GraphData> Graph<Data> {
         let mut graph_outputs = HashMap::with_capacity(outputs.len());
 
         'node_loop: for ser_node in nodes {
-            let Some(node_inst) = Data::node_registry().get(&ser_node.data.name) else {
+            let Some(node_inst) = resources.node_registry.get(&ser_node.data.name) else {
                 errs.push(GraphDeserializeError::NodeNotFound(
                     ser_node.data.name.clone(),
                 ));
                 continue;
             };
 
-            let mut node = StatefulGraphNode::new(node_inst);
+            let mut node = StatefulGraphNode::new(
+                node_inst,
+                GraphNodeDefaultStateContext {
+                    resources: &resources,
+                    _marker: PhantomData,
+                },
+            );
             match node.deserialize_and_set_state(ser_node.state.clone(), &resources) {
                 Ok(_) => {}
                 Err(e) => {
@@ -149,7 +161,7 @@ impl<Data: GraphData> Graph<Data> {
                 };
 
                 let type_name = default.ty.name();
-                let value_type_obj = match Data::type_registry().get_type(type_name) {
+                let value_type_obj = match resources.type_registry.get_type(type_name) {
                     Some(t) => t,
                     None => {
                         errs.push(GraphDeserializeError::TypeNotFound(type_name.to_string()));
@@ -451,6 +463,8 @@ impl SerializableGraphFunction {
         asset_id: Option<AssetId<SerializableGraphFunction>>,
     ) -> (Option<GraphFunction>, Vec<GraphDeserializeError>) {
         let resources = GraphResources {
+            type_registry: GRAPH_FUNCTION_TYPE_REGISTRY.clone(),
+            node_registry: GRAPH_FUNCTION_NODE_REGISTRY.clone(),
             textures,
             functions,
             external_vars: Arc::new(Default::default()),
