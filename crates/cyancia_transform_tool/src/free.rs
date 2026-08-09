@@ -724,7 +724,6 @@ impl ToolFunction for FreeTransformTool {
                 let device = services.render_device();
                 let queue = services.render_queue();
 
-                // TODO change session if active layer is changed
                 let canvas_id = canvas.id();
                 let tiles = services.tile_storage();
 
