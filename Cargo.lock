@@ -1537,6 +1537,7 @@ dependencies = [
  "bytemuck",
  "cyancia_anti_aliasing",
  "cyancia_canvas",
+ "cyancia_color",
  "cyancia_image",
  "cyancia_input",
  "cyancia_render",

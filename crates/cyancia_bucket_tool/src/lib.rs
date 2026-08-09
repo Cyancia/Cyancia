@@ -1,4 +1,5 @@
 use cyancia_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
+use cyancia_color::ForegroundBackgroundColorExt;
 use cyancia_image::tile::TileStorageAppExt;
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_render::render_context::RenderContextAppExt;
@@ -92,6 +93,12 @@ impl ToolFunction for BucketTool {
             return Task::none();
         }
 
+        let profile = canvas.image.profile();
+        let fg_color = services
+            .foreground_color()
+            .get()
+            .into_rgb(profile.rgb_to_xyz_matrix().to_f32().inverse());
+
         let tiles = services.tile_storage();
         // TODO Reference other layers
         let ref_layer_id = canvas.active_layer_id();
@@ -109,8 +116,7 @@ impl ToolFunction for BucketTool {
         let image_size = canvas.image.size();
         let params = BucketParams {
             seed: position_ps.as_uvec2(),
-            // TODO Connect this to foreground color.
-            fill_color: Vec4::new(0.5, 0.5, 0.0, 1.0),
+            fill_color: Vec4::new(fg_color.r, fg_color.g, fg_color.b, 1.0),
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
             close_gap: self.close_gap,

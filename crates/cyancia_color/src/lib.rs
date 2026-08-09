@@ -1,5 +1,6 @@
 use cyancia_runtime::{Application, Services, event::Event, plugin::Plugin, service::Service};
 use cyancia_utils::wrapper;
+use moxcms::{ColorProfile, Matrix3f};
 
 use crate::model::{
     gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv, oklab::OkLab,
@@ -25,6 +26,24 @@ pub enum Color {
     OkLch(OkLch),
     Rgb(Rgb),
     Xyz(Xyz),
+}
+
+impl Color {
+    pub fn into_rgb(self, xyz_to_rgb: Matrix3f) -> Rgb {
+        match self {
+            Color::Gray(gray) => Rgb::from_xyz(gray.into_xyz(), xyz_to_rgb),
+            Color::Hsl(hsl) => hsl.into_rgb(),
+            Color::Hsv(hsv) => hsv.into_rgb(),
+            Color::Lab(lab) => Rgb::from_xyz(lab.into_xyz(), xyz_to_rgb),
+            Color::Lch(lch) => Rgb::from_xyz(lch.into_xyz(), xyz_to_rgb),
+            Color::OkHsl(ok_hsl) => Rgb::from_xyz(ok_hsl.into_xyz(), xyz_to_rgb),
+            Color::OkHsv(ok_hsv) => Rgb::from_xyz(ok_hsv.into_xyz(), xyz_to_rgb),
+            Color::OkLab(ok_lab) => Rgb::from_xyz(ok_lab.into_xyz(), xyz_to_rgb),
+            Color::OkLch(ok_lch) => Rgb::from_xyz(ok_lch.into_xyz(), xyz_to_rgb),
+            Color::Rgb(rgb) => rgb,
+            Color::Xyz(xyz) => Rgb::from_xyz(xyz, xyz_to_rgb),
+        }
+    }
 }
 
 macro_rules! impl_from {
@@ -55,9 +74,29 @@ wrapper! {
 
 impl Service for ForegroundColor {}
 
+impl ForegroundColor {
+    pub fn get(&self) -> Color {
+        self.0
+    }
+
+    pub fn set(&mut self, color: Color) {
+        self.0 = color;
+    }
+}
+
 wrapper! {
     #[derive(Debug, Clone, Copy)]
     pub mut BackgroundColor : Color
+}
+
+impl BackgroundColor {
+    pub fn get(&self) -> Color {
+        self.0
+    }
+
+    pub fn set(&mut self, color: Color) {
+        self.0 = color;
+    }
 }
 
 impl Service for BackgroundColor {}
