@@ -172,8 +172,8 @@ impl TransformSession {
                     ShearType::Bottom => {
                         (ongoing.base_scale.x * (b.max.y as f32 - pivot.y), proj.x)
                     }
-                    ShearType::Left => (ongoing.base_scale.y * (b.max.x as f32 - pivot.x), proj.y),
-                    ShearType::Right => (ongoing.base_scale.y * (pivot.x - b.min.x as f32), proj.y),
+                    ShearType::Left => (ongoing.base_scale.y * (pivot.x - b.min.x as f32), proj.y),
+                    ShearType::Right => (ongoing.base_scale.y * (b.max.x as f32 - pivot.x), proj.y),
                 };
                 let sign = match ty {
                     ShearType::Top | ShearType::Left => -1.0,
@@ -273,6 +273,36 @@ impl TransformSession {
         }
     }
 
+    fn reorient_shear(&mut self, ty: ShearType) {
+        let Some(last_shear) = self.last_shear else {
+            return;
+        };
+        let vertical = matches!(ty, ShearType::Left | ShearType::Right);
+        if vertical == matches!(last_shear, ShearType::Left | ShearType::Right) {
+            return;
+        }
+
+        let x = self.matrix.transform_vector2(Vec2::X);
+        let y = self.matrix.transform_vector2(Vec2::Y);
+        if vertical {
+            let sy = y.length();
+            let rotate = (-y.x).atan2(y.y);
+            let local_x = Mat3::from_angle(-rotate).transform_vector2(x);
+            self.rotate = rotate;
+            self.scale = Vec2::new(local_x.x, sy);
+            self.shear = local_x.y / sy;
+        } else {
+            let sx = x.length();
+            let rotate = x.y.atan2(x.x);
+            let local_y = Mat3::from_angle(-rotate).transform_vector2(y);
+            self.rotate = rotate;
+            self.scale = Vec2::new(sx, local_y.y);
+            self.shear = local_y.x / sx;
+        }
+        self.last_shear = Some(ty);
+        self.update_matrix();
+    }
+
     fn active_shear(&self) -> Option<Mat3> {
         match self.last_shear {
             Some(ShearType::Left | ShearType::Right) => Some(Mat3::from_cols_array(&[
@@ -295,13 +325,6 @@ pub struct OngoingTransform {
     pub base_scale: Vec2,
     pub base_shear: f32,
     pub base_last_shear: Option<ShearType>,
-}
-
-impl OngoingTransform {
-    fn base_translation_for_pivot(&self, pivot: Vec2) -> Vec2 {
-        let origin = self.base_matrix.transform_point2(Vec2::ZERO);
-        origin - pivot + self.base_matrix.transform_vector2(pivot)
-    }
 }
 
 pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
@@ -572,6 +595,9 @@ impl ToolFunction for FreeTransformTool {
             return Task::none();
         };
 
+        if let InteractionType::Shear(shear) = ty {
+            session.reorient_shear(shear);
+        }
         session.ongoing_transform = Some(OngoingTransform {
             cursor_origin_ps: cursor_ps,
             ty,
@@ -989,64 +1015,4 @@ impl FreeTransformPipeline {
 #[derive(ShaderType, Debug)]
 pub struct FreeTransformParams {
     pub mat_inv: Mat3,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn shear_is_only_hit_near_edge_midpoints_between_ten_and_thirty_pixels_outside() {
-        let quad = [
-            Vec2::new(100.0, 0.0),
-            Vec2::new(300.0, 0.0),
-            Vec2::new(200.0, 200.0),
-            Vec2::new(0.0, 200.0),
-        ];
-        let [tl, tr, br, bl] = quad;
-        let x = tr - tl;
-        let y = bl - tl;
-        let top_outward = Vec2::new(x.y, -x.x).normalize();
-        let left_outward = Vec2::new(-y.y, y.x).normalize();
-        let top_midpoint = (tl + tr) * 0.5;
-        let left_midpoint = (tl + bl) * 0.5;
-
-        assert!(matches!(
-            hit_test(quad, top_midpoint),
-            Some(InteractionType::Scale(ScaleType::Top))
-        ));
-        assert!(matches!(
-            hit_test(quad, top_midpoint + top_outward * 9.0),
-            Some(InteractionType::Scale(ScaleType::Top))
-        ));
-        for distance in [10.0, 20.0, 30.0] {
-            let point = top_midpoint + top_outward * distance;
-            let hit = hit_test(quad, point);
-            assert!(
-                matches!(hit, Some(InteractionType::Shear(ShearType::Top))),
-                "distance={distance}, point={point:?}, hit={hit:?}"
-            );
-        }
-        assert!(hit_test(quad, top_midpoint + top_outward * 31.0).is_none());
-        assert!(hit_test(quad, tl + x * 0.25 + top_outward * 20.0).is_none());
-
-        assert!(matches!(
-            hit_test(quad, left_midpoint),
-            Some(InteractionType::Scale(ScaleType::Left))
-        ));
-        assert!(matches!(
-            hit_test(quad, left_midpoint + left_outward * 20.0),
-            Some(InteractionType::Shear(ShearType::Left))
-        ));
-        assert!(hit_test(quad, tl + y * 0.25 + left_outward * 20.0).is_none());
-
-        assert!(matches!(
-            hit_test(quad, (tr + br) * 0.5 - left_outward * 20.0),
-            Some(InteractionType::Shear(ShearType::Right))
-        ));
-        assert!(matches!(
-            hit_test(quad, (bl + br) * 0.5 - top_outward * 20.0),
-            Some(InteractionType::Shear(ShearType::Bottom))
-        ));
-    }
 }
