@@ -10,7 +10,7 @@ use cyancia_utils::wrapper;
 use iced_core::{Element, Point, Theme};
 use iced_runtime::{Task, futures::Subscription};
 use iced_wgpu::Renderer;
-use iced_widget::space;
+use iced_widget::{Stack, space};
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -390,10 +390,9 @@ impl ToolProxy {
         }
 
         log::info!("Switching override tool: {:?}", tool);
-        let deactivate = self
+        let mut deactivate = self
             .override_state
-            .as_ref()
-            .or(self.current_state.as_ref())
+            .take()
             .map(|state| {
                 self.tool_functions
                     .get_mut(&state.function)
@@ -417,21 +416,10 @@ impl ToolProxy {
                 function: tool,
                 is_updating: false,
             });
-            deactivate.chain(activate)
-        } else {
-            self.override_state = None;
-            let activate = self
-                .current_state
-                .as_ref()
-                .map(|state| {
-                    self.tool_functions
-                        .get_mut(&state.function)
-                        .unwrap()
-                        .activate(services)
-                })
-                .unwrap_or_else(Task::none);
-            deactivate.chain(activate)
+            deactivate = deactivate.chain(activate);
         }
+
+        deactivate
     }
 
     pub fn mouse_pressed(
@@ -520,13 +508,27 @@ impl ToolProxy {
         &'a self,
         services: &'a Services,
     ) -> Element<'a, ErasedToolFunctionMessage, Theme, Renderer> {
-        let Some(state) = self.override_state.as_ref().or(self.current_state.as_ref()) else {
-            return space().into();
-        };
-        self.tool_functions
-            .get(&state.function)
-            .unwrap()
-            .canvas_overlay(services)
+        let mut overlays = Stack::new();
+
+        if let Some(state) = &self.current_state {
+            overlays = overlays.push(
+                self.tool_functions
+                    .get(&state.function)
+                    .unwrap()
+                    .canvas_overlay(services),
+            );
+        }
+
+        if let Some(state) = &self.override_state {
+            overlays = overlays.push(
+                self.tool_functions
+                    .get(&state.function)
+                    .unwrap()
+                    .canvas_overlay(services),
+            );
+        }
+
+        overlays.into()
     }
 
     pub fn subscription(&self) -> Option<Subscription<ErasedToolFunctionMessage>> {
