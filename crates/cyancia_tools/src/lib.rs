@@ -502,12 +502,10 @@ impl ToolProxy {
             return Some(widget);
         }
 
-        let current_widget = self
-            .current_state
+        self.current_state
             .as_ref()
             .and_then(|s| self.tool_functions.get(&s.function))
-            .and_then(|f| f.tool_option_widget(services));
-        current_widget
+            .and_then(|f| f.tool_option_widget(services))
     }
 
     pub fn canvas_overlay<'a>(
