@@ -1003,9 +1003,9 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
                 },
             );
 
+            const ANCHOR_SIZE: f32 = 20.0;
             let anchor = self.session.anchor.x * x + self.session.anchor.y * y + tl;
             let anchor_mark = Path::new(|b| {
-                const ANCHOR_SIZE: f32 = 12.0;
                 let h = ANCHOR_SIZE * 0.5;
                 b.move_to(Point::new(anchor.x - h, anchor.y));
                 b.line_to(Point::new(anchor.x + h, anchor.y));
@@ -1017,7 +1017,10 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
                 width: 1.0,
                 ..Default::default()
             };
-            frame.stroke(&Path::circle(Point::new(anchor.x, anchor.y), 10.0), stroke);
+            frame.stroke(
+                &Path::circle(Point::new(anchor.x, anchor.y), ANCHOR_SIZE * 0.5 * 0.7),
+                stroke,
+            );
             frame.stroke(&anchor_mark, stroke);
 
             frame.pop_transform();
@@ -1052,7 +1055,8 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
         };
 
         match ty {
-            InteractionType::Anchor | InteractionType::Translate => mouse::Interaction::Move,
+            InteractionType::Anchor => mouse::Interaction::Pointer,
+            InteractionType::Translate => mouse::Interaction::Move,
             // TODO
             InteractionType::Rotate(_ty) => mouse::Interaction::None,
             InteractionType::Scale(ty) => match ty {
