@@ -628,6 +628,10 @@ impl ToolFunction for FreeTransformTool {
     ) -> Task<Self::Message> {
         match message {
             FreeTransformToolMessage::RequestInit => {
+                if let Some(session) = self.session.take() {
+                    commit_transform(session, services);
+                }
+
                 let Some(canvas) = services.current_canvas() else {
                     return Task::none();
                 };
@@ -718,10 +722,9 @@ impl ToolFunction for FreeTransformTool {
     }
 
     fn deactivate(&mut self, services: &mut Services) -> Task<Self::Message> {
-        let Some(session) = self.session.take() else {
-            return Task::none();
-        };
-        commit_transform(session, services);
+        if let Some(session) = self.session.take() {
+            commit_transform(session, services);
+        }
 
         Task::none()
     }
