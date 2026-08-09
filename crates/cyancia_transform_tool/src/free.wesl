@@ -15,10 +15,12 @@ import image::{
 
 @group(0) @binding(2) var<storage> layer_tile_info: array<TileInfo>;
 @group(0) @binding(3) var<storage> output_tile_info: array<TileInfo>;
-@group(0) @binding(4) var selection: texture_storage_2d_array<r8unorm, read>;
-@group(0) @binding(5) var<storage> selection_tile_info: array<TileInfo>;
-@group(0) @binding(6) var<storage> has_selection: u32;
-@group(0) @binding(7) var<storage> transform: Transform;
+@group(0) @binding(4) var<storage> transform: Transform;
+
+@if(WITH_SELECTION)
+@group(0) @binding(5) var selection: texture_storage_2d_array<r8unorm, read>;
+@if(WITH_SELECTION)
+@group(0) @binding(6) var<storage> selection_tile_info: array<TileInfo>;
 
 struct Transform {
     mat_inv: mat3x3f,
@@ -29,11 +31,8 @@ alias Pixel = vec4u;
 @if(A8)
 alias Pixel = vec4f;
 
+@if(WITH_SELECTION)
 fn sample_selection(position_ps: vec2i) -> f32 {
-    if has_selection == 0u {
-        return 1.0;
-    }
-
     for (var i = 0u; i < arrayLength(&selection_tile_info); i += 1u) {
         let tile = selection_tile_info[i];
         if all(position_ps >= tile.origin) && all(position_ps < tile.origin + i32(TILE_SIZE)) {
@@ -41,6 +40,11 @@ fn sample_selection(position_ps: vec2i) -> f32 {
         }
     }
     return 0.0;
+}
+
+@if(!WITH_SELECTION)
+fn sample_selection(position_ps: vec2i) -> f32 {
+    return 1.0;
 }
 
 fn load_layer(position_ps: vec2i) -> Pixel {

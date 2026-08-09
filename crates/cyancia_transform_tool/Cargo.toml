@@ -9,6 +9,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+anyhow.workspace = true
 bevy_math.workspace = true
 bitflags.workspace = true
 cyancia_canvas.workspace = true
@@ -18,6 +19,7 @@ cyancia_input.workspace = true
 cyancia_render.workspace = true
 cyancia_tools.workspace = true
 cyancia_runtime.workspace = true
+cyancia_undo.workspace = true
 cyancia_utils.workspace = true
 encase.workspace = true
 glam.workspace = true

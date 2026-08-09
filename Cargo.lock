@@ -1886,6 +1886,7 @@ dependencies = [
 name = "cyancia_transform_tool"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "bitflags 2.13.1",
  "cyancia_canvas",
@@ -1895,6 +1896,7 @@ dependencies = [
  "cyancia_render",
  "cyancia_runtime",
  "cyancia_tools",
+ "cyancia_undo",
  "cyancia_utils",
  "encase",
  "glam 0.30.10",

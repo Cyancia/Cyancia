@@ -1,3 +1,6 @@
+use std::collections::{HashMap, hash_map::Entry};
+
+use anyhow::Result;
 use bevy_math::{IRect, Rect};
 use cyancia_canvas::{
     CanvasAppExt, CanvasId, CanvasUndoStackAppExt,
@@ -19,8 +22,10 @@ use cyancia_image::{
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_math::rect_transform::RectTransform;
 use cyancia_render::{
-    bind_group_entries::BindGroupEntries,
-    bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
+    bind_group_entries::{BindGroupEntries, DynamicBindGroupEntries},
+    bind_group_layout_entries::{
+        BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
+    },
     buffer::DynamicBuffer,
     readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
     render_context::RenderContextAppExt,
@@ -29,6 +34,7 @@ use cyancia_render::{
 };
 use cyancia_runtime::{Services, event::Event};
 use cyancia_tools::{ToolFunction, ToolId};
+use cyancia_undo::BatchedUndoCommand;
 use cyancia_utils::log_err::LogErr;
 use encase::ShaderType;
 use glam::{Mat3, Vec2};
@@ -52,9 +58,9 @@ use wgpu::{
 
 pub struct TransformSession {
     pub canvas_id: CanvasId,
-    pub target_layer_id: LayerId,
+    pub target_layers: Vec<(LayerId, TexelType)>,
     pub selection_layer_id: LayerId,
-    pub has_selection: Buffer,
+    pub selection_bounds: IRect,
     pub matrix: Mat3,
     pub translate: Vec2,
     pub rotate: f32,
@@ -64,18 +70,59 @@ pub struct TransformSession {
     pub pivot: Vec2,
     pub tile_bounds: IRect,
     pub pixel_bounds: IRect,
-    pub result_buffer: DynamicLayerStorage,
-    pub transform_pipeline: FreeTransformPipeline,
+    pub result_buffers: HashMap<LayerId, DynamicLayerStorage>,
+    pub transform_pipelines: HashMap<TexelType, FreeTransformPipeline>,
     pub ongoing_transform: Option<OngoingTransform>,
 }
 
 impl TransformSession {
-    pub fn new(device: &Device, queue: &Queue, init: InitTransform) -> Self {
+    pub fn new(init: InitTransform, services: &Services) -> Self {
+        let device = services.render_device();
+        let queue = services.render_queue();
+        let tiles = services.tile_storage();
+
+        let target_layers = init
+            .target_layers
+            .into_iter()
+            .map(|layer_id| (layer_id, tiles.get_layer_info(layer_id).unwrap().texel_type))
+            .collect::<Vec<_>>();
+
+        let transform_pipelines =
+            target_layers
+                .iter()
+                .fold(HashMap::new(), |mut acc, (_, texel_type)| {
+                    if let Entry::Vacant(e) = acc.entry(*texel_type) {
+                        e.insert(FreeTransformPipeline::new(
+                            device,
+                            *texel_type,
+                            !init.selection_bounds.is_empty(),
+                        ));
+                    }
+
+                    acc
+                });
+
+        let result_buffers = target_layers
+            .iter()
+            .map(|(layer_id, texel_type)| {
+                (
+                    *layer_id,
+                    DynamicLayerStorage::new(
+                        device.clone(),
+                        queue.clone(),
+                        GpuLayerInfo {
+                            texel_type: *texel_type,
+                        },
+                    ),
+                )
+            })
+            .collect();
+
         Self {
             canvas_id: init.canvas_id,
-            target_layer_id: init.target_layer_id,
+            target_layers,
             selection_layer_id: init.selection_layer_id,
-            has_selection: init.has_selection,
+            selection_bounds: init.selection_bounds,
             matrix: Mat3::IDENTITY,
             translate: Vec2::ZERO,
             rotate: 0.0,
@@ -85,14 +132,8 @@ impl TransformSession {
             pivot: init.pixel_bounds.as_rect().center(),
             tile_bounds: GpuTileStorage::pixel_rect_to_tile(init.pixel_bounds),
             pixel_bounds: init.pixel_bounds,
-            result_buffer: DynamicLayerStorage::new(
-                device.clone(),
-                queue.clone(),
-                GpuLayerInfo {
-                    texel_type: init.target_layer_texel,
-                },
-            ),
-            transform_pipeline: FreeTransformPipeline::new(device, init.target_layer_texel),
+            result_buffers,
+            transform_pipelines,
             ongoing_transform: None,
         }
     }
@@ -474,10 +515,9 @@ pub enum ShearType {
 
 pub struct InitTransform {
     pub canvas_id: CanvasId,
-    pub target_layer_id: LayerId,
+    pub target_layers: Vec<LayerId>,
     pub selection_layer_id: LayerId,
-    pub has_selection: Buffer,
-    pub target_layer_texel: TexelType,
+    pub selection_bounds: IRect,
     pub pixel_bounds: IRect,
 }
 
@@ -489,8 +529,7 @@ pub enum FreeTransformToolMessage {
 #[derive(Default)]
 pub struct FreeTransformTool {
     session: Option<TransformSession>,
-    bounds_cache: Option<(TexelType, LayerBoundsPipeline)>,
-    scan_pipeline: Option<ScanPixelsPipeline>,
+    bounds_pipelines: HashMap<TexelType, LayerBoundsPipeline>,
 }
 
 impl ToolFunction for FreeTransformTool {
@@ -567,38 +606,45 @@ impl ToolFunction for FreeTransformTool {
 
         session.update(cursor_ps, keyboard.modifiers());
 
-        session.result_buffer.allocate_tiles(session.tile_bounds);
         let transformed_tiles =
             GpuTileStorage::pixel_rect_to_tile(session.transformed_aabb_ps().as_irect());
-        session.result_buffer.allocate_tiles(transformed_tiles);
 
-        let device = services.render_device();
-        let queue = services.render_queue();
-        let tiles = services.tile_storage();
-        let target_layer = tiles
-            .get_layer_binding_or_empty(session.target_layer_id)
-            .unwrap();
-        let selection_layer = tiles
-            .get_layer_binding_or_empty(session.selection_layer_id)
-            .unwrap();
+        for (layer_id, result_buffer) in &mut session.result_buffers {
+            result_buffer.allocate_tiles(session.tile_bounds);
+            result_buffer.allocate_tiles(transformed_tiles);
 
-        session.transform_pipeline.dispatch(
-            device,
-            queue,
-            &FreeTransformParams {
-                mat_inv: session.matrix.inverse(),
-            },
-            target_layer,
-            session.result_buffer.binding_or_empty(),
-            selection_layer,
-            &session.has_selection,
-        );
+            let device = services.render_device();
+            let queue = services.render_queue();
+            let tiles = services.tile_storage();
+            let target_layer = tiles.get_layer_binding_or_empty(*layer_id).unwrap();
+            let selection_layer = (!session.selection_bounds.is_empty()).then(|| {
+                tiles
+                    .get_layer_binding_or_empty(session.selection_layer_id)
+                    .unwrap()
+            });
 
-        let overriders = services.service_mut::<LayerPreviewOverriders>();
-        overriders.insert_overrider(
-            session.target_layer_id,
-            PixelPreviewOverrider::from_layer_storage(&session.result_buffer),
-        );
+            let transform_pipeline = session
+                .transform_pipelines
+                .get(&result_buffer.layer_info().texel_type)
+                .unwrap();
+            transform_pipeline.dispatch(
+                device,
+                queue,
+                &FreeTransformParams {
+                    mat_inv: session.matrix.inverse(),
+                },
+                target_layer,
+                result_buffer.binding_or_empty(),
+                selection_layer,
+            );
+
+            let overriders = services.service_mut::<LayerPreviewOverriders>();
+            overriders.insert_overrider(
+                *layer_id,
+                PixelPreviewOverrider::from_layer_storage(&result_buffer),
+            );
+        }
+
         CanvasUpdated::broadcast(CanvasUpdated {
             id: session.canvas_id,
             dirty_tiles: transformed_tiles.union(session.tile_bounds),
@@ -636,53 +682,101 @@ impl ToolFunction for FreeTransformTool {
                     return Task::none();
                 };
 
-                // TODO change session if active layer is changed
-                let canvas_id = canvas.id();
-                let target_layer_id = canvas.active_layer_id();
-                let selection_layer_id = canvas.image.selection_layer();
-                let tiles = services.tile_storage();
-                let target_layer = tiles.get_layer(target_layer_id).unwrap();
-                let target_layer_texel = target_layer.layer_info().texel_type;
-
                 let device = services.render_device();
                 let queue = services.render_queue();
 
-                if self.bounds_cache.as_ref().map(|(t, _)| *t) != Some(target_layer_texel) {
-                    self.bounds_cache = Some((
-                        target_layer_texel,
-                        LayerBoundsPipeline::new(device, target_layer_texel, true),
-                    ));
-                }
-                let bounds_pipeline = &self.bounds_cache.as_ref().unwrap().1;
-                if self.scan_pipeline.is_none() {
-                    self.scan_pipeline = Some(ScanPixelsPipeline::new(device, TexelType::A8));
-                }
-                let scan_pipeline = self.scan_pipeline.as_ref().unwrap();
+                // TODO change session if active layer is changed
+                let canvas_id = canvas.id();
+                let tiles = services.tile_storage();
 
-                let target_layer_binding = target_layer.binding_or_empty();
-                let selection_binding = tiles
-                    .get_layer_binding_or_empty(selection_layer_id)
-                    .unwrap();
-                let mut has_selection =
-                    Some(scan_pipeline.scan_to_binary_buffer(device, queue, &selection_binding));
+                let selection_layer_id = canvas.image.selection_layer();
+                let selection_layer = tiles.get_layer(selection_layer_id).unwrap();
+                let selection_layer_binding = selection_layer.binding_or_empty();
+                let selection_layer_texel = selection_layer.layer_info().texel_type;
 
+                let selection_layer_bounds_pipeline = self
+                    .bounds_pipelines
+                    .entry(selection_layer_texel)
+                    .or_insert_with(|| {
+                        LayerBoundsPipeline::new(device, selection_layer_texel, false)
+                    });
                 let mut ec = device.create_command_encoder(&Default::default());
-                let bounds_buffer = bounds_pipeline.dispatch(
+                let selection_layer_bounds_buffer = selection_layer_bounds_pipeline.dispatch(
                     device,
                     queue,
                     &mut ec,
-                    &target_layer_binding,
-                    Some(&selection_binding),
+                    &selection_layer_binding,
+                    None,
                 );
-                let bounds_buffer_staging =
-                    create_readback_buffer_and_schedule_copy(device, &mut ec, &bounds_buffer);
-                let bounds_buffer_readback = readback_buffer_on_submit_async::<IRect, _>(
+                let selection_layer_bounds_staging = create_readback_buffer_and_schedule_copy(
+                    device,
                     &mut ec,
-                    &bounds_buffer_staging,
+                    &selection_layer_bounds_buffer,
+                );
+                let selection_layer_bounds_readback = readback_buffer_on_submit_async::<IRect, _>(
+                    &mut ec,
+                    &selection_layer_bounds_staging,
                     ..,
-                )
-                .into_task();
+                );
                 let si = queue.submit([ec.finish()]);
+                device.poll_indefinitely_for(si).unwrap();
+                let selection_layer_bounds = selection_layer_bounds_readback.block_on().unwrap();
+
+                let target_layers = canvas
+                    .selected_layer_ids()
+                    .iter()
+                    .copied()
+                    .chain([canvas.image.selection_layer()])
+                    .collect::<Vec<_>>();
+
+                if !selection_layer_bounds.is_empty() {
+                    let init = InitTransform {
+                        canvas_id,
+                        target_layers,
+                        selection_layer_id,
+                        selection_bounds: selection_layer_bounds,
+                        pixel_bounds: selection_layer_bounds,
+                    };
+                    return Task::done(FreeTransformToolMessage::InitTransform(init));
+                }
+
+                let mut ec = device.create_command_encoder(&Default::default());
+                let mut readback_tasks = Vec::with_capacity(target_layers.len());
+
+                for target_layer_id in &target_layers {
+                    let target_layer = tiles.get_layer(*target_layer_id).unwrap();
+                    let target_layer_binding = target_layer.binding_or_empty();
+                    let target_layer_texel = target_layer.layer_info().texel_type;
+
+                    let bounds_pipeline = self
+                        .bounds_pipelines
+                        .entry(target_layer_texel)
+                        .or_insert_with(|| {
+                            LayerBoundsPipeline::new(device, target_layer_texel, false)
+                        });
+
+                    let bounds_buffer = bounds_pipeline.dispatch(
+                        device,
+                        queue,
+                        &mut ec,
+                        &target_layer_binding,
+                        None,
+                    );
+
+                    let bounds_buffer_staging =
+                        create_readback_buffer_and_schedule_copy(device, &mut ec, &bounds_buffer);
+                    let bounds_buffer_readback = readback_buffer_on_submit_async::<IRect, _>(
+                        &mut ec,
+                        &bounds_buffer_staging,
+                        ..,
+                    )
+                    .into_task();
+
+                    readback_tasks.push(bounds_buffer_readback);
+                }
+
+                let si = queue.submit([ec.finish()]);
+
                 let poll_task = Task::future({
                     let device = device.clone();
                     async move {
@@ -690,19 +784,20 @@ impl ToolFunction for FreeTransformTool {
                     }
                 });
 
-                let init_task = bounds_buffer_readback.then(move |m| match m {
-                    Ok(bounds) => {
-                        let has_selection = has_selection.take().unwrap();
-                        Task::done(FreeTransformToolMessage::InitTransform(InitTransform {
-                            canvas_id,
-                            target_layer_id,
-                            selection_layer_id,
-                            has_selection,
-                            target_layer_texel,
-                            pixel_bounds: bounds,
-                        }))
-                    }
-                    _ => Task::none(),
+                let init_task = Task::batch(readback_tasks).collect().then(move |bounds| {
+                    let bounds = bounds
+                        .into_iter()
+                        .try_fold(IRect::EMPTY, |acc, b| Result::<IRect>::Ok(acc.union(b?)))
+                        .logged_err()
+                        .unwrap_or(IRect::EMPTY);
+
+                    Task::done(FreeTransformToolMessage::InitTransform(InitTransform {
+                        canvas_id,
+                        selection_layer_id,
+                        target_layers: target_layers.clone(),
+                        selection_bounds: selection_layer_bounds,
+                        pixel_bounds: bounds,
+                    }))
                 });
 
                 Task::batch([init_task, poll_task.discard()])
@@ -712,9 +807,7 @@ impl ToolFunction for FreeTransformTool {
                     warn!("Unable to transform on empty layer.");
                     self.session = None;
                 } else {
-                    let device = services.render_device();
-                    let queue = services.render_queue();
-                    self.session = Some(TransformSession::new(device, queue, init));
+                    self.session = Some(TransformSession::new(init, services));
                 }
                 Task::none()
             }
@@ -755,28 +848,34 @@ impl ToolFunction for FreeTransformTool {
 }
 
 fn commit_transform(session: TransformSession, services: &mut Services) {
-    let Some(result_texture) = session.result_buffer.texture() else {
-        return;
-    };
+    let replace_commands = session
+        .result_buffers
+        .into_iter()
+        .filter_map(|(layer_id, result_buffer)| {
+            let result_texture = result_buffer.texture()?;
 
-    services
-        .service_mut::<LayerPreviewOverriders>()
-        .remove_overrider(&session.target_layer_id);
+            services
+                .service_mut::<LayerPreviewOverriders>()
+                .remove_overrider(&layer_id);
 
-    let tiles = services.tile_storage();
-    let target_layer = tiles.get_layer(session.target_layer_id).unwrap();
-    let cmd = TileReplaceCommand::new(
-        "Free Transform".into(),
-        session.canvas_id,
-        services.render_device(),
-        services.render_queue(),
-        session.target_layer_id,
-        &target_layer,
-        session.result_buffer.iter_tile_indices().collect(),
-        result_texture.clone(),
-    );
-    drop(target_layer);
+            let tiles = services.tile_storage();
+            let target_layer = tiles.get_layer(layer_id).unwrap();
+            let cmd = TileReplaceCommand::new(
+                "Free Transform".into(),
+                session.canvas_id,
+                services.render_device(),
+                services.render_queue(),
+                layer_id,
+                &target_layer,
+                result_buffer.iter_tile_indices().collect(),
+                result_texture.clone(),
+            );
 
+            Some(cmd)
+        })
+        .collect();
+
+    let cmd = BatchedUndoCommand::new("Free Transform".into(), replace_commands);
     services
         .push_undo_command(&session.canvas_id, cmd)
         .log_err();
@@ -922,44 +1021,51 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
 pub struct FreeTransformPipeline {
     layout: BindGroupLayout,
     pipeline: ComputePipeline,
+    with_selection: bool,
 }
 
 impl FreeTransformPipeline {
-    pub fn new(device: &Device, format: TexelType) -> Self {
+    pub fn new(device: &Device, format: TexelType, with_selection: bool) -> Self {
         let shader = wesl_jit::compile_wesl_with_config(
             include_str!("free.wesl").into(),
             &[&cyancia_image::image::PACKAGE],
             |compiler| {
                 compiler.set_feature(format.shader_def(), true);
+                compiler.set_feature("WITH_SELECTION", with_selection);
             },
         )
         .unwrap();
 
+        let mut entries = DynamicBindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                binding_types::texture_storage_2d_array(
+                    format.wgpu_format(),
+                    StorageTextureAccess::ReadOnly,
+                ),
+                binding_types::texture_storage_2d_array(
+                    format.wgpu_format(),
+                    StorageTextureAccess::WriteOnly,
+                ),
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                binding_types::storage_buffer_read_only::<FreeTransformParams>(false),
+            ),
+        );
+
+        if with_selection {
+            entries = entries.extend_sequential((
+                binding_types::texture_storage_2d_array(
+                    wgpu::TextureFormat::R8Unorm,
+                    StorageTextureAccess::ReadOnly,
+                ),
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            ));
+        }
+
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("free transform bind group layout"),
-            entries: BindGroupLayoutEntries::sequential(
-                ShaderStages::COMPUTE,
-                (
-                    binding_types::texture_storage_2d_array(
-                        format.wgpu_format(),
-                        StorageTextureAccess::ReadOnly,
-                    ),
-                    binding_types::texture_storage_2d_array(
-                        format.wgpu_format(),
-                        StorageTextureAccess::WriteOnly,
-                    ),
-                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-                    binding_types::texture_storage_2d_array(
-                        wgpu::TextureFormat::R8Unorm,
-                        StorageTextureAccess::ReadOnly,
-                    ),
-                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-                    binding_types::storage_buffer_read_only::<u32>(false),
-                    binding_types::storage_buffer_read_only::<FreeTransformParams>(false),
-                ),
-            )
-            .as_ref(),
+            entries: entries.as_ref(),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -982,7 +1088,11 @@ impl FreeTransformPipeline {
             cache: None,
         });
 
-        Self { layout, pipeline }
+        Self {
+            layout,
+            pipeline,
+            with_selection,
+        }
     }
 
     pub fn dispatch(
@@ -992,8 +1102,7 @@ impl FreeTransformPipeline {
         params: &FreeTransformParams,
         layer: LayerBinding,
         output: LayerBinding,
-        selection: LayerBinding,
-        has_selection: &Buffer,
+        selection: Option<LayerBinding>,
     ) {
         let mut params_buffer = DynamicBuffer::new(
             Some("free_transform_params_buffer".into()),
@@ -1002,20 +1111,28 @@ impl FreeTransformPipeline {
         params_buffer.push(params);
         params_buffer.write_buffer(device, queue);
 
+        let mut entries = DynamicBindGroupEntries::sequential((
+            &layer.texture,
+            &output.texture,
+            layer.tile_info_buffer.as_entire_binding(),
+            output.tile_info_buffer.as_entire_binding(),
+            params_buffer.binding().unwrap(),
+        ));
+
+        if self.with_selection {
+            let selection = selection
+                .as_ref()
+                .expect("selection is required when with_selection is true");
+            entries = entries.extend_sequential((
+                &selection.texture,
+                selection.tile_info_buffer.as_entire_binding(),
+            ));
+        }
+
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("free transform bind group"),
             layout: &self.layout,
-            entries: BindGroupEntries::sequential((
-                &layer.texture,
-                &output.texture,
-                layer.tile_info_buffer.as_entire_binding(),
-                output.tile_info_buffer.as_entire_binding(),
-                &selection.texture,
-                selection.tile_info_buffer.as_entire_binding(),
-                has_selection.as_entire_binding(),
-                params_buffer.binding().unwrap(),
-            ))
-            .as_ref(),
+            entries: entries.as_ref(),
         });
 
         let mut ec = device.create_command_encoder(&Default::default());
