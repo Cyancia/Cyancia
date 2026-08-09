@@ -2283,10 +2283,7 @@ impl<Data: GraphData> GraphSerializable<Data> for WhileNodeState<Data> {
         })?)
     }
 
-    fn from_toml(
-        value: toml::Value,
-        resources: &GraphResources<Data>,
-    ) -> anyhow::Result<Self> {
+    fn from_toml(value: toml::Value, resources: &GraphResources<Data>) -> anyhow::Result<Self> {
         let serialized = SerializableWhileNodeState::deserialize(value)?;
         let locals = serialized
             .locals
@@ -2303,7 +2300,25 @@ impl<Data: GraphData> GraphSerializable<Data> for WhileNodeState<Data> {
             })
             .collect();
 
-        let (body, errors) = Graph::from_serialized(&serialized.body, resources.clone());
+        let while_node_extra = {
+            let mut r = GraphNodeRegistry::default();
+            r.register::<WhileNodeInput>();
+            r.register::<WhileNodeOutput>();
+            r.register::<BreakBeforeNextIterationNode>();
+            r
+        };
+
+        let mut node_registry = resources.node_registry.as_ref().clone();
+        node_registry.merge(while_node_extra);
+
+        let body_resources = GraphResources {
+            type_registry: resources.type_registry.clone(),
+            node_registry: Arc::new(node_registry),
+            textures: resources.textures.clone(),
+            functions: resources.functions.clone(),
+            external_vars: resources.external_vars.clone(),
+        };
+        let (body, errors) = Graph::from_serialized(&serialized.body, body_resources);
         if !errors.is_empty() {
             return Err(anyhow!("While body deserialization failed: {errors:?}"));
         }
@@ -2669,6 +2684,7 @@ fn while_schema_editor_view<Data: GraphData>(
 
 impl<Data: GraphData> GraphNode<Data> for WhileNode {
     type State = WhileNodeState<Data>;
+
     type Message = WhileNodeMessage;
 
     fn name(&self) -> &'static str {
@@ -2676,18 +2692,29 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
     }
 
     fn default_state(&self, ctx: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
-        let mut node_registry = (*ctx.resources.node_registry).clone();
-        node_registry.register::<WhileNodeInput>();
-        node_registry.register::<WhileNodeOutput>();
-        node_registry.register::<BreakBeforeNextIterationNode>();
+        let while_node_extra = {
+            let mut r = GraphNodeRegistry::default();
+            r.register::<WhileNodeInput>();
+            r.register::<WhileNodeOutput>();
+            r.register::<BreakBeforeNextIterationNode>();
+            r
+        };
 
-        let mut resources = ctx.resources.clone();
-        resources.node_registry = Arc::new(node_registry);
+        let mut node_registry = ctx.resources.node_registry.as_ref().clone();
+        node_registry.merge(while_node_extra);
+
+        let body_resources = GraphResources {
+            type_registry: ctx.resources.type_registry.clone(),
+            node_registry: Arc::new(node_registry),
+            textures: ctx.resources.textures.clone(),
+            functions: ctx.resources.functions.clone(),
+            external_vars: ctx.resources.external_vars.clone(),
+        };
 
         WhileNodeState {
             locals: IndexMap::new(),
             revision: 0,
-            body: Graph::new(resources),
+            body: Graph::new(body_resources),
             schema_draft: None,
         }
     }

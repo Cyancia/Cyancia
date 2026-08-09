@@ -729,9 +729,16 @@ impl std::fmt::Display for ContextualGraphNodeCodeGenError {
     }
 }
 
-#[derive(Default)]
 pub struct GraphNodeRegistry<Data: GraphData> {
     nodes: BTreeMap<&'static str, Box<dyn ErasedGraphNode<Data>>>,
+}
+
+impl<Data: GraphData> Default for GraphNodeRegistry<Data> {
+    fn default() -> Self {
+        Self {
+            nodes: Default::default(),
+        }
+    }
 }
 
 impl<Data: GraphData> Clone for GraphNodeRegistry<Data> {
