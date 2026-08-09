@@ -1,4 +1,4 @@
-use cyancia_runtime::{Application, Services, plugin::Plugin, service::Service};
+use cyancia_runtime::{Application, Services, event::Event, plugin::Plugin, service::Service};
 use cyancia_utils::wrapper;
 
 use crate::model::{
@@ -85,6 +85,18 @@ impl ForegroundBackgroundColorExt for Services {
     fn background_color_mut(&mut self) -> &mut BackgroundColor {
         self.service_mut::<BackgroundColor>()
     }
+}
+
+#[derive(Event, Debug, Clone)]
+pub struct ForegroundColorChanged {
+    pub old: Color,
+    pub new: Color,
+}
+
+#[derive(Event, Debug, Clone)]
+pub struct BackgroundColorChanged {
+    pub old: Color,
+    pub new: Color,
 }
 
 pub struct ColorPlugin;
