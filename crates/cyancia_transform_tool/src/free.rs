@@ -100,21 +100,14 @@ impl TransformSession {
         };
 
         let pivot = self.op_pivot_ps(ongoing.ty, modifiers.alt());
-        if pivot != ongoing.pivot {
-            self.rebaseline(pivot);
-            self.pivot = pivot;
-            self.ongoing_transform = Some(OngoingTransform {
-                cursor_origin_ps: cursor_ps,
-                ty: ongoing.ty,
-                pivot,
-                base_translate: self.translate,
-                base_rotate: self.rotate,
-                base_scale: self.scale,
-                base_shear: self.shear,
-            });
-            return;
-        }
+        let base_translate = ongoing.base_translation_for_pivot(pivot);
+
         self.pivot = pivot;
+        self.translate = base_translate;
+        self.rotate = ongoing.base_rotate;
+        self.scale = ongoing.base_scale;
+        self.shear = ongoing.base_shear;
+        self.last_shear = ongoing.base_last_shear;
 
         let delta = cursor_ps - ongoing.cursor_origin_ps;
         match ongoing.ty {
@@ -128,10 +121,10 @@ impl TransformSession {
                 } else {
                     delta
                 };
-                self.translate = ongoing.base_translate + d;
+                self.translate = base_translate + d;
             }
             InteractionType::Rotate(_) => {
-                let center = self.translate + self.pixel_bounds_center_ps();
+                let center = base_translate + pivot;
                 let from = ongoing.cursor_origin_ps - center;
                 let to = cursor_ps - center;
                 self.rotate = ongoing.base_rotate + (to.y.atan2(to.x) - from.y.atan2(from.x));
@@ -141,8 +134,8 @@ impl TransformSession {
                 }
             }
             InteractionType::Scale(ty) => {
-                let anchor_ps = ongoing.base_translate + ongoing.pivot;
-                let inv_rot = Mat3::from_angle(-self.rotate);
+                let anchor_ps = base_translate + pivot;
+                let inv_rot = Mat3::from_angle(-ongoing.base_rotate);
                 let u = inv_rot.transform_vector2(cursor_ps - anchor_ps);
                 let w = inv_rot.transform_vector2(ongoing.cursor_origin_ps - anchor_ps)
                     / ongoing.base_scale;
@@ -172,24 +165,14 @@ impl TransformSession {
             }
             InteractionType::Shear(ty) => {
                 let b = self.pixel_bounds;
-                let proj = Mat3::from_angle(-self.rotate).transform_vector2(delta);
+                let proj = Mat3::from_angle(-ongoing.base_rotate).transform_vector2(delta);
                 let (extent, projection) = match ty {
-                    ShearType::Top => (
-                        self.scale.x * (ongoing.pivot.y - b.min.y as f32),
-                        proj.x,
-                    ),
-                    ShearType::Bottom => (
-                        self.scale.x * (b.max.y as f32 - ongoing.pivot.y),
-                        proj.x,
-                    ),
-                    ShearType::Left => (
-                        self.scale.y * (b.max.x as f32 - ongoing.pivot.x),
-                        proj.y,
-                    ),
-                    ShearType::Right => (
-                        self.scale.y * (ongoing.pivot.x - b.min.x as f32),
-                        proj.y,
-                    ),
+                    ShearType::Top => (ongoing.base_scale.x * (pivot.y - b.min.y as f32), proj.x),
+                    ShearType::Bottom => {
+                        (ongoing.base_scale.x * (b.max.y as f32 - pivot.y), proj.x)
+                    }
+                    ShearType::Left => (ongoing.base_scale.y * (b.max.x as f32 - pivot.x), proj.y),
+                    ShearType::Right => (ongoing.base_scale.y * (pivot.x - b.min.x as f32), proj.y),
                 };
                 let sign = match ty {
                     ShearType::Top | ShearType::Left => -1.0,
@@ -257,7 +240,9 @@ impl TransformSession {
 
     fn op_pivot_ps(&self, ty: InteractionType, symmetric: bool) -> Vec2 {
         match ty {
-            InteractionType::Translate | InteractionType::Rotate(_) => self.pixel_bounds_center_ps(),
+            InteractionType::Translate | InteractionType::Rotate(_) => {
+                self.pixel_bounds_center_ps()
+            }
             InteractionType::Scale(ty) => {
                 if symmetric {
                     self.pixel_bounds_center_ps()
@@ -287,13 +272,6 @@ impl TransformSession {
         }
     }
 
-    fn rebaseline(&mut self, pivot: Vec2) {
-        let k = Mat3::from_angle(self.rotate) * Mat3::from_scale(self.scale)
-            * self.active_shear().unwrap_or(Mat3::IDENTITY);
-        let origin = self.matrix.transform_point2(Vec2::ZERO);
-        self.translate = origin - pivot + k.transform_point2(pivot);
-    }
-
     fn active_shear(&self) -> Option<Mat3> {
         match self.last_shear {
             Some(ShearType::Left | ShearType::Right) => Some(Mat3::from_cols_array(&[
@@ -311,11 +289,18 @@ impl TransformSession {
 pub struct OngoingTransform {
     pub cursor_origin_ps: Vec2,
     pub ty: InteractionType,
-    pub pivot: Vec2,
-    pub base_translate: Vec2,
+    pub base_matrix: Mat3,
     pub base_rotate: f32,
     pub base_scale: Vec2,
     pub base_shear: f32,
+    pub base_last_shear: Option<ShearType>,
+}
+
+impl OngoingTransform {
+    fn base_translation_for_pivot(&self, pivot: Vec2) -> Vec2 {
+        let origin = self.base_matrix.transform_point2(Vec2::ZERO);
+        origin - pivot + self.base_matrix.transform_vector2(pivot)
+    }
 }
 
 pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
@@ -558,7 +543,7 @@ impl ToolFunction for FreeTransformTool {
 
     fn begin(
         &mut self,
-        keyboard: &KeyboardState,
+        _keyboard: &KeyboardState,
         mouse: &PressedMouseState,
         services: &mut Services,
     ) -> Task<Self::Message> {
@@ -578,17 +563,14 @@ impl ToolFunction for FreeTransformTool {
             return Task::none();
         };
 
-        let pivot = session.op_pivot_ps(ty, keyboard.modifiers().alt());
-        session.rebaseline(pivot);
-        session.pivot = pivot;
         session.ongoing_transform = Some(OngoingTransform {
             cursor_origin_ps: cursor_ps,
             ty,
-            pivot,
-            base_translate: session.translate,
+            base_matrix: session.matrix,
             base_rotate: session.rotate,
             base_scale: session.scale,
             base_shear: session.shear,
+            base_last_shear: session.last_shear,
         });
 
         Task::none()
