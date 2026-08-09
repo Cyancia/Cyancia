@@ -95,8 +95,8 @@ impl LayerBoundsPipeline {
         device: &Device,
         queue: &Queue,
         ec: &mut CommandEncoder,
-        layer: LayerBinding,
-        selection: Option<LayerBinding>,
+        layer: &LayerBinding,
+        selection: Option<&LayerBinding>,
     ) -> Buffer {
         let result_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("layer bounds result"),

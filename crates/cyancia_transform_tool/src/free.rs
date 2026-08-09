@@ -667,8 +667,8 @@ impl ToolFunction for FreeTransformTool {
                     device,
                     queue,
                     &mut ec,
-                    target_layer_binding,
-                    Some(selection_binding),
+                    &target_layer_binding,
+                    Some(&selection_binding),
                 );
                 let bounds_buffer_staging =
                     create_readback_buffer_and_schedule_copy(device, &mut ec, &bounds_buffer);
