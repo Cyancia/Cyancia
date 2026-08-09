@@ -157,7 +157,7 @@ impl ToolFunction for FreehandSelectionTool {
     fn tool_option_widget<'a>(
         &'a self,
         _: &'a Services,
-    ) -> Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer> {
+    ) -> Option<Element<'a, Self::Message, Theme, Renderer>> {
         let fields = Form::new().push(
             "Fill Rule",
             row![
@@ -174,7 +174,7 @@ impl ToolFunction for FreehandSelectionTool {
             ],
         );
 
-        container(fields).padding(8).width(Length::Fill).into()
+        Some(container(fields).padding(8).width(Length::Fill).into())
     }
 
     fn canvas_overlay<'a>(
@@ -330,7 +330,7 @@ impl ToolFunction for PolygonSelectionTool {
     fn tool_option_widget<'a>(
         &'a self,
         _: &'a Services,
-    ) -> Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer> {
+    ) -> Option<Element<'a, Self::Message, Theme, Renderer>> {
         let fields = Form::new().push(
             "Fill Rule",
             row![
@@ -347,7 +347,7 @@ impl ToolFunction for PolygonSelectionTool {
             ],
         );
 
-        container(fields).padding(8).width(Length::Fill).into()
+        Some(container(fields).padding(8).width(Length::Fill).into())
     }
 
     fn canvas_overlay<'a>(

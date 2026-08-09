@@ -119,8 +119,8 @@ pub trait ToolFunction: 'static {
     fn tool_option_widget<'a>(
         &'a self,
         _: &'a Services,
-    ) -> Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer> {
-        iced_widget::Space::new().into()
+    ) -> Option<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>> {
+        None
     }
     fn canvas_overlay<'a>(
         &'a self,
@@ -169,7 +169,7 @@ pub trait ErasedToolFunction: 'static {
     fn tool_option_widget<'a>(
         &'a self,
         services: &'a Services,
-    ) -> Element<'a, ErasedToolFunctionMessage, Theme, Renderer>;
+    ) -> Option<Element<'a, ErasedToolFunctionMessage, Theme, Renderer>>;
     fn canvas_overlay<'a>(
         &'a self,
         services: &'a Services,
@@ -268,13 +268,14 @@ impl<T: ToolFunction> ErasedToolFunction for T {
     fn tool_option_widget<'a>(
         &'a self,
         services: &'a Services,
-    ) -> Element<'a, ErasedToolFunctionMessage, Theme, Renderer> {
+    ) -> Option<Element<'a, ErasedToolFunctionMessage, Theme, Renderer>> {
         let id = T::id();
-        self.tool_option_widget(services)
-            .map(move |message| ErasedToolFunctionMessage {
+        self.tool_option_widget(services).map(|e| {
+            e.map(move |message| ErasedToolFunctionMessage {
                 tool_id: id.clone(),
                 message: Box::new(message),
             })
+        })
     }
 
     fn canvas_overlay<'a>(
@@ -492,16 +493,21 @@ impl ToolProxy {
         &'a self,
         services: &'a Services,
     ) -> Option<Element<'a, ErasedToolFunctionMessage, iced_core::Theme, iced_wgpu::Renderer>> {
-        let state = self
+        let overrider_widget = self
             .override_state
             .as_ref()
-            .or(self.current_state.as_ref())?;
-        Some(
-            self.tool_functions
-                .get(&state.function)
-                .unwrap()
-                .tool_option_widget(services),
-        )
+            .and_then(|s| self.tool_functions.get(&s.function))
+            .and_then(|f| f.tool_option_widget(services));
+        if let Some(widget) = overrider_widget {
+            return Some(widget);
+        }
+
+        let current_widget = self
+            .current_state
+            .as_ref()
+            .and_then(|s| self.tool_functions.get(&s.function))
+            .and_then(|f| f.tool_option_widget(services));
+        current_widget
     }
 
     pub fn canvas_overlay<'a>(

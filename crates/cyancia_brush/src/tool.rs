@@ -15,8 +15,9 @@ use cyancia_shader_graph::graph::{
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_undo::QueuedUndoCommand;
 use cyancia_utils::log_err::LogErr;
-use iced_core::{Element, Length};
+use iced_core::{Element, Length, Theme};
 use iced_runtime::Task;
+use iced_wgpu::Renderer;
 use iced_widget::{column, container, text};
 use log::error;
 
@@ -234,10 +235,8 @@ impl ToolFunction for BrushTool {
     fn tool_option_widget<'a>(
         &'a self,
         services: &'a Services,
-    ) -> Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer> {
-        let Some(brush) = services.get_service::<CurrentBrushPreset>() else {
-            return container(text("No brush selected")).padding(8).into();
-        };
+    ) -> Option<Element<'a, Self::Message, Theme, Renderer>> {
+        let brush = services.get_service::<CurrentBrushPreset>()?;
 
         let variables = brush
             .0
@@ -258,11 +257,13 @@ impl ToolFunction for BrushTool {
                 .spacing(4)
                 .into()
             })
-            .collect::<Vec<Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer>>>();
+            .collect::<Vec<_>>();
 
-        container(column(variables).spacing(8).push(text("Variables")))
-            .padding(8)
-            .width(Length::Fill)
-            .into()
+        Some(
+            container(column(variables).spacing(8).push(text("Variables")))
+                .padding(8)
+                .width(Length::Fill)
+                .into(),
+        )
     }
 }

@@ -13,8 +13,9 @@ use cyancia_widgets::{
     fluent_builder::When, form::Form, spin_slider::SpinSlider, style::ButtonStyle,
 };
 use glam::{Vec2, Vec4};
-use iced_core::{Element, Length};
+use iced_core::{Element, Length, Theme};
 use iced_runtime::Task;
+use iced_wgpu::Renderer;
 use iced_widget::{button, container, row};
 
 use crate::render::{SelectionOperation, SelectionPipeline};
@@ -198,7 +199,7 @@ impl ToolFunction for MagicWandSelectionTool {
     fn tool_option_widget<'a>(
         &'a self,
         _: &'a Services,
-    ) -> Element<'a, Self::Message, iced_core::Theme, iced_wgpu::Renderer> {
+    ) -> Option<Element<'a, Self::Message, Theme, Renderer>> {
         let fields = Form::new()
             .push(
                 "Threshold",
@@ -254,6 +255,6 @@ impl ToolFunction for MagicWandSelectionTool {
                 },
             );
 
-        container(fields).padding(8).width(Length::Fill).into()
+        Some(container(fields).padding(8).width(Length::Fill).into())
     }
 }

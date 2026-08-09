@@ -975,10 +975,8 @@ impl ToolFunction for FreeTransformTool {
     fn tool_option_widget<'a>(
         &'a self,
         _services: &'a Services,
-    ) -> Element<'a, Self::Message, Theme, Renderer> {
-        let Some(session) = &self.session else {
-            return container(text("No active transform")).padding(8).into();
-        };
+    ) -> Option<Element<'a, Self::Message, Theme, Renderer>> {
+        let session = self.session.as_ref()?;
         let shear_axis = match session.last_shear {
             Some(ShearType::Left | ShearType::Right) => ShearAxis::Vertical,
             _ => ShearAxis::Horizontal,
@@ -1091,10 +1089,12 @@ impl ToolFunction for FreeTransformTool {
         ]
         .spacing(4);
 
-        container(column![fields, mirrors, actions].spacing(8))
-            .padding(8)
-            .width(Length::Fill)
-            .into()
+        Some(
+            container(column![fields, mirrors, actions].spacing(8))
+                .padding(8)
+                .width(Length::Fill)
+                .into(),
+        )
     }
 }
 
