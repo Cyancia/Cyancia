@@ -12,7 +12,7 @@ use cyancia_canvas::{
         layer_stack::{DropInfo, LayerStackMessage, LayerStackView},
     },
 };
-use cyancia_color::{Color, model::rgb::Rgb};
+use cyancia_color::{BackgroundColorChanged, Color, ForegroundColorChanged, model::rgb::Rgb};
 use cyancia_color_selector::{
     ColorModel, ColorSelectorMessage, ColorSelectorState, GradientPlaneShape,
     config::{
@@ -56,6 +56,8 @@ pub enum ColorSelectorDockMessage {
     ConfigEditor(ColorSelectorConfigMessage),
     OpenSettings,
     SettingsWindowClosed,
+    ForegroundColorChanged(ForegroundColorChanged),
+    BackgroundColorChanged(BackgroundColorChanged),
 }
 
 pub const COLOR_SELECTOR_DOCK_ID: &str = "color_selector";
@@ -65,6 +67,8 @@ pub struct ColorSelectorDock {
     config_editor: ColorSelectorConfigEditorState,
     window_id: RefCell<window::Id>,
     settings_window_id: Option<window::Id>,
+
+    is_foreground_color: bool,
 }
 
 impl ColorSelectorDock {
@@ -149,6 +153,7 @@ impl ColorSelectorDock {
             config_editor: ColorSelectorConfigEditorState::new(configs, Some(0)),
             window_id: RefCell::new(window::Id::unique()),
             settings_window_id: None,
+            is_foreground_color: true,
         }
     }
 }
@@ -239,6 +244,24 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
                 self.config_editor.update(m);
                 Task::none()
             }
+            ColorSelectorDockMessage::ForegroundColorChanged(event) => {
+                if !self.is_foreground_color {
+                    return Task::none();
+                }
+
+                self.selector
+                    .set_color(event.new, services)
+                    .map(ColorSelectorDockMessage::ColorSelector)
+            }
+            ColorSelectorDockMessage::BackgroundColorChanged(event) => {
+                if self.is_foreground_color {
+                    return Task::none();
+                }
+
+                self.selector
+                    .set_color(event.new, services)
+                    .map(ColorSelectorDockMessage::ColorSelector)
+            }
         }
     }
 
@@ -282,7 +305,18 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
             },
         );
 
-        Subscription::batch([window_moved, mouse_events, settings_window_closed])
+        let foreground_color_changed = ForegroundColorChanged::listen_to()
+            .map(ColorSelectorDockMessage::ForegroundColorChanged);
+        let background_color_changed = BackgroundColorChanged::listen_to()
+            .map(ColorSelectorDockMessage::BackgroundColorChanged);
+
+        Subscription::batch([
+            window_moved,
+            mouse_events,
+            settings_window_closed,
+            foreground_color_changed,
+            background_color_changed,
+        ])
     }
 
     fn sub_windows(&self) -> Vec<window::Id> {
