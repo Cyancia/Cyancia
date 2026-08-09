@@ -18,8 +18,10 @@ use iced_wgpu::graphics::geometry;
 use iced_wgpu::{Renderer, primitive};
 use iced_widget::canvas::{Frame, Path, Stroke};
 
-use crate::render::{GradientDrawPrimitive, SurfaceDrawData};
-use crate::{ColorSelectorEvent, ColorSelectorMessage, ColorSelectorState};
+use crate::{
+    ColorSelectorMessage, ColorSelectorState,
+    render::{GradientDrawPrimitive, SurfaceDrawData},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceTarget {
@@ -177,7 +179,10 @@ impl ColorSelectorState {
             }
         }
 
-        self.refresh_clip_bounds(services)
+        Task::batch([
+            self.refresh_clip_bounds(services),
+            Task::done(ColorSelectorMessage::Changed(self.color())),
+        ])
     }
 
     pub(crate) fn finish_active_selection(
@@ -191,8 +196,10 @@ impl ColorSelectorState {
         }
         let task = self.update_active_selection(position, services);
         self.active_selection = None;
-        ColorSelectorEvent::broadcast(ColorSelectorEvent::Confirmed(self.color));
-        task
+        Task::batch([
+            task,
+            Task::done(ColorSelectorMessage::Confirmed(self.color())),
+        ])
     }
 }
 

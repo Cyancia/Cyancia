@@ -12,7 +12,10 @@ use cyancia_canvas::{
         layer_stack::{DropInfo, LayerStackMessage, LayerStackView},
     },
 };
-use cyancia_color::{BackgroundColorChanged, Color, ForegroundColorChanged, model::rgb::Rgb};
+use cyancia_color::{
+    BackgroundColorChanged, Color, ForegroundBackgroundColorExt, ForegroundColorChanged,
+    model::rgb::Rgb,
+};
 use cyancia_color_selector::{
     ColorModel, ColorSelector, ColorSelectorMessage, ColorSelectorState, GradientPlaneShape,
     config::{
@@ -68,6 +71,7 @@ pub struct ColorSelectorDock {
     window_id: RefCell<window::Id>,
     settings_window_id: Option<window::Id>,
 
+    last_color: Color,
     is_foreground_color: bool,
 }
 
@@ -153,6 +157,7 @@ impl ColorSelectorDock {
             config_editor: ColorSelectorConfigEditorState::new(configs, Some(0)),
             window_id: RefCell::new(window::Id::unique()),
             settings_window_id: None,
+            last_color: **services.foreground_color(),
             is_foreground_color: true,
         }
     }
@@ -201,6 +206,23 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
                 .selector
                 .set_output_profile(id, services)
                 .map(ColorSelectorDockMessage::ColorSelector),
+            ColorSelectorDockMessage::ColorSelector(ColorSelectorMessage::Confirmed(color)) => {
+                if self.is_foreground_color {
+                    **services.foreground_color_mut() = color;
+                    ForegroundColorChanged::broadcast(ForegroundColorChanged::new(
+                        self.last_color,
+                        color,
+                    ));
+                } else {
+                    **services.background_color_mut() = color;
+                    BackgroundColorChanged::broadcast(BackgroundColorChanged::new(
+                        self.last_color,
+                        color,
+                    ));
+                }
+
+                Task::none()
+            }
             ColorSelectorDockMessage::ColorSelector(m) => self
                 .selector
                 .update(m, services)
@@ -248,6 +270,8 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
                     return Task::none();
                 }
 
+                dbg!(event.new);
+                self.last_color = event.new;
                 self.selector
                     .set_color(event.new, services)
                     .map(ColorSelectorDockMessage::ColorSelector)
@@ -257,6 +281,8 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
                     return Task::none();
                 }
 
+                dbg!(event.new);
+                self.last_color = event.new;
                 self.selector
                     .set_color(event.new, services)
                     .map(ColorSelectorDockMessage::ColorSelector)

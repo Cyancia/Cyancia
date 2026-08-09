@@ -31,11 +31,6 @@ mod control;
 mod pipeline;
 mod render;
 
-#[derive(Debug, Clone, Copy, Event)]
-pub enum ColorSelectorEvent {
-    Confirmed(Color),
-}
-
 const GRADIENT_RING_GAP: f32 = 5.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
@@ -254,8 +249,6 @@ impl ColorModel {
 
 pub struct ColorSelector<'a, Message> {
     state: &'a ColorSelectorState,
-    on_change: Option<Box<dyn Fn(Color) -> Message>>,
-    on_confirm: Option<Box<dyn Fn(Color) -> Message>>,
     on_state_message: Box<dyn Fn(ColorSelectorMessage) -> Message>,
 }
 
@@ -266,18 +259,8 @@ impl<'a, Message> ColorSelector<'a, Message> {
     ) -> Self {
         Self {
             state,
-            on_change: None,
-            on_confirm: None,
             on_state_message: Box::new(on_state_message),
         }
-    }
-
-    pub fn on_change(&mut self, on_change: impl Fn(Color) -> Message + 'static) {
-        self.on_change = Some(Box::new(on_change));
-    }
-
-    pub fn on_confirm(&mut self, on_confirm: impl Fn(Color) -> Message + 'static) {
-        self.on_confirm = Some(Box::new(on_confirm));
     }
 }
 
@@ -404,6 +387,8 @@ pub enum ColorSelectorMessage {
         x_range: Vec2,
         y_range: Vec2,
     },
+    Changed(Color),
+    Confirmed(Color),
 }
 
 struct PlaneState {
@@ -688,6 +673,7 @@ impl ColorSelectorState {
                 }
                 Task::none()
             }
+            ColorSelectorMessage::Changed(_) | ColorSelectorMessage::Confirmed(_) => Task::none(),
         }
     }
 

@@ -50,14 +50,14 @@ impl_from!(Xyz, Xyz);
 
 wrapper! {
     #[derive(Debug, Clone, Copy)]
-    pub ForegroundColor : Color
+    pub mut ForegroundColor : Color
 }
 
 impl Service for ForegroundColor {}
 
 wrapper! {
     #[derive(Debug, Clone, Copy)]
-    pub BackgroundColor : Color
+    pub mut BackgroundColor : Color
 }
 
 impl Service for BackgroundColor {}
@@ -93,10 +93,22 @@ pub struct ForegroundColorChanged {
     pub new: Color,
 }
 
+impl ForegroundColorChanged {
+    pub fn new(old: Color, new: Color) -> Self {
+        Self { old, new }
+    }
+}
+
 #[derive(Event, Debug, Clone)]
 pub struct BackgroundColorChanged {
     pub old: Color,
     pub new: Color,
+}
+
+impl BackgroundColorChanged {
+    pub fn new(old: Color, new: Color) -> Self {
+        Self { old, new }
+    }
 }
 
 pub struct ColorPlugin;
