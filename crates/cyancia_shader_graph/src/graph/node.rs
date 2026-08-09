@@ -761,6 +761,10 @@ impl<Data: GraphData> GraphNodeRegistry<Data> {
         self.nodes.insert(node.name(), node);
     }
 
+    pub fn register_boxed(&mut self, node: Box<dyn ErasedGraphNode<Data>>) {
+        self.nodes.insert(node.name(), node);
+    }
+
     pub fn get(&self, name: &str) -> Option<Box<dyn ErasedGraphNode<Data>>> {
         self.nodes.get(name).cloned()
     }
