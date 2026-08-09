@@ -520,6 +520,7 @@ pub enum InteractionType {
     Rotate(RotateType),
     Scale(ScaleType),
     Shear(ShearType),
+    // TODO rotate transform bounds
 }
 
 #[derive(Debug, Clone, Copy)]
