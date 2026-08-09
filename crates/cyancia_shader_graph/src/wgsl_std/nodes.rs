@@ -3223,9 +3223,30 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
             .zip(body_output_idents)
             .collect::<HashMap<_, _>>();
         for local in locals.values() {
+            let input_slot_id = next_slots[&local.id];
             let next = body_outputs
-                .get(&next_slots[&local.id])
+                .get(&input_slot_id)
                 .ok_or_else(|| anyhow!("While body output value of {} is missing", local.name))?;
+            let input_slot = body
+                .slots
+                .get_input(&input_slot_id)
+                .ok_or(GraphNodeCodeGenError::MissingInputSlot)?;
+            let next = if let Some(connected) = input_slot.connected {
+                let output_slot = body
+                    .slots
+                    .get_output(&connected)
+                    .ok_or(GraphNodeCodeGenError::MissingOutputSlot)?;
+                if output_slot.data_ty.name() != input_slot.data.ty().name() {
+                    ctx.resources
+                        .type_registry
+                        .try_wgsl_cast(&*output_slot.data_ty, input_slot.data.ty(), next)
+                        .ok_or(GraphNodeCodeGenError::FailedToCastVariable)?
+                } else {
+                    next.clone()
+                }
+            } else {
+                next.clone()
+            };
             code.push_str(&format!(
                 "{} = {next};
 ",
