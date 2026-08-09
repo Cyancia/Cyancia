@@ -1225,7 +1225,7 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
         let x = tr - tl;
         let y = bl - tl;
 
-        let mut frame = Frame::new(renderer, layout.bounds().size());
+        let mut frame = Frame::with_bounds(renderer, layout.bounds());
 
         for (color, translation) in [
             (Color::WHITE, Vector::ZERO),
@@ -1295,7 +1295,9 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
             frame.pop_transform();
         }
 
-        iced_graphics::geometry::Renderer::draw_geometry(renderer, frame.into_geometry());
+        iced_core::Renderer::with_layer(renderer, layout.bounds(), |renderer| {
+            iced_graphics::geometry::Renderer::draw_geometry(renderer, frame.into_geometry());
+        });
     }
 
     fn mouse_interaction(
