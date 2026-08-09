@@ -100,7 +100,8 @@ impl TransformSession {
         };
 
         let pivot = self.op_pivot_ps(ongoing.ty, modifiers.alt());
-        let base_translate = ongoing.base_translation_for_pivot(pivot);
+        let origin = ongoing.base_matrix.transform_point2(Vec2::ZERO);
+        let base_translate = origin - pivot + ongoing.base_matrix.transform_vector2(pivot);
 
         self.pivot = pivot;
         self.translate = base_translate;
