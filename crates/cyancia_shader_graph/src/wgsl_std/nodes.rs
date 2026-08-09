@@ -3070,7 +3070,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
         state: &Self::State,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        let locals = state.locals.lock();
+        let locals = state.locals.lock().clone();
         if locals.len() != ctx.inputs.len() || locals.len() != ctx.outputs.len() {
             return Err(anyhow!("While parent slot invariant is invalid").into());
         }
