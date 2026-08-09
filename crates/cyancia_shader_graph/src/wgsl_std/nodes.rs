@@ -2225,7 +2225,7 @@ impl<Data: GraphData> WhileNodeState<Data> {
             .map(|(id, _)| *id)
             .collect::<Vec<_>>();
 
-        let locals = self.locals.lock();
+        let locals = self.locals.lock().clone();
         for id in input_ids {
             self.body.update_node_state::<WhileNodeInput>(id, |st| {
                 if let Some(variable) = st.variable
