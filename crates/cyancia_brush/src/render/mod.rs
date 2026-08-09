@@ -180,6 +180,7 @@ impl CanvasBrushPresetOperator {
                 .compile(EXTERNAL_VARIABLE_BASE_BINDING)
                 .expect("Failed to compile brush preset")
         });
+        println!("Compiled brush:\n{}", compiled_brush);
         let renderer = self.renderer.get_or_insert_with(|| {
             BrushPresetRenderer::new(
                 compiled_brush,

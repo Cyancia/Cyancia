@@ -32,8 +32,8 @@ use crate::{
             GraphNodeUpdateSignatureContext, GraphNodeViewContext, StatelessCommonGraphNode,
         },
         slot::{
-            ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot,
-            GraphValueType,
+            ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphDefaultInputSlot,
+            GraphDefaultOutputSlot, GraphValueType,
         },
         texture::TextureId,
     },
@@ -2375,17 +2375,90 @@ wrapper! {
     pub WhileVariableId : Uuid
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct WhileLocalSchema {
     pub id: WhileVariableId,
     pub name: String,
-    // TODO Use type instance
+    pub ty: Box<dyn ErasedGraphValueType>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SerializableWhileLocalSchema {
+    pub id: WhileVariableId,
+    pub name: String,
     pub ty: String,
+}
+
+impl<Data: GraphData> GraphSerializable<Data> for WhileLocalSchema {
+    fn to_toml(&self) -> anyhow::Result<toml::Value> {
+        let serializable = SerializableWhileLocalSchema {
+            id: self.id,
+            name: self.name.clone(),
+            ty: self.ty.name().to_string(),
+        };
+        Ok(toml::Value::try_from(serializable)?)
+    }
+
+    fn from_toml(value: toml::Value, resources: &GraphResources<Data>) -> anyhow::Result<Self> {
+        let serializable = SerializableWhileLocalSchema::deserialize(value)?;
+        let ty = resources
+            .type_registry
+            .get_type(&serializable.ty)
+            .ok_or_else(|| anyhow::anyhow!("Unknown type: {}", serializable.ty))?;
+        Ok(WhileLocalSchema {
+            id: serializable.id,
+            name: serializable.name,
+            ty: dyn_clone::clone_box(ty),
+        })
+    }
+}
+
+#[derive(Clone)]
+struct WhileLocalSchemaDraft {
+    pub id: WhileVariableId,
+    pub name: String,
+    pub ty: Option<Box<dyn ErasedGraphValueType>>,
 }
 
 #[derive(Clone, Default)]
 struct WhileSchemaDraft {
-    locals: IndexMap<WhileVariableId, WhileLocalSchema>,
+    locals: IndexMap<WhileVariableId, WhileLocalSchemaDraft>,
+}
+
+impl WhileSchemaDraft {
+    pub fn new(locals: &IndexMap<WhileVariableId, WhileLocalSchema>) -> Self {
+        Self {
+            locals: locals
+                .iter()
+                .map(|(id, schema)| {
+                    (
+                        *id,
+                        WhileLocalSchemaDraft {
+                            id: *id,
+                            name: schema.name.clone(),
+                            ty: Some(schema.ty.clone()),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    pub fn finalize(&self) -> IndexMap<WhileVariableId, WhileLocalSchema> {
+        self.locals
+            .iter()
+            .map(|(id, schema)| {
+                (
+                    *id,
+                    WhileLocalSchema {
+                        id: *id,
+                        name: schema.name.clone(),
+                        ty: schema.ty.clone().unwrap(),
+                    },
+                )
+            })
+            .collect()
+    }
 }
 
 pub struct WhileNodeState<Data: GraphData> {
@@ -2411,7 +2484,7 @@ impl<Data: GraphData> WhileNodeState<Data> {
             WhileLocalSchema {
                 id,
                 name,
-                ty: T::default().name().to_string(),
+                ty: Box::new(T::default()),
             },
         );
         self.revision += 1;
@@ -2458,13 +2531,6 @@ impl<Data: GraphData> WhileNodeState<Data> {
 }
 
 #[derive(Serialize, Deserialize)]
-struct SerializableWhileLocalSchema {
-    id: WhileVariableId,
-    name: String,
-    ty: String,
-}
-
-#[derive(Serialize, Deserialize)]
 struct SerializableWhileNodeState {
     locals: Vec<SerializableWhileLocalSchema>,
     body: SerializableGraph,
@@ -2479,7 +2545,7 @@ impl<Data: GraphData> GraphSerializable<Data> for WhileNodeState<Data> {
             .map(|local| SerializableWhileLocalSchema {
                 id: local.id,
                 name: local.name.clone(),
-                ty: local.ty.clone(),
+                ty: local.ty.clone().name().to_string(),
             })
             .collect();
         let body = self.body.as_serialized()?;
@@ -2491,20 +2557,26 @@ impl<Data: GraphData> GraphSerializable<Data> for WhileNodeState<Data> {
 
     fn from_toml(value: toml::Value, resources: &GraphResources<Data>) -> anyhow::Result<Self> {
         let serialized = SerializableWhileNodeState::deserialize(value)?;
-        let locals = serialized
-            .locals
-            .into_iter()
-            .map(|local| {
-                (
-                    local.id,
-                    WhileLocalSchema {
-                        id: local.id,
-                        name: local.name,
-                        ty: local.ty,
-                    },
-                )
-            })
-            .collect();
+        let locals =
+            serialized
+                .locals
+                .into_iter()
+                .try_fold(IndexMap::new(), |mut locals, local| {
+                    locals.insert(
+                        local.id,
+                        WhileLocalSchema {
+                            id: local.id,
+                            name: local.name,
+                            ty: dyn_clone::clone_box(
+                                resources.type_registry.get_type(&local.ty).ok_or_else(|| {
+                                    anyhow!("Type {} not found in registry", local.ty)
+                                })?,
+                            ),
+                        },
+                    );
+
+                    Result::<_, anyhow::Error>::Ok(locals)
+                })?;
         let locals = Arc::new(Mutex::new(locals));
 
         let while_node_extra = {
@@ -2595,12 +2667,9 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeInput {
         let Some(local) = state.variable.as_ref().and_then(|id| locals.get(id)) else {
             return Vec::new();
         };
-        let Some(ty) = ctx.resources.type_registry.get_type(&local.ty) else {
-            return Vec::new();
-        };
         vec![GraphDefaultOutputSlot::new_boxed(
             format!("{} Current", local.name),
-            dyn_clone::clone_box(ty),
+            local.ty.clone(),
         )]
     }
 
@@ -2696,12 +2765,9 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeOutput {
         let Some(local) = state.variable.as_ref().and_then(|id| locals.get(id)) else {
             return Vec::new();
         };
-        let Some(ty) = ctx.resources.type_registry.get_type(&local.ty) else {
-            return Vec::new();
-        };
         vec![GraphDefaultInputSlot::new_boxed(
             format!("{} Next", local.name),
-            dyn_clone::clone_box(ty),
+            local.ty.clone(),
         )]
     }
 
@@ -2834,8 +2900,8 @@ fn while_schema_editor_view<Data: GraphData>(
                 row![
                     pick_list(
                         type_names.clone(),
-                        type_names.iter().find(|ty| **ty == local.ty).copied(),
-                        move |ty| WhileNodeMessage::EditorChangeLocalType(id, ty.to_string()),
+                        local.ty.as_ref().map(|t| t.name()),
+                        move |ty| { WhileNodeMessage::EditorChangeLocalType(id, ty.to_string()) },
                     )
                     .width(Length::Fill),
                     button("Up").on_press(WhileNodeMessage::EditorMoveLocalUp(id)),
@@ -2853,10 +2919,6 @@ fn while_schema_editor_view<Data: GraphData>(
         .locals
         .values()
         .all(|local| !local.name.is_empty() && local.name.trim() == local.name)
-        && draft
-            .locals
-            .values()
-            .all(|local| type_names.contains(&local.ty.as_str()))
         && draft.locals.values().all(|local| {
             draft
                 .locals
@@ -2943,10 +3005,9 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
             .lock()
             .values()
             .filter_map(|local| {
-                let ty = ctx.resources.type_registry.get_type(&local.ty)?;
                 Some(GraphDefaultInputSlot::new_boxed(
                     format!("{} In", local.name),
-                    dyn_clone::clone_box(ty),
+                    local.ty.clone(),
                 ))
             })
             .collect()
@@ -2962,10 +3023,9 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
             .lock()
             .values()
             .filter_map(|local| {
-                let ty = ctx.resources.type_registry.get_type(&local.ty)?;
                 Some(GraphDefaultOutputSlot::new_boxed(
                     format!("{} Out", local.name),
-                    dyn_clone::clone_box(ty),
+                    local.ty.clone(),
                 ))
             })
             .collect()
@@ -2996,9 +3056,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
                 if state.schema_draft.is_some() {
                     state.schema_draft = None;
                 } else {
-                    state.schema_draft = Some(WhileSchemaDraft {
-                        locals: state.locals.lock().clone(),
-                    });
+                    state.schema_draft = Some(WhileSchemaDraft::new(&state.locals.lock()));
                 }
             }
             WhileNodeMessage::EditorAddLocal => {
@@ -3006,10 +3064,10 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
                     let new_id = WhileVariableId::new(Uuid::new_v4());
                     draft.locals.insert(
                         new_id,
-                        WhileLocalSchema {
+                        WhileLocalSchemaDraft {
                             id: new_id,
                             name: String::new(),
-                            ty: String::new(),
+                            ty: None,
                         },
                     );
                 }
@@ -3046,14 +3104,16 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
                 if let Some(draft) = &mut state.schema_draft
                     && let Some(local) = draft.locals.get_mut(&id)
                 {
-                    local.ty = ty;
+                    local.ty = Some(dyn_clone::clone_box(
+                        ctx.resources.type_registry.get_type(&ty).unwrap(),
+                    ));
                 }
             }
             WhileNodeMessage::EditorConfirm => {
                 let Some(draft) = &mut state.schema_draft else {
                     return;
                 };
-                *state.locals.lock() = draft.locals.clone();
+                *state.locals.lock() = draft.finalize();
                 state.revision += 1;
                 state.schema_draft = None;
                 state.sync_body_nodes();
