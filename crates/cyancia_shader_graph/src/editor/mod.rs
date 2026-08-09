@@ -21,7 +21,7 @@ use iced_graphics::{
     gradient::Linear,
 };
 use iced_widget::{
-    Row, button, column, container,
+    button, column, container,
     core::{Rectangle, Widget, mouse::Cursor},
     overlay::menu,
     row, stack, text,
@@ -238,7 +238,7 @@ impl<'a, Data: GraphData> GraphEditorView<'a, Data> {
                     if subgraphs.is_empty() {
                         None
                     } else {
-                        Some((node_id.clone(), subgraphs))
+                        Some((*node_id, subgraphs))
                     }
                 })
                 .collect(),
@@ -598,7 +598,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
 
                             self.graph
                                 .edges
-                                .get(&(*id).into())
+                                .get(id)
                                 .map(|e| GraphSlotId::Output(e.from))
                                 .unwrap_or(GraphSlotId::Input(*id))
                         }
@@ -644,8 +644,6 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     state.last_click_on_node = Some(Instant::now());
 
                     if state.selected_nodes.is_empty() {
-                        state.selected_nodes.insert(node_id);
-                    } else if state.keyboard_modifiers.shift() {
                         state.selected_nodes.insert(node_id);
                     } else if state.keyboard_modifiers.control() {
                         if !state.selected_nodes.remove(&node_id) {

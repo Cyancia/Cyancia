@@ -7,10 +7,7 @@ use cyancia_runtime::{
 };
 use cyancia_shader_graph::{
     GraphRenderer, GraphTheme,
-    editor::{
-        GraphEditor, GraphEditorMessage, GraphEditorPathComponent, GraphEditorState,
-        GraphEditorView,
-    },
+    editor::{GraphEditor, GraphEditorMessage, GraphEditorState},
     graph::{
         Graph, GraphResources,
         external::{ExternalVariable, ExternalVariableId},
@@ -18,7 +15,6 @@ use cyancia_shader_graph::{
             ASSET_GRAPH_FUNCTION_STORAGE, GRAPH_FUNCTION_NODE_REGISTRY,
             GRAPH_FUNCTION_TYPE_REGISTRY, GraphFunction, GraphFunctionId, GraphFunctionStorage,
         },
-        node::GraphNodeId,
         slot::ErasedGraphLiteralUpdateMessage,
         texture::ASSET_GRAPH_TEXTURE_STORAGE,
         variable::GraphLiteral,

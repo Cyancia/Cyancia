@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicU32, Ordering},
@@ -12,8 +12,8 @@ use cyancia_math::curve::CubicCurve;
 use cyancia_utils::wrapper;
 use cyancia_widgets::{curve_edit::CurveEdit, fluent_builder::When, popover::Popover};
 use glam::{Vec2, Vec3, Vec3Swizzles};
-use iced_core::{Color, Length, Vector};
-use iced_widget::{Float, button, column, container, float, pick_list, row, text, text_input};
+use iced_core::{Color, Length};
+use iced_widget::{button, column, container, pick_list, row, text, text_input};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 use parse_display::Display;
@@ -2661,7 +2661,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeInput {
     fn create_outputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         let locals = self.locals.lock();
         let Some(local) = state.variable.as_ref().and_then(|id| locals.get(id)) else {
@@ -2759,7 +2759,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNodeOutput {
     fn create_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         let locals = self.locals.lock();
         let Some(local) = state.variable.as_ref().and_then(|id| locals.get(id)) else {
@@ -2998,17 +2998,14 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
     fn create_inputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         state
             .locals
             .lock()
             .values()
-            .filter_map(|local| {
-                Some(GraphDefaultInputSlot::new_boxed(
-                    format!("{} In", local.name),
-                    local.ty.clone(),
-                ))
+            .map(|local| {
+                GraphDefaultInputSlot::new_boxed(format!("{} In", local.name), local.ty.clone())
             })
             .collect()
     }
@@ -3016,17 +3013,14 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
     fn create_outputs(
         &self,
         state: &Self::State,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         state
             .locals
             .lock()
             .values()
-            .filter_map(|local| {
-                Some(GraphDefaultOutputSlot::new_boxed(
-                    format!("{} Out", local.name),
-                    local.ty.clone(),
-                ))
+            .map(|local| {
+                GraphDefaultOutputSlot::new_boxed(format!("{} Out", local.name), local.ty.clone())
             })
             .collect()
     }

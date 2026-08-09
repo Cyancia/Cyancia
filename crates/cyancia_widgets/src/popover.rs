@@ -4,7 +4,6 @@ use iced_core::{
     mouse, overlay, renderer,
     widget::{Operation, Tree},
 };
-use iced_widget::tooltip;
 
 pub enum Anchor {
     TopLeft,

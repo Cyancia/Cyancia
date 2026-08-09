@@ -1,7 +1,5 @@
-use glam::Vec2;
-
 use crate::{
-    graph::{slot::GraphValueType, variable::GraphVariableCaster},
+    graph::variable::GraphVariableCaster,
     wgsl_std::types::{BoolType, F32Type, I32Type, Vec2FType},
 };
 

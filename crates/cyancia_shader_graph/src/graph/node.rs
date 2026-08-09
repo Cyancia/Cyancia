@@ -356,11 +356,11 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         Ok(())
     }
 
-    pub fn subgraphs<'a>(&'a self) -> Vec<&'a Graph<Data>> {
+    pub fn subgraphs(&self) -> Vec<&Graph<Data>> {
         self.data.subgraphs(&self.state)
     }
 
-    pub fn subgraphs_mut<'a>(&'a mut self) -> Vec<&'a mut Graph<Data>> {
+    pub fn subgraphs_mut(&mut self) -> Vec<&mut Graph<Data>> {
         self.data.subgraphs_mut(&mut self.state)
     }
 
