@@ -19,7 +19,7 @@ use wgpu::{
 
 use crate::render::{
     ComputedPenInput, DabInfo, InputSampler, OutputSamples, PenInput, StrokePostprocessData,
-    StrokeResources,
+    StrokeResources, graph::CanvasResources,
 };
 
 pub struct BrushInputSamplingPipeline {
@@ -40,6 +40,7 @@ impl BrushInputSamplingPipeline {
                 binding_types::storage_buffer::<InputSampler>(false),
                 binding_types::storage_buffer::<OutputSamples>(false),
                 binding_types::storage_buffer::<UVec4>(false),
+                binding_types::storage_buffer::<CanvasResources>(false),
             ),
         )
         .to_vec();
@@ -87,6 +88,7 @@ impl BrushInputSamplingPipeline {
             input_sampler.binding().unwrap(),
             output_samples.inner_buffer().unwrap().as_entire_binding(),
             bounds_eval_dispatch.as_entire_binding(),
+            resources.canvas_resources.as_entire_binding(),
         ))
         .to_vec();
         entries.extend(resources.external_var_bindings());
@@ -648,6 +650,7 @@ fn common_bind_group_layout_entries(resources: &StrokeResources) -> Vec<BindGrou
                 binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
             ),
             (11, binding_types::storage_buffer_read_only::<u32>(false)),
+            (12, binding_types::storage_buffer_read_only::<CanvasResources>(false)),
         ),
     )
     .to_vec();
@@ -677,6 +680,7 @@ fn common_bind_group_entries<'a>(
         (9, BindingResource::TextureView(selection_layer_texture)),
         (10, selection_layer_tile_info.as_entire_binding()),
         (11, has_selection.as_entire_binding()),
+        (12, resources.canvas_resources.as_entire_binding()),
     ))
     .to_vec();
 

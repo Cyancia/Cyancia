@@ -1,10 +1,11 @@
-import package::brush::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, Time};
+import package::brush::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, Time, CanvasResources};
 import package::render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angle};
 
 @group(0) @binding(0) var<storage> new_input: PenInput;
 @group(0) @binding(1) var<storage, read_write> input_sampler: PenInputSampler;
 @group(0) @binding(2) var<storage, read_write> output_samples: OutputSamples;
 @group(0) @binding(3) var<storage, read_write> bounds_eval_dispatch: vec3u;
+@group(0) @binding(4) var<storage> canvas_resources: CanvasResources;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 

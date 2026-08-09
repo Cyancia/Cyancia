@@ -66,3 +66,8 @@ struct Time {
     now: f32,
     stroke_begin: f32,
 }
+
+struct CanvasResources {
+    foreground_color: vec4f,
+    background_color: vec4f,
+}

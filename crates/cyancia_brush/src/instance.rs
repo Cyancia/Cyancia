@@ -25,12 +25,7 @@ use wesl::{VirtualResolver, Wesl};
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
     render::graph::{
-        BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushMainGraphData,
-        BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData, CurrentPixelColorNode,
-        DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode,
-        LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
-        PasteTextureNode, PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode,
-        PixelPositionNode, SelectionMaskNode, StrokeBoundsNode,
+        BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData, CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, ForegroundColorNode, LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode, StrokeBoundsNode
     },
 };
 
@@ -510,6 +505,8 @@ fn required_spacing_graph_nodes() -> GraphNodeRegistry<BrushRequiredSpacingGraph
     nodes.register::<DrawDirectionNode>();
     nodes.register::<TimeNode>();
     nodes.register::<OutputRequiredSpacingNode>();
+    nodes.register::<ForegroundColorNode>();
+    nodes.register::<BackgroundColorNode>();
 
     nodes
 }
@@ -537,6 +534,8 @@ fn main_graph_nodes() -> GraphNodeRegistry<BrushMainGraphData> {
     nodes.register::<BlendWithInputNode>();
     nodes.register::<BlendWithLayerNode>();
     nodes.register::<SelectionMaskNode>();
+    nodes.register::<ForegroundColorNode>();
+    nodes.register::<BackgroundColorNode>();
 
     nodes
 }
@@ -559,6 +558,8 @@ fn stroke_postprocess_graph_nodes() -> GraphNodeRegistry<BrushStrokePostprocessG
     nodes.register::<BlendWithInputNode>();
     nodes.register::<BlendWithLayerNode>();
     nodes.register::<SelectionMaskNode>();
+    nodes.register::<ForegroundColorNode>();
+    nodes.register::<BackgroundColorNode>();
 
     nodes
 }

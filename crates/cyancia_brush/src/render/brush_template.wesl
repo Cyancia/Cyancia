@@ -1,6 +1,6 @@
 import package::image::image_tiling::{TileInfo, TILE_SIZE};
 import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv, rotate_mat2x2};
-import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo};
+import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo, CanvasResources};
 
 @if(!BOUNDS_EVAL || POSTPROCESS) @group(0) @binding(0) var<storage> sample: GraphInput;
 @if(BOUNDS_EVAL && !POSTPROCESS) @group(0) @binding(0) var<storage> sample: OutputSamples;
@@ -16,6 +16,7 @@ import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSa
 @group(0) @binding(9) var selection: texture_storage_2d_array<r8unorm, read>;
 @group(0) @binding(10) var<storage> selection_tile_info: array<TileInfo>;
 @group(0) @binding(11) var<storage> has_selection: u32;
+@group(0) @binding(12) var<storage> canvas_resources: CanvasResources;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 

@@ -1497,6 +1497,7 @@ dependencies = [
  "chrono",
  "cyancia_assets",
  "cyancia_canvas",
+ "cyancia_color",
  "cyancia_image",
  "cyancia_input",
  "cyancia_math",

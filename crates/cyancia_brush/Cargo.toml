@@ -14,6 +14,7 @@ bevy_math.workspace = true
 chrono.workspace = true
 cyancia_assets.workspace = true
 cyancia_canvas.workspace = true
+cyancia_color.workspace = true
 cyancia_image.workspace = true
 cyancia_input.workspace = true
 cyancia_math.workspace = true

@@ -20,6 +20,8 @@ use cyancia_shader_graph::{
     },
 };
 use cyancia_utils::random_oklch;
+use encase::ShaderType;
+use glam::Vec4;
 use iced_core::{Color, Length};
 use iced_widget::pick_list;
 use serde::{Deserialize, Serialize};
@@ -32,10 +34,22 @@ use crate::{
     render::{ComputedPenInput, Time},
 };
 
+// TODO We may move to another crate.
+#[derive(Default, Clone, ShaderType)]
+pub struct CanvasResources {
+    pub foreground_color: Vec4,
+    pub background_color: Vec4,
+}
+
+pub trait GraphDataWithBrushResource: GraphData {
+    fn canvas_resources_field() -> String;
+}
+
 #[derive(Default, Clone)]
 pub struct BrushStrokePostprocessGraphData {
     pub accumulated_pixel_bounds: IRect,
     pub time: Time,
+    pub resources: CanvasResources,
 }
 
 impl GraphData for BrushStrokePostprocessGraphData {
@@ -50,6 +64,7 @@ impl GraphData for BrushStrokePostprocessGraphData {
 
 pub struct BrushRequiredSpacingGraphData {
     pub pen_input: ComputedPenInput,
+    pub resources: CanvasResources,
 }
 
 impl GraphData for BrushRequiredSpacingGraphData {
@@ -65,6 +80,7 @@ impl GraphData for BrushRequiredSpacingGraphData {
 #[derive(Default, Clone)]
 pub struct BrushMainGraphData {
     pub pen_input: ComputedPenInput,
+    pub resources: CanvasResources,
 }
 
 impl GraphData for BrushMainGraphData {
@@ -130,6 +146,24 @@ impl GraphDataWithTime for BrushStrokePostprocessGraphData {
 
     fn wgsl_variable() -> String {
         "graph_input.time".into()
+    }
+}
+
+impl GraphDataWithBrushResource for BrushRequiredSpacingGraphData {
+    fn canvas_resources_field() -> String {
+        "canvas_resources".into()
+    }
+}
+
+impl GraphDataWithBrushResource for BrushMainGraphData {
+    fn canvas_resources_field() -> String {
+        "canvas_resources".into()
+    }
+}
+
+impl GraphDataWithBrushResource for BrushStrokePostprocessGraphData {
+    fn canvas_resources_field() -> String {
+        "canvas_resources".into()
     }
 }
 
@@ -1242,6 +1276,88 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SelectionMaskNode {
         Ok(format!(
             "let {} = load_selection_mask_value(vec2i({}));\n",
             output, input
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct ForegroundColorNode;
+
+#[stateless]
+impl<Data: GraphDataWithBrushResource> StatelessCommonGraphNode<Data> for ForegroundColorNode {
+    fn name(&self) -> &'static str {
+        "Foreground Color"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(ForegroundColorNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>(
+            "Color".to_string(),
+        )]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = {}.foreground_color;\n",
+            ctx.get_output(0)?,
+            Data::canvas_resources_field()
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct BackgroundColorNode;
+
+#[stateless]
+impl<Data: GraphDataWithBrushResource> StatelessCommonGraphNode<Data> for BackgroundColorNode {
+    fn name(&self) -> &'static str {
+        "Background Color"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(BackgroundColorNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<ColorType>(
+            "Color".to_string(),
+        )]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = {}.background_color;\n",
+            ctx.get_output(0)?,
+            Data::canvas_resources_field()
         ))
     }
 }

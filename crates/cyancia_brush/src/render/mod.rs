@@ -8,6 +8,7 @@ use bevy_math::IRect;
 use chrono::{DateTime, Utc};
 use cyancia_assets::{AssetAppExt, store::AssetRegistry};
 use cyancia_canvas::{CanvasAppExt, CanvasId};
+use cyancia_color::ForegroundBackgroundColorExt;
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::{LayerId, properties::LayerTexelTypeProp},
@@ -30,7 +31,7 @@ use cyancia_runtime::Services;
 use cyancia_utils::log_err::LogErr;
 use encase::ShaderType;
 use futures::channel::oneshot;
-use glam::{IVec2, Vec2};
+use glam::{IVec2, Vec2, Vec4};
 use iced_runtime::Task;
 use parking_lot::Mutex;
 use wgpu::{
@@ -43,9 +44,12 @@ use wgpu::{
 use crate::{
     input_processing::{InputProcessor, RawPenInput},
     instance::{BrushPresetInstance, CompiledBrushPreset},
-    render::pipeline::{
-        BrushInputSamplingPipeline, BrushMainBoundsEvalPipeline, BrushMainPipeline,
-        BrushPostProcessBoundsEvalPipeline, BrushPostProcessPipeline,
+    render::{
+        graph::CanvasResources,
+        pipeline::{
+            BrushInputSamplingPipeline, BrushMainBoundsEvalPipeline, BrushMainPipeline,
+            BrushPostProcessBoundsEvalPipeline, BrushPostProcessPipeline,
+        },
     },
 };
 
@@ -73,6 +77,7 @@ pub struct CanvasBrushPresetOperator {
     last_session: Option<CanvasBrushStrokeSessionInfo>,
     input_processor: InputProcessor,
     cached_brush: Option<CompiledBrushPreset>,
+    canvas_resources: DynamicBuffer<CanvasResources>,
 }
 
 impl CanvasBrushPresetOperator {
@@ -90,6 +95,10 @@ impl CanvasBrushPresetOperator {
             last_session: None,
             input_processor,
             cached_brush: None,
+            canvas_resources: DynamicBuffer::new(
+                Some("canvas_resources".into()),
+                BufferUsages::STORAGE,
+            ),
         }
     }
 
@@ -126,6 +135,23 @@ impl CanvasBrushPresetOperator {
             return Task::none();
         }
 
+        // update canvas resources
+        let xyz_to_rgb = canvas
+            .image
+            .profile()
+            .rgb_to_xyz_matrix()
+            .to_f32()
+            .inverse();
+        let fg_color = services.foreground_color().get().into_rgb(xyz_to_rgb);
+        let bg_color = services.background_color().get().into_rgb(xyz_to_rgb);
+        self.canvas_resources.clear();
+        self.canvas_resources.push(&CanvasResources {
+            foreground_color: Vec4::new(fg_color.r, fg_color.g, fg_color.b, 1.0),
+            background_color: Vec4::new(bg_color.r, bg_color.g, bg_color.b, 1.0),
+        });
+        self.canvas_resources
+            .write_buffer(&self.device, &self.queue);
+
         let tiles = services.tile_storage();
         let target_layer_info = tiles
             .get_layer_info(active_layer_id)
@@ -160,6 +186,7 @@ impl CanvasBrushPresetOperator {
                 session.target_layer_format,
                 session.selection_layer_format,
                 services,
+                &self.canvas_resources,
             )
         });
 
@@ -363,6 +390,7 @@ impl BrushPresetRenderer {
         target_layer_format: TexelType,
         selection_layer_format: TexelType,
         services: &Services,
+        canvas_resources: &DynamicBuffer<CanvasResources>,
     ) -> Self {
         let device = services.render_device();
         let queue = services.render_queue();
@@ -375,6 +403,7 @@ impl BrushPresetRenderer {
             target_layer_format,
             selection_layer_format,
             assets,
+            canvas_resources,
         );
         let scan_pixels = ScanPixelsPipeline::new(device, selection_layer_format);
 
@@ -1019,6 +1048,7 @@ pub struct StrokeResources {
     // FIXME This should be retrieved every time updates. Or the value is never updated.
     pub external_var_buffers: Vec<Buffer>,
     pub referenced_textures: TextureAtlas,
+    pub canvas_resources: Buffer,
 
     pub target_layer_format: TexelType,
     pub selection_layer_format: TexelType,
@@ -1032,6 +1062,7 @@ impl StrokeResources {
         target_layer_format: TexelType,
         selection_layer_format: TexelType,
         assets: &AssetRegistry,
+        canvas_resources: &DynamicBuffer<CanvasResources>,
     ) -> Self {
         let mut external_var_layouts = Vec::new();
         for cur_binding in (EXTERNAL_VARIABLE_BASE_BINDING..).take(brush.external_vars.all().len())
@@ -1109,6 +1140,7 @@ impl StrokeResources {
 
             target_layer_format,
             selection_layer_format,
+            canvas_resources: canvas_resources.inner_buffer().unwrap().clone(),
         }
     }
 
