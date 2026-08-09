@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use cyancia_shader_graph::{
-    editor::{GraphEditorView, GraphEditorMessage, GraphEditorState},
+    editor::{GraphEditorMessage, GraphEditorState, GraphEditorView},
     graph::{
         Graph, GraphData, GraphResources, node::GraphNodeRegistry, variable::GraphTypeRegistry,
     },

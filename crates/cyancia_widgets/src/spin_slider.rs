@@ -30,6 +30,7 @@ where
     prefix: String,
     suffix: String,
     disabled: bool,
+    allow_beyond_range: bool,
     class: <Theme as Catalog>::Class<'a>,
 }
 
@@ -42,13 +43,6 @@ where
     pub const DEFAULT_HEIGHT: f32 = 24.0;
 
     pub fn new(range: RangeInclusive<T>, value: T) -> Self {
-        let value = if value < *range.start() {
-            *range.start()
-        } else if value > *range.end() {
-            *range.end()
-        } else {
-            value
-        };
         let fractional_step = 0.1f64.as_();
         let step = if fractional_step > 0.0f64.as_() {
             fractional_step
@@ -71,6 +65,7 @@ where
             prefix: String::new(),
             suffix: String::new(),
             disabled: false,
+            allow_beyond_range: true,
             class: <Theme as Catalog>::default(),
         }
     }
@@ -134,6 +129,16 @@ where
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    pub fn allow_beyond_range(mut self, allow: bool) -> Self {
+        if self.value < *self.range.start() {
+            self.value = *self.range.start();
+        } else if self.value > *self.range.end() {
+            self.value = *self.range.end();
+        }
+        self.allow_beyond_range = allow;
         self
     }
 
@@ -215,7 +220,13 @@ where
         let end: f64 = (*self.range.end()).as_();
         let step: f64 = self.step.as_();
         let steps = ((value - start) / step).round();
-        (start + steps * step).clamp(start, end).as_()
+        let val = start + steps * step;
+        if self.allow_beyond_range {
+            val
+        } else {
+            val.clamp(start, end)
+        }
+        .as_()
     }
 
     fn value_to_percentage(&self, value: T) -> f32 {

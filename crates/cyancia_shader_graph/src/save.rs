@@ -16,8 +16,8 @@ use crate::graph::{
     Graph, GraphData, GraphResources,
     external::{ExternalVariable, ExternalVariableId},
     function::{
-        GRAPH_FUNCTION_NODE_REGISTRY, GRAPH_FUNCTION_TYPE_REGISTRY, GraphFunction,
-        GraphFunctionId, SharedGraphFunctionStorage,
+        GRAPH_FUNCTION_NODE_REGISTRY, GRAPH_FUNCTION_TYPE_REGISTRY, GraphFunction, GraphFunctionId,
+        SharedGraphFunctionStorage,
     },
     node::{
         GraphNodeCreateSlotsContext, GraphNodeData, GraphNodeDefaultStateContext, GraphNodeId,

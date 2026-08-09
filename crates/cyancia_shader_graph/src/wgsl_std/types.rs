@@ -268,10 +268,18 @@ impl GraphValueType for ColorType {
         data: &Self::AssociatedLiteralType,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
         column![
-            SpinSlider::new(0.0..=1.0, data.x).on_confirm(ColorMessage::R),
-            SpinSlider::new(0.0..=1.0, data.y).on_confirm(ColorMessage::G),
-            SpinSlider::new(0.0..=1.0, data.z).on_confirm(ColorMessage::B),
-            SpinSlider::new(0.0..=1.0, data.w).on_confirm(ColorMessage::A),
+            SpinSlider::new(0.0..=1.0, data.x)
+                .on_confirm(ColorMessage::R)
+                .allow_beyond_range(false),
+            SpinSlider::new(0.0..=1.0, data.y)
+                .on_confirm(ColorMessage::G)
+                .allow_beyond_range(false),
+            SpinSlider::new(0.0..=1.0, data.z)
+                .on_confirm(ColorMessage::B)
+                .allow_beyond_range(false),
+            SpinSlider::new(0.0..=1.0, data.w)
+                .on_confirm(ColorMessage::A)
+                .allow_beyond_range(false),
         ]
         .padding(2)
         .into()

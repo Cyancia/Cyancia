@@ -8,9 +8,8 @@ use cyancia_shader_graph::{
         GraphData,
         node::{
             GraphNode, GraphNodeCodeGenContext, GraphNodeCodeGenError, GraphNodeCreateSlotsContext,
-            GraphNodeDefaultStateContext, GraphNodeUpdateContext,
-            GraphNodeUpdateSignatureContext, GraphNodeViewContext, StatelessCommonGraphNode,
-            stateless,
+            GraphNodeDefaultStateContext, GraphNodeUpdateContext, GraphNodeUpdateSignatureContext,
+            GraphNodeViewContext, StatelessCommonGraphNode, stateless,
         },
         slot::{ErasedGraphLiteralUpdateMessage, GraphDefaultInputSlot, GraphDefaultOutputSlot},
     },
