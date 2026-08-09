@@ -316,86 +316,94 @@ pub fn hit_test(quad: [Vec2; 4], p: Vec2) -> Option<InteractionType> {
     let u = (d.x * y.y - d.y * y.x) / det;
     let v = (x.x * d.y - x.y * d.x) / det;
 
-    let x_hat = x.normalize();
-    let y_hat = y.normalize();
+    const EDGE_HIT_RADIUS: f32 = 10.0;
+    const SHEAR_HIT_MAX_DISTANCE: f32 = 30.0;
+    const ROTATE_HIT_RADIUS: f32 = 40.0;
+
     let w_abs = x.length();
     let h_abs = y.length();
-    let center = (tl + tr + br + bl) * 0.25;
+    let area = det.abs();
 
-    let dl = (p - tl).dot(x_hat);
-    let dr = (p - tr).dot(x_hat);
-    let dt = (p - tl).dot(y_hat);
-    let db = (p - bl).dot(y_hat);
-    if dl > 10.0 && dr < -10.0 && dt > 10.0 && db < -10.0 {
+    let left_distance = u * area / h_abs;
+    let right_distance = (1.0 - u) * area / h_abs;
+    let top_distance = v * area / w_abs;
+    let bottom_distance = (1.0 - v) * area / w_abs;
+
+    let left_edge_t = (p - tl).dot(y) / y.length_squared();
+    let right_edge_t = (p - tr).dot(y) / y.length_squared();
+    let top_edge_t = (p - tl).dot(x) / x.length_squared();
+    let bottom_edge_t = (p - bl).dot(x) / x.length_squared();
+
+    if left_distance > EDGE_HIT_RADIUS
+        && right_distance > EDGE_HIT_RADIUS
+        && top_distance > EDGE_HIT_RADIUS
+        && bottom_distance > EDGE_HIT_RADIUS
+    {
         return Some(InteractionType::Translate);
     }
 
-    if p.distance(tl) < 10.0 {
+    if p.distance(tl) < EDGE_HIT_RADIUS {
         return Some(InteractionType::Scale(ScaleType::TopLeft));
     }
-    if p.distance(br) < 10.0 {
+    if p.distance(br) < EDGE_HIT_RADIUS {
         return Some(InteractionType::Scale(ScaleType::BottomRight));
     }
-    if p.distance(tr) < 10.0 {
+    if p.distance(tr) < EDGE_HIT_RADIUS {
         return Some(InteractionType::Scale(ScaleType::TopRight));
     }
-    if p.distance(bl) < 10.0 {
+    if p.distance(bl) < EDGE_HIT_RADIUS {
         return Some(InteractionType::Scale(ScaleType::BottomLeft));
     }
 
-    let shear = (p - center).dot(y_hat).abs() < h_abs.min(10.0);
-    if dl.abs() < 10.0 {
-        if shear {
-            return Some(InteractionType::Shear(ShearType::Left));
-        } else {
-            return Some(InteractionType::Scale(ScaleType::Left));
-        }
+    if 0.0 < left_edge_t && left_edge_t < 1.0 && left_distance.abs() < EDGE_HIT_RADIUS {
+        return Some(InteractionType::Scale(ScaleType::Left));
     }
-    if dr.abs() < 10.0 {
-        if shear {
-            return Some(InteractionType::Shear(ShearType::Right));
-        } else {
-            return Some(InteractionType::Scale(ScaleType::Right));
-        }
+    if 0.0 < right_edge_t && right_edge_t < 1.0 && right_distance.abs() < EDGE_HIT_RADIUS {
+        return Some(InteractionType::Scale(ScaleType::Right));
+    }
+    if 0.0 < top_edge_t && top_edge_t < 1.0 && top_distance.abs() < EDGE_HIT_RADIUS {
+        return Some(InteractionType::Scale(ScaleType::Top));
+    }
+    if 0.0 < bottom_edge_t && bottom_edge_t < 1.0 && bottom_distance.abs() < EDGE_HIT_RADIUS {
+        return Some(InteractionType::Scale(ScaleType::Bottom));
     }
 
-    let shear = (p - center).dot(x_hat).abs() < w_abs.min(10.0);
-    if dt.abs() < 10.0 {
-        if shear {
-            return Some(InteractionType::Shear(ShearType::Top));
-        } else {
-            return Some(InteractionType::Scale(ScaleType::Top));
-        }
+    if ((left_edge_t - 0.5) * h_abs).abs() < h_abs.min(EDGE_HIT_RADIUS)
+        && left_distance <= -EDGE_HIT_RADIUS
+        && left_distance >= -SHEAR_HIT_MAX_DISTANCE
+    {
+        return Some(InteractionType::Shear(ShearType::Left));
     }
-    if db.abs() < 10.0 {
-        if shear {
-            return Some(InteractionType::Shear(ShearType::Bottom));
-        } else {
-            return Some(InteractionType::Scale(ScaleType::Bottom));
-        }
+    if ((right_edge_t - 0.5) * h_abs).abs() < h_abs.min(EDGE_HIT_RADIUS)
+        && right_distance <= -EDGE_HIT_RADIUS
+        && right_distance >= -SHEAR_HIT_MAX_DISTANCE
+    {
+        return Some(InteractionType::Shear(ShearType::Right));
     }
-
-    let closest = tl + x * u.clamp(0.0, 1.0) + y * v.clamp(0.0, 1.0);
-    if closest.distance(p) > 40.0 {
-        return None;
+    if ((top_edge_t - 0.5) * w_abs).abs() < w_abs.min(EDGE_HIT_RADIUS)
+        && top_distance <= -EDGE_HIT_RADIUS
+        && top_distance >= -SHEAR_HIT_MAX_DISTANCE
+    {
+        return Some(InteractionType::Shear(ShearType::Top));
     }
-
-    if u < 0.0 {
-        if v < 0.0 {
-            return Some(InteractionType::Rotate(RotateType::TopLeft));
-        }
-        if v > 1.0 {
-            return Some(InteractionType::Rotate(RotateType::BottomLeft));
-        }
+    if ((bottom_edge_t - 0.5) * w_abs).abs() < w_abs.min(EDGE_HIT_RADIUS)
+        && bottom_distance <= -EDGE_HIT_RADIUS
+        && bottom_distance >= -SHEAR_HIT_MAX_DISTANCE
+    {
+        return Some(InteractionType::Shear(ShearType::Bottom));
     }
 
-    if u > 1.0 {
-        if v < 0.0 {
-            return Some(InteractionType::Rotate(RotateType::TopRight));
-        }
-        if v > 1.0 {
-            return Some(InteractionType::Rotate(RotateType::BottomRight));
-        }
+    if u < 0.0 && v < 0.0 && p.distance(tl) < ROTATE_HIT_RADIUS {
+        return Some(InteractionType::Rotate(RotateType::TopLeft));
+    }
+    if u > 1.0 && v < 0.0 && p.distance(tr) < ROTATE_HIT_RADIUS {
+        return Some(InteractionType::Rotate(RotateType::TopRight));
+    }
+    if u > 1.0 && v > 1.0 && p.distance(br) < ROTATE_HIT_RADIUS {
+        return Some(InteractionType::Rotate(RotateType::BottomRight));
+    }
+    if u < 0.0 && v > 1.0 && p.distance(bl) < ROTATE_HIT_RADIUS {
+        return Some(InteractionType::Rotate(RotateType::BottomLeft));
     }
 
     None
@@ -980,4 +988,64 @@ impl FreeTransformPipeline {
 #[derive(ShaderType, Debug)]
 pub struct FreeTransformParams {
     pub mat_inv: Mat3,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shear_is_only_hit_near_edge_midpoints_between_ten_and_thirty_pixels_outside() {
+        let quad = [
+            Vec2::new(100.0, 0.0),
+            Vec2::new(300.0, 0.0),
+            Vec2::new(200.0, 200.0),
+            Vec2::new(0.0, 200.0),
+        ];
+        let [tl, tr, br, bl] = quad;
+        let x = tr - tl;
+        let y = bl - tl;
+        let top_outward = Vec2::new(x.y, -x.x).normalize();
+        let left_outward = Vec2::new(-y.y, y.x).normalize();
+        let top_midpoint = (tl + tr) * 0.5;
+        let left_midpoint = (tl + bl) * 0.5;
+
+        assert!(matches!(
+            hit_test(quad, top_midpoint),
+            Some(InteractionType::Scale(ScaleType::Top))
+        ));
+        assert!(matches!(
+            hit_test(quad, top_midpoint + top_outward * 9.0),
+            Some(InteractionType::Scale(ScaleType::Top))
+        ));
+        for distance in [10.0, 20.0, 30.0] {
+            let point = top_midpoint + top_outward * distance;
+            let hit = hit_test(quad, point);
+            assert!(
+                matches!(hit, Some(InteractionType::Shear(ShearType::Top))),
+                "distance={distance}, point={point:?}, hit={hit:?}"
+            );
+        }
+        assert!(hit_test(quad, top_midpoint + top_outward * 31.0).is_none());
+        assert!(hit_test(quad, tl + x * 0.25 + top_outward * 20.0).is_none());
+
+        assert!(matches!(
+            hit_test(quad, left_midpoint),
+            Some(InteractionType::Scale(ScaleType::Left))
+        ));
+        assert!(matches!(
+            hit_test(quad, left_midpoint + left_outward * 20.0),
+            Some(InteractionType::Shear(ShearType::Left))
+        ));
+        assert!(hit_test(quad, tl + y * 0.25 + left_outward * 20.0).is_none());
+
+        assert!(matches!(
+            hit_test(quad, (tr + br) * 0.5 - left_outward * 20.0),
+            Some(InteractionType::Shear(ShearType::Right))
+        ));
+        assert!(matches!(
+            hit_test(quad, (bl + br) * 0.5 - top_outward * 20.0),
+            Some(InteractionType::Shear(ShearType::Bottom))
+        ));
+    }
 }
