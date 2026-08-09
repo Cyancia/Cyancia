@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 cyancia_math.workspace = true
+cyancia_runtime.workspace = true
 cyancia_utils.workspace = true
 glam.workspace = true
 moxcms.workspace = true

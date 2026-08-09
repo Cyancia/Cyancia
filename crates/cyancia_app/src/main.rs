@@ -13,6 +13,7 @@ use cyancia_assets::{
 use cyancia_brush::{BrushPlugin, editor::BrushEditor};
 use cyancia_bucket_tool::BucketPlugin;
 use cyancia_canvas::CanvasPlugin;
+use cyancia_color::ColorPlugin;
 use cyancia_image::ImagePlugin;
 use cyancia_input::InputPlugin;
 use cyancia_render::RenderPlugin;
@@ -73,6 +74,7 @@ fn main() {
         .add_plugin(BucketPlugin)
         .add_plugin(SelectionPlugin)
         .add_plugin(FreeTransformPlugin)
+        .add_plugin(ColorPlugin)
         .add_plugin(ActionPlugin);
     app.build_plugins();
 

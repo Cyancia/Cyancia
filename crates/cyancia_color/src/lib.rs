@@ -1,3 +1,6 @@
+use cyancia_runtime::{Application, Services, plugin::Plugin, service::Service};
+use cyancia_utils::wrapper;
+
 use crate::model::{
     gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv, oklab::OkLab,
     oklch::OkLch, rgb::Rgb, xyz::Xyz,
@@ -44,3 +47,55 @@ impl_from!(OkLab, OkLab);
 impl_from!(OkLch, OkLch);
 impl_from!(Rgb, Rgb);
 impl_from!(Xyz, Xyz);
+
+wrapper! {
+    #[derive(Debug, Clone, Copy)]
+    pub ForegroundColor : Color
+}
+
+impl Service for ForegroundColor {}
+
+wrapper! {
+    #[derive(Debug, Clone, Copy)]
+    pub BackgroundColor : Color
+}
+
+impl Service for BackgroundColor {}
+
+pub trait ForegroundBackgroundColorExt {
+    fn foreground_color(&self) -> &ForegroundColor;
+    fn foreground_color_mut(&mut self) -> &mut ForegroundColor;
+    fn background_color(&self) -> &BackgroundColor;
+    fn background_color_mut(&mut self) -> &mut BackgroundColor;
+}
+
+impl ForegroundBackgroundColorExt for Services {
+    fn foreground_color(&self) -> &ForegroundColor {
+        self.service::<ForegroundColor>()
+    }
+
+    fn foreground_color_mut(&mut self) -> &mut ForegroundColor {
+        self.service_mut::<ForegroundColor>()
+    }
+
+    fn background_color(&self) -> &BackgroundColor {
+        self.service::<BackgroundColor>()
+    }
+
+    fn background_color_mut(&mut self) -> &mut BackgroundColor {
+        self.service_mut::<BackgroundColor>()
+    }
+}
+
+pub struct ColorPlugin;
+
+impl Plugin for ColorPlugin {
+    fn build(&self, app: &mut Application) {
+        let mut runtime = app.runtime_mut();
+        let services = runtime.services_mut();
+
+        let default_color = Color::Rgb(Rgb::new(0.0, 0.0, 0.0));
+        services.insert_service(ForegroundColor::new(default_color));
+        services.insert_service(BackgroundColor::new(default_color));
+    }
+}
