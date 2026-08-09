@@ -782,6 +782,215 @@ impl<Data: GraphData> GraphNode<Data> for RectMathNode {
 }
 
 #[derive(Default, Clone)]
+pub struct CompareNode;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display)]
+pub enum CompareNodeMode {
+    #[display("Less Than")]
+    LessThan,
+    #[display("Less Equal")]
+    LessEqual,
+    #[display("Greater Than")]
+    GreaterThan,
+    #[display("Greater Equal")]
+    GreaterEqual,
+    Equal,
+}
+
+impl CompareNodeMode {
+    pub const ALL: [CompareNodeMode; 5] = [
+        CompareNodeMode::LessThan,
+        CompareNodeMode::LessEqual,
+        CompareNodeMode::GreaterThan,
+        CompareNodeMode::GreaterEqual,
+        CompareNodeMode::Equal,
+    ];
+}
+
+#[derive(Clone)]
+pub enum CompareNodeMessage {
+    ModeChanged(CompareNodeMode),
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
+impl<Data: GraphData> GraphNode<Data> for CompareNode {
+    type State = CompareNodeMode;
+    type Message = CompareNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Compare"
+    }
+
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
+        CompareNodeMode::LessThan
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        themed_color(stringify!(CompareNode), is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<F32Type>("Lhs".into()),
+            GraphDefaultInputSlot::new::<F32Type>("Rhs".into()),
+        ]
+    }
+
+    fn create_outputs(
+        &self,
+        _: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<BoolType>("Result".into())]
+    }
+
+    fn view(
+        &self,
+        state: &Self::State,
+        ctx: GraphNodeViewContext<'_, Data>,
+    ) -> GraphElement<'static, Self::Message> {
+        ctx.view_all_slots_with_header(
+            pick_list(
+                CompareNodeMode::ALL,
+                Some(*state),
+                CompareNodeMessage::ModeChanged,
+            )
+            .width(Length::Fill),
+            CompareNodeMessage::LiteralUpdate,
+        )
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
+    ) {
+        match message {
+            CompareNodeMessage::ModeChanged(mode) => *state = mode,
+            CompareNodeMessage::LiteralUpdate(message) => ctx.update_literal(message),
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let lhs = ctx.get_input(0)?;
+        let rhs = ctx.get_input(1)?;
+        let output = ctx.get_output(0)?;
+        let operator = match state {
+            CompareNodeMode::LessThan => "<",
+            CompareNodeMode::LessEqual => "<=",
+            CompareNodeMode::GreaterThan => ">",
+            CompareNodeMode::GreaterEqual => ">=",
+            CompareNodeMode::Equal => "==",
+        };
+
+        Ok(format!("let {} = {} {} {};\n", output, lhs, operator, rhs))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct ScalarSelectNode;
+
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for ScalarSelectNode {
+    fn name(&self) -> &'static str {
+        "Scalar Select"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        themed_color(stringify!(ScalarSelectNode), is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<BoolType>("Condition".into()),
+            GraphDefaultInputSlot::new::<F32Type>("False".into()),
+            GraphDefaultInputSlot::new::<F32Type>("True".into()),
+        ]
+    }
+
+    fn create_outputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<F32Type>("Result".into())]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let condition = ctx.get_input(0)?;
+        let false_value = ctx.get_input(1)?;
+        let true_value = ctx.get_input(2)?;
+        let output = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = select({}, {}, {});\n",
+            output, false_value, true_value, condition
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct VectorSelectNode;
+
+#[stateless]
+impl<Data: GraphData> StatelessCommonGraphNode<Data> for VectorSelectNode {
+    fn name(&self) -> &'static str {
+        "Vector Select"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        themed_color(stringify!(VectorSelectNode), is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![
+            GraphDefaultInputSlot::new::<BoolType>("Condition".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("False".into()),
+            GraphDefaultInputSlot::new::<Vec2FType>("True".into()),
+        ]
+    }
+
+    fn create_outputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<Vec2FType>("Result".into())]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let condition = ctx.get_input(0)?;
+        let false_value = ctx.get_input(1)?;
+        let true_value = ctx.get_input(2)?;
+        let output = ctx.get_output(0)?;
+
+        Ok(format!(
+            "let {} = select({}, {}, {});\n",
+            output, false_value, true_value, condition
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct TimeNode;
 
 pub struct GraphTimes {

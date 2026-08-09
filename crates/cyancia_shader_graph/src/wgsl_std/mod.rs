@@ -31,6 +31,9 @@ pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
     nodes.register::<ScalarMathNode>();
     nodes.register::<VectorMathNode>();
     nodes.register::<RectMathNode>();
+    nodes.register::<CompareNode>();
+    nodes.register::<ScalarSelectNode>();
+    nodes.register::<VectorSelectNode>();
     nodes.register::<ClampNode>();
     nodes.register::<RandomNode>();
     nodes.register::<StepNode>();
