@@ -706,9 +706,13 @@ impl ToolFunction for FreeTransformTool {
                 Task::batch([init_task, poll_task.discard()])
             }
             FreeTransformToolMessage::InitTransform(init) => {
-                let device = services.render_device();
-                let queue = services.render_queue();
-                self.session = Some(TransformSession::new(device, queue, init));
+                if init.pixel_bounds.is_empty() {
+                    self.session = None;
+                } else {
+                    let device = services.render_device();
+                    let queue = services.render_queue();
+                    self.session = Some(TransformSession::new(device, queue, init));
+                }
                 Task::none()
             }
         }
