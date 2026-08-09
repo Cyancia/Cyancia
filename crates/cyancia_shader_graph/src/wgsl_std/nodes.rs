@@ -3257,7 +3257,7 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
         let break_conditions = body
             .nodes
             .values()
-            .filter(|node| node.data.state::<BreakBeforeNextIterationNode>().is_some())
+            .filter(|node| node.data.is::<BreakBeforeNextIterationNode>())
             .filter_map(|node| {
                 let input_id = node.inputs.first()?;
                 let slot = body.slots.get_input(input_id)?;

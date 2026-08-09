@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::Result;
 use cyancia_utils::{cloneable_any::ClonableAnySync, wrapper};
+use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 use iced_core::{Color, Length, Point};
 use iced_widget::Column;
@@ -102,7 +103,7 @@ impl std::fmt::Debug for ErasedGraphNodeMessage {
     }
 }
 
-pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
+pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone + Downcast {
     fn name(&self) -> &'static str;
     fn default_state(
         &self,
@@ -155,6 +156,7 @@ pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
 }
 
 dyn_clone::clone_trait_object!(<Data> ErasedGraphNode<Data>);
+downcast_rs::impl_downcast!(ErasedGraphNode<Data> where Data: GraphData);
 
 impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
     fn name(&self) -> &'static str {
@@ -378,6 +380,10 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
 
     pub fn update_signature(&self, ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
         self.data.update_signature(&self.state, ctx);
+    }
+
+    pub fn is<T: GraphNode<Data>>(&self) -> bool {
+        self.data.downcast_ref::<T>().is_some()
     }
 
     pub fn state<T: GraphNode<Data>>(&self) -> Option<&T::State> {
