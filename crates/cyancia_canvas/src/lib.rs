@@ -6,7 +6,7 @@ use cyancia_image::{
     CImage,
     layer::{LayerId, LayerStackNode},
 };
-use cyancia_runtime::{Application, Services, plugin::Plugin, service::Service};
+use cyancia_runtime::{Application, Services, event::Event, plugin::Plugin, service::Service};
 use cyancia_tools::{ToolProxyId, ToolsAppExt};
 use cyancia_undo::{QueuedUndoCommand, UndoCommand, UndoStack, UndoStacks};
 use cyancia_utils::wrapper;
@@ -90,34 +90,31 @@ impl CCanvas {
         Ok(())
     }
 
-    pub fn set_active_layer(&mut self, layer_id: LayerId) -> Option<CanvasActiveLayerChanged> {
+    pub fn set_active_layer(&mut self, layer_id: LayerId) {
         if layer_id == self.active_layer || layer_id == *self.image.layer_stack().root_id() {
-            return None;
+            return;
         }
         let old = self.active_layer;
         self.active_layer = layer_id;
         self.selected_layers.insert(layer_id);
-        Some(CanvasActiveLayerChanged {
+        CanvasActiveLayerChanged::broadcast(CanvasActiveLayerChanged {
             from: old,
             to: layer_id,
-        })
+        });
     }
 
-    pub fn set_active_layer_and_clear_select(
-        &mut self,
-        layer_id: LayerId,
-    ) -> Option<CanvasActiveLayerChanged> {
+    pub fn set_active_layer_and_clear_select(&mut self, layer_id: LayerId) {
         self.selected_layers.clear();
-        self.set_active_layer(layer_id)
+        self.set_active_layer(layer_id);
     }
 
     pub fn select_layer(&mut self, layer_id: LayerId) {
         self.selected_layers.insert(layer_id);
     }
 
-    pub fn deselect_layer(&mut self, layer_id: LayerId) -> Option<CanvasActiveLayerChanged> {
+    pub fn deselect_layer(&mut self, layer_id: LayerId) {
         if self.selected_layers.contains(&layer_id) && self.selected_layers.len() == 1 {
-            return None;
+            return;
         }
 
         self.selected_layers.shift_remove(&layer_id);
@@ -127,32 +124,23 @@ impl CCanvas {
                     .first()
                     .copied()
                     .expect("A selected layer should remain"),
-            )
-        } else {
-            None
+            );
         }
     }
 
-    pub fn toggle_layer_selection_and_active(
-        &mut self,
-        layer_id: LayerId,
-    ) -> Option<CanvasActiveLayerChanged> {
+    pub fn toggle_layer_selection_and_active(&mut self, layer_id: LayerId) {
         if self.selected_layers.contains(&layer_id) {
-            self.deselect_layer(layer_id)
+            self.deselect_layer(layer_id);
         } else {
-            self.set_active_layer(layer_id)
+            self.set_active_layer(layer_id);
         }
     }
 
-    pub fn toggle_layer_selection(
-        &mut self,
-        layer_id: LayerId,
-    ) -> Option<CanvasActiveLayerChanged> {
+    pub fn toggle_layer_selection(&mut self, layer_id: LayerId) {
         if self.selected_layers.contains(&layer_id) {
-            self.deselect_layer(layer_id)
+            self.deselect_layer(layer_id);
         } else {
             self.select_layer(layer_id);
-            None
         }
     }
 

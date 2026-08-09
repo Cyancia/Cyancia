@@ -1,7 +1,9 @@
 use bevy_math::{IRect, Rect};
 use cyancia_canvas::{
-    CanvasAppExt, CanvasId, CanvasUndoStackAppExt, command::TileReplaceCommand,
-    control::CanvasTransform, event::CanvasUpdated,
+    CanvasAppExt, CanvasId, CanvasUndoStackAppExt,
+    command::TileReplaceCommand,
+    control::CanvasTransform,
+    event::{CanvasActiveLayerChanged, CanvasUpdated},
 };
 use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
@@ -34,7 +36,7 @@ use iced_core::{
     Clipboard, Color, Element, Length, Point, Rectangle, Shell, Size, Theme, Vector, Widget,
     keyboard::Modifiers, layout, mouse, renderer, widget,
 };
-use iced_runtime::Task;
+use iced_runtime::{Task, futures::Subscription};
 use iced_wgpu::Renderer;
 use iced_widget::{
     canvas::{Frame, Path, Stroke},
@@ -479,6 +481,7 @@ pub struct InitTransform {
 }
 
 pub enum FreeTransformToolMessage {
+    RequestInit,
     InitTransform(InitTransform),
 }
 
@@ -497,80 +500,7 @@ impl ToolFunction for FreeTransformTool {
     }
 
     fn activate(&mut self, services: &mut Services) -> Task<Self::Message> {
-        let Some(canvas) = services.current_canvas() else {
-            return Task::none();
-        };
-
-        // TODO change session if active layer is changed
-        let canvas_id = canvas.id();
-        let target_layer_id = canvas.active_layer_id();
-        let selection_layer_id = canvas.image.selection_layer();
-        let target_layer_texel = {
-            let tiles = services.tile_storage();
-            let target_layer = tiles.get_layer(target_layer_id).unwrap();
-            target_layer.layer_info().texel_type
-        };
-
-        let device = services.render_device();
-        let queue = services.render_queue();
-
-        if self.bounds_cache.as_ref().map(|(t, _)| *t) != Some(target_layer_texel) {
-            self.bounds_cache = Some((
-                target_layer_texel,
-                LayerBoundsPipeline::new(device, target_layer_texel, true),
-            ));
-        }
-        let bounds_pipeline = &self.bounds_cache.as_ref().unwrap().1;
-        if self.scan_pipeline.is_none() {
-            self.scan_pipeline = Some(ScanPixelsPipeline::new(device, TexelType::A8));
-        }
-        let scan_pipeline = self.scan_pipeline.as_ref().unwrap();
-
-        let tiles = services.tile_storage();
-        let target_layer = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
-        let selection_binding = tiles
-            .get_layer_binding_or_empty(selection_layer_id)
-            .unwrap();
-        let mut has_selection =
-            Some(scan_pipeline.scan_to_binary_buffer(device, queue, &selection_binding));
-
-        let mut ec = device.create_command_encoder(&Default::default());
-        let bounds_buffer = bounds_pipeline.dispatch(
-            device,
-            queue,
-            &mut ec,
-            target_layer,
-            Some(selection_binding),
-        );
-        let bounds_buffer_staging =
-            create_readback_buffer_and_schedule_copy(device, &mut ec, &bounds_buffer);
-        let bounds_buffer_readback =
-            readback_buffer_on_submit_async::<IRect, _>(&mut ec, &bounds_buffer_staging, ..)
-                .into_task();
-        let si = queue.submit([ec.finish()]);
-        let poll_task = Task::future({
-            let device = device.clone();
-            async move {
-                let _ = device.poll_indefinitely_for(si);
-            }
-        });
-
-        let init_task = bounds_buffer_readback.then(move |m| match m {
-            Ok(bounds) => {
-                let has_selection = has_selection.take().unwrap();
-                Task::done(FreeTransformToolMessage::InitTransform(InitTransform {
-                    canvas_id,
-                    target_layer_id,
-                    selection_layer_id,
-                    has_selection,
-                    target_layer_texel,
-                    pixel_bounds: bounds,
-                }))
-            }
-            _ => Task::none(),
-        });
-
-        Task::batch([init_task, poll_task.discard()])
+        Task::done(FreeTransformToolMessage::RequestInit)
     }
 
     fn begin(
@@ -696,6 +626,85 @@ impl ToolFunction for FreeTransformTool {
         services: &mut Services,
     ) -> Task<Self::Message> {
         match message {
+            FreeTransformToolMessage::RequestInit => {
+                let Some(canvas) = services.current_canvas() else {
+                    return Task::none();
+                };
+
+                // TODO change session if active layer is changed
+                let canvas_id = canvas.id();
+                let target_layer_id = canvas.active_layer_id();
+                let selection_layer_id = canvas.image.selection_layer();
+                let target_layer_texel = {
+                    let tiles = services.tile_storage();
+                    let target_layer = tiles.get_layer(target_layer_id).unwrap();
+                    target_layer.layer_info().texel_type
+                };
+
+                let device = services.render_device();
+                let queue = services.render_queue();
+
+                if self.bounds_cache.as_ref().map(|(t, _)| *t) != Some(target_layer_texel) {
+                    self.bounds_cache = Some((
+                        target_layer_texel,
+                        LayerBoundsPipeline::new(device, target_layer_texel, true),
+                    ));
+                }
+                let bounds_pipeline = &self.bounds_cache.as_ref().unwrap().1;
+                if self.scan_pipeline.is_none() {
+                    self.scan_pipeline = Some(ScanPixelsPipeline::new(device, TexelType::A8));
+                }
+                let scan_pipeline = self.scan_pipeline.as_ref().unwrap();
+
+                let tiles = services.tile_storage();
+                let target_layer = tiles.get_layer_binding_or_empty(target_layer_id).unwrap();
+                let selection_binding = tiles
+                    .get_layer_binding_or_empty(selection_layer_id)
+                    .unwrap();
+                let mut has_selection =
+                    Some(scan_pipeline.scan_to_binary_buffer(device, queue, &selection_binding));
+
+                let mut ec = device.create_command_encoder(&Default::default());
+                let bounds_buffer = bounds_pipeline.dispatch(
+                    device,
+                    queue,
+                    &mut ec,
+                    target_layer,
+                    Some(selection_binding),
+                );
+                let bounds_buffer_staging =
+                    create_readback_buffer_and_schedule_copy(device, &mut ec, &bounds_buffer);
+                let bounds_buffer_readback = readback_buffer_on_submit_async::<IRect, _>(
+                    &mut ec,
+                    &bounds_buffer_staging,
+                    ..,
+                )
+                .into_task();
+                let si = queue.submit([ec.finish()]);
+                let poll_task = Task::future({
+                    let device = device.clone();
+                    async move {
+                        let _ = device.poll_indefinitely_for(si);
+                    }
+                });
+
+                let init_task = bounds_buffer_readback.then(move |m| match m {
+                    Ok(bounds) => {
+                        let has_selection = has_selection.take().unwrap();
+                        Task::done(FreeTransformToolMessage::InitTransform(InitTransform {
+                            canvas_id,
+                            target_layer_id,
+                            selection_layer_id,
+                            has_selection,
+                            target_layer_texel,
+                            pixel_bounds: bounds,
+                        }))
+                    }
+                    _ => Task::none(),
+                });
+
+                Task::batch([init_task, poll_task.discard()])
+            }
             FreeTransformToolMessage::InitTransform(init) => {
                 let device = services.render_device();
                 let queue = services.render_queue();
@@ -729,6 +738,13 @@ impl ToolFunction for FreeTransformTool {
             canvas_transform: &canvas.transform,
             session,
         })
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        let active_layer_change =
+            CanvasActiveLayerChanged::listen_to().map(|_| FreeTransformToolMessage::RequestInit);
+
+        active_layer_change
     }
 }
 
