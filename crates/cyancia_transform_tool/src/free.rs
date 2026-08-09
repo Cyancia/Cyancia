@@ -793,7 +793,9 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
             .session
             .quad_ps()
             .map(|p| self.canvas_transform.pixel_to_window(p));
-        let [top_left, top_right, bottom_right, bottom_left] = corners;
+        let [tl, tr, br, bl] = corners;
+        let x = tr - tl;
+        let y = bl - tl;
 
         let mut frame = Frame::new(renderer, layout.bounds().size());
 
@@ -805,7 +807,7 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
             frame.translate(translation);
 
             const HANDLE_SIZE: f32 = 10.0;
-            for point in [top_left, top_right, bottom_left, bottom_right] {
+            for point in [tl, tr, bl, br] {
                 let origin = Point::new(point.x - HANDLE_SIZE * 0.5, point.y - HANDLE_SIZE * 0.5);
                 frame.stroke_rectangle(
                     origin,
@@ -819,14 +821,14 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
             }
 
             let path = Path::new(|b| {
-                let hx = Vec2::X * HANDLE_SIZE;
-                let hy = Vec2::Y * HANDLE_SIZE;
+                let hx = x.normalize() * HANDLE_SIZE;
+                let hy = y.normalize() * HANDLE_SIZE;
 
                 for seg in [
-                    (top_left + hx, top_right - hx),
-                    (top_right + hy, bottom_right - hy),
-                    (bottom_right - hx, bottom_left + hx),
-                    (bottom_left - hy, top_left + hy),
+                    (tl + hx, tr - hx),
+                    (tr + hy, br - hy),
+                    (br - hx, bl + hx),
+                    (bl - hy, tl + hy),
                 ] {
                     let (p1, p2) = seg;
                     b.move_to(Point::new(p1.x, p1.y));
