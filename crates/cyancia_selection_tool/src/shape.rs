@@ -31,12 +31,9 @@ fn common_begin(
         return;
     };
 
-    let Some(start_pos) = canvas
+    let start_pos = canvas
         .transform
-        .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
-    else {
-        return;
-    };
+        .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y));
 
     *state = Some(ShapeSelectionState {
         start_ps: start_pos.as_ivec2(),
@@ -59,13 +56,10 @@ fn common_update(
         return;
     };
 
-    let Some(end_pos) = canvas
+    let end_pos = canvas
         .transform
         .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
-    else {
-        return;
-    };
-    let end_pos = end_pos.as_ivec2();
+        .as_ivec2();
 
     let cur_end_pos = if keyboard.modifiers().shift() {
         // Square

@@ -49,8 +49,11 @@ impl CanvasTransform {
         widget + self.widget_bounds.min
     }
 
-    // TODO Make these methods always return an vec2
-    pub fn window_to_widget(&self, point: Vec2) -> Option<Vec2> {
+    pub fn window_to_widget(&self, point: Vec2) -> Vec2 {
+        point - self.widget_bounds.min
+    }
+
+    pub fn window_to_in_widget(&self, point: Vec2) -> Option<Vec2> {
         if self.widget_bounds.contains(point) {
             Some(point - self.widget_bounds.min)
         } else {
@@ -58,9 +61,14 @@ impl CanvasTransform {
         }
     }
 
-    pub fn window_to_pixel(&self, point: Vec2) -> Option<Vec2> {
-        let widget = self.window_to_widget(point)?;
+    pub fn window_to_pixel(&self, point: Vec2) -> Vec2 {
+        let widget = self.window_to_widget(point);
         let pixel = self.pixel_to_widget.inverse().transform_point2(widget);
-        Some(pixel)
+        pixel
+    }
+
+    pub fn window_to_in_pixel(&self, point: Vec2) -> Option<Vec2> {
+        let widget = self.window_to_in_widget(point)?;
+        Some(self.pixel_to_widget.inverse().transform_point2(widget))
     }
 }

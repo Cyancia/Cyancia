@@ -83,9 +83,7 @@ impl ToolFunction for BucketTool {
         };
 
         let position_ws = Vec2::new(mouse.position.x, mouse.position.y);
-        let Some(position_ps) = canvas.transform.window_to_pixel(position_ws) else {
-            return Task::none();
-        };
+        let position_ps = canvas.transform.window_to_pixel(position_ws);
         if position_ps.x < 0.0
             || position_ps.y < 0.0
             || position_ps.x > canvas.image.size().x as f32

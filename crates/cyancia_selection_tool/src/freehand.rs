@@ -64,12 +64,9 @@ impl ToolFunction for FreehandSelectionTool {
             return Task::none();
         };
 
-        let Some(point_ps) = canvas
+        let point_ps = canvas
             .transform
-            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
-        else {
-            return Task::none();
-        };
+            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y));
 
         self.state = Some(FreehandSelectionState {
             aabb: Rect {
@@ -93,12 +90,9 @@ impl ToolFunction for FreehandSelectionTool {
             return Task::none();
         };
 
-        let Some(point_ps) = canvas
+        let point_ps = canvas
             .transform
-            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
-        else {
-            return Task::none();
-        };
+            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y));
 
         let Some(state) = self.state.as_mut() else {
             return Task::none();
@@ -207,7 +201,7 @@ pub enum PolygonSelectionToolMessage {
 pub struct PolygonSelectionTool {
     fill_rule: FillRule,
     state: Option<FreehandSelectionState>,
-    cursor_ps: Option<Vec2>,
+    cursor_ps: Vec2,
 }
 
 impl Default for PolygonSelectionTool {
@@ -271,9 +265,7 @@ impl ToolFunction for PolygonSelectionTool {
         };
 
         let point_ss = Vec2::new(mouse.position.x, mouse.position.y);
-        let Some(point_ps) = canvas.transform.window_to_pixel(point_ss) else {
-            return Task::none();
-        };
+        let point_ps = canvas.transform.window_to_pixel(point_ss);
         let point_ws = point_ss - canvas.transform.widget_bounds.min;
 
         let Some(state) = self.state.as_mut() else {
@@ -362,15 +354,11 @@ impl ToolFunction for PolygonSelectionTool {
             return space().into();
         };
 
-        let Some(point_ps) = self.cursor_ps else {
-            return space().into();
-        };
-
         let line_vertices_ps = state
             .points_ps
             .iter()
             .copied()
-            .chain([point_ps])
+            .chain([self.cursor_ps])
             .collect::<Vec<_>>();
 
         SelectionPreviewLayer {

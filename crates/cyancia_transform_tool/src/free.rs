@@ -633,12 +633,9 @@ impl ToolFunction for FreeTransformTool {
         let Some(canvas) = services.canvas(&session.canvas_id) else {
             return Task::none();
         };
-        let Some(cursor_ps) = canvas
+        let cursor_ps = canvas
             .transform
-            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
-        else {
-            return Task::none();
-        };
+            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y));
         let Some(ty) = hit_test(session.quad_ps(), cursor_ps, session.anchor) else {
             return Task::none();
         };
@@ -672,12 +669,9 @@ impl ToolFunction for FreeTransformTool {
         let Some(canvas) = services.canvas(&session.canvas_id) else {
             return Task::none();
         };
-        let Some(cursor_ps) = canvas
+        let cursor_ps = canvas
             .transform
-            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y))
-        else {
-            return Task::none();
-        };
+            .window_to_pixel(Vec2::new(mouse.position.x, mouse.position.y));
 
         if session.ongoing_transform.is_none() {
             return Task::none();
@@ -1301,7 +1295,7 @@ impl<'a> Widget<FreeTransformToolMessage, Theme, Renderer> for FreeTransformTool
     ) -> mouse::Interaction {
         let Some(cursor_ps) = cursor
             .position()
-            .and_then(|p| self.canvas_transform.window_to_pixel(Vec2::new(p.x, p.y)))
+            .map(|p| self.canvas_transform.window_to_pixel(Vec2::new(p.x, p.y)))
         else {
             return mouse::Interaction::None;
         };

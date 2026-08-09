@@ -112,12 +112,9 @@ impl CanvasBrushPresetOperator {
         let canvas = services
             .canvas(&canvas_id)
             .expect("Current canvas should exist");
-        let Some(position) = canvas
+        let position = canvas
             .transform
-            .window_to_pixel(Vec2::new(input.position.x, input.position.y))
-        else {
-            return Task::none();
-        };
+            .window_to_pixel(Vec2::new(input.position.x, input.position.y));
         let active_layer_id = canvas.active_layer_id();
         let selection_layer_id = canvas.image.selection_layer();
         if !canvas
@@ -219,12 +216,9 @@ impl CanvasBrushPresetOperator {
             return Task::none();
         };
         let canvas = services.canvas(&session.canvas_id).unwrap();
-        let Some(position) = canvas
+        let position = canvas
             .transform
-            .window_to_pixel(Vec2::new(input.position.x, input.position.y))
-        else {
-            return Task::none();
-        };
+            .window_to_pixel(Vec2::new(input.position.x, input.position.y));
 
         let Some(sample) = self
             .input_processor
@@ -270,12 +264,9 @@ impl CanvasBrushPresetOperator {
         let canvas = services
             .canvas(&session.canvas_id)
             .expect("Stroke canvas should exist");
-        let Some(position) = canvas
+        let position = canvas
             .transform
-            .window_to_pixel(Vec2::new(input.position.x, input.position.y))
-        else {
-            return Task::none();
-        };
+            .window_to_pixel(Vec2::new(input.position.x, input.position.y));
 
         let mut updates = Vec::new();
         for sample in self
