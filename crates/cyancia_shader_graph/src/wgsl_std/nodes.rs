@@ -3283,8 +3283,9 @@ impl<Data: GraphData> GraphNode<Data> for WhileNode {
 ",
         );
 
-        for (slot_id, output_ident) in ctx.outputs.iter().zip(current.into_values()) {
-            ctx.output_slot_idents.insert(*slot_id, output_ident);
+        for (slot_id, local) in ctx.outputs.iter().zip(locals.values()) {
+            ctx.output_slot_idents
+                .insert(*slot_id, current[&local.id].clone());
         }
 
         Ok(code)
