@@ -63,8 +63,7 @@ impl CanvasTransform {
 
     pub fn window_to_pixel(&self, point: Vec2) -> Vec2 {
         let widget = self.window_to_widget(point);
-        let pixel = self.pixel_to_widget.inverse().transform_point2(widget);
-        pixel
+        self.pixel_to_widget.inverse().transform_point2(widget)
     }
 
     pub fn window_to_in_pixel(&self, point: Vec2) -> Option<Vec2> {
