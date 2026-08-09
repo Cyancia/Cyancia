@@ -5,8 +5,8 @@ use cyancia_render::{
 };
 use glam::Vec4;
 use wgpu::{
-    BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferDescriptor, BufferUsages,
-    CommandEncoder, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
+    BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, CommandEncoder,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess,
     util::{BufferInitDescriptor, DeviceExt},

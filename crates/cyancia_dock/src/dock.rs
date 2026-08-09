@@ -31,7 +31,7 @@ where
         services: &'a Services,
     ) -> Element<'a, Self::Message, Theme, Renderer>;
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message>;
-    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
+    fn subscription(&self, _services: &Services) -> Subscription<Self::Message> {
         Subscription::none()
     }
     fn on_open(&mut self) -> Task<Self::Message> {

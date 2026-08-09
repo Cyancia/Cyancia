@@ -246,7 +246,7 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
         Task::done(ColorSelectorDockMessage::WindowMoved)
     }
 
-    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
+    fn subscription(&self, _services: &Services) -> Subscription<Self::Message> {
         let cur_window = *self.window_id.borrow();
 
         let window_moved =
@@ -533,7 +533,7 @@ impl Dock<Theme, Renderer> for LayersDock {
         Task::none()
     }
 
-    fn subscription(&self, services: &Services) -> Subscription<Self::Message> {
+    fn subscription(&self, _services: &Services) -> Subscription<Self::Message> {
         listen_with(|event, _status, _window| match event {
             iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(keyboard::key::Named::Escape),

@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
-use bevy_math::{IRect, Rect, VectorSpace};
+use bevy_math::{IRect, Rect};
 use cyancia_canvas::{
     CanvasAppExt, CanvasId, CanvasUndoStackAppExt,
     command::TileReplaceCommand,
@@ -15,7 +15,6 @@ use cyancia_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::LayerId,
     layer_bounds::LayerBoundsPipeline,
-    scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
     tile::{
         DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, LayerBinding,
@@ -25,10 +24,8 @@ use cyancia_image::{
 use cyancia_input::{key::KeyboardState, mouse::PressedMouseState};
 use cyancia_math::rect_transform::RectTransform;
 use cyancia_render::{
-    bind_group_entries::{BindGroupEntries, DynamicBindGroupEntries},
-    bind_group_layout_entries::{
-        BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
-    },
+    bind_group_entries::DynamicBindGroupEntries,
+    bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
     readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
     render_context::RenderContextAppExt,
@@ -44,8 +41,8 @@ use encase::ShaderType;
 use glam::{Mat3, Vec2};
 use iced_aw::number_input;
 use iced_core::{
-    Alignment, Clipboard, Color, Element, Length, Point, Rectangle, Shell, Size, Theme, Vector,
-    Widget, keyboard::Modifiers, layout, mouse, renderer, widget,
+    Alignment, Color, Element, Length, Point, Rectangle, Size, Theme, Vector, Widget,
+    keyboard::Modifiers, layout, mouse, renderer, widget,
 };
 use iced_runtime::{Task, futures::Subscription};
 use iced_wgpu::Renderer;
@@ -56,7 +53,7 @@ use iced_widget::{
 };
 use tracing::warn;
 use wgpu::{
-    BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages,
+    BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess,
@@ -282,13 +279,13 @@ impl TransformSession {
     pub fn update_matrix(&mut self) {
         let pivot = self.pivot;
         let mut m = Mat3::from_translation(self.translate);
-        m = m * Mat3::from_translation(pivot);
-        m = m * Mat3::from_angle(self.rotate);
-        m = m * Mat3::from_scale(self.scale);
+        m *= Mat3::from_translation(pivot);
+        m *= Mat3::from_angle(self.rotate);
+        m *= Mat3::from_scale(self.scale);
         if let Some(shear) = self.active_shear() {
-            m = m * shear;
+            m *= shear;
         }
-        m = m * Mat3::from_translation(-pivot);
+        m *= Mat3::from_translation(-pivot);
         self.matrix = m;
     }
 
@@ -480,26 +477,22 @@ pub fn hit_test(quad: [Vec2; 4], p: Vec2, anchor: Vec2) -> Option<InteractionTyp
     }
 
     if ((left_edge_t - 0.5) * h_abs).abs() < h_abs.min(EDGE_HIT_RADIUS)
-        && left_distance <= -EDGE_HIT_RADIUS
-        && left_distance >= -SHEAR_HIT_MAX_DISTANCE
+        && (-EDGE_HIT_RADIUS..-SHEAR_HIT_MAX_DISTANCE).contains(&left_distance)
     {
         return Some(InteractionType::Shear(ShearType::Left));
     }
     if ((right_edge_t - 0.5) * h_abs).abs() < h_abs.min(EDGE_HIT_RADIUS)
-        && right_distance <= -EDGE_HIT_RADIUS
-        && right_distance >= -SHEAR_HIT_MAX_DISTANCE
+        && (-EDGE_HIT_RADIUS..-SHEAR_HIT_MAX_DISTANCE).contains(&right_distance)
     {
         return Some(InteractionType::Shear(ShearType::Right));
     }
     if ((top_edge_t - 0.5) * w_abs).abs() < w_abs.min(EDGE_HIT_RADIUS)
-        && top_distance <= -EDGE_HIT_RADIUS
-        && top_distance >= -SHEAR_HIT_MAX_DISTANCE
+        && (-EDGE_HIT_RADIUS..-SHEAR_HIT_MAX_DISTANCE).contains(&top_distance)
     {
         return Some(InteractionType::Shear(ShearType::Top));
     }
     if ((bottom_edge_t - 0.5) * w_abs).abs() < w_abs.min(EDGE_HIT_RADIUS)
-        && bottom_distance <= -EDGE_HIT_RADIUS
-        && bottom_distance >= -SHEAR_HIT_MAX_DISTANCE
+        && (-EDGE_HIT_RADIUS..-SHEAR_HIT_MAX_DISTANCE).contains(&bottom_distance)
     {
         return Some(InteractionType::Shear(ShearType::Bottom));
     }
@@ -623,7 +616,7 @@ impl ToolFunction for FreeTransformTool {
         ToolId::new("free_transform_tool".into())
     }
 
-    fn activate(&mut self, services: &mut Services) -> Task<Self::Message> {
+    fn activate(&mut self, _services: &mut Services) -> Task<Self::Message> {
         Task::done(FreeTransformToolMessage::RequestInit)
     }
 
@@ -698,8 +691,8 @@ impl ToolFunction for FreeTransformTool {
     fn end(
         &mut self,
         _keyboard: &KeyboardState,
-        mouse: &PressedMouseState,
-        services: &mut Services,
+        _mouse: &PressedMouseState,
+        _services: &mut Services,
     ) -> Task<Self::Message> {
         let Some(session) = &mut self.session else {
             return Task::none();
@@ -975,10 +968,7 @@ impl ToolFunction for FreeTransformTool {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        let active_layer_change =
-            CanvasActiveLayerChanged::listen_to().map(|_| FreeTransformToolMessage::RequestInit);
-
-        active_layer_change
+        CanvasActiveLayerChanged::listen_to().map(|_| FreeTransformToolMessage::RequestInit)
     }
 
     fn tool_option_widget<'a>(
