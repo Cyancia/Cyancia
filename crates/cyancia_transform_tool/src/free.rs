@@ -199,9 +199,13 @@ impl TransformSession {
                 let w = inv_rot.transform_vector2(ongoing.cursor_origin_ps - anchor_ps)
                     / ongoing.base_scale;
                 self.scale = if modifiers.shift() {
-                    let from = (ongoing.cursor_origin_ps - anchor_ps).length();
-                    let to = (cursor_ps - anchor_ps).length();
-                    let s = if from > f32::EPSILON { to / from } else { 1.0 };
+                    let from = ongoing.cursor_origin_ps - anchor_ps;
+                    let to = cursor_ps - anchor_ps;
+                    let s = if from.length_squared() > f32::EPSILON {
+                        (to.length() / from.length()).copysign(to.dot(from))
+                    } else {
+                        1.0
+                    };
                     ongoing.base_scale * s
                 } else {
                     let sx = if w.x.abs() > f32::EPSILON {
@@ -220,7 +224,13 @@ impl TransformSession {
                         _ => Vec2::new(sx, sy),
                     }
                 };
-                self.scale = self.scale.max(Vec2::splat(0.01));
+                const MIN_SCALE: f32 = 0.001;
+                if self.scale.x.abs() <= MIN_SCALE {
+                    self.scale.x = MIN_SCALE.copysign(self.scale.x);
+                }
+                if self.scale.y.abs() <= MIN_SCALE {
+                    self.scale.y = MIN_SCALE.copysign(self.scale.y);
+                }
             }
             InteractionType::Shear(ty) => {
                 let b = self.pixel_bounds;
