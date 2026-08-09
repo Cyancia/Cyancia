@@ -9,7 +9,7 @@ use cyancia_color::{
     platform,
 };
 use cyancia_render::render_context::RenderContextAppExt;
-use cyancia_runtime::{Services, event::Event};
+use cyancia_runtime::Services;
 use cyancia_widgets::{fluent_builder::When, spin_slider::SpinSlider};
 use glam::{Vec2, Vec3};
 use iced_core::{Element, Length, Point, Rectangle, Theme};
@@ -369,7 +369,7 @@ impl<'a, Message: 'a> From<ColorSelector<'a, Message>> for Element<'a, Message, 
         ]
         .width(Length::Fill);
 
-        Element::new(content).map(value.on_state_message).into()
+        Element::new(content).map(value.on_state_message)
     }
 }
 

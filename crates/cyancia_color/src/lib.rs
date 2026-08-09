@@ -1,6 +1,6 @@
 use cyancia_runtime::{Application, Services, event::Event, plugin::Plugin, service::Service};
 use cyancia_utils::wrapper;
-use moxcms::{ColorProfile, Matrix3f};
+use moxcms::Matrix3f;
 
 use crate::model::{
     gray::Gray, hsl::Hsl, hsv::Hsv, lab::Lab, lch::Lch, okhsl::OkHsl, okhsv::OkHsv, oklab::OkLab,

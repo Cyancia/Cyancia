@@ -25,7 +25,13 @@ use wesl::{VirtualResolver, Wesl};
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
     render::graph::{
-        BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData, CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, ForegroundColorNode, LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode, StrokeBoundsNode
+        BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode,
+        BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData,
+        CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode,
+        FilterWithinMaskNode, ForegroundColorNode, LayerPixelColorNode, OutputBoundsNode,
+        OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode,
+        PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode,
+        StrokeBoundsNode,
     },
 };
 

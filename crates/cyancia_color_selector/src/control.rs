@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cyancia_runtime::{Services, event::Event as _};
+use cyancia_runtime::Services;
 use glam::Vec2;
 use iced_core::{
     Clipboard, Color, Element, Event, Layout, Length, Point, Rectangle, Renderer as _, Shell, Size,

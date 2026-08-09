@@ -650,7 +650,10 @@ fn common_bind_group_layout_entries(resources: &StrokeResources) -> Vec<BindGrou
                 binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
             ),
             (11, binding_types::storage_buffer_read_only::<u32>(false)),
-            (12, binding_types::storage_buffer_read_only::<CanvasResources>(false)),
+            (
+                12,
+                binding_types::storage_buffer_read_only::<CanvasResources>(false),
+            ),
         ),
     )
     .to_vec();
