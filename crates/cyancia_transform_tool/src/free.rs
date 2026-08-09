@@ -90,12 +90,13 @@ impl TransformSession {
         let transform_pipelines =
             target_layers
                 .iter()
-                .fold(HashMap::new(), |mut acc, (_, texel_type)| {
+                .fold(HashMap::new(), |mut acc, (layer_id, texel_type)| {
                     if let Entry::Vacant(e) = acc.entry(*texel_type) {
                         e.insert(FreeTransformPipeline::new(
                             device,
                             *texel_type,
                             !init.selection_bounds.is_empty(),
+                            *layer_id == init.selection_layer_id,
                         ));
                     }
 
@@ -1025,7 +1026,12 @@ pub struct FreeTransformPipeline {
 }
 
 impl FreeTransformPipeline {
-    pub fn new(device: &Device, format: TexelType, with_selection: bool) -> Self {
+    pub fn new(
+        device: &Device,
+        format: TexelType,
+        with_selection: bool,
+        is_target_selection: bool,
+    ) -> Self {
         let shader = wesl_jit::compile_wesl_with_config(
             include_str!("free.wesl").into(),
             &[&cyancia_image::image::PACKAGE],
@@ -1083,7 +1089,11 @@ impl FreeTransformPipeline {
             label: Some("free transform pipeline"),
             layout: Some(&pipeline_layout),
             module: &module,
-            entry_point: Some("main"),
+            entry_point: Some(if is_target_selection {
+                "main_selection"
+            } else {
+                "main"
+            }),
             compilation_options: Default::default(),
             cache: None,
         });

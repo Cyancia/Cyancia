@@ -77,6 +77,17 @@ fn to_pixel(color: vec4f) -> Pixel {
 
 @compute
 @workgroup_size(16, 16, 1)
+fn main_selection(@builtin(global_invocation_id) global_id: vec3u) {
+    let output_tile_index = global_id.z;
+    let output_local_index = global_id.xy;
+    let position_ps = output_tile_info[output_tile_index].origin + vec2i(output_local_index);
+    let positionf_ps = vec2f(position_ps);
+    let original_ps = (transform.mat_inv * vec3f(positionf_ps, 1.0)).xy;
+    textureStore(output, output_local_index, output_tile_index, sample_layer(original_ps));
+}
+
+@compute
+@workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3u) {
     let output_tile_index = global_id.z;
     let output_local_index = global_id.xy;
