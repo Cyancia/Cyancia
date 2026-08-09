@@ -14,7 +14,7 @@ use cyancia_canvas::{
 };
 use cyancia_color::{BackgroundColorChanged, Color, ForegroundColorChanged, model::rgb::Rgb};
 use cyancia_color_selector::{
-    ColorModel, ColorSelectorMessage, ColorSelectorState, GradientPlaneShape,
+    ColorModel, ColorSelector, ColorSelectorMessage, ColorSelectorState, GradientPlaneShape,
     config::{
         ColorSelectorConfig, ColorSelectorConfigEditorState, ColorSelectorConfigMessage,
         GradientBarConfig, GradientPlaneConfig, GradientPlaneFlipAxis,
@@ -177,11 +177,10 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
                 .map(ColorSelectorDockMessage::ConfigEditor)
         } else {
             column![
-                scrollable(
-                    self.selector
-                        .view()
-                        .map(ColorSelectorDockMessage::ColorSelector)
-                )
+                scrollable(ColorSelector::new(
+                    &self.selector,
+                    ColorSelectorDockMessage::ColorSelector
+                ))
                 .width(Length::Fill)
                 .height(Length::Fill),
                 button("Settings").on_press(ColorSelectorDockMessage::OpenSettings),
@@ -283,18 +282,6 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
                     }
                 });
 
-        let mouse_events = listen_with(|event, _status, _window| match event {
-            iced_core::Event::Mouse(mouse::Event::CursorMoved { position }) => {
-                Some(ColorSelectorDockMessage::ColorSelector(
-                    ColorSelectorMessage::SurfaceMove(position),
-                ))
-            }
-            iced_core::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => Some(
-                ColorSelectorDockMessage::ColorSelector(ColorSelectorMessage::SurfaceRelease),
-            ),
-            _ => None,
-        });
-
         let settings_window_closed = window::events().with(self.settings_window_id).filter_map(
             |(settings_window_id, (window_id, event))| {
                 if matches!(event, window::Event::Closed) && Some(window_id) == settings_window_id {
@@ -312,7 +299,6 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
 
         Subscription::batch([
             window_moved,
-            mouse_events,
             settings_window_closed,
             foreground_color_changed,
             background_color_changed,
