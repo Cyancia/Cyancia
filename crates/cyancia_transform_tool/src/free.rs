@@ -1,4 +1,7 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fmt,
+};
 
 use anyhow::Result;
 use bevy_math::{IRect, Rect, VectorSpace};
@@ -36,17 +39,20 @@ use cyancia_runtime::{Services, event::Event};
 use cyancia_tools::{ToolFunction, ToolId};
 use cyancia_undo::BatchedUndoCommand;
 use cyancia_utils::log_err::LogErr;
+use cyancia_widgets::form::Form;
 use encase::ShaderType;
 use glam::{Mat3, Vec2};
+use iced_aw::number_input;
 use iced_core::{
-    Clipboard, Color, Element, Length, Point, Rectangle, Shell, Size, Theme, Vector, Widget,
-    keyboard::Modifiers, layout, mouse, renderer, widget,
+    Alignment, Clipboard, Color, Element, Length, Point, Rectangle, Shell, Size, Theme, Vector,
+    Widget, keyboard::Modifiers, layout, mouse, renderer, widget,
 };
 use iced_runtime::{Task, futures::Subscription};
 use iced_wgpu::Renderer;
 use iced_widget::{
+    button,
     canvas::{Frame, Path, Stroke},
-    space,
+    column, container, pick_list, row, space, text,
 };
 use tracing::warn;
 use wgpu::{
@@ -551,6 +557,7 @@ pub enum ShearType {
     Bottom,
 }
 
+#[derive(Debug, Clone)]
 pub struct InitTransform {
     pub canvas_id: CanvasId,
     pub target_layers: Vec<LayerId>,
@@ -559,9 +566,48 @@ pub struct InitTransform {
     pub pixel_bounds: IRect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SamplingMethod {
+    NearestNeighbor,
+}
+
+impl fmt::Display for SamplingMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Nearest Neighbor")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShearAxis {
+    Horizontal,
+    Vertical,
+}
+
+impl fmt::Display for ShearAxis {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Horizontal => f.write_str("Horizontal"),
+            Self::Vertical => f.write_str("Vertical"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum FreeTransformToolMessage {
     RequestInit,
     InitTransform(InitTransform),
+    SamplingChanged(SamplingMethod),
+    TranslationXChanged(f32),
+    TranslationYChanged(f32),
+    RotationChanged(f32),
+    ScaleXChanged(f32),
+    ScaleYChanged(f32),
+    ShearChanged(f32),
+    ShearAxisChanged(ShearAxis),
+    MirrorHorizontally,
+    MirrorVertically,
+    Cancel,
+    Confirm,
 }
 
 #[derive(Default)]
@@ -644,50 +690,7 @@ impl ToolFunction for FreeTransformTool {
         }
 
         session.update(cursor_ps, keyboard.modifiers());
-
-        let transformed_tiles =
-            GpuTileStorage::pixel_rect_to_tile(session.transformed_aabb_ps().as_irect());
-
-        for (layer_id, result_buffer) in &mut session.result_buffers {
-            result_buffer.allocate_tiles(session.tile_bounds);
-            result_buffer.allocate_tiles(transformed_tiles);
-
-            let device = services.render_device();
-            let queue = services.render_queue();
-            let tiles = services.tile_storage();
-            let target_layer = tiles.get_layer_binding_or_empty(*layer_id).unwrap();
-            let selection_layer = (!session.selection_bounds.is_empty()).then(|| {
-                tiles
-                    .get_layer_binding_or_empty(session.selection_layer_id)
-                    .unwrap()
-            });
-
-            let transform_pipeline = session
-                .transform_pipelines
-                .get(&result_buffer.layer_info().texel_type)
-                .unwrap();
-            transform_pipeline.dispatch(
-                device,
-                queue,
-                &FreeTransformParams {
-                    mat_inv: session.matrix.inverse(),
-                },
-                target_layer,
-                result_buffer.binding_or_empty(),
-                selection_layer,
-            );
-
-            let overriders = services.service_mut::<LayerPreviewOverriders>();
-            overriders.insert_overrider(
-                *layer_id,
-                PixelPreviewOverrider::from_layer_storage(&result_buffer),
-            );
-        }
-
-        CanvasUpdated::broadcast(CanvasUpdated {
-            id: session.canvas_id,
-            dirty_tiles: transformed_tiles.union(session.tile_bounds),
-        });
+        render_transform_preview(session, services);
 
         Task::none()
     }
@@ -849,6 +852,100 @@ impl ToolFunction for FreeTransformTool {
                 }
                 Task::none()
             }
+            FreeTransformToolMessage::SamplingChanged(_) => Task::none(),
+            FreeTransformToolMessage::Confirm => Task::done(FreeTransformToolMessage::RequestInit),
+            FreeTransformToolMessage::Cancel => {
+                if let Some(session) = self.session.take() {
+                    for (layer_id, _) in &session.target_layers {
+                        services
+                            .service_mut::<LayerPreviewOverriders>()
+                            .remove_overrider(layer_id);
+                    }
+                    CanvasUpdated::broadcast(CanvasUpdated {
+                        id: session.canvas_id,
+                        dirty_tiles: GpuTileStorage::pixel_rect_to_tile(
+                            session.transformed_aabb_ps().as_irect(),
+                        )
+                        .union(session.tile_bounds),
+                    });
+                }
+                Task::done(FreeTransformToolMessage::RequestInit)
+            }
+            message => {
+                let Some(session) = &mut self.session else {
+                    return Task::none();
+                };
+                session.ongoing_transform = None;
+
+                if matches!(
+                    &message,
+                    FreeTransformToolMessage::RotationChanged(_)
+                        | FreeTransformToolMessage::ScaleXChanged(_)
+                        | FreeTransformToolMessage::ScaleYChanged(_)
+                        | FreeTransformToolMessage::ShearChanged(_)
+                        | FreeTransformToolMessage::MirrorHorizontally
+                        | FreeTransformToolMessage::MirrorVertically
+                ) {
+                    let b = session.pixel_bounds;
+                    let pivot = b.min.as_vec2() + session.anchor * b.size().as_vec2();
+                    let origin = session.matrix.transform_point2(Vec2::ZERO);
+                    session.translate = origin - pivot + session.matrix.transform_vector2(pivot);
+                    session.pivot = pivot;
+                }
+
+                match message {
+                    FreeTransformToolMessage::TranslationXChanged(value) => {
+                        session.translate.x = value;
+                    }
+                    FreeTransformToolMessage::TranslationYChanged(value) => {
+                        session.translate.y = value;
+                    }
+                    FreeTransformToolMessage::RotationChanged(value) => {
+                        session.rotate = value;
+                    }
+                    FreeTransformToolMessage::ScaleXChanged(value) => {
+                        session.scale.x = if value.abs() <= 0.001 {
+                            (0.001 + f32::EPSILON).copysign(value)
+                        } else {
+                            value
+                        };
+                    }
+                    FreeTransformToolMessage::ScaleYChanged(value) => {
+                        session.scale.y = if value.abs() <= 0.001 {
+                            (0.001 + f32::EPSILON).copysign(value)
+                        } else {
+                            value
+                        };
+                    }
+                    FreeTransformToolMessage::ShearChanged(value) => {
+                        session.shear = value;
+                        session.last_shear.get_or_insert(ShearType::Top);
+                    }
+                    FreeTransformToolMessage::ShearAxisChanged(axis) => {
+                        let shear = match axis {
+                            ShearAxis::Horizontal => ShearType::Top,
+                            ShearAxis::Vertical => ShearType::Left,
+                        };
+                        session.reorient_shear(shear);
+                        session.last_shear = Some(shear);
+                    }
+                    FreeTransformToolMessage::MirrorHorizontally
+                    | FreeTransformToolMessage::MirrorVertically => match message {
+                        FreeTransformToolMessage::MirrorHorizontally => {
+                            session.scale.x = -session.scale.x;
+                        }
+                        FreeTransformToolMessage::MirrorVertically => {
+                            session.scale.y = -session.scale.y;
+                        }
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!(),
+                }
+
+                session.update_matrix();
+                render_transform_preview(session, services);
+                Task::none()
+            }
         }
     }
 
@@ -883,6 +980,178 @@ impl ToolFunction for FreeTransformTool {
 
         active_layer_change
     }
+
+    fn tool_option_widget<'a>(
+        &'a self,
+        _services: &'a Services,
+    ) -> Element<'a, Self::Message, Theme, Renderer> {
+        let Some(session) = &self.session else {
+            return container(text("No active transform")).padding(8).into();
+        };
+        let shear_axis = match session.last_shear {
+            Some(ShearType::Left | ShearType::Right) => ShearAxis::Vertical,
+            _ => ShearAxis::Horizontal,
+        };
+
+        let fields = Form::new()
+            .push(
+                "Sampling",
+                pick_list(
+                    vec![SamplingMethod::NearestNeighbor],
+                    Some(SamplingMethod::NearestNeighbor),
+                    FreeTransformToolMessage::SamplingChanged,
+                )
+                .width(Length::Fill),
+            )
+            .push(
+                "Translation",
+                row![
+                    text("X"),
+                    number_input(
+                        &session.translate.x,
+                        f32::MIN..=f32::MAX,
+                        FreeTransformToolMessage::TranslationXChanged,
+                    )
+                    .step(1.0)
+                    .width(Length::FillPortion(1)),
+                    text("Y"),
+                    number_input(
+                        &session.translate.y,
+                        f32::MIN..=f32::MAX,
+                        FreeTransformToolMessage::TranslationYChanged,
+                    )
+                    .step(1.0)
+                    .width(Length::FillPortion(1)),
+                ]
+                .align_y(Alignment::Center)
+                .spacing(4),
+            )
+            .push(
+                "Rotation",
+                number_input(
+                    &session.rotate,
+                    f32::MIN..=f32::MAX,
+                    FreeTransformToolMessage::RotationChanged,
+                )
+                .step(0.01)
+                .width(Length::Fill),
+            )
+            .push(
+                "Scale",
+                row![
+                    text("X"),
+                    number_input(
+                        &session.scale.x,
+                        f32::MIN..=f32::MAX,
+                        FreeTransformToolMessage::ScaleXChanged,
+                    )
+                    .step(0.01)
+                    .width(Length::FillPortion(1)),
+                    text("Y"),
+                    number_input(
+                        &session.scale.y,
+                        f32::MIN..=f32::MAX,
+                        FreeTransformToolMessage::ScaleYChanged,
+                    )
+                    .step(0.01)
+                    .width(Length::FillPortion(1)),
+                ]
+                .align_y(Alignment::Center)
+                .spacing(4),
+            )
+            .push(
+                "Shear",
+                number_input(
+                    &session.shear,
+                    f32::MIN..=f32::MAX,
+                    FreeTransformToolMessage::ShearChanged,
+                )
+                .step(0.01)
+                .width(Length::Fill),
+            )
+            .push(
+                "Shear Direction",
+                pick_list(
+                    vec![ShearAxis::Horizontal, ShearAxis::Vertical],
+                    Some(shear_axis),
+                    FreeTransformToolMessage::ShearAxisChanged,
+                )
+                .width(Length::Fill),
+            );
+
+        let mirrors = row![
+            button("Mirror Horizontally")
+                .on_press(FreeTransformToolMessage::MirrorHorizontally)
+                .width(Length::Fill),
+            button("Mirror Vertically")
+                .on_press(FreeTransformToolMessage::MirrorVertically)
+                .width(Length::Fill),
+        ]
+        .spacing(4);
+        let actions = row![
+            button("Cancel")
+                .on_press(FreeTransformToolMessage::Cancel)
+                .style(button::danger)
+                .width(Length::Fill),
+            button("Confirm")
+                .on_press(FreeTransformToolMessage::Confirm)
+                .style(button::primary)
+                .width(Length::Fill),
+        ]
+        .spacing(4);
+
+        container(column![fields, mirrors, actions].spacing(8))
+            .padding(8)
+            .width(Length::Fill)
+            .into()
+    }
+}
+
+fn render_transform_preview(session: &mut TransformSession, services: &mut Services) {
+    let transformed_tiles =
+        GpuTileStorage::pixel_rect_to_tile(session.transformed_aabb_ps().as_irect());
+
+    for (layer_id, result_buffer) in &mut session.result_buffers {
+        result_buffer.allocate_tiles(session.tile_bounds);
+        result_buffer.allocate_tiles(transformed_tiles);
+
+        let device = services.render_device();
+        let queue = services.render_queue();
+        let tiles = services.tile_storage();
+        let target_layer = tiles.get_layer_binding_or_empty(*layer_id).unwrap();
+        let selection_layer = (!session.selection_bounds.is_empty()).then(|| {
+            tiles
+                .get_layer_binding_or_empty(session.selection_layer_id)
+                .unwrap()
+        });
+
+        let transform_pipeline = session
+            .transform_pipelines
+            .get(&result_buffer.layer_info().texel_type)
+            .unwrap();
+        transform_pipeline.dispatch(
+            device,
+            queue,
+            &FreeTransformParams {
+                mat_inv: session.matrix.inverse(),
+            },
+            target_layer,
+            result_buffer.binding_or_empty(),
+            selection_layer,
+        );
+
+        services
+            .service_mut::<LayerPreviewOverriders>()
+            .insert_overrider(
+                *layer_id,
+                PixelPreviewOverrider::from_layer_storage(result_buffer),
+            );
+    }
+
+    CanvasUpdated::broadcast(CanvasUpdated {
+        id: session.canvas_id,
+        dirty_tiles: transformed_tiles.union(session.tile_bounds),
+    });
 }
 
 fn commit_transform(session: TransformSession, services: &mut Services) {
