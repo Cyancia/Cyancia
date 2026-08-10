@@ -278,10 +278,10 @@ fn map_result_texture(
     });
 
     let result_binding = result.binding();
+    let tile_bounds = result.compute_tile_bounds();
     let Some(result_binding) = result_binding else {
         return output_texture;
     };
-    let tile_bounds = result.compute_tile_bounds();
     if tile_bounds.is_empty() {
         return output_texture;
     }

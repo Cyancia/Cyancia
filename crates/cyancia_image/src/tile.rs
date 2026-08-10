@@ -434,11 +434,9 @@ impl DynamicLayerStorage {
 
     pub fn compute_tile_bounds(&self) -> IRect {
         let mut bounds = IRect::EMPTY;
-        for (coord, _) in self.tiles.iter() {
-            bounds = bounds.union_point(*coord);
-        }
-        if !bounds.is_empty() {
-            bounds.max += 1;
+        for coord in self.tiles.keys().copied() {
+            bounds.min = bounds.min.min(coord);
+            bounds.max = bounds.max.max(coord + IVec2::ONE);
         }
         bounds
     }
