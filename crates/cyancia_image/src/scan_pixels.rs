@@ -1,7 +1,7 @@
 use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
-    readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
+    readback::{create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async},
     util::DevicePollExt,
 };
 use glam::IVec2;
@@ -118,7 +118,7 @@ impl ScanPixelsPipeline {
         }
 
         let is_not_empty_readback =
-            create_readback_buffer_and_schedule_copy(device, &mut ec, &is_not_empty_buffer);
+            create_readback_buffer_and_schedule_copy_buffer(device, &mut ec, &is_not_empty_buffer);
         let is_not_empty_readback_async =
             readback_buffer_on_submit_async::<Vec<u32>, _>(&mut ec, &is_not_empty_readback, ..);
 

@@ -6,10 +6,42 @@ use encase::{ShaderType, internal::CreateFrom};
 use futures::channel::oneshot::{Receiver, Sender};
 use iced_runtime::Task;
 use wgpu::{
-    Buffer, BufferAddress, BufferAsyncError, BufferUsages, CommandEncoder, Device, MapMode,
+    Buffer, BufferAddress, BufferAsyncError, BufferUsages, CommandEncoder, Device, Extent3d,
+    MapMode, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture,
 };
 
-pub fn create_readback_buffer_and_schedule_copy(
+pub fn create_readback_buffer_and_schedule_copy_texture(
+    device: &Device,
+    ec: &mut CommandEncoder,
+    src_texture: &Texture,
+) -> Buffer {
+    let pixel_size = src_texture.format().block_copy_size(None).unwrap();
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (src_texture.width() * src_texture.height() * pixel_size) as u64,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    ec.copy_texture_to_buffer(
+        src_texture.as_image_copy(),
+        TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(src_texture.width() * pixel_size),
+                rows_per_image: Some(src_texture.height()),
+            },
+        },
+        Extent3d {
+            width: src_texture.width(),
+            height: src_texture.height(),
+            depth_or_array_layers: src_texture.depth_or_array_layers(),
+        },
+    );
+    buffer
+}
+
+pub fn create_readback_buffer_and_schedule_copy_buffer(
     device: &Device,
     ec: &mut CommandEncoder,
     src_buffer: &Buffer,

@@ -41,7 +41,10 @@ fn bezier_t_for_arc_length(table: ptr<function, array<f32, BEZIER_SAMPLES + 1u>>
 fn compute_pen_input(last: PenInput, current: PenInput, p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32) -> ComputedPenInput {
     let position = bezier_eval(p0, p1, p2, p3, t);
     let pressure = mix(last.pressure, current.pressure, t);
-    let tilt = mix(last.tilt, current.tilt, t);
+    let tilt = vec2f(
+        mix_angle(last.tilt.x, current.tilt.x, t),
+        mix_angle(last.tilt.y, current.tilt.y, t),
+    );
     let angle = vec2f(
         mix_angle(last.angle.x, current.angle.x, t),
         mix_angle(last.angle.y, current.angle.y, t),

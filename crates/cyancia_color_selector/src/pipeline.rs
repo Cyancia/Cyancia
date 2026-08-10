@@ -9,7 +9,7 @@ use cyancia_render::{
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
     readback::{
-        AsyncBufferReadback, create_readback_buffer_and_schedule_copy,
+        AsyncBufferReadback, create_readback_buffer_and_schedule_copy_buffer,
         readback_buffer_on_submit_async,
     },
     wesl_jit::{compile_wesl, compile_wesl_with_config},
@@ -161,7 +161,7 @@ impl ComputeBoundsPipeline {
             );
         }
 
-        let readback_buffer = create_readback_buffer_and_schedule_copy(
+        let readback_buffer = create_readback_buffer_and_schedule_copy_buffer(
             device,
             &mut encoder,
             output_buffer.inner_buffer().unwrap(),

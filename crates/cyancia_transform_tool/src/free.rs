@@ -27,7 +27,7 @@ use cyancia_render::{
     bind_group_entries::DynamicBindGroupEntries,
     bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
-    readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
+    readback::{create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async},
     render_context::RenderContextAppExt,
     util::DevicePollExt,
     wesl_jit,
@@ -737,11 +737,12 @@ impl ToolFunction for FreeTransformTool {
                     &selection_layer_binding,
                     None,
                 );
-                let selection_layer_bounds_staging = create_readback_buffer_and_schedule_copy(
-                    device,
-                    &mut ec,
-                    &selection_layer_bounds_buffer,
-                );
+                let selection_layer_bounds_staging =
+                    create_readback_buffer_and_schedule_copy_buffer(
+                        device,
+                        &mut ec,
+                        &selection_layer_bounds_buffer,
+                    );
                 let selection_layer_bounds_readback = readback_buffer_on_submit_async::<IRect, _>(
                     &mut ec,
                     &selection_layer_bounds_staging,
@@ -792,8 +793,11 @@ impl ToolFunction for FreeTransformTool {
                         None,
                     );
 
-                    let bounds_buffer_staging =
-                        create_readback_buffer_and_schedule_copy(device, &mut ec, &bounds_buffer);
+                    let bounds_buffer_staging = create_readback_buffer_and_schedule_copy_buffer(
+                        device,
+                        &mut ec,
+                        &bounds_buffer,
+                    );
                     let bounds_buffer_readback = readback_buffer_on_submit_async::<IRect, _>(
                         &mut ec,
                         &bounds_buffer_staging,

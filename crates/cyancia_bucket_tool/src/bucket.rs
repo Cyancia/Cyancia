@@ -8,7 +8,7 @@ use cyancia_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
-    readback::{create_readback_buffer_and_schedule_copy, readback_buffer_on_submit_async},
+    readback::{create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async},
     util::DevicePollExt,
 };
 use encase::ShaderType;
@@ -1105,7 +1105,7 @@ impl Bucket {
         }
 
         let seed_mode_readback_buffer =
-            create_readback_buffer_and_schedule_copy(device, &mut ec, &seed_mode_buffer);
+            create_readback_buffer_and_schedule_copy_buffer(device, &mut ec, &seed_mode_buffer);
         let seed_mode_readback =
             readback_buffer_on_submit_async::<u32, _>(&mut ec, &seed_mode_readback_buffer, ..);
 

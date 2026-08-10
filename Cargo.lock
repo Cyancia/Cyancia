@@ -1517,6 +1517,7 @@ dependencies = [
  "iced_runtime",
  "iced_wgpu",
  "iced_widget",
+ "image",
  "log",
  "parking_lot",
  "ringbuffer",

@@ -20,7 +20,7 @@ use cyancia_input::mouse::PressedMouseState;
 use cyancia_render::{
     buffer::{BufferVec, DynamicBuffer},
     readback::{
-        AsyncBufferReadback, create_readback_buffer_and_schedule_copy,
+        AsyncBufferReadback, create_readback_buffer_and_schedule_copy_buffer,
         readback_buffer_on_submit_async,
     },
     render_context::RenderContextAppExt,
@@ -55,6 +55,7 @@ use crate::{
 
 pub mod graph;
 pub mod pipeline;
+pub mod stroke_preview;
 
 const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 pub const MAX_DABS_PER_STROKE: u32 = 256;
@@ -596,12 +597,12 @@ impl BrushPresetRenderer {
         }
         ec.pop_debug_group();
 
-        let output_samples_readback = create_readback_buffer_and_schedule_copy(
+        let output_samples_readback = create_readback_buffer_and_schedule_copy_buffer(
             device,
             &mut ec,
             output_samples.inner_buffer().unwrap(),
         );
-        let dab_info_readback = create_readback_buffer_and_schedule_copy(
+        let dab_info_readback = create_readback_buffer_and_schedule_copy_buffer(
             device,
             &mut ec,
             dab_infos.inner_buffer().unwrap(),
@@ -915,7 +916,7 @@ async fn postprocess_stroke(
             );
         }
 
-        let dab_info_readback_buffer = create_readback_buffer_and_schedule_copy(
+        let dab_info_readback_buffer = create_readback_buffer_and_schedule_copy_buffer(
             device,
             &mut ec,
             dab_info_buffer.inner_buffer().unwrap(),
