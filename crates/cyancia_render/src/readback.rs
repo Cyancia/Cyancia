@@ -7,7 +7,7 @@ use futures::channel::oneshot::{Receiver, Sender};
 use iced_runtime::Task;
 use wgpu::{
     Buffer, BufferAddress, BufferAsyncError, BufferUsages, CommandEncoder, Device, Extent3d,
-    MapMode, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture,
+    MapMode, TexelCopyBufferInfo, TexelCopyBufferLayout, Texture,
 };
 
 pub fn create_readback_buffer_and_schedule_copy_texture(
