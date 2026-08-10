@@ -44,6 +44,8 @@ use crate::{
     render::{BrushPresetRenderer, EXTERNAL_VARIABLE_BASE_BINDING, Time, graph::CanvasResources},
 };
 
+pub const CACHED_STROKE_PREVIEW_SIZE: (u32, u32) = (512, 256);
+
 pub fn load_cached_stroke_preview_or_generate(
     brush: &AssetHandle<BrushPreset>,
     services: &Services,
@@ -80,8 +82,8 @@ pub fn load_cached_stroke_preview_or_generate(
 
     let texture = create_stroke_preview_predefined_curve(
         &instance,
-        512,
-        256,
+        CACHED_STROKE_PREVIEW_SIZE.0,
+        CACHED_STROKE_PREVIEW_SIZE.1,
         services,
         &CanvasResources {
             foreground_color: Vec4::ONE,
@@ -95,9 +97,12 @@ pub fn load_cached_stroke_preview_or_generate(
     Ok(texture
         .then(move |texture| readback_preview(device.clone(), queue.clone(), texture))
         .map(move |img| {
-            let img = img?;
+            let img = img.logged_err().unwrap_or_else(|_| {
+                RgbaImage::new(CACHED_STROKE_PREVIEW_SIZE.0, CACHED_STROKE_PREVIEW_SIZE.1)
+            });
             let mut file = File::create(&cache_path)?;
             img.write_to(&mut file, ImageFormat::Png)?;
+            info!("Stroke preview saved to {}", cache_path.display());
             Ok(img)
         }))
 }
@@ -243,10 +248,8 @@ pub fn create_stroke_preview(
 
     Ok(Task::batch(render_tasks)
         .discard()
-        .chain(final_result.then(move |result| {
+        .chain(final_result.map(move |result| {
             map_result_texture(device.clone(), queue.clone(), width, height, result)
-                .map(Task::done)
-                .unwrap_or_else(Task::none)
         })))
 }
 
@@ -256,26 +259,7 @@ fn map_result_texture(
     width: u32,
     height: u32,
     result: DynamicLayerStorage,
-) -> Option<Texture> {
-    let result_binding = result.binding()?;
-    let tile_bounds = result.compute_tile_bounds();
-    if tile_bounds.is_empty() {
-        return None;
-    }
-    let pixel_bounds = GpuTileStorage::tile_rect_to_pixel(tile_bounds);
-
-    let mut result_bounds = DynamicBuffer::new(
-        Some("stroke preview result bounds".into()),
-        BufferUsages::STORAGE,
-    );
-    result_bounds.push(&IVec4::new(
-        pixel_bounds.min.x,
-        pixel_bounds.min.y,
-        pixel_bounds.max.x,
-        pixel_bounds.max.y,
-    ));
-    result_bounds.write_buffer(&device, &queue);
-
+) -> Texture {
     let output_texture = device.create_texture(&TextureDescriptor {
         label: Some("stroke preview texture"),
         size: Extent3d {
@@ -293,6 +277,28 @@ fn map_result_texture(
         view_formats: &[],
     });
 
+    let result_binding = result.binding();
+    let Some(result_binding) = result_binding else {
+        return output_texture;
+    };
+    let tile_bounds = result.compute_tile_bounds();
+    if tile_bounds.is_empty() {
+        return output_texture;
+    }
+    let pixel_bounds = GpuTileStorage::tile_rect_to_pixel(tile_bounds);
+
+    let mut result_bounds = DynamicBuffer::new(
+        Some("stroke preview result bounds".into()),
+        BufferUsages::STORAGE,
+    );
+    result_bounds.push(&IVec4::new(
+        pixel_bounds.min.x,
+        pixel_bounds.min.y,
+        pixel_bounds.max.x,
+        pixel_bounds.max.y,
+    ));
+    result_bounds.write_buffer(&device, &queue);
+
     ComposeStrokePreviewPipeline::new(&device).dispatch(
         &device,
         &queue,
@@ -301,7 +307,7 @@ fn map_result_texture(
         &output_texture,
     );
 
-    Some(output_texture)
+    output_texture
 }
 
 struct ComposeStrokePreviewPipeline {
