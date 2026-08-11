@@ -6,7 +6,7 @@ use std::{
 
 use iced_core::{
     Background, Border, Clipboard, Color, Element, Event, Layout, Length, Point, Shell, Size,
-    Vector,
+    Transformation, Vector,
     border::Radius,
     gradient::ColorStop,
     keyboard::{self, key},
@@ -524,6 +524,11 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         viewport: &Rectangle,
     ) {
         let state = tree.state.downcast_mut::<State>();
+        let view_transformation = state.view_transformation(layout.bounds());
+        let inverse_view_transformation = view_transformation.inverse();
+        let graph_cursor = cursor * inverse_view_transformation;
+        let graph_viewport = *viewport * inverse_view_transformation;
+
         if let Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) = event {
             state.keyboard_modifiers = *modifiers;
         }
@@ -541,11 +546,11 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                 tree,
                 event,
                 layout,
-                cursor,
+                graph_cursor,
                 renderer,
                 clipboard,
                 &mut children_shell,
-                viewport,
+                &graph_viewport,
             );
 
             child
@@ -561,6 +566,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         }
 
         const SLOT_PIN_SNAP: f32 = 3.0 * 3.0;
+        let slot_pin_snap = SLOT_PIN_SNAP / state.view_scale;
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                 let Some(cursor) = cursor.position_over(layout.bounds()) else {
@@ -588,13 +594,16 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                 }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                let Some(cursor) = cursor.position_over(layout.bounds()) else {
+                if cursor.position_over(layout.bounds()).is_none() {
+                    return;
+                }
+                let Some(cursor) = graph_cursor.position() else {
                     return;
                 };
 
                 for (slot_id, slot_pos) in state.slot_pins.all() {
                     let d = slot_pos.distance(cursor);
-                    if d > SLOT_PIN_SNAP {
+                    if d > slot_pin_snap {
                         continue;
                     }
 
@@ -712,8 +721,10 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     } => {
                         let mut found = None;
                         for (slot_id, slot_pos) in state.slot_pins.all() {
-                            let cursor = cursor.position().unwrap();
-                            if slot_pos.distance(cursor) < SLOT_PIN_SNAP {
+                            let Some(cursor) = graph_cursor.position() else {
+                                return;
+                            };
+                            if slot_pos.distance(cursor) < slot_pin_snap {
                                 found = Some(*slot_id);
                                 break;
                             }
@@ -738,7 +749,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                         originally_selected,
                         mode,
                     } => {
-                        let Some(cursor) = cursor.position() else {
+                        let Some(cursor) = graph_cursor.position() else {
                             state.interaction = InteractionState::SelectionDragging {
                                 cursor_origin,
                                 originally_selected,
@@ -778,7 +789,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     node_origin,
                     ..
                 } => {
-                    let Some(cursor) = cursor.position() else {
+                    let Some(cursor) = graph_cursor.position() else {
                         return;
                     };
                     for selected in &state.selected_nodes {
@@ -786,8 +797,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                             shell.publish(GraphEditorMessage::Graph(
                                 GraphEditorGraphMessage::NodeMoveRequest(
                                     *node_origin + (cursor - *cursor_origin)
-                                        - Vector::new(layout.position().x, layout.position().y)
-                                        - state.view_translation,
+                                        - Vector::new(layout.position().x, layout.position().y),
                                     *selected,
                                 ),
                             ));
@@ -800,7 +810,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     originally_selected,
                     mode,
                 } => {
-                    let Some(cursor) = cursor.position() else {
+                    let Some(cursor) = graph_cursor.position() else {
                         return;
                     };
                     let selection_rect = Rectangle {
@@ -830,10 +840,28 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     };
                     state.view_translation = *translation_origin + (cursor - *cursor_origin);
                     shell.capture_event();
-                    shell.invalidate_layout();
                     shell.request_redraw();
                 }
             },
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                let Some(cursor) = cursor.position_over(layout.bounds()) else {
+                    return;
+                };
+                let Some(graph_cursor) = graph_cursor.position() else {
+                    return;
+                };
+                let delta = match delta {
+                    mouse::ScrollDelta::Lines { x: _, y } => *y,
+                    mouse::ScrollDelta::Pixels { x: _, y } => *y / 30.0,
+                };
+                let new_scale = (state.view_scale * 1.1_f32.powf(delta)).clamp(0.1, 10.0);
+                let origin = layout.position();
+
+                state.view_scale = new_scale;
+                state.view_translation = (cursor - origin) - (graph_cursor - origin) * new_scale;
+                shell.capture_event();
+                shell.request_redraw();
+            }
             Event::Keyboard(keyboard::Event::KeyPressed {
                 physical_key,
                 modifiers,
@@ -887,6 +915,9 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         renderer: &GraphRenderer,
     ) -> Interaction {
         let state = tree.state.downcast_ref::<State>();
+        let inverse_view_transformation = state.view_transformation(layout.bounds()).inverse();
+        let graph_cursor = cursor * inverse_view_transformation;
+        let graph_viewport = *viewport * inverse_view_transformation;
 
         if matches!(state.interaction, InteractionState::NodeDragging { .. }) {
             mouse::Interaction::Grabbing
@@ -897,10 +928,13 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                 .zip(&tree.children)
                 .zip(layout.children())
                 .map(|((child, tree), layout)| {
-                    child
-                        .widget
-                        .as_widget()
-                        .mouse_interaction(tree, layout, cursor, viewport, renderer)
+                    child.widget.as_widget().mouse_interaction(
+                        tree,
+                        layout,
+                        graph_cursor,
+                        &graph_viewport,
+                        renderer,
+                    )
                 })
                 .max()
                 .unwrap_or_default()
@@ -918,6 +952,10 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         viewport: &Rectangle,
     ) {
         let state = tree.state.downcast_ref::<State>();
+        let view_transformation = state.view_transformation(layout.bounds());
+        let inverse_view_transformation = view_transformation.inverse();
+        let graph_cursor = cursor * inverse_view_transformation;
+        let graph_viewport = *viewport * inverse_view_transformation;
         {
             use iced_core::Renderer;
 
@@ -964,50 +1002,56 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
             use iced_core::Renderer;
 
             renderer.with_layer(layout.bounds(), |renderer| {
-                use iced_graphics::geometry::Renderer;
-                renderer.draw_geometry(frame.into_geometry());
+                renderer.with_transformation(view_transformation, |renderer| {
+                    use iced_graphics::geometry::Renderer;
+                    renderer.draw_geometry(frame.into_geometry());
+                });
             });
         }
 
-        for ((child, node_tree), node_layout) in self
-            .graph
-            .nodes
-            .values()
-            .zip(&tree.children)
-            .zip(layout.children())
-            .filter(|(_, layout)| layout.bounds().intersects(viewport))
         {
             use iced_core::Renderer;
             renderer.with_layer(layout.bounds(), |renderer| {
-                if state.selected_nodes.contains(&child.node_id) {
-                    renderer.fill_quad(
-                        Quad {
-                            bounds: node_layout.bounds().expand(2.0),
-                            border: Border::default().rounded(NODE_BORDER_RADIUS),
-                            ..Default::default()
-                        },
-                        Color::WHITE,
-                    );
-                }
-                child.widget.as_widget().draw(
-                    node_tree,
-                    renderer,
-                    theme,
-                    style,
-                    node_layout,
-                    cursor,
-                    viewport,
-                );
-                if self.graph.vert_in_loop.contains(&child.node_id) {
-                    renderer.fill_quad(
-                        Quad {
-                            bounds: node_layout.bounds(),
-                            border: Border::default().rounded(NODE_BORDER_RADIUS),
-                            ..Default::default()
-                        },
-                        Color::from_rgb8(255, 0, 0).scale_alpha(0.3),
-                    );
-                }
+                renderer.with_transformation(view_transformation, |renderer| {
+                    for ((child, node_tree), node_layout) in self
+                        .graph
+                        .nodes
+                        .values()
+                        .zip(&tree.children)
+                        .zip(layout.children())
+                        .filter(|(_, layout)| layout.bounds().intersects(&graph_viewport))
+                    {
+                        if state.selected_nodes.contains(&child.node_id) {
+                            renderer.fill_quad(
+                                Quad {
+                                    bounds: node_layout.bounds().expand(2.0),
+                                    border: Border::default().rounded(NODE_BORDER_RADIUS),
+                                    ..Default::default()
+                                },
+                                Color::WHITE,
+                            );
+                        }
+                        child.widget.as_widget().draw(
+                            node_tree,
+                            renderer,
+                            theme,
+                            style,
+                            node_layout,
+                            graph_cursor,
+                            &graph_viewport,
+                        );
+                        if self.graph.vert_in_loop.contains(&child.node_id) {
+                            renderer.fill_quad(
+                                Quad {
+                                    bounds: node_layout.bounds(),
+                                    border: Border::default().rounded(NODE_BORDER_RADIUS),
+                                    ..Default::default()
+                                },
+                                Color::from_rgb8(255, 0, 0).scale_alpha(0.3),
+                            );
+                        }
+                    }
+                });
             });
         }
 
@@ -1017,7 +1061,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                 color,
             },
             Some(cursor_pos),
-        ) = (&state.interaction, cursor.position())
+        ) = (&state.interaction, graph_cursor.position())
             && let Some(start_pos) = state.slot_pins.get(resolved_source)
         {
             let mut frame = Frame::with_bounds(renderer, layout.bounds());
@@ -1032,37 +1076,41 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
 
             use iced_core::Renderer;
             renderer.with_layer(layout.bounds(), |renderer| {
-                use iced_graphics::geometry::Renderer;
-                renderer.draw_geometry(frame.into_geometry());
+                renderer.with_transformation(view_transformation, |renderer| {
+                    use iced_graphics::geometry::Renderer;
+                    renderer.draw_geometry(frame.into_geometry());
+                });
             });
         };
 
         if let InteractionState::SelectionDragging { cursor_origin, .. } = &state.interaction {
-            let Some(cursor_pos) = cursor.position() else {
+            let Some(cursor_pos) = graph_cursor.position() else {
                 return;
             };
             use iced_core::Renderer;
             renderer.with_layer(layout.bounds(), |renderer| {
-                renderer.fill_quad(
-                    Quad {
-                        bounds: Rectangle {
-                            x: cursor_origin.x.min(cursor_pos.x),
-                            y: cursor_origin.y.min(cursor_pos.y),
-                            width: (cursor_origin.x - cursor_pos.x).abs(),
-                            height: (cursor_origin.y - cursor_pos.y).abs(),
+                renderer.with_transformation(view_transformation, |renderer| {
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: Rectangle {
+                                x: cursor_origin.x.min(cursor_pos.x),
+                                y: cursor_origin.y.min(cursor_pos.y),
+                                width: (cursor_origin.x - cursor_pos.x).abs(),
+                                height: (cursor_origin.y - cursor_pos.y).abs(),
+                            },
+                            border: Border::default().width(2.0).color(
+                                theme
+                                    .extended_palette()
+                                    .primary
+                                    .strong
+                                    .color
+                                    .scale_alpha(0.5),
+                            ),
+                            ..Default::default()
                         },
-                        border: Border::default().width(2.0).color(
-                            theme
-                                .extended_palette()
-                                .primary
-                                .strong
-                                .color
-                                .scale_alpha(0.5),
-                        ),
-                        ..Default::default()
-                    },
-                    theme.extended_palette().primary.base.color.scale_alpha(0.3),
-                );
+                        theme.extended_palette().primary.base.color.scale_alpha(0.3),
+                    );
+                });
             });
         }
     }
@@ -1075,6 +1123,13 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         viewport: &Rectangle,
         translation: Vector,
     ) -> Option<overlay::Element<'b, GraphEditorMessage, GraphTheme, GraphRenderer>> {
+        let view_transformation = tree
+            .state
+            .downcast_ref::<State>()
+            .view_transformation(layout.bounds());
+        let inverse_view_transformation = view_transformation.inverse();
+        let graph_viewport = *viewport * inverse_view_transformation;
+
         for ((child, tree), layout) in self
             .graph
             .nodes
@@ -1082,34 +1137,46 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
             .zip(&mut tree.children)
             .zip(layout.children())
         {
-            if let Some(overlay) =
-                child
-                    .widget
-                    .as_widget_mut()
-                    .overlay(tree, layout, renderer, viewport, translation)
-            {
-                return Some(overlay);
+            if let Some(overlay) = child.widget.as_widget_mut().overlay(
+                tree,
+                layout,
+                renderer,
+                &graph_viewport,
+                translation,
+            ) {
+                return Some(overlay::Element::new(Box::new(
+                    TransformedGraphOverlay::new(overlay, view_transformation),
+                )));
             }
         }
 
         let state = tree.state.downcast_mut::<State>();
         if let Some(menu_position) = state.node_creation_menu.position {
+            let graph_origin = Vector::new(layout.position().x, layout.position().y);
+            let graph_cursor = menu_position * inverse_view_transformation;
+            let NodeCreationMenuState {
+                position,
+                state: menu_state,
+                hovered,
+            } = &mut state.node_creation_menu;
+            let selected_nodes = &mut state.selected_nodes;
+            let interaction = &mut state.interaction;
             let menu = menu::Menu::new(
-                &mut state.node_creation_menu.state,
+                menu_state,
                 &self.node_creation_menu_items,
-                &mut state.node_creation_menu.hovered,
-                |name| {
-                    let position = state.node_creation_menu.position.take().unwrap();
+                hovered,
+                move |name| {
+                    position.take();
                     let node_id = GraphNodeId::new(Uuid::new_v4());
-                    state.selected_nodes.clear();
-                    state.selected_nodes.insert(node_id);
-                    state.interaction = InteractionState::NodeDragging {
-                        cursor_origin: position,
-                        node_origin: HashMap::from([(node_id, position)]),
+                    selected_nodes.clear();
+                    selected_nodes.insert(node_id);
+                    *interaction = InteractionState::NodeDragging {
+                        cursor_origin: graph_cursor,
+                        node_origin: HashMap::from([(node_id, graph_cursor)]),
                         skip_next_release: true,
                     };
                     GraphEditorMessage::Graph(GraphEditorGraphMessage::NodeCreateRequest(
-                        position - state.view_translation,
+                        graph_cursor - graph_origin,
                         name.node_title,
                         node_id,
                     ))
@@ -1135,9 +1202,136 @@ impl<'a, Data: GraphData> From<GraphEditorView<'a, Data>>
     }
 }
 
-#[derive(Default)]
+struct TransformedGraphOverlay<'a> {
+    content: overlay::Element<'a, GraphEditorMessage, GraphTheme, GraphRenderer>,
+    transformation: Transformation,
+}
+
+impl<'a> TransformedGraphOverlay<'a> {
+    fn new(
+        content: overlay::Element<'a, GraphEditorMessage, GraphTheme, GraphRenderer>,
+        transformation: Transformation,
+    ) -> Self {
+        Self {
+            content,
+            transformation,
+        }
+    }
+}
+
+impl iced_core::Overlay<GraphEditorMessage, GraphTheme, GraphRenderer>
+    for TransformedGraphOverlay<'_>
+{
+    fn layout(&mut self, renderer: &GraphRenderer, bounds: Size) -> Node {
+        let content = self
+            .content
+            .as_overlay_mut()
+            .layout(renderer, bounds * self.transformation.inverse());
+        let content_bounds = content.bounds();
+        let transformed_bounds = content_bounds * self.transformation;
+
+        Node::with_children(
+            transformed_bounds.size(),
+            vec![content.move_to(Point::new(
+                content_bounds.x - transformed_bounds.x,
+                content_bounds.y - transformed_bounds.y,
+            ))],
+        )
+        .move_to(transformed_bounds.position())
+    }
+
+    fn operate(
+        &mut self,
+        layout: Layout<'_>,
+        renderer: &GraphRenderer,
+        operation: &mut dyn Operation,
+    ) {
+        self.content.as_overlay_mut().operate(
+            layout.children().next().unwrap_or(layout),
+            renderer,
+            operation,
+        );
+    }
+
+    fn update(
+        &mut self,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: Cursor,
+        renderer: &GraphRenderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, GraphEditorMessage>,
+    ) {
+        self.content.as_overlay_mut().update(
+            event,
+            layout.children().next().unwrap_or(layout),
+            cursor * self.transformation.inverse(),
+            renderer,
+            clipboard,
+            shell,
+        );
+    }
+
+    fn mouse_interaction(
+        &self,
+        layout: Layout<'_>,
+        cursor: Cursor,
+        renderer: &GraphRenderer,
+    ) -> Interaction {
+        self.content.as_overlay().mouse_interaction(
+            layout.children().next().unwrap_or(layout),
+            cursor * self.transformation.inverse(),
+            renderer,
+        )
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut GraphRenderer,
+        theme: &GraphTheme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: Cursor,
+    ) {
+        use iced_core::Renderer;
+
+        renderer.with_transformation(self.transformation, |renderer| {
+            self.content.as_overlay().draw(
+                renderer,
+                theme,
+                style,
+                layout.children().next().unwrap_or(layout),
+                cursor * self.transformation.inverse(),
+            );
+        });
+    }
+
+    fn overlay<'a>(
+        &'a mut self,
+        layout: Layout<'a>,
+        renderer: &GraphRenderer,
+    ) -> Option<overlay::Element<'a, GraphEditorMessage, GraphTheme, GraphRenderer>> {
+        let transformation = self.transformation;
+
+        self.content
+            .as_overlay_mut()
+            .overlay(layout.children().next().unwrap_or(layout), renderer)
+            .map(|overlay| {
+                overlay::Element::new(Box::new(TransformedGraphOverlay::new(
+                    overlay,
+                    transformation,
+                )))
+            })
+    }
+
+    fn index(&self) -> f32 {
+        self.content.as_overlay().index()
+    }
+}
+
 struct State {
     view_translation: Vector,
+    view_scale: f32,
     keyboard_modifiers: keyboard::Modifiers,
 
     node_creation_menu: NodeCreationMenuState,
@@ -1146,6 +1340,34 @@ struct State {
     interaction: InteractionState,
     node_bounds: HashMap<GraphNodeId, Rectangle>,
     slot_pins: GraphSlotPinPositionCollection,
+}
+
+impl State {
+    fn view_transformation(&self, bounds: Rectangle) -> Transformation {
+        let origin = bounds.position();
+
+        Transformation::translate(
+            origin.x + self.view_translation.x,
+            origin.y + self.view_translation.y,
+        ) * Transformation::scale(self.view_scale)
+            * Transformation::translate(-origin.x, -origin.y)
+    }
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            view_translation: Default::default(),
+            view_scale: 1.0,
+            keyboard_modifiers: Default::default(),
+            node_creation_menu: Default::default(),
+            last_click_on_node: Default::default(),
+            selected_nodes: Default::default(),
+            interaction: Default::default(),
+            node_bounds: Default::default(),
+            slot_pins: Default::default(),
+        }
+    }
 }
 
 #[derive(Default)]
