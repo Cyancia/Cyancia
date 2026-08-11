@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use anyhow::Result;
 use cyancia_utils::wrapper;
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
@@ -7,6 +8,7 @@ use iced_core::Color;
 use parse_display::Display;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use uuid::Uuid;
+use wgpu::QueueWriteBufferView;
 
 use crate::{
     GraphElement,
@@ -113,11 +115,12 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
     fn color(&self, is_dark: bool) -> Color;
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Self::AssociatedLiteralType;
-    fn wgsl_type(&self) -> Option<&'static str>;
+    fn wgsl_type(&self) -> Option<(&'static str, u64)>;
     fn try_write_into_shader_buffer(
         &self,
         literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>>;
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()>;
     fn view_literal(
         &self,
         data: &Self::AssociatedLiteralType,
@@ -171,8 +174,12 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
     fn color(&self, is_dark: bool) -> Color;
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Box<dyn GraphLiteralValue>;
-    fn wgsl_type(&self) -> Option<&'static str>;
-    fn try_write_into_shader_buffer(&self, literal: &dyn GraphLiteralValue) -> Option<Vec<u8>>;
+    fn wgsl_type(&self) -> Option<(&'static str, u64)>;
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &dyn GraphLiteralValue,
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()>;
     fn view_literal(
         &self,
         slot_id: GraphInputSlotId,
@@ -209,15 +216,20 @@ impl<T: GraphValueType> ErasedGraphValueType for T {
         Box::new(self.default_literal())
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
         self.wgsl_type()
     }
 
-    fn try_write_into_shader_buffer(&self, literal: &dyn GraphLiteralValue) -> Option<Vec<u8>> {
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &dyn GraphLiteralValue,
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
         self.try_write_into_shader_buffer(
             literal
                 .downcast_ref::<T::AssociatedLiteralType>()
                 .expect("failed to downcast graph literal"),
+            writer,
         )
     }
 

@@ -1,12 +1,14 @@
 use std::convert::identity;
 
+use anyhow::{Result, bail};
 use bevy_math::Rect;
-use cyancia_render::buffer::DynamicBuffer;
 use cyancia_widgets::spin_slider::SpinSlider;
+use encase::{DynamicUniformBuffer, ShaderType};
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element};
 use iced_widget::{checkbox, column, space};
 use serde::{Deserialize, Serialize};
+use wgpu::QueueWriteBufferView;
 
 use crate::{
     GraphRenderer, GraphTheme,
@@ -34,17 +36,18 @@ impl GraphValueType for F32Type {
         0.0
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
-        Some("f32")
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
+        Some(("f32", <f32 as ShaderType>::min_size().get()))
     }
 
     fn try_write_into_shader_buffer(
         &self,
         literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>> {
-        let mut buf = DynamicBuffer::default();
-        buf.push(literal);
-        Some(buf.into_inner())
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
+        let mut writer = DynamicUniformBuffer::new(writer.as_mut());
+        writer.write(literal)?;
+        Ok(())
     }
 
     fn view_literal(
@@ -92,17 +95,18 @@ impl GraphValueType for Vec2FType {
         Vec2::ZERO
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
-        Some("vec2f")
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
+        Some(("vec2f", <Vec2 as ShaderType>::min_size().get()))
     }
 
     fn try_write_into_shader_buffer(
         &self,
         literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>> {
-        let mut buf = DynamicBuffer::default();
-        buf.push(literal);
-        Some(buf.into_inner())
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
+        let mut writer = DynamicUniformBuffer::new(writer.as_mut());
+        writer.write(literal)?;
+        Ok(())
     }
 
     fn view_literal(
@@ -149,17 +153,18 @@ impl GraphValueType for I32Type {
         0
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
-        Some("i32")
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
+        Some(("i32", <i32 as ShaderType>::min_size().get()))
     }
 
     fn try_write_into_shader_buffer(
         &self,
         literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>> {
-        let mut buf = DynamicBuffer::default();
-        buf.push(literal);
-        Some(buf.into_inner())
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
+        let mut writer = DynamicUniformBuffer::new(writer.as_mut());
+        writer.write(literal)?;
+        Ok(())
     }
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
@@ -198,12 +203,20 @@ impl GraphValueType for BoolType {
         false
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
-        Some("bool")
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
+        Some(("bool", <u32 as ShaderType>::min_size().get()))
     }
 
-    fn try_write_into_shader_buffer(&self, _: &Self::AssociatedLiteralType) -> Option<Vec<u8>> {
-        None
+    // FIXME This is not working is some expr references bool type,
+    //       because it generates exprs like `if 1u { .. }` which is not valid.
+    fn try_write_into_shader_buffer(
+        &self,
+        literal: &Self::AssociatedLiteralType,
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
+        let mut writer = DynamicUniformBuffer::new(writer.as_mut());
+        writer.write(&if *literal { 1u32 } else { 0u32 })?;
+        Ok(())
     }
 
     fn literal_to_code(&self, data: &Self::AssociatedLiteralType) -> Option<String> {
@@ -250,17 +263,18 @@ impl GraphValueType for ColorType {
         Vec4::ZERO
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
-        Some("vec4f")
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
+        Some(("vec4f", <Vec4 as ShaderType>::min_size().get()))
     }
 
     fn try_write_into_shader_buffer(
         &self,
         literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>> {
-        let mut buf = DynamicBuffer::default();
-        buf.push(literal);
-        Some(buf.into_inner())
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
+        let mut writer = DynamicUniformBuffer::new(writer.as_mut());
+        writer.write(literal)?;
+        Ok(())
     }
 
     fn view_literal(
@@ -341,15 +355,17 @@ impl GraphValueType for TextureType {
         TextureReference::NULL
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
         None
     }
 
     fn try_write_into_shader_buffer(
         &self,
         _literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>> {
-        None
+        _writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
+        // TODO Support texture as external variable
+        bail!("Unsupported writing for texture type.");
     }
 
     fn view_literal(
@@ -394,17 +410,18 @@ impl GraphValueType for RectType {
         Rect::default()
     }
 
-    fn wgsl_type(&self) -> Option<&'static str> {
-        Some("Rect")
+    fn wgsl_type(&self) -> Option<(&'static str, u64)> {
+        Some(("Rect", <Rect as ShaderType>::min_size().get()))
     }
 
     fn try_write_into_shader_buffer(
         &self,
         literal: &Self::AssociatedLiteralType,
-    ) -> Option<Vec<u8>> {
-        let mut buf = DynamicBuffer::default();
-        buf.push(literal);
-        Some(buf.into_inner())
+        writer: &mut QueueWriteBufferView,
+    ) -> Result<()> {
+        let mut writer = DynamicUniformBuffer::new(writer.as_mut());
+        writer.write(literal)?;
+        Ok(())
     }
 
     fn view_literal(

@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
+use anyhow::Result;
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
+use wgpu::QueueWriteBufferView;
 
 use crate::graph::slot::{ErasedGraphLiteralUpdateMessage, ErasedGraphValueType, GraphValueType};
 
@@ -187,8 +189,9 @@ impl GraphLiteral {
         self.ty.literal_to_code(self.value.as_ref())
     }
 
-    pub fn try_write_into_shader_buffer(&self) -> Option<Vec<u8>> {
-        self.ty.try_write_into_shader_buffer(self.value.as_ref())
+    pub fn try_write_into_shader_buffer(&self, writer: &mut QueueWriteBufferView) -> Result<()> {
+        self.ty
+            .try_write_into_shader_buffer(self.value.as_ref(), writer)
     }
 }
 

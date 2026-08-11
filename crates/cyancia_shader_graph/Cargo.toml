@@ -16,6 +16,7 @@ bevy_math.workspace = true
 cyancia_assets.workspace = true
 cyancia_math.workspace = true
 cyancia_render.workspace = true
+cyancia_runtime.workspace = true
 cyancia_shader_graph_derive.workspace = true
 cyancia_utils.workspace = true
 cyancia_widgets.workspace = true
@@ -37,7 +38,7 @@ serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 uuid.workspace = true
-cyancia_runtime.workspace = true
+wgpu.workspace = true
 
 [dev-dependencies]
 iced.workspace = true

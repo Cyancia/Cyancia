@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    num::NonZeroU64,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use anyhow::Result;
@@ -39,7 +42,6 @@ use wgpu::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
     BufferDescriptor, BufferUsages, ComputePassDescriptor, Device, Extent3d, Queue, ShaderStages,
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    util::{BufferInitDescriptor, DeviceExt},
 };
 
 use crate::{
@@ -1085,12 +1087,17 @@ impl StrokeResources {
 
         let mut external_var_buffers = Vec::new();
         for var in brush.external_vars.all().iter() {
-            let buffer = var.value.try_write_into_shader_buffer().unwrap();
-            let gpu_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            let (_, size) = var.value.ty().wgsl_type().unwrap();
+            let gpu_buffer = device.create_buffer(&BufferDescriptor {
                 label: Some("external variable buffer"),
-                contents: &buffer,
+                size,
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
             });
+            let mut writer = queue
+                .write_buffer_with(&gpu_buffer, 0, NonZeroU64::new(size).unwrap())
+                .unwrap();
+            var.value.try_write_into_shader_buffer(&mut writer).unwrap();
             external_var_buffers.push(gpu_buffer);
         }
 
@@ -1156,9 +1163,13 @@ impl StrokeResources {
             .iter()
             .zip(&self.external_var_buffers)
         {
-            if let Some(buffer) = ext_var.value.try_write_into_shader_buffer() {
-                queue.write_buffer(var_buffer, 0, &buffer);
-            }
+            let mut writer = queue
+                .write_buffer_with(var_buffer, 0, NonZeroU64::new(var_buffer.size()).unwrap())
+                .unwrap();
+            ext_var
+                .value
+                .try_write_into_shader_buffer(&mut writer)
+                .unwrap();
         }
     }
 
