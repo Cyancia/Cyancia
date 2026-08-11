@@ -24,7 +24,6 @@ impl<Data: GraphData> Graph<Data> {
             return;
         }
 
-        let nodes_to_format = nodes_to_format;
         if !self
             .nodes
             .keys()
@@ -667,7 +666,7 @@ fn minimum_edge_length_ranks(successors: &[BTreeMap<usize, u64>]) -> Vec<usize> 
         successors
             .iter()
             .enumerate()
-            .all(|(from, edges)| edges.keys().all(|to| ranks[*to] >= ranks[from] + 1))
+            .all(|(from, edges)| edges.keys().all(|to| ranks[*to] > ranks[from]))
     );
     ranks
 }
