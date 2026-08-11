@@ -179,6 +179,7 @@ pub enum GraphEditorGraphMessage {
     EdgeCreateRequest(GraphOutputSlotId, GraphInputSlotId),
     EdgeRemoveRequest(GraphInputSlotId),
     NodeUpdate(ErasedGraphNodeMessage),
+    Format(HashMap<GraphNodeId, Rectangle>, HashSet<GraphNodeId>),
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +204,7 @@ impl<Data: GraphData> Graph<Data> {
             }
             GraphEditorGraphMessage::EdgeRemoveRequest(to) => self.disconnect_slot(to),
             GraphEditorGraphMessage::NodeUpdate(message) => self.update_node(message),
+            GraphEditorGraphMessage::Format(bounds, selected) => self.format(&bounds, &selected),
         }
     }
 }
@@ -462,18 +464,23 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         renderer: &GraphRenderer,
         limits: &layout::Limits,
     ) -> Node {
-        let state = tree.state.downcast_ref::<State>();
+        let state = tree.state.downcast_mut::<State>();
+        state.node_bounds.clear();
+
         let children = self
             .graph
             .nodes
             .values_mut()
             .zip(&mut tree.children)
             .map(|(node, tree)| {
-                node.widget
+                let layout = node
+                    .widget
                     .as_widget_mut()
                     .layout(tree, renderer, &Limits::NONE)
                     .translate(Vector::new(node.position.x, node.position.y))
-                    .translate(state.view_translation)
+                    .translate(state.view_translation);
+                state.node_bounds.insert(node.node_id, layout.bounds());
+                layout
             })
             .collect();
         Node::with_children(
@@ -549,6 +556,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         shell.merge(children_shell, |m| m);
 
         if shell.is_event_captured() {
+            dbg!();
             return;
         }
 
@@ -855,6 +863,14 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                         shell.capture_event();
                         shell.request_redraw();
                     }
+                    key::Code::KeyF if modifiers.shift() && modifiers.alt() => {
+                        shell.publish(GraphEditorMessage::Graph(GraphEditorGraphMessage::Format(
+                            state.node_bounds.clone(),
+                            state.selected_nodes.clone(),
+                        )));
+                        shell.capture_event();
+                        shell.request_redraw();
+                    }
                     _ => {}
                 }
             }
@@ -1128,6 +1144,7 @@ struct State {
     last_click_on_node: Option<Instant>,
     selected_nodes: HashSet<GraphNodeId>,
     interaction: InteractionState,
+    node_bounds: HashMap<GraphNodeId, Rectangle>,
     slot_pins: GraphSlotPinPositionCollection,
 }
 

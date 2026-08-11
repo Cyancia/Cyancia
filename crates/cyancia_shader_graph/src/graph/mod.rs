@@ -28,6 +28,7 @@ use crate::graph::{
 
 pub mod external;
 pub mod function;
+pub mod layout;
 pub mod node;
 pub mod slot;
 pub mod texture;
