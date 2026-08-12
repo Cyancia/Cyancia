@@ -58,7 +58,7 @@ impl AssetSerializer for ImageSerializer {
     type Error = ImageSerializerError;
 
     fn file_extension() -> &'static str {
-        "cig"
+        "lig"
     }
 
     fn read(&self, reader: &mut dyn Read) -> Result<Self::Asset, Self::Error> {
