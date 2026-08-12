@@ -40,7 +40,7 @@ fn main() {
     {
         let (standard_bundles, errs) = StandardAssetBundle::scan_bundles("assets");
         log::info!(
-            "Loaded {} csb bundles with {} errors",
+            "Loaded {} lazurite bundles with {} errors",
             standard_bundles.len(),
             errs.len()
         );

@@ -66,7 +66,7 @@ fn scan_bundles(
         let path = entry.path();
         if path.is_file() {
             let ext = path.extension().and_then(|ext| ext.to_str());
-            if ext == Some("csb") {
+            if ext == Some("lazurite") {
                 match StandardAssetBundle::new(&path) {
                     Ok(bundle) => bundles.push(bundle),
                     Err(e) => errors.push(e),
