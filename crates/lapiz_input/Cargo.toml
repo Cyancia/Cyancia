@@ -1,0 +1,19 @@
+[package]
+name = "lapiz_input"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde.workspace = true
+iced_core.workspace = true
+thiserror.workspace = true
+smallvec.workspace = true
+lapiz_assets.workspace = true
+toml.workspace = true
+indexmap.workspace = true
+bitflags.workspace = true
+log.workspace = true
+lapiz_utils.workspace = true
+lapiz_runtime.workspace = true
+futures.workspace = true
+parse-display.workspace = true

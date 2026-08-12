@@ -1,0 +1,30 @@
+[package]
+name = "lapiz_actions"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+lapiz_assets.workspace = true
+lapiz_canvas.workspace = true
+lapiz_image.workspace = true
+lapiz_input.workspace = true
+lapiz_render.workspace = true
+lapiz_runtime.workspace = true
+lapiz_tools.workspace = true
+lapiz_undo.workspace = true
+lapiz_utils.workspace = true
+futures.workspace = true
+iced_core.workspace = true
+iced_runtime.workspace = true
+log.workspace = true
+rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

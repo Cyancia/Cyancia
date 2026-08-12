@@ -1370,600 +1370,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
-name = "cyancia_abr"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cyancia_abr_derive",
- "image",
- "uuid",
-]
-
-[[package]]
-name = "cyancia_abr_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "cyancia_actions"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cyancia_assets",
- "cyancia_canvas",
- "cyancia_image",
- "cyancia_input",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_tools",
- "cyancia_undo",
- "cyancia_utils",
- "futures",
- "iced_core",
- "iced_runtime",
- "log",
- "rfd",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "uuid",
-]
-
-[[package]]
-name = "cyancia_anti_aliasing"
-version = "0.1.0"
-dependencies = [
- "cyancia_image",
- "cyancia_render",
- "encase",
- "wesl",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "cyancia_actions",
- "cyancia_assets",
- "cyancia_brush",
- "cyancia_bucket_tool",
- "cyancia_canvas",
- "cyancia_color",
- "cyancia_color_selector",
- "cyancia_dock",
- "cyancia_image",
- "cyancia_input",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_selection_tool",
- "cyancia_shader_graph",
- "cyancia_tools",
- "cyancia_transform_tool",
- "cyancia_undo",
- "cyancia_utils",
- "fs_extra",
- "futures",
- "iced",
- "iced_core",
- "iced_futures",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "log",
- "moxcms",
- "parking_lot",
- "tracing-subscriber",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_assets"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "cyancia_runtime",
- "cyancia_utils",
- "downcast-rs 2.0.2",
- "env_logger",
- "futures",
- "log",
- "md5",
- "parking_lot",
- "parse-display",
- "path-clean",
- "rusqlite",
- "serde",
- "thiserror 2.0.19",
- "toml",
- "uuid",
- "xxhash-rust",
- "zip",
-]
-
-[[package]]
-name = "cyancia_brush"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "chrono",
- "cyancia_assets",
- "cyancia_canvas",
- "cyancia_color",
- "cyancia_image",
- "cyancia_input",
- "cyancia_math",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_shader_graph",
- "cyancia_tools",
- "cyancia_undo",
- "cyancia_utils",
- "cyancia_widgets",
- "dyn-clone",
- "encase",
- "futures",
- "glam 0.30.10",
- "iced_core",
- "iced_futures",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "image",
- "log",
- "parking_lot",
- "ringbuffer",
- "serde",
- "thiserror 2.0.19",
- "toml",
- "tracing",
- "uuid",
- "wesl",
- "wgpu",
- "zip",
-]
-
-[[package]]
-name = "cyancia_bucket_tool"
-version = "0.1.0"
-dependencies = [
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "bytemuck",
- "cyancia_anti_aliasing",
- "cyancia_canvas",
- "cyancia_color",
- "cyancia_image",
- "cyancia_input",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_tools",
- "cyancia_utils",
- "cyancia_widgets",
- "encase",
- "glam 0.30.10",
- "iced_core",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "indexmap",
- "tracing",
- "wesl",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_canvas"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "bytemuck",
- "cyancia_color",
- "cyancia_cyan",
- "cyancia_image",
- "cyancia_input",
- "cyancia_math",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_tools",
- "cyancia_undo",
- "cyancia_utils",
- "cyancia_widgets",
- "encase",
- "glam 0.30.10",
- "iced_aw",
- "iced_core",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "indexmap",
- "log",
- "moxcms",
- "parking_lot",
- "parse-display",
- "serde",
- "tracing",
- "uuid",
- "wesl",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_color"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cyancia_math",
- "cyancia_runtime",
- "cyancia_utils",
- "glam 0.30.10",
- "moxcms",
- "parse-display",
- "wesl",
- "windows 0.62.2",
-]
-
-[[package]]
-name = "cyancia_color_selector"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitflags 2.13.1",
- "bytemuck",
- "cyancia_color",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_widgets",
- "encase",
- "glam 0.30.10",
- "iced_aw",
- "iced_core",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "moxcms",
- "parse-display",
- "wesl",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_cyan"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "glam 0.30.10",
- "parking_lot",
- "rusqlite",
- "uuid",
-]
-
-[[package]]
-name = "cyancia_dock"
-version = "0.1.0"
-dependencies = [
- "cyancia_runtime",
- "cyancia_utils",
- "iced",
- "iced_aw",
- "iced_core",
- "iced_runtime",
- "iced_widget",
- "indexmap",
- "log",
- "parse-display",
- "serde",
- "thiserror 2.0.19",
- "uuid",
-]
-
-[[package]]
-name = "cyancia_image"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "bytemuck",
- "cyancia_color",
- "cyancia_cyan",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_shader_graph",
- "cyancia_utils",
- "cyancia_widgets",
- "dashmap",
- "downcast-rs 2.0.2",
- "dyn-clone",
- "encase",
- "flate2",
- "futures",
- "glam 0.30.10",
- "half",
- "image",
- "indexmap",
- "log",
- "moxcms",
- "num_enum",
- "palette",
- "parking_lot",
- "parse-display",
- "rayon",
- "rmp-serde",
- "schemars",
- "serde",
- "uuid",
- "wesl",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_input"
-version = "0.1.0"
-dependencies = [
- "bitflags 2.13.1",
- "cyancia_assets",
- "cyancia_runtime",
- "cyancia_utils",
- "futures",
- "iced_core",
- "indexmap",
- "log",
- "parse-display",
- "serde",
- "smallvec",
- "thiserror 2.0.19",
- "toml",
-]
-
-[[package]]
-name = "cyancia_math"
-version = "0.1.0"
-dependencies = [
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "glam 0.30.10",
- "iced_core",
- "moxcms",
-]
-
-[[package]]
-name = "cyancia_render"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "bytemuck",
- "cyancia_assets",
- "cyancia_runtime",
- "cyancia_utils",
- "encase",
- "futures",
- "iced_runtime",
- "image",
- "log",
- "parse-display",
- "serde",
- "thiserror 2.0.19",
- "toml",
- "tracing",
- "variadics_please 2.0.0",
- "wesl",
- "wgpu",
- "zip",
-]
-
-[[package]]
-name = "cyancia_runtime"
-version = "0.1.0"
-dependencies = [
- "cyancia_runtime_derive",
- "cyancia_utils",
- "downcast-rs 2.0.2",
- "futures",
- "iced_core",
- "iced_futures",
- "iced_graphics",
- "iced_runtime",
- "iced_wgpu",
- "iced_winit",
- "log",
- "parking_lot",
- "parse-display",
- "rustc-hash 1.1.0",
- "smol",
- "wgpu",
- "windows 0.62.2",
- "winit",
-]
-
-[[package]]
-name = "cyancia_runtime_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "cyancia_selection_tool"
-version = "0.1.0"
-dependencies = [
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "bytemuck",
- "cyancia_anti_aliasing",
- "cyancia_bucket_tool",
- "cyancia_canvas",
- "cyancia_image",
- "cyancia_input",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_tools",
- "cyancia_utils",
- "cyancia_widgets",
- "encase",
- "glam 0.30.10",
- "iced_core",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "indexmap",
- "lyon",
- "tracing",
- "wesl",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_shader_graph"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arc-swap",
- "bevy_color",
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "cyancia_assets",
- "cyancia_math",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_shader_graph_derive",
- "cyancia_utils",
- "cyancia_widgets",
- "dashmap",
- "downcast-rs 2.0.2",
- "dyn-clone",
- "encase",
- "glam 0.30.10",
- "iced",
- "iced_core",
- "iced_graphics",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "indexmap",
- "log",
- "parking_lot",
- "parse-display",
- "serde",
- "thiserror 2.0.19",
- "toml",
- "uuid",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_shader_graph_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "cyancia_tools"
-version = "0.1.0"
-dependencies = [
- "cyancia_assets",
- "cyancia_input",
- "cyancia_runtime",
- "cyancia_utils",
- "iced_core",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "log",
- "parse-display",
- "serde",
- "serde_json",
- "uuid",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_transform_tool"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
- "bitflags 2.13.1",
- "cyancia_canvas",
- "cyancia_image",
- "cyancia_input",
- "cyancia_math",
- "cyancia_render",
- "cyancia_runtime",
- "cyancia_tools",
- "cyancia_undo",
- "cyancia_utils",
- "cyancia_widgets",
- "encase",
- "glam 0.30.10",
- "iced_aw",
- "iced_core",
- "iced_graphics",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "tracing",
- "wgpu",
-]
-
-[[package]]
-name = "cyancia_undo"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cyancia_runtime",
- "cyancia_utils",
- "downcast-rs 2.0.2",
- "futures",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cyancia_utils"
-version = "0.1.0"
-dependencies = [
- "bevy_color",
- "cyancia_utils_derive",
- "downcast-rs 2.0.2",
- "dyn-clone",
- "iced_core",
- "tracing",
-]
-
-[[package]]
-name = "cyancia_utils_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "cyancia_widgets"
-version = "0.1.0"
-dependencies = [
- "cyancia_math",
- "glam 0.30.10",
- "iced_core",
- "iced_graphics",
- "iced_wgpu",
- "iced_widget",
- "num-traits",
-]
-
-[[package]]
 name = "dashmap"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3570,6 +2976,600 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "884f3e747ed2dcee867cda1b0c31a048f9e20de2d916a248949319921a2e666e"
 dependencies = [
  "regex-automata",
+]
+
+[[package]]
+name = "lapiz_abr"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "lapiz_abr_derive",
+ "uuid",
+]
+
+[[package]]
+name = "lapiz_abr_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "lapiz_actions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "iced_core",
+ "iced_runtime",
+ "lapiz_assets",
+ "lapiz_canvas",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_tools",
+ "lapiz_undo",
+ "lapiz_utils",
+ "log",
+ "rfd",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "uuid",
+]
+
+[[package]]
+name = "lapiz_anti_aliasing"
+version = "0.1.0"
+dependencies = [
+ "encase",
+ "lapiz_image",
+ "lapiz_render",
+ "wesl",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "fs_extra",
+ "futures",
+ "iced",
+ "iced_core",
+ "iced_futures",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "lapiz_actions",
+ "lapiz_assets",
+ "lapiz_brush",
+ "lapiz_bucket_tool",
+ "lapiz_canvas",
+ "lapiz_color",
+ "lapiz_color_selector",
+ "lapiz_dock",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_selection_tool",
+ "lapiz_shader_graph",
+ "lapiz_tools",
+ "lapiz_transform_tool",
+ "lapiz_undo",
+ "lapiz_utils",
+ "log",
+ "moxcms",
+ "parking_lot",
+ "tracing-subscriber",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_assets"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "downcast-rs 2.0.2",
+ "env_logger",
+ "futures",
+ "lapiz_runtime",
+ "lapiz_utils",
+ "log",
+ "md5",
+ "parking_lot",
+ "parse-display",
+ "path-clean",
+ "rusqlite",
+ "serde",
+ "thiserror 2.0.19",
+ "toml",
+ "uuid",
+ "xxhash-rust",
+ "zip",
+]
+
+[[package]]
+name = "lapiz_brush"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "chrono",
+ "dyn-clone",
+ "encase",
+ "futures",
+ "glam 0.30.10",
+ "iced_core",
+ "iced_futures",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "image",
+ "lapiz_assets",
+ "lapiz_canvas",
+ "lapiz_color",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_math",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_shader_graph",
+ "lapiz_tools",
+ "lapiz_undo",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "log",
+ "parking_lot",
+ "ringbuffer",
+ "serde",
+ "thiserror 2.0.19",
+ "toml",
+ "tracing",
+ "uuid",
+ "wesl",
+ "wgpu",
+ "zip",
+]
+
+[[package]]
+name = "lapiz_bucket_tool"
+version = "0.1.0"
+dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "encase",
+ "glam 0.30.10",
+ "iced_core",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "indexmap",
+ "lapiz_anti_aliasing",
+ "lapiz_canvas",
+ "lapiz_color",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_tools",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "tracing",
+ "wesl",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_canvas"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "encase",
+ "glam 0.30.10",
+ "iced_aw",
+ "iced_core",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "indexmap",
+ "lapiz_color",
+ "lapiz_cyan",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_math",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_tools",
+ "lapiz_undo",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "log",
+ "moxcms",
+ "parking_lot",
+ "parse-display",
+ "serde",
+ "tracing",
+ "uuid",
+ "wesl",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_color"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam 0.30.10",
+ "lapiz_math",
+ "lapiz_runtime",
+ "lapiz_utils",
+ "moxcms",
+ "parse-display",
+ "wesl",
+ "windows 0.62.2",
+]
+
+[[package]]
+name = "lapiz_color_selector"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitflags 2.13.1",
+ "bytemuck",
+ "encase",
+ "glam 0.30.10",
+ "iced_aw",
+ "iced_core",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "lapiz_color",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_widgets",
+ "moxcms",
+ "parse-display",
+ "wesl",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_cyan"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam 0.30.10",
+ "parking_lot",
+ "rusqlite",
+ "uuid",
+]
+
+[[package]]
+name = "lapiz_dock"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "iced_aw",
+ "iced_core",
+ "iced_runtime",
+ "iced_widget",
+ "indexmap",
+ "lapiz_runtime",
+ "lapiz_utils",
+ "log",
+ "parse-display",
+ "serde",
+ "thiserror 2.0.19",
+ "uuid",
+]
+
+[[package]]
+name = "lapiz_image"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "dashmap",
+ "downcast-rs 2.0.2",
+ "dyn-clone",
+ "encase",
+ "flate2",
+ "futures",
+ "glam 0.30.10",
+ "half",
+ "image",
+ "indexmap",
+ "lapiz_color",
+ "lapiz_cyan",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_shader_graph",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "log",
+ "moxcms",
+ "num_enum",
+ "palette",
+ "parking_lot",
+ "parse-display",
+ "rayon",
+ "rmp-serde",
+ "schemars",
+ "serde",
+ "uuid",
+ "wesl",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_input"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.13.1",
+ "futures",
+ "iced_core",
+ "indexmap",
+ "lapiz_assets",
+ "lapiz_runtime",
+ "lapiz_utils",
+ "log",
+ "parse-display",
+ "serde",
+ "smallvec",
+ "thiserror 2.0.19",
+ "toml",
+]
+
+[[package]]
+name = "lapiz_math"
+version = "0.1.0"
+dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "glam 0.30.10",
+ "iced_core",
+ "moxcms",
+]
+
+[[package]]
+name = "lapiz_render"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "encase",
+ "futures",
+ "iced_runtime",
+ "image",
+ "lapiz_assets",
+ "lapiz_runtime",
+ "lapiz_utils",
+ "log",
+ "parse-display",
+ "serde",
+ "thiserror 2.0.19",
+ "toml",
+ "tracing",
+ "variadics_please 2.0.0",
+ "wesl",
+ "wgpu",
+ "zip",
+]
+
+[[package]]
+name = "lapiz_runtime"
+version = "0.1.0"
+dependencies = [
+ "downcast-rs 2.0.2",
+ "futures",
+ "iced_core",
+ "iced_futures",
+ "iced_graphics",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_winit",
+ "lapiz_runtime_derive",
+ "lapiz_utils",
+ "log",
+ "parking_lot",
+ "parse-display",
+ "rustc-hash 1.1.0",
+ "smol",
+ "wgpu",
+ "windows 0.62.2",
+ "winit",
+]
+
+[[package]]
+name = "lapiz_runtime_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "lapiz_selection_tool"
+version = "0.1.0"
+dependencies = [
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bytemuck",
+ "encase",
+ "glam 0.30.10",
+ "iced_core",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "indexmap",
+ "lapiz_anti_aliasing",
+ "lapiz_bucket_tool",
+ "lapiz_canvas",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_tools",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "lyon",
+ "tracing",
+ "wesl",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_shader_graph"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "bevy_color",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "dashmap",
+ "downcast-rs 2.0.2",
+ "dyn-clone",
+ "encase",
+ "glam 0.30.10",
+ "iced",
+ "iced_core",
+ "iced_graphics",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "indexmap",
+ "lapiz_assets",
+ "lapiz_math",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_shader_graph_derive",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "log",
+ "parking_lot",
+ "parse-display",
+ "serde",
+ "thiserror 2.0.19",
+ "toml",
+ "uuid",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_shader_graph_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "lapiz_tools"
+version = "0.1.0"
+dependencies = [
+ "iced_core",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "lapiz_assets",
+ "lapiz_input",
+ "lapiz_runtime",
+ "lapiz_utils",
+ "log",
+ "parse-display",
+ "serde",
+ "serde_json",
+ "uuid",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_transform_tool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "bitflags 2.13.1",
+ "encase",
+ "glam 0.30.10",
+ "iced_aw",
+ "iced_core",
+ "iced_graphics",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "lapiz_canvas",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_math",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_tools",
+ "lapiz_undo",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "tracing",
+ "wgpu",
+]
+
+[[package]]
+name = "lapiz_undo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "downcast-rs 2.0.2",
+ "futures",
+ "lapiz_runtime",
+ "lapiz_utils",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "lapiz_utils"
+version = "0.1.0"
+dependencies = [
+ "bevy_color",
+ "downcast-rs 2.0.2",
+ "dyn-clone",
+ "iced_core",
+ "lapiz_utils_derive",
+ "tracing",
+]
+
+[[package]]
+name = "lapiz_utils_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "lapiz_widgets"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+ "iced_core",
+ "iced_graphics",
+ "iced_wgpu",
+ "iced_widget",
+ "lapiz_math",
+ "num-traits",
 ]
 
 [[package]]

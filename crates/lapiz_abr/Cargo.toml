@@ -1,0 +1,15 @@
+[package]
+name = "lapiz_abr"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+lapiz_abr_derive.workspace = true
+image.workspace = true
+uuid.workspace = true

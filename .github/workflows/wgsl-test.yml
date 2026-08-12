@@ -25,4 +25,4 @@ jobs:
         run: npm install -g wgsl-test
 
       - name: Run WGSL tests
-        run: wgsl-test run --projectDir crates/cyancia_color
+        run: wgsl-test run --projectDir crates/lapiz_color

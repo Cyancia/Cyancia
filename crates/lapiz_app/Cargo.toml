@@ -1,0 +1,46 @@
+[package]
+name = "lapiz_app"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bevy_math.workspace = true
+lapiz_actions.workspace = true
+lapiz_assets.workspace = true
+lapiz_brush.workspace = true
+lapiz_bucket_tool.workspace = true
+lapiz_color.workspace = true
+lapiz_color_selector.workspace = true
+lapiz_canvas.workspace = true
+lapiz_dock.workspace = true
+lapiz_image.workspace = true
+lapiz_input.workspace = true
+lapiz_render.workspace = true
+lapiz_runtime.workspace = true
+lapiz_selection_tool.workspace = true
+lapiz_transform_tool.workspace = true
+lapiz_shader_graph.workspace = true
+lapiz_tools.workspace = true
+lapiz_undo.workspace = true
+lapiz_utils.workspace = true
+futures.workspace = true
+iced.workspace = true
+iced_core.workspace = true
+iced_futures.workspace = true
+iced_runtime.workspace = true
+iced_wgpu.workspace = true
+iced_widget.workspace = true
+moxcms.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+tracing-subscriber.workspace = true
+wgpu.workspace = true
+
+[build-dependencies]
+fs_extra.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "lapiz_utils"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bevy_color.workspace = true
+lapiz_utils_derive.workspace = true
+downcast-rs.workspace = true
+dyn-clone.workspace = true
+iced_core.workspace = true
+tracing.workspace = true

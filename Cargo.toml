@@ -1,36 +1,36 @@
 [workspace]
 members = [
-    "crates/cyancia_abr",
-    "crates/cyancia_abr_derive",
-    "crates/cyancia_actions",
-    "crates/cyancia_anti_aliasing",
-    "crates/cyancia_app",
-    "crates/cyancia_assets",
-    "crates/cyancia_brush",
-    "crates/cyancia_bucket_tool",
-    "crates/cyancia_canvas",
-    "crates/cyancia_color",
-    "crates/cyancia_cyan",
-    "crates/cyancia_color_selector",
-    "crates/cyancia_dock",
-    "crates/cyancia_image",
-    "crates/cyancia_input",
-    "crates/cyancia_math",
-    "crates/cyancia_render",
-    "crates/cyancia_runtime",
-    "crates/cyancia_runtime_derive",
-    "crates/cyancia_selection_tool",
-    "crates/cyancia_transform_tool",
-    "crates/cyancia_shader_graph",
-    "crates/cyancia_shader_graph_derive",
-    "crates/cyancia_tools",
-    "crates/cyancia_undo",
-    "crates/cyancia_utils",
-    "crates/cyancia_utils_derive",
-    "crates/cyancia_widgets",
+    "crates/lapiz_abr",
+    "crates/lapiz_abr_derive",
+    "crates/lapiz_actions",
+    "crates/lapiz_anti_aliasing",
+    "crates/lapiz_app",
+    "crates/lapiz_assets",
+    "crates/lapiz_brush",
+    "crates/lapiz_bucket_tool",
+    "crates/lapiz_canvas",
+    "crates/lapiz_color",
+    "crates/lapiz_cyan",
+    "crates/lapiz_color_selector",
+    "crates/lapiz_dock",
+    "crates/lapiz_image",
+    "crates/lapiz_input",
+    "crates/lapiz_math",
+    "crates/lapiz_render",
+    "crates/lapiz_runtime",
+    "crates/lapiz_runtime_derive",
+    "crates/lapiz_selection_tool",
+    "crates/lapiz_transform_tool",
+    "crates/lapiz_shader_graph",
+    "crates/lapiz_shader_graph_derive",
+    "crates/lapiz_tools",
+    "crates/lapiz_undo",
+    "crates/lapiz_utils",
+    "crates/lapiz_utils_derive",
+    "crates/lapiz_widgets",
 ]
 resolver = "3"
-default-members = ["crates/cyancia_app"]
+default-members = ["crates/lapiz_app"]
 
 [profile.dev]
 opt-level = 1
@@ -48,33 +48,33 @@ type_complexity = "allow"
 too_many_arguments = "allow"
 
 [workspace.dependencies]
-cyancia_abr = { version = "0.1.0", path = "crates/cyancia_abr" }
-cyancia_abr_derive = { version = "0.1.0", path = "crates/cyancia_abr_derive" }
-cyancia_actions = { version = "0.1.0", path = "crates/cyancia_actions" }
-cyancia_anti_aliasing = { version = "0.1.0", path = "crates/cyancia_anti_aliasing" }
-cyancia_assets = { version = "0.1.0", path = "crates/cyancia_assets" }
-cyancia_brush = { version = "0.1.0", path = "crates/cyancia_brush" }
-cyancia_bucket_tool = { version = "0.1.0", path = "crates/cyancia_bucket_tool" }
-cyancia_canvas = { version = "0.1.0", path = "crates/cyancia_canvas" }
-cyancia_color = { version = "0.1.0", path = "crates/cyancia_color" }
-cyancia_cyan = { version = "0.1.0", path = "crates/cyancia_cyan" }
-cyancia_color_selector = { version = "0.1.0", path = "crates/cyancia_color_selector" }
-cyancia_dock = { version = "0.1.0", path = "crates/cyancia_dock" }
-cyancia_image = { version = "0.1.0", path = "crates/cyancia_image" }
-cyancia_input = { version = "0.1.0", path = "crates/cyancia_input" }
-cyancia_math = { version = "0.1.0", path = "crates/cyancia_math" }
-cyancia_render = { version = "0.1.0", path = "crates/cyancia_render" }
-cyancia_runtime = { version = "0.1.0", path = "crates/cyancia_runtime" }
-cyancia_runtime_derive = { version = "0.1.0", path = "crates/cyancia_runtime_derive" }
-cyancia_shader_graph = { version = "0.1.0", path = "crates/cyancia_shader_graph" }
-cyancia_shader_graph_derive = { version = "0.1.0", path = "crates/cyancia_shader_graph_derive" }
-cyancia_selection_tool = { version = "0.1.0", path = "crates/cyancia_selection_tool" }
-cyancia_transform_tool = { version = "0.1.0", path = "crates/cyancia_transform_tool" }
-cyancia_tools = { version = "0.1.0", path = "crates/cyancia_tools" }
-cyancia_undo = { version = "0.1.0", path = "crates/cyancia_undo" }
-cyancia_utils = { version = "0.1.0", path = "crates/cyancia_utils" }
-cyancia_utils_derive = { version = "0.1.0", path = "crates/cyancia_utils_derive" }
-cyancia_widgets = { version = "0.1.0", path = "crates/cyancia_widgets" }
+lapiz_abr = { version = "0.1.0", path = "crates/lapiz_abr" }
+lapiz_abr_derive = { version = "0.1.0", path = "crates/lapiz_abr_derive" }
+lapiz_actions = { version = "0.1.0", path = "crates/lapiz_actions" }
+lapiz_anti_aliasing = { version = "0.1.0", path = "crates/lapiz_anti_aliasing" }
+lapiz_assets = { version = "0.1.0", path = "crates/lapiz_assets" }
+lapiz_brush = { version = "0.1.0", path = "crates/lapiz_brush" }
+lapiz_bucket_tool = { version = "0.1.0", path = "crates/lapiz_bucket_tool" }
+lapiz_canvas = { version = "0.1.0", path = "crates/lapiz_canvas" }
+lapiz_color = { version = "0.1.0", path = "crates/lapiz_color" }
+lapiz_cyan = { version = "0.1.0", path = "crates/lapiz_cyan" }
+lapiz_color_selector = { version = "0.1.0", path = "crates/lapiz_color_selector" }
+lapiz_dock = { version = "0.1.0", path = "crates/lapiz_dock" }
+lapiz_image = { version = "0.1.0", path = "crates/lapiz_image" }
+lapiz_input = { version = "0.1.0", path = "crates/lapiz_input" }
+lapiz_math = { version = "0.1.0", path = "crates/lapiz_math" }
+lapiz_render = { version = "0.1.0", path = "crates/lapiz_render" }
+lapiz_runtime = { version = "0.1.0", path = "crates/lapiz_runtime" }
+lapiz_runtime_derive = { version = "0.1.0", path = "crates/lapiz_runtime_derive" }
+lapiz_shader_graph = { version = "0.1.0", path = "crates/lapiz_shader_graph" }
+lapiz_shader_graph_derive = { version = "0.1.0", path = "crates/lapiz_shader_graph_derive" }
+lapiz_selection_tool = { version = "0.1.0", path = "crates/lapiz_selection_tool" }
+lapiz_transform_tool = { version = "0.1.0", path = "crates/lapiz_transform_tool" }
+lapiz_tools = { version = "0.1.0", path = "crates/lapiz_tools" }
+lapiz_undo = { version = "0.1.0", path = "crates/lapiz_undo" }
+lapiz_utils = { version = "0.1.0", path = "crates/lapiz_utils" }
+lapiz_utils_derive = { version = "0.1.0", path = "crates/lapiz_utils_derive" }
+lapiz_widgets = { version = "0.1.0", path = "crates/lapiz_widgets" }
 
 anyhow = "1"
 arc-swap = "1"

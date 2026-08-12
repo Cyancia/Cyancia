@@ -1,0 +1,18 @@
+[package]
+name = "lapiz_undo"
+version = "0.1.0"
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+lapiz_runtime.workspace = true
+lapiz_utils.workspace = true
+downcast-rs.workspace = true
+futures.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
