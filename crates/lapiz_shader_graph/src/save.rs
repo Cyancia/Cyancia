@@ -506,7 +506,7 @@ impl AssetSerializer for SerializableGraphFunctionSerializer {
     type Error = SerializableGraphFunctionSerializerError;
 
     fn file_extension() -> &'static str {
-        "csf"
+        "lsf"
     }
 
     fn read(&self, reader: &mut dyn std::io::Read) -> Result<Self::Asset, Self::Error> {

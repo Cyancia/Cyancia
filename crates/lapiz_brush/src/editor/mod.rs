@@ -578,7 +578,7 @@ impl BrushEditor {
             .bundle_id;
         let asset_id = services
             .assets()
-            .add_asset(bundle, "unnamed_function.csf", Arc::new(serialized))
+            .add_asset(bundle, "unnamed_function.lsf", Arc::new(serialized))
             .unwrap();
         let handle = services.assets().handle(asset_id).unwrap();
         self.name_buffer = function.name.clone();
