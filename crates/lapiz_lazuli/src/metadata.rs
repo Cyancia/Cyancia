@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow, bail};
 use rusqlite::{Connection, params};
 
-use crate::{CyanArchive, VERSION};
+use crate::{LazuliArchive, VERSION};
 
 pub(crate) fn initialize_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(&format!(
@@ -21,7 +21,7 @@ pub struct Metadata {
     pub version: u32,
 }
 
-impl CyanArchive {
+impl LazuliArchive {
     pub fn read_metadata(&self) -> Result<Metadata> {
         let conn = self.conn();
         let mut statement = conn.prepare("SELECT version FROM metadata")?;
@@ -55,12 +55,12 @@ impl CyanArchive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CyanArchive;
+    use crate::LazuliArchive;
     use uuid::Uuid;
 
     #[test]
     fn metadata_table_contains_the_current_version() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let conn = archive.conn();
         let mut statement = conn.prepare("PRAGMA table_info(metadata)").unwrap();
         let columns = statement
@@ -94,9 +94,9 @@ mod tests {
     #[test]
     fn opening_an_archive_with_an_unsupported_version_fails() {
         let directory =
-            std::env::temp_dir().join(format!("lapiz_cyan_metadata_{}", Uuid::new_v4()));
-        let path = directory.join("archive.cyan");
-        let archive = CyanArchive::new(&path).unwrap();
+            std::env::temp_dir().join(format!("lapiz_lazuli_metadata_{}", Uuid::new_v4()));
+        let path = directory.join("archive.lazuli");
+        let archive = LazuliArchive::new(&path).unwrap();
         archive
             .write_metadata(Metadata {
                 version: VERSION + 1,
@@ -104,11 +104,11 @@ mod tests {
             .unwrap();
         drop(archive);
 
-        let error = CyanArchive::open(&path).unwrap_err();
+        let error = LazuliArchive::open(&path).unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("unsupported cyan archive version")
+                .contains("unsupported lazuli archive version")
         );
 
         std::fs::remove_file(path).unwrap();

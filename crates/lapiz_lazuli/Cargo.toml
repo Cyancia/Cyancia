@@ -1,5 +1,5 @@
 [package]
-name = "lapiz_cyan"
+name = "lapiz_lazuli"
 version = "0.1.0"
 publish.workspace = true
 edition.workspace = true

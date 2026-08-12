@@ -2,11 +2,11 @@ use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Result;
 use indexmap::IndexSet;
-use lapiz_cyan::CyanArchive;
 use lapiz_image::{
     CImage,
     layer::{LayerId, LayerStackNode},
 };
+use lapiz_lazuli::LazuliArchive;
 use lapiz_runtime::{Application, Services, event::Event, plugin::Plugin, service::Service};
 use lapiz_tools::{ToolProxyId, ToolsAppExt};
 use lapiz_undo::{QueuedUndoCommand, UndoCommand, UndoStack, UndoStacks};
@@ -40,7 +40,7 @@ pub struct CCanvas {
     tool_proxy_id: ToolProxyId,
     pub image: CImage,
     file_path: PathBuf,
-    pub archive: CyanArchive,
+    pub archive: LazuliArchive,
     pub transform: CanvasTransform,
     active_layer: LayerId,
     selected_layers: IndexSet<LayerId>,
@@ -50,7 +50,7 @@ impl CCanvas {
     pub fn new(
         path: PathBuf,
         image: CImage,
-        archive: CyanArchive,
+        archive: LazuliArchive,
         tool_proxy_id: ToolProxyId,
     ) -> Self {
         let background_layer = *image

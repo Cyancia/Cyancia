@@ -12,7 +12,7 @@ use anyhow::Result;
 use bevy_math::IRect;
 use glam::{IVec2, UVec2};
 use imagers::{ImageDecoder, ImageReader};
-use lapiz_cyan::CyanArchive;
+use lapiz_lazuli::LazuliArchive;
 use lapiz_runtime::{Application, Services, plugin::Plugin};
 use moxcms::ColorProfile;
 // TODO move CImage to another place to avoid this.
@@ -33,10 +33,10 @@ pub mod blend_modes;
 pub mod composite;
 pub mod convert;
 pub mod copy_layer;
-pub mod cyan;
 pub mod dynamic_intermediate_buffer;
 pub mod layer;
 pub mod layer_bounds;
+pub mod lazuli;
 pub mod scan_pixels;
 pub mod texel;
 pub mod tile;
@@ -98,17 +98,20 @@ impl CImage {
         }
     }
 
-    pub fn from_file(path: impl AsRef<Path>, services: &Services) -> Result<(CImage, CyanArchive)> {
+    pub fn from_file(
+        path: impl AsRef<Path>,
+        services: &Services,
+    ) -> Result<(CImage, LazuliArchive)> {
         let path = path.as_ref();
-        if path.extension() == Some(OsStr::new("cyan")) {
-            let archive = CyanArchive::open(path)?;
+        if path.extension() == Some(OsStr::new("lazuli")) {
+            let archive = LazuliArchive::open(path)?;
             let img = CImage::read_archive(&archive, services)?;
             Ok((img, archive))
         } else {
             let (img, profile) = Self::load_image_with_profile(BufReader::new(File::open(path)?))?;
             let img = Self::from_image(img, profile, services.tile_storage());
 
-            Ok((img, CyanArchive::new_in_memory()?))
+            Ok((img, LazuliArchive::new_in_memory()?))
         }
     }
 

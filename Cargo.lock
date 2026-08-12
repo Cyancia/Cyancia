@@ -3184,9 +3184,9 @@ dependencies = [
  "iced_widget",
  "indexmap",
  "lapiz_color",
- "lapiz_cyan",
  "lapiz_image",
  "lapiz_input",
+ "lapiz_lazuli",
  "lapiz_math",
  "lapiz_render",
  "lapiz_runtime",
@@ -3245,17 +3245,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lapiz_cyan"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "glam 0.30.10",
- "parking_lot",
- "rusqlite",
- "uuid",
-]
-
-[[package]]
 name = "lapiz_dock"
 version = "0.1.0"
 dependencies = [
@@ -3292,7 +3281,7 @@ dependencies = [
  "image",
  "indexmap",
  "lapiz_color",
- "lapiz_cyan",
+ "lapiz_lazuli",
  "lapiz_render",
  "lapiz_runtime",
  "lapiz_shader_graph",
@@ -3330,6 +3319,17 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.19",
  "toml",
+]
+
+[[package]]
+name = "lapiz_lazuli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam 0.30.10",
+ "parking_lot",
+ "rusqlite",
+ "uuid",
 ]
 
 [[package]]

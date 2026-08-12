@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow, bail};
 use rusqlite::{Connection, params};
 use uuid::Uuid;
 
-use crate::CyanArchive;
+use crate::LazuliArchive;
 
 #[derive(Debug, Clone)]
 pub struct ImageProperties {
@@ -33,7 +33,7 @@ CREATE UNIQUE INDEX image_singleton ON image ((1));
     Ok(())
 }
 
-impl CyanArchive {
+impl LazuliArchive {
     pub fn read_image_properties(&self) -> Result<ImageProperties> {
         let conn = self.conn();
 
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn image_table_has_exactly_the_requested_columns() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let conn = archive.conn();
         let mut statement = conn.prepare("PRAGMA table_info(image)").unwrap();
         let columns = statement
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn image_properties_round_trip_with_embedded_icc_profile() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let properties = ImageProperties {
             width: 1920,
             height: 1080,
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn writing_image_properties_replaces_the_single_row() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         for width in [128, 512] {
             archive
                 .write_image_properties(&ImageProperties {
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn arbitrary_color_profile_bytes_are_accepted() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let root_layer = Uuid::new_v4();
         archive
             .conn()

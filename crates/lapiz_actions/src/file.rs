@@ -106,7 +106,7 @@ impl ActionFunction for SaveFileAction {
         services.update_canvas(&canvas_id, |canvas, services| {
             if canvas.archive.path().is_none()
                 && canvas
-                    .set_file_path(canvas.file_path().with_extension("cyan"))
+                    .set_file_path(canvas.file_path().with_extension("lazuli"))
                     .logged_err()
                     .is_err()
             {

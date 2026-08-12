@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use glam::{IVec2, UVec2};
-use lapiz_cyan::{CyanArchive, ImageProperties, LayerNode};
+use lapiz_lazuli::{LazuliArchive, ImageProperties, LayerNode};
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::Services;
 use moxcms::ColorProfile;
@@ -27,7 +27,7 @@ use crate::{
 };
 
 impl CImage {
-    pub fn read_archive(archive: &CyanArchive, services: &Services) -> Result<Self> {
+    pub fn read_archive(archive: &LazuliArchive, services: &Services) -> Result<Self> {
         let image_props = archive.read_image_properties()?;
         let layer_stack = LayerStack::read_entire_tree(
             image_props.root_layer,
@@ -67,7 +67,7 @@ impl CImage {
         })
     }
 
-    pub async fn write_archive(&self, archive: &CyanArchive, services: &Services) -> Result<()> {
+    pub async fn write_archive(&self, archive: &LazuliArchive, services: &Services) -> Result<()> {
         archive.write_image_properties(&ImageProperties {
             width: self.size.x,
             height: self.size.y,
@@ -108,7 +108,7 @@ impl GpuTileStorage {
         &self,
         device: &Device,
         queue: &Queue,
-        archive: &CyanArchive,
+        archive: &LazuliArchive,
         layer_id: LayerId,
     ) -> Result<()> {
         let layer = self
@@ -130,7 +130,7 @@ impl GpuTileStorage {
         &self,
         device: &Device,
         queue: &Queue,
-        archive: &CyanArchive,
+        archive: &LazuliArchive,
         layer_id: LayerId,
         tiles: impl IntoIterator<Item = IVec2>,
     ) -> Result<()> {
@@ -147,7 +147,7 @@ impl GpuTileStorage {
     }
 
     fn write_tile_data(
-        archive: &CyanArchive,
+        archive: &LazuliArchive,
         layer_id: LayerId,
         tile: IVec2,
         data: &[u8],
@@ -162,7 +162,7 @@ impl GpuTileStorage {
     pub fn read_tiles(
         &self,
         queue: &Queue,
-        archive: &CyanArchive,
+        archive: &LazuliArchive,
         layer_id: Uuid,
         tiles: Vec<IVec2>,
     ) -> Result<()> {
@@ -211,7 +211,7 @@ impl LayerProperties {
 }
 
 impl LayerStack {
-    pub fn write_entire_tree(&self, archive: &CyanArchive) -> Result<()> {
+    pub fn write_entire_tree(&self, archive: &LazuliArchive) -> Result<()> {
         for layer in self.iter_layers() {
             let (parent_id, sort_order) = match layer.parent() {
                 Some(parent_id) => {
@@ -235,7 +235,7 @@ impl LayerStack {
 
     pub fn read_entire_tree(
         root_layer: Uuid,
-        archive: &CyanArchive,
+        archive: &LazuliArchive,
         layer_types: &LayerTypeRegistry,
     ) -> Result<Self> {
         let mut nodes = archive.read_all_layer_nodes()?;

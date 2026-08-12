@@ -10,11 +10,11 @@ members = [
     "crates/lapiz_bucket_tool",
     "crates/lapiz_canvas",
     "crates/lapiz_color",
-    "crates/lapiz_cyan",
     "crates/lapiz_color_selector",
     "crates/lapiz_dock",
     "crates/lapiz_image",
     "crates/lapiz_input",
+    "crates/lapiz_lazuli",
     "crates/lapiz_math",
     "crates/lapiz_render",
     "crates/lapiz_runtime",
@@ -57,11 +57,11 @@ lapiz_brush = { version = "0.1.0", path = "crates/lapiz_brush" }
 lapiz_bucket_tool = { version = "0.1.0", path = "crates/lapiz_bucket_tool" }
 lapiz_canvas = { version = "0.1.0", path = "crates/lapiz_canvas" }
 lapiz_color = { version = "0.1.0", path = "crates/lapiz_color" }
-lapiz_cyan = { version = "0.1.0", path = "crates/lapiz_cyan" }
 lapiz_color_selector = { version = "0.1.0", path = "crates/lapiz_color_selector" }
 lapiz_dock = { version = "0.1.0", path = "crates/lapiz_dock" }
 lapiz_image = { version = "0.1.0", path = "crates/lapiz_image" }
 lapiz_input = { version = "0.1.0", path = "crates/lapiz_input" }
+lapiz_lazuli = { version = "0.1.0", path = "crates/lapiz_lazuli" }
 lapiz_math = { version = "0.1.0", path = "crates/lapiz_math" }
 lapiz_render = { version = "0.1.0", path = "crates/lapiz_render" }
 lapiz_runtime = { version = "0.1.0", path = "crates/lapiz_runtime" }

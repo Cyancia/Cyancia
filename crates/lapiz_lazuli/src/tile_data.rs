@@ -5,7 +5,7 @@ use glam::IVec2;
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
-use crate::CyanArchive;
+use crate::LazuliArchive;
 
 pub(crate) fn initialize_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -23,7 +23,7 @@ CREATE TABLE tile_data (
     Ok(())
 }
 
-impl CyanArchive {
+impl LazuliArchive {
     pub fn read_layer_data(&self, layer_id: Uuid) -> Result<HashMap<IVec2, Vec<u8>>> {
         let conn = self.conn();
         let mut statement = conn.prepare(
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn tile_data_table_has_the_requested_columns() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let conn = archive.conn();
         let mut statement = conn.prepare("PRAGMA table_info(tile_data)").unwrap();
         let columns = statement
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn compressed_tile_data_round_trips_without_transformation() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let layer_id = Uuid::new_v4();
         let compressed_data = [120, 156, 99, 96, 100, 98, 6, 0, 0, 14, 0, 7];
 
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn writing_the_same_tile_replaces_its_data() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let layer_id = Uuid::new_v4();
 
         archive.write_tile_data(layer_id, 4, 5, [1, 2]).unwrap();
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn reads_all_tiles_from_one_layer() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let layer_id = Uuid::new_v4();
         let other_layer_id = Uuid::new_v4();
 

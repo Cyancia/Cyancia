@@ -23,17 +23,17 @@ struct Inner {
     conn: Connection,
 }
 
-pub struct CyanArchive {
+pub struct LazuliArchive {
     inner: Arc<Mutex<Inner>>,
 }
 
-impl std::fmt::Debug for CyanArchive {
+impl std::fmt::Debug for LazuliArchive {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CyanArchive").finish()
+        f.debug_struct("LazuliArchive").finish()
     }
 }
 
-impl CyanArchive {
+impl LazuliArchive {
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if let Some(parent) = path
@@ -82,7 +82,7 @@ impl CyanArchive {
         };
         let metadata = archive.read_metadata()?;
         if metadata.version != VERSION {
-            bail!("unsupported cyan archive version: {}", metadata.version);
+            bail!("unsupported lazuli archive version: {}", metadata.version);
         }
 
         Ok(archive)
@@ -140,9 +140,9 @@ mod tests {
     #[test]
     fn set_path_saves_an_in_memory_archive_and_switches_to_the_disk_database() {
         let directory =
-            std::env::temp_dir().join(format!("lapiz_cyan_set_path_{}", Uuid::new_v4()));
-        let path = directory.join("archive.cyan");
-        let mut archive = CyanArchive::new_in_memory().unwrap();
+            std::env::temp_dir().join(format!("lapiz_lazuli_set_path_{}", Uuid::new_v4()));
+        let path = directory.join("archive.lazuli");
+        let mut archive = LazuliArchive::new_in_memory().unwrap();
         let root_layer = Uuid::new_v4();
 
         archive
@@ -172,7 +172,7 @@ mod tests {
             .unwrap();
         drop(archive);
 
-        let archive = CyanArchive::open(&path).unwrap();
+        let archive = LazuliArchive::open(&path).unwrap();
         let properties = archive.read_image_properties().unwrap();
         assert_eq!(properties.width, 512);
         assert_eq!(properties.height, 256);

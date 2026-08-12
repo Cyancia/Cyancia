@@ -2,7 +2,7 @@ use anyhow::Result;
 use rusqlite::{Connection, params};
 use uuid::Uuid;
 
-use crate::CyanArchive;
+use crate::LazuliArchive;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayerNode {
@@ -36,7 +36,7 @@ CREATE INDEX layer_tree_parent ON layer_tree (parent_id, sort_order);
     Ok(())
 }
 
-impl CyanArchive {
+impl LazuliArchive {
     pub fn read_layer_node(&self, layer_id: Uuid) -> Result<LayerNode> {
         let (id, parent_id, sort_order, layer_type, properties): (
             Vec<u8>,
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn layer_tree_has_the_requested_columns() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let conn = archive.conn();
         let mut statement = conn.prepare("PRAGMA table_info(layer_tree)").unwrap();
         let columns = statement
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn property_bytes_round_trip() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let root_id = Uuid::new_v4();
         let pixel_id = Uuid::new_v4();
 
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn parent_and_sort_order_must_both_be_null_or_non_null() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
 
         assert!(
             archive
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn writing_the_same_layer_replaces_it() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let id = Uuid::new_v4();
 
         archive
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn reads_all_layer_nodes() {
-        let archive = CyanArchive::new_in_memory().unwrap();
+        let archive = LazuliArchive::new_in_memory().unwrap();
         let root_id = Uuid::new_v4();
         let first_child_id = Uuid::new_v4();
         let second_child_id = Uuid::new_v4();

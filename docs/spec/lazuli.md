@@ -1,6 +1,6 @@
-# `cyan` File Format
+# `lazuli` File Format
 
-This document specifies `cyan` format version `0` (pre-alpha). A `cyan` file is a single SQLite 3 database with no additional header or outer container.
+This document specifies `lazuli` format version `0` (pre-alpha). A `lazuli` file is a single SQLite 3 database with no additional header or outer container.
 
 Third-party plugins may add tables. This specification defines only the standard built-in tables.
 
