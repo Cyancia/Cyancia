@@ -228,14 +228,14 @@ mod tests {
 
     #[test]
     fn asset_id_is_namespaced_by_bundle_id() {
-        let path = Path::new("brushes/sample.cbp");
+        let path = Path::new("brushes/sample.lapiz");
         let first_bundle = BundleId::new(Uuid::from_u128(1));
         let second_bundle = BundleId::new(Uuid::from_u128(2));
 
         let first_id = asset_id_from_relative_path(&first_bundle, path);
         assert_eq!(
             first_id,
-            asset_id_from_relative_path(&first_bundle, Path::new("./brushes/sample.cbp"))
+            asset_id_from_relative_path(&first_bundle, Path::new("./brushes/sample.lapiz"))
         );
         assert_ne!(first_id, asset_id_from_relative_path(&second_bundle, path));
     }
@@ -245,7 +245,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("lapiz-asset-tags-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root)?;
         let bundle = AssetDirectory::new(&root)?;
-        let asset_path = Path::new("brushes/sample.cbp");
+        let asset_path = Path::new("brushes/sample.lapiz");
         let first_tag = TagId::new(Uuid::from_u128(1));
         let second_tag = TagId::new(Uuid::from_u128(2));
 
@@ -261,7 +261,7 @@ mod tests {
             bundle.read_asset_tags(asset_path)?.unwrap().tags,
             BTreeSet::from([first_tag])
         );
-        assert!(root.join("brushes/sample.cbp.tags").is_file());
+        assert!(root.join("brushes/sample.lapiz.tags").is_file());
         let manifest = bundle.manifest()?;
         assert!(manifest.assets.is_empty());
         assert!(manifest.tags.is_empty());

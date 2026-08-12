@@ -46,10 +46,10 @@ impl AssetSerializer for BrushPresetSerializer {
     type Error = BrushPresetSerializerError;
 
     fn file_extension() -> &'static str {
-        "cbp"
+        "lapiz"
     }
 
-    // TODO: Final .cbp file definition.
+    // TODO: Final .lapiz file definition.
     // TODO: Support embedded textures and shader graph functions.
     fn read(&self, reader: &mut dyn Read) -> Result<Self::Asset, Self::Error> {
         let mut buf = Vec::new();

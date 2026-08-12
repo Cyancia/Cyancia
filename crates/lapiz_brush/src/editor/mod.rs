@@ -546,7 +546,7 @@ impl BrushEditor {
             .bundle_id;
         let id = services
             .assets()
-            .add_asset(bundle, "unnamed_brush.cbp", Arc::new(preset))
+            .add_asset(bundle, "unnamed_brush.lapiz", Arc::new(preset))
             .unwrap();
         let handle = services.assets().handle(id).unwrap();
         let index = self.brushes.push(handle);

@@ -708,7 +708,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("lapiz-readonly-tags-{}", Uuid::new_v4()));
         let bundle_id = BundleId::new(Uuid::from_u128(1));
         let asset_id = UntypedAssetId::new(Uuid::from_u128(2));
-        let asset_path = PathBuf::from("brushes/sample.cbp");
+        let asset_path = PathBuf::from("brushes/sample.lapiz");
         let base_tag = TagId::new(Uuid::from_u128(3));
         let override_tag = TagId::new(Uuid::from_u128(4));
         let bundle = Arc::new(ReadonlyBundle {
