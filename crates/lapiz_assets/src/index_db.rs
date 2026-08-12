@@ -1139,7 +1139,7 @@ mod tests {
         })?;
         let mut tag = sourced_tag(
             bundle_id,
-            "original.ctag",
+            "original.tag",
             "Original",
             Some(TestAsset::TYPE_NAME.to_string()),
         );
@@ -1217,10 +1217,10 @@ mod tests {
         assert_eq!(stored.1.as_deref(), Some(TestAsset::TYPE_NAME));
         assert_eq!(stored.2, updated_at);
 
-        let untyped_tag = sourced_tag(bundle_id, "all.ctag", "All assets", None);
+        let untyped_tag = sourced_tag(bundle_id, "all.tag", "All assets", None);
         let other_asset_tag = sourced_tag(
             bundle_id,
-            "other.ctag",
+            "other.tag",
             "Other assets",
             Some(OtherAsset::TYPE_NAME.to_string()),
         );
@@ -1295,11 +1295,11 @@ mod tests {
 
         let typed_tag = sourced_tag(
             bundle_id,
-            "test.ctag",
+            "test.tag",
             "Test assets",
             Some(TestAsset::TYPE_NAME.to_string()),
         );
-        let untyped_tag = sourced_tag(bundle_id, "any.ctag", "Any assets", None);
+        let untyped_tag = sourced_tag(bundle_id, "any.tag", "Any assets", None);
         db.upsert_tag(&typed_tag, last_modified)?;
         db.upsert_tag(&untyped_tag, last_modified)?;
 
@@ -1454,7 +1454,7 @@ SELECT
         db.add_asset(&asset)?;
         let tag = sourced_tag(
             bundle_id,
-            "restored.ctag",
+            "restored.tag",
             "Restored tag",
             Some(TestAsset::TYPE_NAME.to_string()),
         );

@@ -62,7 +62,7 @@ impl From<Tag> for TagFile {
     }
 }
 
-pub const TAG_EXT: &str = "ctag";
+pub const TAG_EXT: &str = "tag";
 
 #[derive(Default, Clone, Serialize, Deserialize)]
 pub struct AssetTags {

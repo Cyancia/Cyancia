@@ -762,7 +762,7 @@ mod tests {
                 .add_tag(&Tag {
                     id: TagId::new(Uuid::new_v4()),
                     bundle_id,
-                    relative_path: "new.ctag".to_string(),
+                    relative_path: "new.tag".to_string(),
                     name: "New".to_string(),
                     asset_ty: None,
                 })
