@@ -1,16 +1,16 @@
 use std::{collections::HashMap, sync::Arc};
 
+use glam::{Mat2, Vec2};
+use iced_core::{Color, Point, Rectangle};
+use iced_runtime::Task;
+use iced_wgpu::Primitive;
+use iced_widget::shader;
 use lapiz_render::{
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
     render_context::RenderContextAppExt,
 };
 use lapiz_runtime::Services;
-use glam::{Mat2, Vec2};
-use iced_core::{Color, Point, Rectangle};
-use iced_runtime::Task;
-use iced_wgpu::Primitive;
-use iced_widget::shader;
 use moxcms::ColorProfile;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,

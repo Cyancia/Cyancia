@@ -5,9 +5,9 @@ use std::{
     sync::Arc,
 };
 
-use lapiz_utils::wrapper;
 use iced_core::{Element, Theme, window};
 use iced_runtime::{Task, futures::Subscription};
+use lapiz_utils::wrapper;
 use parse_display::Display;
 
 use crate::{Services, service::Service};

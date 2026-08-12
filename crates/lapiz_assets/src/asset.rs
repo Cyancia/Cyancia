@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, hash::Hash, marker::PhantomData, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use lapiz_utils::wrapper;
 use downcast_rs::DowncastSync;
+use lapiz_utils::wrapper;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

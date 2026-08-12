@@ -2,12 +2,12 @@ use std::any::TypeId;
 
 use anyhow::Result;
 use bevy_math::IRect;
+use glam::{IVec2, UVec3};
 use lapiz_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
 };
-use glam::{IVec2, UVec3};
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,

@@ -6,11 +6,11 @@ use std::{
 };
 
 use anyhow::Result;
-use lapiz_utils::{cloneable_any::ClonableAnySync, wrapper};
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 use iced_core::{Color, Length, Point};
 use iced_widget::Column;
+use lapiz_utils::{cloneable_any::ClonableAnySync, wrapper};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

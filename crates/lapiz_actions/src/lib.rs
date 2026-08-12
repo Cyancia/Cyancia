@@ -1,9 +1,9 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
+use iced_runtime::Task;
 use lapiz_assets::AssetAppExt;
 use lapiz_runtime::{Application, Services, plugin::Plugin, service::Service};
 use lapiz_utils::wrapper;
-use iced_runtime::Task;
 
 use crate::{
     edit::{PasteIntoNewLayerAction, RedoAction, UndoAction},

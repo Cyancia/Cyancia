@@ -4,10 +4,10 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
+use indexmap::IndexMap;
 use lapiz_assets::asset::{AssetHandle, AssetId};
 use lapiz_render::texture::Image;
 use lapiz_utils::wrapper;
-use indexmap::IndexMap;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 wrapper! {

@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read};
 
-use lapiz_assets::{asset::Asset, loader::AssetSerializer};
 use image::{DynamicImage, ImageFormat};
+use lapiz_assets::{asset::Asset, loader::AssetSerializer};
 use serde::{Deserialize, Serialize};
 use wgpu::{
     Device, Extent3d, Queue, Texture, TextureDimension, TextureFormat, TextureUsages,

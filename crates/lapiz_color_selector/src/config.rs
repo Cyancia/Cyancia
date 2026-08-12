@@ -1,13 +1,13 @@
 use std::f32::consts::TAU;
 
-use lapiz_color::model::rgb::Rgb;
-use lapiz_widgets::spin_slider::SpinSlider;
 use iced_aw::ColorPicker;
 use iced_core::{Alignment, Border, Color, Length, Theme};
 use iced_wgpu::Renderer;
 use iced_widget::{
     Space, button, checkbox, column, container, pick_list, radio, row, scrollable, text, text_input,
 };
+use lapiz_color::model::rgb::Rgb;
+use lapiz_widgets::spin_slider::SpinSlider;
 
 use crate::{ColorModel, GradientPlaneShape};
 

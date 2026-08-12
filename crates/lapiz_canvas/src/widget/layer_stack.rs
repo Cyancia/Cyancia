@@ -1,3 +1,13 @@
+use iced_aw::ContextMenu;
+use iced_core::{
+    Alignment, Element, Font, Layout, Length, Point, Rectangle, Size,
+    font::Weight,
+    layout::{self, Limits},
+    mouse, renderer,
+    widget::Tree,
+};
+use iced_widget::{PickList, TextInput, button, checkbox, column, container, row, stack, text};
+use indexmap::IndexMap;
 use lapiz_image::{
     composite::BlendFunctionRegistry,
     layer::{
@@ -14,16 +24,6 @@ use lapiz_widgets::{
     drag_drop_column::{DragDropColumn, DragDropInfo},
     spin_slider::SpinSlider,
 };
-use iced_aw::ContextMenu;
-use iced_core::{
-    Alignment, Element, Font, Layout, Length, Point, Rectangle, Size,
-    font::Weight,
-    layout::{self, Limits},
-    mouse, renderer,
-    widget::Tree,
-};
-use iced_widget::{PickList, TextInput, button, checkbox, column, container, row, stack, text};
-use indexmap::IndexMap;
 
 use crate::{CCanvas, command::LayerPropertyChangeCommand};
 

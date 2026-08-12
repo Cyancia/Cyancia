@@ -8,13 +8,13 @@ use std::{
 
 use anyhow::anyhow;
 
-use lapiz_math::curve::CubicCurve;
-use lapiz_utils::wrapper;
-use lapiz_widgets::{curve_edit::CurveEdit, fluent_builder::When, popover::Popover};
 use glam::{Vec2, Vec3, Vec3Swizzles};
 use iced_core::{Color, Length};
 use iced_widget::{button, column, container, pick_list, row, text, text_input};
 use indexmap::IndexMap;
+use lapiz_math::curve::CubicCurve;
+use lapiz_utils::wrapper;
+use lapiz_widgets::{curve_edit::CurveEdit, fluent_builder::When, popover::Popover};
 use parking_lot::Mutex;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};

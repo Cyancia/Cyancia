@@ -9,13 +9,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use lapiz_runtime::Services;
 use dock::{DockAction, DockId, FloatAction, TabEvent};
 use group::DockGroupData;
 use iced::Subscription;
 use iced_core::{Element, Point, Size, Vector, window};
 use iced_runtime::Task;
 use iced_widget::pane_grid;
+use lapiz_runtime::Services;
 use state::DockState;
 use style::DockCatalog;
 

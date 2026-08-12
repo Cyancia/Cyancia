@@ -1,11 +1,11 @@
+use glam::IVec2;
+use indexmap::IndexSet;
 use lapiz_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     readback::{create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async},
     util::DevicePollExt,
 };
-use glam::IVec2;
-use indexmap::IndexSet;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupLayoutDescriptor, BindingResource, Buffer, BufferDescriptor,

@@ -1,10 +1,10 @@
+use encase::ShaderType;
 use lapiz_image::tile::{GpuTileInfo, LayerBinding};
 use lapiz_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
 };
-use encase::ShaderType;
 use wesl::include_wesl;
 use wgpu::{
     BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,

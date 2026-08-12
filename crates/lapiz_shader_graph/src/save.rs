@@ -5,11 +5,11 @@ use std::{
 };
 
 use anyhow::Result;
+use iced_core::Point;
 use lapiz_assets::{
     asset::{Asset, AssetId},
     loader::AssetSerializer,
 };
-use iced_core::Point;
 use serde::{Deserialize, Serialize};
 
 use crate::graph::{

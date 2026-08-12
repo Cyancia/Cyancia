@@ -1,10 +1,10 @@
 use std::ops::RangeBounds;
 
 use anyhow::Result;
-use lapiz_utils::{Deref, DerefMut};
 use encase::{ShaderType, internal::CreateFrom};
 use futures::channel::oneshot::{Receiver, Sender};
 use iced_runtime::Task;
+use lapiz_utils::{Deref, DerefMut};
 use wgpu::{
     Buffer, BufferAddress, BufferAsyncError, BufferUsages, CommandEncoder, Device, Extent3d,
     MapMode, TexelCopyBufferInfo, TexelCopyBufferLayout, Texture,

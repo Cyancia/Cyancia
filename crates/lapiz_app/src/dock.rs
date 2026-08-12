@@ -1,6 +1,18 @@
 use std::cell::RefCell;
 
 use bevy_math::{IRect, Rect};
+use iced::{
+    Element, Length, Size, Subscription, Task, Theme,
+    event::listen_with,
+    keyboard::{self, Modifiers},
+    mouse,
+    widget::{Space, button, column, text},
+    window,
+};
+use iced_core::Point;
+use iced_runtime::task;
+use iced_wgpu::Renderer;
+use iced_widget::{container, scrollable, stack};
 use lapiz_assets::AssetAppExt;
 use lapiz_brush::{asset::BrushPreset, tool::BrushServicesExt, widget::BrushPresetListDelegate};
 use lapiz_canvas::{
@@ -37,18 +49,6 @@ use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::{Services, event::Event};
 use lapiz_tools::{ErasedToolFunctionMessage, ToolProxies, ToolProxyId};
 use lapiz_utils::log_err::LogErr;
-use iced::{
-    Element, Length, Size, Subscription, Task, Theme,
-    event::listen_with,
-    keyboard::{self, Modifiers},
-    mouse,
-    widget::{Space, button, column, text},
-    window,
-};
-use iced_core::Point;
-use iced_runtime::task;
-use iced_wgpu::Renderer;
-use iced_widget::{container, scrollable, stack};
 use moxcms::ColorProfile;
 
 #[derive(Clone)]

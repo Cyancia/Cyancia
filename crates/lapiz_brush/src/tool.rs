@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+use iced_core::{Element, Length, Theme};
+use iced_runtime::Task;
+use iced_wgpu::Renderer;
+use iced_widget::{column, container, text};
 use lapiz_assets::asset::AssetHandle;
 use lapiz_canvas::{
     CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand, event::CanvasUpdated,
@@ -15,10 +19,6 @@ use lapiz_shader_graph::graph::{
 use lapiz_tools::{ToolFunction, ToolId};
 use lapiz_undo::QueuedUndoCommand;
 use lapiz_utils::log_err::LogErr;
-use iced_core::{Element, Length, Theme};
-use iced_runtime::Task;
-use iced_wgpu::Renderer;
-use iced_widget::{column, container, text};
 use log::error;
 
 use crate::{

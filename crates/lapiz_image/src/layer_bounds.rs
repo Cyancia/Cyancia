@@ -1,9 +1,9 @@
+use glam::Vec4;
 use lapiz_render::{
     bind_group_entries::DynamicBindGroupEntries,
     bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
     wesl_jit,
 };
-use glam::Vec4;
 use wgpu::{
     BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages, CommandEncoder,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device,

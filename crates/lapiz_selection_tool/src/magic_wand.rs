@@ -1,3 +1,8 @@
+use glam::{Vec2, Vec4};
+use iced_core::{Element, Length, Theme};
+use iced_runtime::Task;
+use iced_wgpu::Renderer;
+use iced_widget::{button, container, row};
 use lapiz_bucket_tool::{
     BucketTool,
     bucket::{Bucket, BucketAntialiasApproach, BucketParams},
@@ -12,11 +17,6 @@ use lapiz_utils::log_err::LogErr;
 use lapiz_widgets::{
     fluent_builder::When, form::Form, spin_slider::SpinSlider, style::ButtonStyle,
 };
-use glam::{Vec2, Vec4};
-use iced_core::{Element, Length, Theme};
-use iced_runtime::Task;
-use iced_wgpu::Renderer;
-use iced_widget::{button, container, row};
 
 use crate::render::{SelectionOperation, SelectionPipeline};
 

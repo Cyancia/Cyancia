@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Result;
+use indexmap::IndexSet;
 use lapiz_cyan::CyanArchive;
 use lapiz_image::{
     CImage,
@@ -10,7 +11,6 @@ use lapiz_runtime::{Application, Services, event::Event, plugin::Plugin, service
 use lapiz_tools::{ToolProxyId, ToolsAppExt};
 use lapiz_undo::{QueuedUndoCommand, UndoCommand, UndoStack, UndoStacks};
 use lapiz_utils::wrapper;
-use indexmap::IndexSet;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

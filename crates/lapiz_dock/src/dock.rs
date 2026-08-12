@@ -1,7 +1,5 @@
 use std::{any::Any, sync::Arc};
 
-use lapiz_runtime::Services;
-use lapiz_utils::wrapper;
 use iced::Subscription;
 use iced_aw::ContextMenu;
 use iced_core::{
@@ -9,6 +7,8 @@ use iced_core::{
 };
 use iced_runtime::Task;
 use iced_widget::{button, column, pane_grid, space, stack, text};
+use lapiz_runtime::Services;
+use lapiz_utils::wrapper;
 use parse_display::Display;
 use serde::Serialize;
 

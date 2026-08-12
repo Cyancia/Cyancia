@@ -5,6 +5,20 @@ use std::{
 
 use anyhow::Result;
 use bevy_math::{IRect, Rect};
+use encase::ShaderType;
+use glam::{Mat3, Vec2};
+use iced_aw::number_input;
+use iced_core::{
+    Alignment, Color, Element, Length, Point, Rectangle, Size, Theme, Vector, Widget,
+    keyboard::Modifiers, layout, mouse, renderer, widget,
+};
+use iced_runtime::{Task, futures::Subscription};
+use iced_wgpu::Renderer;
+use iced_widget::{
+    button,
+    canvas::{Frame, Path, Stroke},
+    column, container, pick_list, row, space, text,
+};
 use lapiz_canvas::{
     CanvasAppExt, CanvasId, CanvasUndoStackAppExt,
     command::TileReplaceCommand,
@@ -37,20 +51,6 @@ use lapiz_tools::{ToolFunction, ToolId};
 use lapiz_undo::BatchedUndoCommand;
 use lapiz_utils::log_err::LogErr;
 use lapiz_widgets::form::Form;
-use encase::ShaderType;
-use glam::{Mat3, Vec2};
-use iced_aw::number_input;
-use iced_core::{
-    Alignment, Color, Element, Length, Point, Rectangle, Size, Theme, Vector, Widget,
-    keyboard::Modifiers, layout, mouse, renderer, widget,
-};
-use iced_runtime::{Task, futures::Subscription};
-use iced_wgpu::Renderer;
-use iced_widget::{
-    button,
-    canvas::{Frame, Path, Stroke},
-    column, container, pick_list, row, space, text,
-};
 use tracing::warn;
 use wgpu::{
     BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,

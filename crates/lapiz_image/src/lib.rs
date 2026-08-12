@@ -10,10 +10,10 @@ use std::{
 
 use anyhow::Result;
 use bevy_math::IRect;
-use lapiz_cyan::CyanArchive;
-use lapiz_runtime::{Application, Services, plugin::Plugin};
 use glam::{IVec2, UVec2};
 use imagers::{ImageDecoder, ImageReader};
+use lapiz_cyan::CyanArchive;
+use lapiz_runtime::{Application, Services, plugin::Plugin};
 use moxcms::ColorProfile;
 // TODO move CImage to another place to avoid this.
 extern crate image as imagers;

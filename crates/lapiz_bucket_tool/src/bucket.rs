@@ -1,3 +1,6 @@
+use encase::ShaderType;
+use glam::{IVec2, UVec2, Vec4};
+use indexmap::IndexSet;
 use lapiz_anti_aliasing::fxaa::{FxaaParams, FxaaPipeline};
 use lapiz_image::{
     scan_pixels::ScanPixelsPipeline,
@@ -11,9 +14,6 @@ use lapiz_render::{
     readback::{create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async},
     util::DevicePollExt,
 };
-use encase::ShaderType;
-use glam::{IVec2, UVec2, Vec4};
-use indexmap::IndexSet;
 use tracing::info;
 use wesl::include_wesl;
 use wgpu::{

@@ -1,9 +1,9 @@
+use glam::Vec2;
+use iced_runtime::Task;
 use lapiz_input::{key::KeyboardState, mouse::PressedMouseState};
 use lapiz_math::number::AngleDifference;
 use lapiz_runtime::Services;
 use lapiz_tools::{ToolFunction, ToolId};
-use glam::Vec2;
-use iced_runtime::Task;
 
 use crate::{CanvasAppExt, control::CanvasTransform};
 

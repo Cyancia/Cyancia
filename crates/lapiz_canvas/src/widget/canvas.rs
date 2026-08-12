@@ -1,5 +1,4 @@
 use bevy_math::Rect;
-use lapiz_image::{texel::TexelType, tile::GpuTileStorage};
 use glam::Vec2;
 use iced_core::{
     Clipboard, Element, Event, Layout, Length, Point, Rectangle, Shell, Size, Widget,
@@ -8,6 +7,7 @@ use iced_core::{
     widget::Tree,
 };
 use iced_wgpu::primitive::Renderer;
+use lapiz_image::{texel::TexelType, tile::GpuTileStorage};
 use moxcms::ColorProfile;
 
 use crate::{CCanvas, render::CanvasPrimitive};

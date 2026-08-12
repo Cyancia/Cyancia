@@ -1,8 +1,8 @@
+use iced_runtime::Task;
 use lapiz_runtime::{
     Services,
     windows::{OpenWindowViewCommand, WindowCommandBuffer, WindowViewId},
 };
-use iced_runtime::Task;
 
 use crate::{ActionFunction, ActionId};
 

@@ -1,7 +1,7 @@
 use bevy_math::IRect;
-use lapiz_render::buffer::{BufferVec, DynamicBuffer};
 use encase::ShaderType;
 use glam::IVec2;
+use lapiz_render::buffer::{BufferVec, DynamicBuffer};
 use wgpu::{
     Buffer, BufferUsages, Device, Extent3d, Queue, TextureDescriptor, TextureDimension,
     TextureUsages, TextureView, TextureViewDimension, wgt::TextureViewDescriptor,

@@ -1,9 +1,9 @@
+use glam::UVec3;
 use lapiz_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     wesl_jit,
 };
-use glam::UVec3;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, ComputePass,
     ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor,

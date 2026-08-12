@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use iced_runtime::Task;
 use lapiz_canvas::{CCanvas, CanvasAppExt, event::CanvasCreated};
 use lapiz_image::{
     CImage,
@@ -10,7 +11,6 @@ use lapiz_runtime::{Services, event::Event};
 use lapiz_tools::{ToolFunctionRegistry, ToolProxies, ToolProxy};
 use lapiz_undo::{UndoStack, UndoStacks};
 use lapiz_utils::log_err::LogErr;
-use iced_runtime::Task;
 use rfd::AsyncFileDialog;
 
 use crate::{ActionFunction, ActionId};

@@ -1,6 +1,10 @@
 use std::fmt;
 
 use bevy_math::IRect;
+use encase::ShaderType;
+use glam::Vec4;
+use iced_core::{Color, Length};
+use iced_widget::pick_list;
 use lapiz_image::blend_modes::BlendMode;
 use lapiz_shader_graph::{
     GraphElement,
@@ -19,10 +23,6 @@ use lapiz_shader_graph::{
     },
 };
 use lapiz_utils::random_oklch;
-use encase::ShaderType;
-use glam::Vec4;
-use iced_core::{Color, Length};
-use iced_widget::pick_list;
 use serde::{Deserialize, Serialize};
 
 use crate::render::{ComputedPenInput, Time};

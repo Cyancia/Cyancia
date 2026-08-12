@@ -1,5 +1,5 @@
-use lapiz_utils::wrapper;
 use dashmap::DashMap;
+use lapiz_utils::wrapper;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

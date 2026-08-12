@@ -1,5 +1,6 @@
 use std::{any::TypeId, path::PathBuf};
 
+use iced_runtime::{Task, clipboard};
 use lapiz_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::InsertLayerCommand};
 use lapiz_image::{
     layer::{LayerPosition, pixel_layer::PixelLayer},
@@ -8,7 +9,6 @@ use lapiz_image::{
 use lapiz_runtime::Services;
 use lapiz_undo::{BatchedUndoCommand, UndoStacks};
 use lapiz_utils::log_err::LogErr;
-use iced_runtime::{Task, clipboard};
 
 use crate::{ActionFunction, ActionId};
 

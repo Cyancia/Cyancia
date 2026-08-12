@@ -10,7 +10,6 @@ use anyhow::{Result, bail};
 use descriptor::BrushDescriptorRoot;
 
 pub use cursor::Cursor;
-pub use lapiz_abr_derive::{AbrClass, AbrEnum, AbrIntegerEnum, AbrObject};
 pub use descriptor::{
     AbrClass, AbrEnum, AbrIntegerEnum, AbrObject, AbrValue, BlendMode, BrushGroup, BrushPreset,
     BrushTip, ComputedBrushTip, DBrushTip, DescriptorUnit, DualBrush, DynamicsControl,
@@ -19,6 +18,7 @@ pub use descriptor::{
 };
 pub use header::AbrHeader;
 pub use hierarchy::HierarchyNode;
+pub use lapiz_abr_derive::{AbrClass, AbrEnum, AbrIntegerEnum, AbrObject};
 pub use pattern::{ColorMode, Pattern, PatternChannel};
 pub use sample::{Sample, SampleImage};
 

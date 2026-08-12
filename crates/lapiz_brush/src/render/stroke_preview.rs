@@ -4,6 +4,9 @@ use std::{
 };
 
 use anyhow::{Result, anyhow, ensure};
+use glam::{IVec4, Vec2, Vec4};
+use iced_runtime::Task;
+use image::{ImageFormat, RgbaImage};
 use lapiz_assets::asset::AssetHandle;
 use lapiz_image::{
     texel::TexelType,
@@ -24,9 +27,6 @@ use lapiz_shader_graph::graph::{
     function::ASSET_GRAPH_FUNCTION_STORAGE, texture::ASSET_GRAPH_TEXTURE_STORAGE,
 };
 use lapiz_utils::log_err::LogErr;
-use glam::{IVec4, Vec2, Vec4};
-use iced_runtime::Task;
-use image::{ImageFormat, RgbaImage};
 use tracing::info;
 use wesl::include_wesl;
 use wgpu::{

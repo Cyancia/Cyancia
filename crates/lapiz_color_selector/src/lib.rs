@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+use glam::{Vec2, Vec3};
+use iced_core::{Element, Length, Point, Rectangle, Theme};
+use iced_runtime::Task;
+use iced_wgpu::Renderer;
+use iced_widget::{Row, column, radio, text};
 use lapiz_color::{
     Color,
     model::{
@@ -11,11 +16,6 @@ use lapiz_color::{
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::Services;
 use lapiz_widgets::{fluent_builder::When, spin_slider::SpinSlider};
-use glam::{Vec2, Vec3};
-use iced_core::{Element, Length, Point, Rectangle, Theme};
-use iced_runtime::Task;
-use iced_wgpu::Renderer;
-use iced_widget::{Row, column, radio, text};
 use moxcms::ColorProfile;
 use parse_display::Display;
 

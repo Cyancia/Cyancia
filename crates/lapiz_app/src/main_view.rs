@@ -1,5 +1,12 @@
 use std::{any::Any, sync::Arc};
 
+use iced::keyboard::key;
+use iced::{
+    Element, Subscription, Task, Theme,
+    keyboard::{self},
+    mouse, window,
+};
+use iced_wgpu::Renderer;
 use lapiz_actions::{
     ActionFunctionRegistry, ActionId,
     manifest::{ActionCollection, KeyBindingDefManifest},
@@ -21,13 +28,6 @@ use lapiz_runtime::{
     windows::{WindowView, WindowViewId},
 };
 use lapiz_tools::{ErasedToolFunctionMessage, GlobalToolBindings, ToolFunction, ToolProxies};
-use iced::keyboard::key;
-use iced::{
-    Element, Subscription, Task, Theme,
-    keyboard::{self},
-    mouse, window,
-};
-use iced_wgpu::Renderer;
 
 use crate::dock::{
     BRUSH_PRESETS_DOCK_ID, BrushPresetDock, COLOR_SELECTOR_DOCK_ID, CanvasDock, ColorSelectorDock,

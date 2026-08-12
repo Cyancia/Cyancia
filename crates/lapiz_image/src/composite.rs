@@ -5,11 +5,11 @@ use std::{
 };
 
 use bevy_math::IRect;
-use lapiz_runtime::{Services, service::Service};
-use lapiz_utils::wrapper;
 use dyn_clone::DynClone;
 use encase::ShaderType;
 use glam::IVec2;
+use lapiz_runtime::{Services, service::Service};
+use lapiz_utils::wrapper;
 use log::error;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};

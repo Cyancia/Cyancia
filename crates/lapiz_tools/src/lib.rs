@@ -1,5 +1,9 @@
 use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
+use iced_core::{Element, Point, Theme};
+use iced_runtime::{Task, futures::Subscription};
+use iced_wgpu::Renderer;
+use iced_widget::{Stack, space};
 use lapiz_assets::AssetAppExt;
 use lapiz_input::{
     key::{KeySequence, KeyboardState},
@@ -7,10 +11,6 @@ use lapiz_input::{
 };
 use lapiz_runtime::{Application, Services, plugin::Plugin, service::Service};
 use lapiz_utils::wrapper;
-use iced_core::{Element, Point, Theme};
-use iced_runtime::{Task, futures::Subscription};
-use iced_wgpu::Renderer;
-use iced_widget::{Stack, space};
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

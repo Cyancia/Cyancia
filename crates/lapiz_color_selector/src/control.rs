@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use lapiz_runtime::Services;
 use glam::Vec2;
 use iced_core::{
     Clipboard, Color, Element, Event, Layout, Length, Point, Rectangle, Renderer as _, Shell, Size,
@@ -17,6 +16,7 @@ use iced_runtime::Task;
 use iced_wgpu::graphics::geometry;
 use iced_wgpu::{Renderer, primitive};
 use iced_widget::canvas::{Frame, Path, Stroke};
+use lapiz_runtime::Services;
 
 use crate::{
     ColorSelectorMessage, ColorSelectorState,

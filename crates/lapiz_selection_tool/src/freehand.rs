@@ -1,6 +1,11 @@
 use std::borrow::Cow;
 
 use bevy_math::Rect;
+use glam::Vec2;
+use iced_core::{Element, Length, Theme};
+use iced_runtime::Task;
+use iced_wgpu::Renderer;
+use iced_widget::{button, container, row, space};
 use lapiz_canvas::{CanvasAppExt, CanvasUndoStackAppExt};
 use lapiz_input::{
     key::KeyboardState,
@@ -10,11 +15,6 @@ use lapiz_runtime::Services;
 use lapiz_tools::{ToolFunction, ToolId};
 use lapiz_utils::log_err::LogErr;
 use lapiz_widgets::{form::Form, style::ButtonStyle};
-use glam::Vec2;
-use iced_core::{Element, Length, Theme};
-use iced_runtime::Task;
-use iced_wgpu::Renderer;
-use iced_widget::{button, container, row, space};
 use lyon::tessellation::FillRule;
 use tracing::info;
 

@@ -1,5 +1,5 @@
-use lapiz_runtime::service::Service;
 use iced_core::keyboard::{Modifiers, key};
+use lapiz_runtime::service::Service;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 

@@ -4,11 +4,11 @@ use std::{
 };
 
 use anyhow::{Result, anyhow, bail};
+use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
+use glam::{IVec2, UVec2};
 use lapiz_cyan::{CyanArchive, ImageProperties, LayerNode};
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::Services;
-use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
-use glam::{IVec2, UVec2};
 use moxcms::ColorProfile;
 use serde::Serialize;
 use uuid::Uuid;

@@ -1,4 +1,3 @@
-use lapiz_math::curve::CubicCurve;
 use glam::Vec2;
 use iced_core::{
     Background, Border, Clipboard, Color, Element, Event, Layout, Length, Point, Rectangle, Shell,
@@ -10,6 +9,7 @@ use iced_core::{
     widget::{self, tree},
 };
 use iced_graphics::geometry::{Frame, Path, Stroke};
+use lapiz_math::curve::CubicCurve;
 
 const MIN_POINT_GAP: f32 = 0.001;
 

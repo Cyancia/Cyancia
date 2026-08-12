@@ -6,6 +6,12 @@ use std::{
 
 use anyhow::Result;
 use bevy_math::IRect;
+use dashmap::{DashMap, Entry};
+use encase::ShaderType;
+use futures::{FutureExt, future::join_all};
+use glam::{IVec2, UVec2};
+use image::{DynamicImage, GenericImageView};
+use indexmap::{IndexMap, IndexSet};
 use lapiz_render::{
     buffer::BufferVec, readback::readback_buffer_raw_on_submit_async,
     render_context::RenderContextAppExt, util::DevicePollExt,
@@ -15,12 +21,6 @@ use lapiz_runtime::{
     service::{FromServices, Service},
 };
 use lapiz_utils::Deref;
-use dashmap::{DashMap, Entry};
-use encase::ShaderType;
-use futures::{FutureExt, future::join_all};
-use glam::{IVec2, UVec2};
-use image::{DynamicImage, GenericImageView};
-use indexmap::{IndexMap, IndexSet};
 use moxcms::{ColorProfile, TransformOptions};
 use wgpu::{
     Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyBufferInfo,

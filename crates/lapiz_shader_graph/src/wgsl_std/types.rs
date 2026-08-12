@@ -2,11 +2,11 @@ use std::convert::identity;
 
 use anyhow::{Result, bail};
 use bevy_math::Rect;
-use lapiz_widgets::spin_slider::SpinSlider;
 use encase::{DynamicUniformBuffer, ShaderType};
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element};
 use iced_widget::{checkbox, column, space};
+use lapiz_widgets::spin_slider::SpinSlider;
 use serde::{Deserialize, Serialize};
 use wgpu::QueueWriteBufferView;
 

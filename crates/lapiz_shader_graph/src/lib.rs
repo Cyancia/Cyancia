@@ -1,7 +1,7 @@
+use iced_core::{Element, Theme};
 use lapiz_assets::AssetAppExt;
 use lapiz_render::texture::Image;
 use lapiz_runtime::{Application, plugin::Plugin};
-use iced_core::{Element, Theme};
 
 use crate::{
     graph::{

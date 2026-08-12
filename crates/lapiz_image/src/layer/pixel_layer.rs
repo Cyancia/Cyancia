@@ -1,6 +1,8 @@
 use std::{any::TypeId, fs::File, io::BufReader, path::Path};
 
 use anyhow::Result;
+use glam::UVec3;
+use imagers::DynamicImage;
 use lapiz_render::{
     bind_group_entries::DynamicBindGroupEntries,
     bind_group_layout_entries::{
@@ -8,8 +10,6 @@ use lapiz_render::{
     },
     buffer::DynamicBuffer,
 };
-use glam::UVec3;
-use imagers::DynamicImage;
 use moxcms::ColorProfile;
 use wesl::{VirtualResolver, Wesl};
 use wgpu::{

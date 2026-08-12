@@ -2,6 +2,8 @@ use std::{borrow::Cow, collections::HashMap};
 
 use anyhow::bail;
 use bevy_math::IRect;
+use glam::IVec2;
+use indexmap::IndexSet;
 use lapiz_image::{
     layer::{
         LayerId, LayerPosition, LayerStackNode,
@@ -13,8 +15,6 @@ use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::{Services, event::Event};
 use lapiz_undo::UndoCommand;
 use lapiz_utils::log_err::LogErr;
-use glam::IVec2;
-use indexmap::IndexSet;
 use wgpu::{
     Device, Extent3d, ImageSubresourceRange, Origin3d, Queue, TexelCopyTextureInfo, Texture,
     TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,

@@ -2,6 +2,10 @@ use std::{sync::OnceLock, time::Instant};
 
 use anyhow::Result;
 use bevy_math::IRect;
+use encase::ShaderType;
+use glam::{IVec2, Mat3, UVec2, UVec3};
+use iced_core::Rectangle;
+use iced_widget::shader;
 use lapiz_color::shader::IccTransformShader;
 use lapiz_image::{
     layer::LayerId,
@@ -15,10 +19,6 @@ use lapiz_render::{
     resources::{FullscreenVertex, GlobalSamplers},
     wesl_jit::compile_wesl,
 };
-use encase::ShaderType;
-use glam::{IVec2, Mat3, UVec2, UVec3};
-use iced_core::Rectangle;
-use iced_widget::shader;
 use moxcms::{ColorProfile, Layout};
 use wesl::include_wesl;
 use wgpu::{

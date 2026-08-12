@@ -5,10 +5,10 @@ use std::{
 };
 
 use anyhow::{Result, bail};
-use lapiz_runtime::{Application, Services, plugin::Plugin, service::Service};
-use lapiz_utils::{Deref, DerefMut, log_err::LogErr};
 use downcast_rs::Downcast;
 use futures::channel::oneshot::{self, Canceled, Receiver, Sender};
+use lapiz_runtime::{Application, Services, plugin::Plugin, service::Service};
+use lapiz_utils::{Deref, DerefMut, log_err::LogErr};
 use tracing::info;
 use uuid::Uuid;
 

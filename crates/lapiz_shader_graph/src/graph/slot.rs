@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
-use lapiz_utils::wrapper;
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
 use iced_core::Color;
+use lapiz_utils::wrapper;
 use parse_display::Display;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use uuid::Uuid;

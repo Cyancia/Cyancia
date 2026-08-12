@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use bevy_math::URect;
+use glam::UVec4;
 use lapiz_image::tile::{GpuTileInfo, GpuTileStorage, LayerBinding};
 use lapiz_render::{
     bind_group_entries::{BindGroupEntries, DynamicBindGroupEntries},
@@ -9,7 +10,6 @@ use lapiz_render::{
     },
     buffer::{BufferVec, DynamicBuffer},
 };
-use glam::UVec4;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, Buffer, ComputePass, ComputePipeline,

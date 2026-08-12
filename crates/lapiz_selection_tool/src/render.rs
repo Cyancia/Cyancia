@@ -1,6 +1,14 @@
 use std::{borrow::Cow, sync::OnceLock, time::Instant};
 
 use bevy_math::IRect;
+use encase::ShaderType;
+use glam::{IVec2, Mat3, Vec2};
+use iced_core::{
+    Element, Length, Rectangle, Size, Widget, keyboard::Modifiers, layout, mouse, renderer, widget,
+};
+use iced_wgpu::{Primitive, Renderer, graphics::Viewport};
+use iced_widget::shader::Pipeline;
+use indexmap::IndexSet;
 use lapiz_anti_aliasing::fxaa::{FxaaParams, FxaaPipeline};
 use lapiz_canvas::{CanvasAppExt, command::TileReplaceCommand, control::CanvasTransform};
 use lapiz_image::{
@@ -17,14 +25,6 @@ use lapiz_render::{
     render_context::RenderContextAppExt,
 };
 use lapiz_runtime::Services;
-use encase::ShaderType;
-use glam::{IVec2, Mat3, Vec2};
-use iced_core::{
-    Element, Length, Rectangle, Size, Widget, keyboard::Modifiers, layout, mouse, renderer, widget,
-};
-use iced_wgpu::{Primitive, Renderer, graphics::Viewport};
-use iced_widget::shader::Pipeline;
-use indexmap::IndexSet;
 use lyon::{
     path::Path,
     tessellation::{

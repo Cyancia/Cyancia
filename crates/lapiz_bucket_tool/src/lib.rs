@@ -1,3 +1,8 @@
+use glam::{Vec2, Vec4};
+use iced_core::{Element, Length, Theme};
+use iced_runtime::Task;
+use iced_wgpu::Renderer;
+use iced_widget::{button, container, row};
 use lapiz_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
 use lapiz_color::ForegroundBackgroundColorExt;
 use lapiz_image::tile::TileStorageAppExt;
@@ -9,11 +14,6 @@ use lapiz_utils::log_err::LogErr;
 use lapiz_widgets::{
     fluent_builder::When, form::Form, spin_slider::SpinSlider, style::ButtonStyle,
 };
-use glam::{Vec2, Vec4};
-use iced_core::{Element, Length, Theme};
-use iced_runtime::Task;
-use iced_wgpu::Renderer;
-use iced_widget::{button, container, row};
 
 use crate::bucket::{Bucket, BucketAntialiasApproach, BucketParams};
 

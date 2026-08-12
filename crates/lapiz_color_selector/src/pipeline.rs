@@ -1,5 +1,7 @@
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
+use encase::ShaderType;
+use glam::{UVec2, Vec2, Vec3, Vec4};
 use lapiz_color::{
     model::rgb::Rgb,
     shader::{IccInputTransformShader, IccOutputTransformShader},
@@ -14,8 +16,6 @@ use lapiz_render::{
     },
     wesl_jit::{compile_wesl, compile_wesl_with_config},
 };
-use encase::ShaderType;
-use glam::{UVec2, Vec2, Vec3, Vec4};
 use moxcms::{ColorProfile, Layout};
 use wgpu::{
     BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BlendState, Buffer,
