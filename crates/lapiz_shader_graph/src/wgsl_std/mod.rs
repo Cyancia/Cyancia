@@ -50,6 +50,7 @@ pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
     nodes.register::<ExternalVariableNode>();
     nodes.register::<CurveNode>();
     nodes.register::<RepeatNode>();
+    nodes.register::<CustomExpressionNode>();
 
     nodes
 }

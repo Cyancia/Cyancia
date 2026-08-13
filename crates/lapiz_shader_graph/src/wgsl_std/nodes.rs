@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     sync::{
         Arc,
@@ -10,8 +11,8 @@ use anyhow::anyhow;
 
 use glam::{Vec2, Vec3, Vec3Swizzles};
 use iced_core::{
-    Clipboard, Color, Event, Layout, Length, Rectangle, Shell, Size, Vector, Widget, layout, mouse,
-    overlay, renderer,
+    Clipboard, Color, Event, Layout, Length, Rectangle, Shell, Size, Widget, layout, mouse,
+    renderer,
     widget::{Operation, Tree, tree},
 };
 use iced_widget::{button, column, container, pick_list, row, text, text_editor, text_input};
@@ -25,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    GraphElement, GraphRenderer,
+    GraphElement, GraphRenderer, GraphTheme,
     graph::{
         Graph, GraphData, GraphResources, GraphVarIdentGenerator,
         external::{ExternalVariableId, generate_external_variable_name},
@@ -3273,5 +3274,711 @@ impl<Data: GraphData> GraphNode<Data> for RepeatNode {
 
     fn subgraphs_mut<'a>(&mut self, state: &'a mut Self::State) -> Vec<&'a mut Graph<Data>> {
         vec![&mut state.body]
+    }
+}
+
+wrapper! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+    pub CustomExpressionVariableId : Uuid
+}
+
+#[derive(Clone)]
+pub struct CustomExpressionVariable {
+    pub id: CustomExpressionVariableId,
+    pub display_name: String,
+    pub name: String,
+    pub ty: Box<dyn ErasedGraphValueType>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerializableCustomExpressionVariable {
+    id: CustomExpressionVariableId,
+    display_name: String,
+    name: String,
+    ty: String,
+}
+
+pub struct CustomExpressionNodeState {
+    inputs: IndexMap<CustomExpressionVariableId, CustomExpressionVariable>,
+    outputs: IndexMap<CustomExpressionVariableId, CustomExpressionVariable>,
+    code: String,
+    draft: Option<CustomExpressionDraft>,
+}
+
+#[derive(Clone)]
+struct CustomExpressionVariableDraft {
+    id: CustomExpressionVariableId,
+    display_name: String,
+    name: String,
+    ty: Option<Box<dyn ErasedGraphValueType>>,
+}
+
+#[derive(Clone, Copy)]
+pub enum CustomExpressionVariableKind {
+    Input,
+    Output,
+}
+
+struct CustomExpressionDraft {
+    inputs: IndexMap<CustomExpressionVariableId, CustomExpressionVariableDraft>,
+    outputs: IndexMap<CustomExpressionVariableId, CustomExpressionVariableDraft>,
+}
+
+impl CustomExpressionDraft {
+    fn new(state: &CustomExpressionNodeState) -> Self {
+        let to_draft = |variables: &IndexMap<_, CustomExpressionVariable>| {
+            variables
+                .iter()
+                .map(|(id, variable)| {
+                    (
+                        *id,
+                        CustomExpressionVariableDraft {
+                            id: *id,
+                            display_name: variable.display_name.clone(),
+                            name: variable.name.clone(),
+                            ty: Some(variable.ty.clone()),
+                        },
+                    )
+                })
+                .collect()
+        };
+        Self {
+            inputs: to_draft(&state.inputs),
+            outputs: to_draft(&state.outputs),
+        }
+    }
+
+    fn variables_mut(
+        &mut self,
+        kind: CustomExpressionVariableKind,
+    ) -> &mut IndexMap<CustomExpressionVariableId, CustomExpressionVariableDraft> {
+        match kind {
+            CustomExpressionVariableKind::Input => &mut self.inputs,
+            CustomExpressionVariableKind::Output => &mut self.outputs,
+        }
+    }
+
+    fn finalize(
+        variables: &IndexMap<CustomExpressionVariableId, CustomExpressionVariableDraft>,
+    ) -> IndexMap<CustomExpressionVariableId, CustomExpressionVariable> {
+        variables
+            .iter()
+            .map(|(id, variable)| {
+                (
+                    *id,
+                    CustomExpressionVariable {
+                        id: *id,
+                        display_name: variable.display_name.clone(),
+                        name: variable.name.clone(),
+                        ty: variable.ty.clone().unwrap(),
+                    },
+                )
+            })
+            .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerializableCustomExpressionNodeState {
+    inputs: Vec<SerializableCustomExpressionVariable>,
+    outputs: Vec<SerializableCustomExpressionVariable>,
+    code: String,
+}
+
+impl<Data: GraphData> GraphSerializable<Data> for CustomExpressionNodeState {
+    fn to_toml(&self) -> anyhow::Result<toml::Value> {
+        let serialize = |variables: &IndexMap<_, CustomExpressionVariable>| {
+            variables
+                .values()
+                .map(|variable| SerializableCustomExpressionVariable {
+                    id: variable.id,
+                    display_name: variable.display_name.clone(),
+                    name: variable.name.clone(),
+                    ty: variable.ty.name().to_string(),
+                })
+                .collect()
+        };
+        Ok(toml::Value::try_from(
+            SerializableCustomExpressionNodeState {
+                inputs: serialize(&self.inputs),
+                outputs: serialize(&self.outputs),
+                code: self.code.clone(),
+            },
+        )?)
+    }
+
+    fn from_toml(value: toml::Value, resources: &GraphResources<Data>) -> anyhow::Result<Self> {
+        let serialized = SerializableCustomExpressionNodeState::deserialize(value)?;
+        let deserialize = |variables: Vec<SerializableCustomExpressionVariable>| {
+            variables
+                .into_iter()
+                .map(|variable| {
+                    let ty = resources
+                        .type_registry
+                        .get_type(&variable.ty)
+                        .ok_or_else(|| anyhow!("Unknown type"))?;
+                    Ok((
+                        variable.id,
+                        CustomExpressionVariable {
+                            id: variable.id,
+                            display_name: variable.display_name,
+                            name: variable.name,
+                            ty: dyn_clone::clone_box(ty),
+                        },
+                    ))
+                })
+                .collect::<anyhow::Result<IndexMap<_, _>>>()
+        };
+        Ok(Self {
+            inputs: deserialize(serialized.inputs)?,
+            outputs: deserialize(serialized.outputs)?,
+            code: serialized.code,
+            draft: None,
+        })
+    }
+}
+
+struct CustomExpressionCodeEditor<'a> {
+    code: &'a str,
+}
+
+// TODO Probably avoid this pattern? We are storing the actual state in widget tree,
+//      because text_editor::Content is not sync, but GraphNode::State must be sync.
+struct CustomExpressionCodeEditorState {
+    content: RefCell<text_editor::Content<GraphRenderer>>,
+}
+
+fn custom_expression_text_editor(
+    content: &text_editor::Content<GraphRenderer>,
+) -> text_editor::TextEditor<
+    '_,
+    iced_core::text::highlighter::PlainText,
+    text_editor::Action,
+    GraphTheme,
+    GraphRenderer,
+> {
+    text_editor(content)
+        .placeholder("WGSL")
+        .height(Length::Fixed(140.0))
+        .on_action(std::convert::identity)
+}
+
+impl Widget<CustomExpressionNodeMessage, GraphTheme, GraphRenderer>
+    for CustomExpressionCodeEditor<'_>
+{
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<CustomExpressionCodeEditorState>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(CustomExpressionCodeEditorState {
+            content: RefCell::new(text_editor::Content::with_text(self.code)),
+        })
+    }
+
+    fn children(&self) -> Vec<Tree> {
+        let content = text_editor::Content::with_text(self.code);
+        let editor = custom_expression_text_editor(&content);
+        vec![Tree::new(&editor as &dyn Widget<_, _, _>)]
+    }
+
+    fn diff(&self, tree: &mut Tree) {
+        let state = tree.state.downcast_mut::<CustomExpressionCodeEditorState>();
+        if state.content.borrow().text() != self.code {
+            *state.content.borrow_mut() = text_editor::Content::with_text(self.code);
+        }
+        let content = state.content.borrow();
+        let editor = custom_expression_text_editor(&content);
+        tree.children[0].diff(&editor as &dyn Widget<_, _, _>);
+    }
+
+    fn size(&self) -> Size<Length> {
+        Size::new(Length::Fill, Length::Fixed(140.0))
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &GraphRenderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        let state = tree.state.downcast_ref::<CustomExpressionCodeEditorState>();
+        custom_expression_text_editor(&state.content.borrow()).layout(
+            &mut tree.children[0],
+            renderer,
+            limits,
+        )
+    }
+
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &GraphRenderer,
+        operation: &mut dyn Operation,
+    ) {
+        let state = tree.state.downcast_ref::<CustomExpressionCodeEditorState>();
+        custom_expression_text_editor(&state.content.borrow()).operate(
+            &mut tree.children[0],
+            layout,
+            renderer,
+            operation,
+        );
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &GraphRenderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, CustomExpressionNodeMessage>,
+        viewport: &Rectangle,
+    ) {
+        let state = tree.state.downcast_ref::<CustomExpressionCodeEditorState>();
+        let mut actions = Vec::new();
+        let mut child_shell = Shell::new(&mut actions);
+        custom_expression_text_editor(&state.content.borrow()).update(
+            &mut tree.children[0],
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            &mut child_shell,
+            viewport,
+        );
+        shell.merge(child_shell, |action| {
+            let mut content = state.content.borrow_mut();
+            content.perform(action);
+            CustomExpressionNodeMessage::CodeChanged(content.text())
+        });
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &GraphRenderer,
+    ) -> mouse::Interaction {
+        let state = tree.state.downcast_ref::<CustomExpressionCodeEditorState>();
+        custom_expression_text_editor(&state.content.borrow()).mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
+    }
+
+    fn draw(
+        &self,
+        tree: &Tree,
+        renderer: &mut GraphRenderer,
+        theme: &GraphTheme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        let state = tree.state.downcast_ref::<CustomExpressionCodeEditorState>();
+        custom_expression_text_editor(&state.content.borrow()).draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            viewport,
+        );
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct CustomExpressionNode;
+
+#[derive(Clone)]
+pub enum CustomExpressionNodeMessage {
+    ToggleEditor,
+    AddVariable(CustomExpressionVariableKind),
+    RemoveVariable(CustomExpressionVariableKind, CustomExpressionVariableId),
+    MoveVariableUp(CustomExpressionVariableKind, CustomExpressionVariableId),
+    MoveVariableDown(CustomExpressionVariableKind, CustomExpressionVariableId),
+    ChangeDisplayName(
+        CustomExpressionVariableKind,
+        CustomExpressionVariableId,
+        String,
+    ),
+    ChangeName(
+        CustomExpressionVariableKind,
+        CustomExpressionVariableId,
+        String,
+    ),
+    ChangeType(
+        CustomExpressionVariableKind,
+        CustomExpressionVariableId,
+        String,
+    ),
+    CodeChanged(String),
+    Confirm,
+    Cancel,
+    LiteralUpdate(ErasedGraphLiteralUpdateMessage),
+}
+
+fn custom_expression_variable_rows<Data: GraphData>(
+    variables: &IndexMap<CustomExpressionVariableId, CustomExpressionVariableDraft>,
+    kind: CustomExpressionVariableKind,
+    resources: &GraphResources<Data>,
+) -> Vec<GraphElement<'static, CustomExpressionNodeMessage>> {
+    let type_names = resources
+        .type_registry
+        .all_types()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    variables
+        .values()
+        .map(|variable| {
+            let id = variable.id;
+            column![
+                row![
+                    text_input("Slot Name", &variable.display_name).on_input(move |name| {
+                        CustomExpressionNodeMessage::ChangeDisplayName(kind, id, name)
+                    }),
+                    text_input("WGSL Name", &variable.name).on_input(move |name| {
+                        CustomExpressionNodeMessage::ChangeName(kind, id, name)
+                    }),
+                ]
+                .spacing(4),
+                row![
+                    pick_list(
+                        type_names.clone(),
+                        variable.ty.as_ref().map(|ty| ty.name()),
+                        move |ty| {
+                            CustomExpressionNodeMessage::ChangeType(kind, id, ty.to_string())
+                        }
+                    )
+                    .width(Length::Fill),
+                    button("Up").on_press(CustomExpressionNodeMessage::MoveVariableUp(kind, id)),
+                    button("Down")
+                        .on_press(CustomExpressionNodeMessage::MoveVariableDown(kind, id)),
+                    button("Delete")
+                        .on_press(CustomExpressionNodeMessage::RemoveVariable(kind, id)),
+                ]
+                .spacing(4),
+            ]
+            .spacing(4)
+            .into()
+        })
+        .collect()
+}
+
+fn is_custom_expression_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+}
+
+fn custom_expression_editor_view<Data: GraphData>(
+    state: &CustomExpressionNodeState,
+    resources: &GraphResources<Data>,
+) -> GraphElement<'static, CustomExpressionNodeMessage> {
+    let draft = state.draft.as_ref().expect("editor must be open");
+    let input_rows = custom_expression_variable_rows(
+        &draft.inputs,
+        CustomExpressionVariableKind::Input,
+        resources,
+    );
+    let output_rows = custom_expression_variable_rows(
+        &draft.outputs,
+        CustomExpressionVariableKind::Output,
+        resources,
+    );
+    let variables = draft
+        .inputs
+        .values()
+        .chain(draft.outputs.values())
+        .collect::<Vec<_>>();
+    let valid = variables.iter().all(|variable| {
+        !variable.display_name.is_empty()
+            && variable.display_name.trim() == variable.display_name
+            && is_custom_expression_identifier(&variable.name)
+            && variable.ty.is_some()
+            && variables
+                .iter()
+                .filter(|other| other.name == variable.name)
+                .count()
+                == 1
+    });
+    let panel = column![]
+        .width(Length::Fixed(500.0))
+        .padding(4)
+        .spacing(6)
+        .push(text("Inputs"))
+        .extend(input_rows)
+        .push(
+            button("Add Input").on_press(CustomExpressionNodeMessage::AddVariable(
+                CustomExpressionVariableKind::Input,
+            )),
+        )
+        .push(text("Outputs"))
+        .extend(output_rows)
+        .push(
+            button("Add Output").on_press(CustomExpressionNodeMessage::AddVariable(
+                CustomExpressionVariableKind::Output,
+            )),
+        )
+        .push(
+            row![
+                button("Cancel").on_press(CustomExpressionNodeMessage::Cancel),
+                button("Confirm").when(valid, |button| {
+                    button.on_press(CustomExpressionNodeMessage::Confirm)
+                }),
+            ]
+            .spacing(4),
+        );
+    container(panel)
+        .style(|theme| container::Style {
+            background: Some(theme.extended_palette().background.base.color.into()),
+            ..container::transparent(theme)
+        })
+        .into()
+}
+
+impl<Data: GraphData> GraphNode<Data> for CustomExpressionNode {
+    type State = CustomExpressionNodeState;
+
+    type Message = CustomExpressionNodeMessage;
+
+    fn name(&self) -> &'static str {
+        "Custom Expression"
+    }
+
+    fn default_state(&self, _: GraphNodeDefaultStateContext<'_, Data>) -> Self::State {
+        CustomExpressionNodeState {
+            inputs: IndexMap::new(),
+            outputs: IndexMap::new(),
+            code: String::new(),
+            draft: None,
+        }
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        themed_color(stringify!(CustomExpressionNode), is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        state: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        state
+            .inputs
+            .values()
+            .map(|variable| {
+                GraphDefaultInputSlot::new_boxed(variable.display_name.clone(), variable.ty.clone())
+            })
+            .collect()
+    }
+
+    fn create_outputs(
+        &self,
+        state: &Self::State,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        state
+            .outputs
+            .values()
+            .map(|variable| {
+                GraphDefaultOutputSlot::new_boxed(
+                    variable.display_name.clone(),
+                    variable.ty.clone(),
+                )
+            })
+            .collect()
+    }
+
+    fn view<'a>(
+        &self,
+        state: &'a Self::State,
+        ctx: GraphNodeViewContext<'_, Data>,
+    ) -> GraphElement<'a, Self::Message> {
+        let trigger = button(text("Edit")).on_press(CustomExpressionNodeMessage::ToggleEditor);
+        let content = state
+            .draft
+            .as_ref()
+            .map(|_| custom_expression_editor_view(state, ctx.resources));
+        ctx.view_all_slots_with_header(
+            column![
+                Popover::new(trigger).content(content),
+                GraphElement::new(CustomExpressionCodeEditor { code: &state.code })
+            ]
+            .spacing(4),
+            CustomExpressionNodeMessage::LiteralUpdate,
+        )
+    }
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        message: Self::Message,
+        mut ctx: GraphNodeUpdateContext<'_, Data>,
+    ) {
+        match message {
+            CustomExpressionNodeMessage::ToggleEditor => {
+                state.draft = if state.draft.is_some() {
+                    None
+                } else {
+                    Some(CustomExpressionDraft::new(state))
+                };
+            }
+            CustomExpressionNodeMessage::AddVariable(kind) => {
+                if let Some(draft) = &mut state.draft {
+                    let id = CustomExpressionVariableId::new(Uuid::new_v4());
+                    draft.variables_mut(kind).insert(
+                        id,
+                        CustomExpressionVariableDraft {
+                            id,
+                            display_name: String::new(),
+                            name: String::new(),
+                            ty: None,
+                        },
+                    );
+                }
+            }
+            CustomExpressionNodeMessage::RemoveVariable(kind, id) => {
+                if let Some(draft) = &mut state.draft {
+                    draft.variables_mut(kind).shift_remove(&id);
+                }
+            }
+            CustomExpressionNodeMessage::MoveVariableUp(kind, id) => {
+                if let Some(draft) = &mut state.draft {
+                    let variables = draft.variables_mut(kind);
+                    if let Some(index) = variables.get_index_of(&id)
+                        && index > 0
+                    {
+                        variables.swap_indices(index, index - 1);
+                    }
+                }
+            }
+            CustomExpressionNodeMessage::MoveVariableDown(kind, id) => {
+                if let Some(draft) = &mut state.draft {
+                    let variables = draft.variables_mut(kind);
+                    if let Some(index) = variables.get_index_of(&id)
+                        && index + 1 < variables.len()
+                    {
+                        variables.swap_indices(index, index + 1);
+                    }
+                }
+            }
+            CustomExpressionNodeMessage::ChangeDisplayName(kind, id, name) => {
+                if let Some(variable) = state
+                    .draft
+                    .as_mut()
+                    .and_then(|draft| draft.variables_mut(kind).get_mut(&id))
+                {
+                    variable.display_name = name;
+                }
+            }
+            CustomExpressionNodeMessage::ChangeName(kind, id, name) => {
+                if let Some(variable) = state
+                    .draft
+                    .as_mut()
+                    .and_then(|draft| draft.variables_mut(kind).get_mut(&id))
+                {
+                    variable.name = name;
+                }
+            }
+            CustomExpressionNodeMessage::ChangeType(kind, id, ty) => {
+                if let Some(variable) = state
+                    .draft
+                    .as_mut()
+                    .and_then(|draft| draft.variables_mut(kind).get_mut(&id))
+                {
+                    variable.ty = ctx
+                        .resources
+                        .type_registry
+                        .get_type(&ty)
+                        .map(dyn_clone::clone_box);
+                }
+            }
+            CustomExpressionNodeMessage::CodeChanged(code) => state.code = code,
+            CustomExpressionNodeMessage::Confirm => {
+                let Some(draft) = state.draft.take() else {
+                    return;
+                };
+                state.inputs = CustomExpressionDraft::finalize(&draft.inputs);
+                state.outputs = CustomExpressionDraft::finalize(&draft.outputs);
+            }
+            CustomExpressionNodeMessage::Cancel => state.draft = None,
+            CustomExpressionNodeMessage::LiteralUpdate(message) => ctx.update_literal(message),
+        }
+    }
+
+    fn generate_code(
+        &self,
+        state: &Self::State,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        if state.inputs.len() != ctx.inputs.len() || state.outputs.len() != ctx.outputs.len() {
+            return Err(anyhow!("Invalid slots").into());
+        }
+
+        let names = state
+            .inputs
+            .values()
+            .chain(state.outputs.values())
+            .map(|variable| variable.name.as_str())
+            .collect::<Vec<_>>();
+
+        let mut outputs = Vec::with_capacity(state.outputs.len());
+        let mut code = String::new();
+        for (index, variable) in state.outputs.values().enumerate() {
+            let mut output = ctx.get_output(index)?;
+            while names.contains(&output.as_str()) {
+                output = ctx.ident_generator.next_output();
+                ctx.output_slot_idents
+                    .insert(ctx.outputs[index], output.clone());
+            }
+            let (ty, _) = variable
+                .ty
+                .wgsl_type()
+                .ok_or_else(|| GraphNodeCodeGenError::Custom(anyhow!("Invalid type")))?;
+            code.push_str(&format!("var {output}: {ty};\n"));
+            outputs.push(output);
+        }
+
+        code.push_str("{\n");
+
+        for (index, variable) in state.inputs.values().enumerate() {
+            code.push_str(&format!(
+                "let {} = {};\n",
+                variable.name,
+                ctx.get_input(index)?
+            ));
+        }
+        for variable in state.outputs.values() {
+            let (ty, _) = variable
+                .ty
+                .wgsl_type()
+                .ok_or_else(|| GraphNodeCodeGenError::Custom(anyhow!("Invalid type")))?;
+            code.push_str(&format!("var {}: {ty};\n", variable.name));
+        }
+        code.push_str(&state.code);
+        if !state.code.is_empty() && !state.code.ends_with('\n') {
+            code.push('\n');
+        }
+        for ((_, variable), output) in state.outputs.iter().zip(outputs) {
+            code.push_str(&format!("{output} = {};\n", variable.name));
+        }
+
+        code.push_str("}\n");
+        Ok(code)
     }
 }
