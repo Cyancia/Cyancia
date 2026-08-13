@@ -55,11 +55,11 @@ pub trait GraphNode<Data: GraphData>: Send + Sync + 'static + DynClone {
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot>;
     fn update_signature(&self, _: &Self::State, _: GraphNodeUpdateSignatureContext<'_, Data>) {}
-    fn view(
+    fn view<'a>(
         &self,
-        state: &Self::State,
+        state: &'a Self::State,
         ctx: GraphNodeViewContext<'_, Data>,
-    ) -> GraphElement<'static, Self::Message>;
+    ) -> GraphElement<'a, Self::Message>;
     fn update(
         &self,
         state: &mut Self::State,
@@ -112,46 +112,46 @@ pub trait ErasedGraphNode<Data: GraphData>: Send + Sync + 'static + DynClone + D
     fn header_color(&self, is_dark: bool) -> Color;
     fn create_inputs(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot>;
     fn create_outputs(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot>;
     fn update_signature(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeUpdateSignatureContext<'_, Data>,
     );
-    fn view(
+    fn view<'a>(
         &self,
         node_id: GraphNodeId,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &'a (dyn Any + Send + Sync),
         ctx: GraphNodeViewContext<'_, Data>,
-    ) -> GraphElement<'static, ErasedGraphNodeMessage>;
+    ) -> GraphElement<'a, ErasedGraphNodeMessage>;
     fn update(
         &self,
-        state: &mut Box<dyn Any + Send + Sync>,
+        state: &mut (dyn Any + Send + Sync),
         message: ErasedGraphNodeMessage,
         ctx: GraphNodeUpdateContext<'_, Data>,
     );
     fn generate_code(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError>;
-    fn serialize_state(&self, state: &Box<dyn Any + Send + Sync>) -> Result<toml::Value>;
+    fn serialize_state(&self, state: &(dyn Any + Send + Sync)) -> Result<toml::Value>;
     fn deserialize_state(
         &self,
         value: toml::Value,
         resources: &GraphResources<Data>,
     ) -> Result<Box<dyn Any + Send + Sync>>;
-    fn subgraphs<'a>(&self, state: &'a Box<dyn Any + Send + Sync>) -> Vec<&'a Graph<Data>>;
+    fn subgraphs<'a>(&self, state: &'a (dyn Any + Send + Sync)) -> Vec<&'a Graph<Data>>;
     fn subgraphs_mut<'a>(
         &mut self,
-        state: &'a mut Box<dyn Any + Send + Sync>,
+        state: &'a mut (dyn Any + Send + Sync),
     ) -> Vec<&'a mut Graph<Data>>;
 }
 
@@ -176,7 +176,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
 
     fn create_inputs(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         self.create_inputs(
@@ -189,7 +189,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
 
     fn create_outputs(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         self.create_outputs(
@@ -202,7 +202,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
 
     fn update_signature(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeUpdateSignatureContext<'_, Data>,
     ) {
         self.update_signature(
@@ -213,12 +213,12 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
         );
     }
 
-    fn view(
+    fn view<'a>(
         &self,
         node_id: GraphNodeId,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &'a (dyn Any + Send + Sync),
         ctx: GraphNodeViewContext<'_, Data>,
-    ) -> GraphElement<'static, ErasedGraphNodeMessage> {
+    ) -> GraphElement<'a, ErasedGraphNodeMessage> {
         self.view(
             state
                 .downcast_ref::<T::State>()
@@ -233,7 +233,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
 
     fn update(
         &self,
-        state: &mut Box<dyn Any + Send + Sync>,
+        state: &mut (dyn Any + Send + Sync),
         message: ErasedGraphNodeMessage,
         ctx: GraphNodeUpdateContext<'_, Data>,
     ) {
@@ -249,7 +249,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
 
     fn generate_code(
         &self,
-        state: &Box<dyn Any + Send + Sync>,
+        state: &(dyn Any + Send + Sync),
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         self.generate_code(
@@ -260,7 +260,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
         )
     }
 
-    fn serialize_state(&self, state: &Box<dyn Any + Send + Sync>) -> Result<toml::Value> {
+    fn serialize_state(&self, state: &(dyn Any + Send + Sync)) -> Result<toml::Value> {
         self.serialize_state(
             state
                 .downcast_ref::<T::State>()
@@ -276,7 +276,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
         Ok(Box::new(self.deserialize_state(value, resources)?))
     }
 
-    fn subgraphs<'a>(&self, state: &'a Box<dyn Any + Send + Sync>) -> Vec<&'a Graph<Data>> {
+    fn subgraphs<'a>(&self, state: &'a (dyn Any + Send + Sync)) -> Vec<&'a Graph<Data>> {
         self.subgraphs(
             state
                 .downcast_ref::<T::State>()
@@ -286,7 +286,7 @@ impl<T: GraphNode<Data>, Data: GraphData> ErasedGraphNode<Data> for T {
 
     fn subgraphs_mut<'a>(
         &mut self,
-        state: &'a mut Box<dyn Any + Send + Sync>,
+        state: &'a mut (dyn Any + Send + Sync),
     ) -> Vec<&'a mut Graph<Data>> {
         self.subgraphs_mut(
             state
@@ -320,11 +320,11 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         self.data.header_color(is_dark)
     }
 
-    pub fn view(
-        &self,
+    pub fn view<'a>(
+        &'a self,
         node_id: GraphNodeId,
         ctx: GraphNodeViewContext<'_, Data>,
-    ) -> GraphElement<'static, ErasedGraphNodeMessage> {
+    ) -> GraphElement<'a, ErasedGraphNodeMessage> {
         self.data.view(node_id, &self.state, ctx)
     }
 
@@ -427,13 +427,13 @@ pub struct GraphNodeData<Data: GraphData> {
 }
 
 impl<Data: GraphData> GraphNodeData<Data> {
-    pub fn view(
-        &self,
+    pub fn view<'a>(
+        &'a self,
         node_id: GraphNodeId,
         slots: &GraphSlots,
         resources: &GraphResources<Data>,
         is_dark: bool,
-    ) -> GraphElement<'static, ErasedGraphNodeMessage> {
+    ) -> GraphElement<'a, ErasedGraphNodeMessage> {
         self.data.view(
             node_id,
             GraphNodeViewContext {
@@ -477,29 +477,29 @@ impl<Data: GraphData> GraphNodeViewContext<'_, Data> {
         self.slots.get_output(self.outputs.get(index)?)
     }
 
-    pub fn view_input_slot<Message: 'static>(
+    pub fn view_input_slot<'a, Message: 'static>(
         &self,
         index: usize,
         map_literal: impl Fn(ErasedGraphLiteralUpdateMessage) -> Message + Copy + 'static,
-    ) -> Option<GraphElement<'static, Message>> {
+    ) -> Option<GraphElement<'a, Message>> {
         let slot_id = *self.inputs.get(index)?;
         let slot = self.slots.get_input(&slot_id)?;
         Some(input_slot(slot_id, slot.name.clone(), slot, self.is_dark).map(map_literal))
     }
 
-    pub fn view_output_slot<Message: 'static>(
+    pub fn view_output_slot<'a, Message: 'static>(
         &self,
         index: usize,
-    ) -> Option<GraphElement<'static, Message>> {
+    ) -> Option<GraphElement<'a, Message>> {
         let slot_id = *self.outputs.get(index)?;
         let slot = self.slots.get_output(&slot_id)?;
         Some(output_slot(slot_id, slot.name.clone(), slot, self.is_dark))
     }
 
-    pub fn view_all_inputs<Message: 'static>(
+    pub fn view_all_inputs<'a, Message: 'static>(
         &self,
         map_literal: impl Fn(ErasedGraphLiteralUpdateMessage) -> Message + Copy + 'static,
-    ) -> Vec<GraphElement<'static, Message>> {
+    ) -> Vec<GraphElement<'a, Message>> {
         self.inputs
             .iter()
             .filter_map(|id| {
@@ -509,7 +509,7 @@ impl<Data: GraphData> GraphNodeViewContext<'_, Data> {
             .collect()
     }
 
-    pub fn view_all_outputs<Message: 'static>(&self) -> Vec<GraphElement<'static, Message>> {
+    pub fn view_all_outputs<'a, Message: 'static>(&self) -> Vec<GraphElement<'a, Message>> {
         self.outputs
             .iter()
             .filter_map(|id| {
@@ -519,10 +519,10 @@ impl<Data: GraphData> GraphNodeViewContext<'_, Data> {
             .collect()
     }
 
-    pub fn view_all_slots<Message: 'static>(
+    pub fn view_all_slots<'a, Message: 'static>(
         &self,
         map_literal: impl Fn(ErasedGraphLiteralUpdateMessage) -> Message + Copy + 'static,
-    ) -> GraphElement<'static, Message> {
+    ) -> GraphElement<'a, Message> {
         Column::new()
             .push(
                 Column::with_children(self.view_all_inputs(map_literal))
@@ -539,11 +539,11 @@ impl<Data: GraphData> GraphNodeViewContext<'_, Data> {
             .into()
     }
 
-    pub fn view_all_slots_with_header<Message: 'static>(
+    pub fn view_all_slots_with_header<'a, Message: 'static>(
         &self,
-        header: impl Into<GraphElement<'static, Message>>,
+        header: impl Into<GraphElement<'a, Message>>,
         map_literal: impl Fn(ErasedGraphLiteralUpdateMessage) -> Message + Copy + 'static,
-    ) -> GraphElement<'static, Message> {
+    ) -> GraphElement<'a, Message> {
         Column::new()
             .push(header)
             .push(self.view_all_slots(map_literal))

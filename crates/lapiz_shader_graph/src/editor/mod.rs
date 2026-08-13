@@ -210,7 +210,7 @@ impl<Data: GraphData> Graph<Data> {
 }
 
 pub struct GraphEditorView<'a, Data: GraphData> {
-    graph: DrawableGraph,
+    graph: DrawableGraph<'a>,
     node_creation_menu_items: Vec<NodeCreationMenuItem>,
     node_creation_menu_class: <GraphTheme as menu::Catalog>::Class<'a>,
     snapshot: Option<GraphEditorSnapshot>,
@@ -277,15 +277,15 @@ pub struct GraphNodeStyle {
     pub line_spacing: f32,
 }
 
-pub struct DrawableGraph {
-    pub nodes: IndexMap<GraphNodeId, DrawableNode>,
+pub struct DrawableGraph<'a> {
+    pub nodes: IndexMap<GraphNodeId, DrawableNode<'a>>,
     pub slots: HashMap<GraphSlotId, SlotData>,
     pub edges: HashMap<GraphInputSlotId, DrawableEdge>,
     pub vert_in_loop: HashSet<GraphNodeId>,
 }
 
-impl DrawableGraph {
-    pub fn new<Data: GraphData>(graph: &Graph<Data>, is_dark: bool) -> Self {
+impl<'a> DrawableGraph<'a> {
+    pub fn new<Data: GraphData>(graph: &'a Graph<Data>, is_dark: bool) -> Self {
         let mut nodes = IndexMap::with_capacity(graph.nodes.len());
         let mut node_indices = HashMap::with_capacity(graph.nodes.len());
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
@@ -367,18 +367,18 @@ pub struct DrawableEdge {
     style: geometry::Style,
 }
 
-pub struct DrawableNode {
+pub struct DrawableNode<'a> {
     pub node_id: GraphNodeId,
     pub position: Point,
-    pub widget: Element<'static, GraphEditorMessage, GraphTheme, GraphRenderer>,
+    pub widget: Element<'a, GraphEditorMessage, GraphTheme, GraphRenderer>,
     pub input_slots: Arc<[GraphInputSlotId]>,
     pub output_slots: Arc<[GraphOutputSlotId]>,
 }
 
-impl DrawableNode {
+impl<'a> DrawableNode<'a> {
     pub fn new<Data: GraphData>(
         node_id: GraphNodeId,
-        node: &GraphNodeData<Data>,
+        node: &'a GraphNodeData<Data>,
         slots: &GraphSlots,
         resources: &GraphResources<Data>,
         is_dark: bool,

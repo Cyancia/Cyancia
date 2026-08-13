@@ -9,8 +9,12 @@ use std::{
 use anyhow::anyhow;
 
 use glam::{Vec2, Vec3, Vec3Swizzles};
-use iced_core::{Color, Length};
-use iced_widget::{button, column, container, pick_list, row, text, text_input};
+use iced_core::{
+    Clipboard, Color, Event, Layout, Length, Rectangle, Shell, Size, Vector, Widget, layout, mouse,
+    overlay, renderer,
+    widget::{Operation, Tree, tree},
+};
+use iced_widget::{button, column, container, pick_list, row, text, text_editor, text_input};
 use indexmap::IndexMap;
 use lapiz_math::curve::CubicCurve;
 use lapiz_utils::wrapper;
@@ -21,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    GraphElement,
+    GraphElement, GraphRenderer,
     graph::{
         Graph, GraphData, GraphResources, GraphVarIdentGenerator,
         external::{ExternalVariableId, generate_external_variable_name},

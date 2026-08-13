@@ -1,6 +1,6 @@
 use std::convert::identity;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use bevy_math::Rect;
 use encase::{DynamicUniformBuffer, ShaderType};
 use glam::{Vec2, Vec4};
@@ -356,16 +356,17 @@ impl GraphValueType for TextureType {
     }
 
     fn wgsl_type(&self) -> Option<(&'static str, u64)> {
-        None
+        Some(("u32", <u32 as ShaderType>::min_size().get()))
     }
 
     fn try_write_into_shader_buffer(
         &self,
-        _literal: &Self::AssociatedLiteralType,
-        _writer: &mut QueueWriteBufferView,
+        literal: &Self::AssociatedLiteralType,
+        writer: &mut QueueWriteBufferView,
     ) -> Result<()> {
-        // TODO Support texture as external variable
-        bail!("Unsupported writing for texture type.");
+        let mut writer = DynamicUniformBuffer::new(writer.as_mut());
+        writer.write(&literal.local_index)?;
+        Ok(())
     }
 
     fn view_literal(
