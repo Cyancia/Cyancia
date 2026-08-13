@@ -477,8 +477,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     .widget
                     .as_widget_mut()
                     .layout(tree, renderer, &Limits::NONE)
-                    .translate(Vector::new(node.position.x, node.position.y))
-                    .translate(state.view_translation);
+                    .translate(Vector::new(node.position.x, node.position.y));
                 state.node_bounds.insert(node.node_id, layout.bounds());
                 layout
             })
@@ -676,9 +675,8 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                             .selected_nodes
                             .iter()
                             .filter_map(|id| {
-                                self.graph.nodes.get_index_of(id).map(|index| (id, index))
+                                self.graph.nodes.get(id).map(|node| (*id, node.position))
                             })
-                            .map(|(id, index)| (*id, layout.child(index).position()))
                             .collect(),
                         skip_next_release: false,
                     };
@@ -796,8 +794,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                         if let Some(node_origin) = node_origin.get(selected) {
                             shell.publish(GraphEditorMessage::Graph(
                                 GraphEditorGraphMessage::NodeMoveRequest(
-                                    *node_origin + (cursor - *cursor_origin)
-                                        - Vector::new(layout.position().x, layout.position().y),
+                                    *node_origin + (cursor - *cursor_origin),
                                     *selected,
                                 ),
                             ));
@@ -968,7 +965,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
             );
         }
 
-        let mut frame = Frame::with_bounds(renderer, layout.bounds());
+        let mut frame = Frame::with_bounds(renderer, graph_viewport);
         for (to, edge) in &self.graph.edges {
             let from_pos = state.slot_pins.get_output(&edge.from);
             let to_pos = state.slot_pins.get_input(to);
@@ -1064,7 +1061,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         ) = (&state.interaction, graph_cursor.position())
             && let Some(start_pos) = state.slot_pins.get(resolved_source)
         {
-            let mut frame = Frame::with_bounds(renderer, layout.bounds());
+            let mut frame = Frame::with_bounds(renderer, graph_viewport);
             frame.stroke(
                 &geometry::Path::line(*start_pos, cursor_pos),
                 Stroke {
@@ -1154,6 +1151,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         if let Some(menu_position) = state.node_creation_menu.position {
             let graph_origin = Vector::new(layout.position().x, layout.position().y);
             let graph_cursor = menu_position * inverse_view_transformation;
+            let node_position = graph_cursor - graph_origin;
             let NodeCreationMenuState {
                 position,
                 state: menu_state,
@@ -1172,11 +1170,11 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                     selected_nodes.insert(node_id);
                     *interaction = InteractionState::NodeDragging {
                         cursor_origin: graph_cursor,
-                        node_origin: HashMap::from([(node_id, graph_cursor)]),
+                        node_origin: HashMap::from([(node_id, node_position)]),
                         skip_next_release: true,
                     };
                     GraphEditorMessage::Graph(GraphEditorGraphMessage::NodeCreateRequest(
-                        graph_cursor - graph_origin,
+                        node_position,
                         name.node_title,
                         node_id,
                     ))
