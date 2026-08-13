@@ -325,7 +325,7 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         node_id: GraphNodeId,
         ctx: GraphNodeViewContext<'_, Data>,
     ) -> GraphElement<'a, ErasedGraphNodeMessage> {
-        self.data.view(node_id, &self.state, ctx)
+        self.data.view(node_id, self.state.as_ref(), ctx)
     }
 
     pub fn update(
@@ -333,18 +333,18 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
         message: ErasedGraphNodeMessage,
         ctx: GraphNodeUpdateContext<'_, Data>,
     ) {
-        self.data.update(&mut self.state, message, ctx);
+        self.data.update(self.state.as_mut(), message, ctx);
     }
 
     pub fn generate_code(
         &self,
         ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
-        self.data.generate_code(&self.state, ctx)
+        self.data.generate_code(self.state.as_ref(), ctx)
     }
 
     pub fn serialize_state(&self) -> Result<toml::Value> {
-        self.data.serialize_state(&self.state)
+        self.data.serialize_state(self.state.as_ref())
     }
 
     pub fn deserialize_and_set_state(
@@ -357,29 +357,29 @@ impl<Data: GraphData> StatefulGraphNode<Data> {
     }
 
     pub fn subgraphs(&self) -> Vec<&Graph<Data>> {
-        self.data.subgraphs(&self.state)
+        self.data.subgraphs(self.state.as_ref())
     }
 
     pub fn subgraphs_mut(&mut self) -> Vec<&mut Graph<Data>> {
-        self.data.subgraphs_mut(&mut self.state)
+        self.data.subgraphs_mut(self.state.as_mut())
     }
 
     pub fn create_inputs(
         &self,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
-        self.data.create_inputs(&self.state, ctx)
+        self.data.create_inputs(self.state.as_ref(), ctx)
     }
 
     pub fn create_outputs(
         &self,
         ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
-        self.data.create_outputs(&self.state, ctx)
+        self.data.create_outputs(self.state.as_ref(), ctx)
     }
 
     pub fn update_signature(&self, ctx: GraphNodeUpdateSignatureContext<'_, Data>) {
-        self.data.update_signature(&self.state, ctx);
+        self.data.update_signature(self.state.as_ref(), ctx);
     }
 
     pub fn is<T: GraphNode<Data>>(&self) -> bool {
