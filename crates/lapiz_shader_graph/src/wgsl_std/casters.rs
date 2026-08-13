@@ -90,7 +90,7 @@ impl GraphVariableCaster for I32ToVec2FCaster {
     type ToType = Vec2FType;
 
     fn wgsl_cast(&self, variable: &str) -> String {
-        format!("vec2f(f32{})", variable)
+        format!("vec2f(f32({}))", variable)
     }
 }
 
