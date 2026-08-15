@@ -28,8 +28,9 @@ use lapiz_filter::asset::{
     SerializableFilterGroup,
 };
 use lapiz_filter::render::graph::{
-    BlendWithLayerNode, FILTER_GRAPH_NODES, FILTER_GRAPH_TYPES, FilterGraphData, InputColorNode,
-    OutputColorNode, PixelPositionNode, SampleInputColorNode, SelectionMaskNode,
+    BlendWithLayerNode, FILTER_GRAPH_NODES, FILTER_GRAPH_TYPES, FilterGraphData, InputBoundsNode,
+    InputColorNode, OutputBoundsNode, OutputColorNode, PixelPositionNode, SampleInputColorNode,
+    SelectionMaskNode,
 };
 use lapiz_shader_graph::graph::{
     Graph, GraphResources,
@@ -109,6 +110,18 @@ fn connect_selection_blend(
     connect(g, blend, 0, out, 0);
 
     out
+}
+
+/// Explicitly declare the output pixel bounds for a builtin graph:
+/// `InputBounds -> OutputBounds` (output bounds equal input bounds).
+fn connect_output_bounds(g: &mut Graph<FilterGraphData>, pos: f32) {
+    let input_bounds = g.add_node(Point::new(pos, pos + 1.0), InputBoundsNode::default());
+    let output_bounds = g.add_node(
+        Point::new(pos + 1.0, pos + 1.0),
+        OutputBoundsNode::default(),
+    );
+
+    connect(g, input_bounds, 0, output_bounds, 0);
 }
 
 /// Add a Scalar Math node with the requested mode.
@@ -194,6 +207,7 @@ fn build_invert_graph(
 
     // Blend the inverted color over the original layer using the selection mask.
     connect_selection_blend(&mut g, pos, combine, pixel);
+    connect_output_bounds(&mut g, pos + 3.0);
     Ok(g.as_serialized()?)
 }
 
@@ -255,6 +269,7 @@ fn build_brightness_graph(
 
     // Blend the adjusted color over the original layer using the selection mask.
     connect_selection_blend(&mut g, pos, combine, pixel);
+    connect_output_bounds(&mut g, pos + 3.0);
     Ok(g.as_serialized()?)
 }
 
@@ -319,6 +334,7 @@ fn build_pixelate_graph(
 
     // Blend the pixelated color over the original layer using the selection mask.
     connect_selection_blend(&mut g, pos, sample, pixel);
+    connect_output_bounds(&mut g, pos + 3.0);
     Ok(g.as_serialized()?)
 }
 
@@ -375,6 +391,7 @@ fn build_posterize_graph(
 
     connect(&mut g, split, 3, combine, 3);
     connect(&mut g, combine, 0, out, 0);
+    connect_output_bounds(&mut g, pos);
     Ok(g.as_serialized()?)
 }
 
