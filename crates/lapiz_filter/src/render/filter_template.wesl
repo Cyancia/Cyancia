@@ -1,5 +1,5 @@
-import package::image::image_tiling::{TileInfo, TILE_SIZE};
-import package::render::math::{Rect, IRect, URect};
+import image::image_tiling::{TileInfo, TILE_SIZE};
+import render::math::{Rect, IRect, URect};
 
 @group(0) @binding(0) var input_atlas: texture_storage_2d_array<r32uint, read>;
 @group(0) @binding(1) var<storage> input_tile_info: array<TileInfo>;
@@ -72,7 +72,7 @@ fn load_input_color(pixel: vec2i) -> vec4f {
             return vec4f(0.0);
         }
         let color = textureLoad(input_atlas, vec2i(tile_index.xy), tile_index.z);
-        return package::image::texture_unpack::unpack_rgba8_texel(color);
+        return image::texture_unpack::unpack_rgba8_texel(color);
     }
 }
 
@@ -93,7 +93,7 @@ fn target_layer_color(pixel_pos: vec2i) -> vec4f {
         if tile_index.z == 0xFFFFFFFFu {
             return vec4f(0.0);
         }
-        return package::image::texture_unpack::unpack_rgba8_texel(textureLoad(layer_atlas, vec2i(tile_index.xy), tile_index.z));
+        return image::texture_unpack::unpack_rgba8_texel(textureLoad(layer_atlas, vec2i(tile_index.xy), tile_index.z));
     }
 }
 
@@ -129,7 +129,7 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
         if tile_index.z == 0xFFFFFFFFu {
             return;
         }
-        let packed = package::image::texture_unpack::pack_rgba8_texel(color);
+        let packed = image::texture_unpack::pack_rgba8_texel(color);
         textureStore(output_atlas, vec2i(tile_index.xy), tile_index.z, packed);
     }
 }
