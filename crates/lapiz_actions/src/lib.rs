@@ -14,7 +14,7 @@ use crate::{
     },
     manifest::KeyBindingDefManifestLoader,
     selection::DeleteSelectionAction,
-    window::OpenBrushEditorAction,
+    window::{OpenBrushEditorAction, ToggleFilterPanelAction},
 };
 
 pub mod edit;
@@ -52,6 +52,7 @@ impl Plugin for ActionPlugin {
             .add_action_function::<SelectPreviousLayerAction>()
             .add_action_function::<PasteIntoNewLayerAction>()
             .add_action_function::<OpenBrushEditorAction>()
+            .add_action_function::<ToggleFilterPanelAction>()
             .add_action_function::<UndoAction>()
             .add_action_function::<RedoAction>();
     }

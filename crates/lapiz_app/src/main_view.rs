@@ -31,7 +31,7 @@ use lapiz_tools::{ErasedToolFunctionMessage, GlobalToolBindings, ToolFunction, T
 
 use crate::dock::{
     BRUSH_PRESETS_DOCK_ID, BrushPresetDock, COLOR_SELECTOR_DOCK_ID, CanvasDock, ColorSelectorDock,
-    FILTERS_DOCK_ID, FiltersDock, LAYER_DOCK_ID, LayersDock, TOOL_OPTIONS_DOCK_ID, ToolOptionsDock,
+    LAYER_DOCK_ID, LayersDock, TOOL_OPTIONS_DOCK_ID, ToolOptionsDock,
     construct_canvas_dock_id,
 };
 
@@ -113,7 +113,6 @@ impl WindowView for MainView {
         let (main_window, task) = window::open(Default::default());
         let (mut dock_manager, dock_manager_task) = DockManager::new(main_window);
         dock_manager.register_dock(LayersDock::new());
-        dock_manager.register_dock(FiltersDock);
         dock_manager.register_dock(ToolOptionsDock::new(services));
         dock_manager.register_dock(BrushPresetDock::new(services));
         dock_manager.register_dock(ColorSelectorDock::new(services));
@@ -121,7 +120,6 @@ impl WindowView for MainView {
         let dock_tasks = Task::batch([
             dock_manager.open_dock(DockId::new(COLOR_SELECTOR_DOCK_ID.into())),
             dock_manager.open_dock(DockId::new(LAYER_DOCK_ID.into())),
-            dock_manager.open_dock(DockId::new(FILTERS_DOCK_ID.into())),
             dock_manager.open_dock(DockId::new(TOOL_OPTIONS_DOCK_ID.into())),
             dock_manager.open_dock(DockId::new(BRUSH_PRESETS_DOCK_ID.into())),
         ])

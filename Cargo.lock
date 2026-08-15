@@ -3056,6 +3056,7 @@ dependencies = [
  "lapiz_color",
  "lapiz_color_selector",
  "lapiz_dock",
+ "lapiz_filter",
  "lapiz_image",
  "lapiz_input",
  "lapiz_render",
@@ -3261,6 +3262,48 @@ dependencies = [
  "serde",
  "thiserror 2.0.19",
  "uuid",
+]
+
+[[package]]
+name = "lapiz_filter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
+ "chrono",
+ "dyn-clone",
+ "futures",
+ "glam 0.30.10",
+ "iced_core",
+ "iced_futures",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "lapiz_actions",
+ "lapiz_assets",
+ "lapiz_canvas",
+ "lapiz_color",
+ "lapiz_image",
+ "lapiz_input",
+ "lapiz_math",
+ "lapiz_render",
+ "lapiz_runtime",
+ "lapiz_shader_graph",
+ "lapiz_tools",
+ "lapiz_undo",
+ "lapiz_utils",
+ "lapiz_widgets",
+ "log",
+ "parking_lot",
+ "ringbuffer",
+ "serde",
+ "thiserror 2.0.19",
+ "toml",
+ "tracing",
+ "uuid",
+ "wesl",
+ "wgpu",
+ "zip",
 ]
 
 [[package]]

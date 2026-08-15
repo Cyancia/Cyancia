@@ -11,6 +11,10 @@
       "action_name": "OpenBrushEditorAction"
     },
     {
+      "shortcut": "ctrl-shift-f",
+      "action_name": "ToggleFilterPanelAction"
+    },
+    {
       "shortcut": "ctrl-shift-n",
       "action_name": "CreateNewLayerAction",
       "context": "main_view"

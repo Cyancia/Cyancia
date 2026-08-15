@@ -11,6 +11,7 @@ use lapiz_assets::{
     bundle::{ErasedAssetBundle, directory::AssetDirectory, standard::StandardAssetBundle},
 };
 use lapiz_brush::{BrushPlugin, editor::BrushEditor};
+use lapiz_filter::{FilterPlugin, editor::FilterEditor, panel::FilterPanel};
 use lapiz_bucket_tool::BucketPlugin;
 use lapiz_canvas::CanvasPlugin;
 use lapiz_color::ColorPlugin;
@@ -71,6 +72,7 @@ fn main() {
         .add_plugin(CanvasPlugin)
         .add_plugin(InputPlugin)
         .add_plugin(BrushPlugin)
+        .add_plugin(FilterPlugin)
         .add_plugin(BucketPlugin)
         .add_plugin(SelectionPlugin)
         .add_plugin(FreeTransformPlugin)
@@ -84,6 +86,8 @@ fn main() {
         rt.window_manager_mut().set_root_view::<MainView>();
         rt.window_manager_mut().register_view::<MainView>();
         rt.window_manager_mut().register_view::<BrushEditor>();
+        rt.window_manager_mut().register_view::<FilterPanel>();
+        rt.window_manager_mut().register_view::<FilterEditor>();
     }
 
     app.run().unwrap();

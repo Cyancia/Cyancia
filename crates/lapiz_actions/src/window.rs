@@ -1,7 +1,7 @@
 use iced_runtime::Task;
 use lapiz_runtime::{
     Services,
-    windows::{OpenWindowViewCommand, WindowCommandBuffer, WindowViewId},
+    windows::{OpenWindowViewCommand, ToggleWindowViewCommand, WindowCommandBuffer, WindowViewId},
 };
 
 use crate::{ActionFunction, ActionId};
@@ -22,6 +22,24 @@ impl ActionFunction for OpenBrushEditorAction {
             .push(OpenWindowViewCommand::new(WindowViewId::new(
                 "brush_editor",
             )));
+        Task::none()
+    }
+}
+
+#[derive(Default)]
+pub struct ToggleFilterPanelAction;
+
+impl ActionFunction for ToggleFilterPanelAction {
+    type Message = ();
+
+    fn id(&self) -> ActionId {
+        ActionId::new("ToggleFilterPanelAction".into())
+    }
+
+    fn trigger(&self, services: &mut Services) -> Task<Self::Message> {
+        services
+            .service_mut::<WindowCommandBuffer>()
+            .push(ToggleWindowViewCommand::new(WindowViewId::new("filter_panel")));
         Task::none()
     }
 }

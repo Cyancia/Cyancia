@@ -340,36 +340,6 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
     }
 }
 
-macro_rules! test_dummy_dock {
-    ($name:ident, $id:ident, $text:expr) => {
-        pub struct $name;
-
-        impl Dock<Theme, Renderer> for $name {
-            type Message = ();
-
-            fn id(&self) -> DockId {
-                DockId::new($text.into())
-            }
-
-            fn view<'a>(
-                &'a self,
-                _window_id: window::Id,
-                _services: &'a Services,
-            ) -> Element<'a, Self::Message, Theme, Renderer> {
-                text($text).into()
-            }
-
-            fn update(&mut self, _message: (), _services: &mut Services) -> Task<()> {
-                Task::none()
-            }
-        }
-
-        pub const $id: &'static str = $text;
-    };
-}
-
-test_dummy_dock!(FiltersDock, FILTERS_DOCK_ID, "Filters");
-
 pub const LAYER_DOCK_ID: &str = "Layers";
 
 pub struct LayersDock {
