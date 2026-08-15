@@ -37,26 +37,11 @@ use wgpu::{
 
 use crate::{
     asset::{FilterGroupId, FilterSlotRef},
-    instance::CompiledFilterPreset,
+    instance::{CompiledFilterPreset, EXTERNAL_VARIABLE_BASE_BINDING},
     render::pipeline::{FilterBoundsEvalPipeline, FilterMainPipeline},
 };
 pub mod graph;
 pub mod pipeline;
-
-pub(crate) const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
-
-fn rgba8_texel_type() -> TexelType {
-    TexelType {
-        format: TexelFormat::Rgba,
-        depth: TexelDepth::Bit8,
-    }
-}
-fn alpha8_texel_type() -> TexelType {
-    TexelType {
-        format: TexelFormat::Alpha,
-        depth: TexelDepth::Bit8,
-    }
-}
 
 #[derive(Clone)]
 pub struct FilterResources {
@@ -74,11 +59,8 @@ impl FilterResources {
         compiled: &CompiledFilterPreset,
         assets: &AssetRegistry,
     ) -> Result<Self> {
-        let target_layer_format = rgba8_texel_type();
-        let selection_layer_format = alpha8_texel_type();
-        // Share the exact storage with the FilterInstance so external variable
-        // edits are visible here; buffer/binding order therefore also matches
-        // the order used by `FilterInstance::compile`.
+        let target_layer_format = TexelType::RGBA8;
+        let selection_layer_format = TexelType::A8;
         let external_var_storage = compiled.external_vars.clone();
         let external_var_layouts = (EXTERNAL_VARIABLE_BASE_BINDING..)
             .take(external_var_storage.all().len())
@@ -113,8 +95,6 @@ impl FilterResources {
             })
             .collect();
 
-        // Texture atlas for the builtin TextureNode / GetPixelColorNode /
-        // TextureSizeNode nodes (same approach as the brush renderer).
         let used_textures = compiled.texture_usage.used_textures_ordered();
         let mut texture_atlas_builder = TextureAtlasBuilder::with_capacity(used_textures.len());
         let empty_texture = device.create_texture(&TextureDescriptor {
@@ -170,8 +150,6 @@ impl FilterResources {
         })
     }
 
-    /// Queue writes the current external variable values. This only needs
-    /// `&self`: the buffers themselves are immutable GPU handles.
     pub fn update_external_var_buffers(&self, queue: &Queue) {
         for (ext_var, var_buffer) in self
             .external_var_storage
@@ -209,11 +187,10 @@ pub struct FilterRenderer {
     resources: FilterResources,
     scan_pixels: ScanPixelsPipeline,
     chain: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
-    /// Per-group (input, output) wiring in topological order.
     wiring: Vec<(FilterSlotRef, FilterSlotRef)>,
-    /// Group ids in topological order (keys for intermediate buffers).
     group_ids: Vec<FilterGroupId>,
 }
+
 impl FilterRenderer {
     #[tracing::instrument(skip_all, name = "new_filter_renderer")]
     pub fn new(services: &Services, compiled: CompiledFilterPreset) -> Result<Self> {
@@ -262,9 +239,6 @@ impl FilterRenderer {
         canvas_id: CanvasId,
         layer_ids: Vec<LayerId>,
     ) -> Task<Result<HashMap<LayerId, DynamicLayerStorage>>> {
-        // The instance edits the shared external variable storage; re-upload the
-        // current values before this render round (same queue guarantees ordering
-        // ahead of the worker's submits).
         self.resources.update_external_var_buffers(&self.queue);
 
         let Some(canvas) = services.canvas(&canvas_id) else {
@@ -395,7 +369,7 @@ async fn run_filter_on_layer(
     if wiring.len() != n_groups || group_ids.len() != n_groups {
         return Err(anyhow!("Filter preset wiring/group id count mismatch"));
     }
-    // Index of the unique group whose output goes directly to the layer.
+
     let final_index = wiring
         .iter()
         .position(|(_, output)| *output == FilterSlotRef::Layer)
@@ -407,7 +381,7 @@ async fn run_filter_on_layer(
     for i in 0..n_groups {
         let (input_ref, _output_ref) = wiring[i];
         let group_uuid = group_ids[i].0;
-        // Input comes from the layer or from the producing group's intermediate buffer.
+
         let (input_binding, in_bounds) = match input_ref {
             FilterSlotRef::Layer => (target_layer.clone(), bounds0),
             FilterSlotRef::Group(producer) => {
@@ -472,15 +446,13 @@ async fn run_filter_on_layer(
         outputs.insert(group_uuid, output);
         out_bounds.insert(group_uuid, out_bounds_i);
 
-        // Release intermediates no longer consumed by any remaining group. The
-        // final group's output is always kept so it can be returned below.
-        let needed: HashSet<Uuid> = wiring[i + 1..]
+        let needed = wiring[i + 1..]
             .iter()
             .filter_map(|(input_ref, _)| match input_ref {
                 FilterSlotRef::Group(producer) => Some(*producer),
                 FilterSlotRef::Layer => None,
             })
-            .collect();
+            .collect::<HashSet<_>>();
         outputs.retain(|uuid, _| needed.contains(uuid) || *uuid == final_group_uuid);
         out_bounds.retain(|uuid, _| needed.contains(uuid));
     }

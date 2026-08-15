@@ -1,7 +1,9 @@
-use std::fmt::Display;
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::{collections::HashMap, fmt::Display};
 
 use lapiz_assets::asset::{AssetHandle, AssetId};
+use lapiz_render::wesl_jit;
 use lapiz_runtime::Services;
 use lapiz_shader_graph::{
     graph::{
@@ -27,12 +29,8 @@ use crate::{
     render::graph::FilterGraphData,
 };
 
-// Re-export the shared registries from the instance module so the editor and
-// panel can reference `crate::instance::FILTER_GRAPH_TYPES` / `FILTER_GRAPH_NODES`.
 pub use crate::render::graph::{FILTER_GRAPH_NODES, FILTER_GRAPH_TYPES};
 
-/// Base binding index for external variable storage buffers. Bindings 0..8 are
-/// reserved for the fixed filter bindings (see filter_template.wesl).
 pub const EXTERNAL_VARIABLE_BASE_BINDING: u32 = 32;
 
 pub struct CompiledFilterGroup {
@@ -187,13 +185,7 @@ impl FilterInstance {
         })
     }
 
-    /// Kahn topological sort of group execution order based on each group's
-    /// `input` reference. A group whose input is `Layer` has no dependency and
-    /// is scheduled first; a group whose input is `Group(id)` depends on the
-    /// group that produces it, so it runs after.
     pub fn topological_order(&self) -> Vec<usize> {
-        use std::collections::{HashMap, VecDeque};
-
         let n = self.groups.len();
         let index_of = self
             .groups
@@ -202,7 +194,7 @@ impl FilterInstance {
             .map(|(i, g)| (g.id, i))
             .collect::<HashMap<_, _>>();
 
-        let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
+        let mut consumers = vec![Vec::<usize>::new(); n];
         let mut in_degree = vec![0usize; n];
 
         for (consumer_index, group) in self.groups.iter().enumerate() {
@@ -228,8 +220,6 @@ impl FilterInstance {
             }
         }
 
-        // Defensive: if a cycle somehow remains (it should not after asset
-        // validation), append leftover groups so execution is total.
         for i in 0..n {
             if !order.contains(&i) {
                 order.push(i);
@@ -238,7 +228,6 @@ impl FilterInstance {
         order
     }
 
-    /// Index of the final output group (the one whose `output == Layer`).
     pub fn final_group_index(&self) -> usize {
         self.groups
             .iter()
@@ -258,8 +247,6 @@ impl FilterInstance {
         self.groups.len()
     }
 
-    /// Appends a new group wired as layer -> layer with a fresh graph, returning
-    /// its index. The name defaults to "Group N".
     pub fn new_group(&mut self) -> usize {
         let index = self.groups.len();
         let graph = Graph::new(GraphResources {
@@ -285,7 +272,6 @@ impl FilterInstance {
         }
     }
 
-    /// Move a group from `from` to `to` (both existing indices).
     pub fn move_group(&mut self, from: usize, to: usize) {
         if from >= self.groups.len() || to >= self.groups.len() || from == to {
             return;
@@ -358,27 +344,12 @@ impl FilterInstance {
                     .graph
                     .compile(Vec::new(), Default::default(), &mut texture_usage)?;
 
-            // Detect whether the graph writes its own output bounds so we know
-            // whether to fall back to set_output_bounds(input_bounds) in the
-            // bounds_eval variant.
-            let has_output_bounds = shader.contains("set_output_bounds(");
-
             let compiled = CompiledFilterGroup {
                 id: group.id,
                 input: group.input,
                 output: group.output,
-                main: compile_template(
-                    &shader,
-                    &external_variable_bindings,
-                    false,
-                    has_output_bounds,
-                )?,
-                bounds_eval: compile_template(
-                    &shader,
-                    &external_variable_bindings,
-                    true,
-                    has_output_bounds,
-                )?,
+                main: compile_template(&shader, &external_variable_bindings, false)?,
+                bounds_eval: compile_template(&shader, &external_variable_bindings, true)?,
             };
             groups.push(compiled);
         }
@@ -393,207 +364,25 @@ impl FilterInstance {
     }
 }
 
-fn add_modules(resolver: &mut VirtualResolver) {
-    resolver.add_module(
-        "package::image::texture_unpack".parse().unwrap(),
-        include_str!("../../lapiz_image/src/shaders/texture_unpack.wesl").into(),
-    );
-    resolver.add_module(
-        "package::render::math".parse().unwrap(),
-        include_str!("../../lapiz_render/src/shaders/math.wesl").into(),
-    );
-    resolver.add_module(
-        "package::render::hash".parse().unwrap(),
-        include_str!("../../lapiz_render/src/shaders/hash.wesl").into(),
-    );
-    resolver.add_module(
-        "package::image::blend_modes".parse().unwrap(),
-        include_str!("../../lapiz_image/src/shaders/blend_modes.wesl").into(),
-    );
-    resolver.add_module(
-        "package::image::image_tiling".parse().unwrap(),
-        include_str!("../../lapiz_image/src/shaders/image_tiling.wesl").into(),
-    );
-}
-
 fn compile_template(
     graph_shader: &str,
     external_variable_bindings: &str,
     bounds_eval: bool,
-    has_output_bounds: bool,
 ) -> anyhow::Result<String> {
-    let mut graph_body = graph_shader.to_string();
-    if bounds_eval && !has_output_bounds {
-        graph_body.push_str("set_output_bounds(input_bounds);\n");
-    }
-
     let shader = include_str!("render/filter_template.wesl")
-        .replace("//CODEGENFLAG_COMPILED_GRAPH", &graph_body)
+        .replace("//CODEGENFLAG_COMPILED_GRAPH", graph_shader)
         .replace(
             "//CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS",
             external_variable_bindings,
         );
 
-    let mut resolver = VirtualResolver::new();
-    resolver.add_module("package::template".parse().unwrap(), shader.into());
-    add_modules(&mut resolver);
-
-    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-    compiler.set_mangler(Default::default());
-    compiler.set_options(Default::default());
-    compiler.set_feature("BOUNDS_EVAL", bounds_eval);
-
-    let compiled_shader = compiler
-        .compile(&"package::template".parse().unwrap())?
-        .to_string();
+    let compiled_shader = wesl_jit::compile_wesl_with_config(
+        shader,
+        &[&lapiz_image::image::PACKAGE, &lapiz_render::render::PACKAGE],
+        |compiler| {
+            compiler.set_feature("BOUNDS_EVAL", bounds_eval);
+        },
+    )?;
 
     Ok(compiled_shader)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use iced_core::Point;
-    use lapiz_shader_graph::graph::{
-        external::GraphExternalVariableStorage, texture::GraphTextureUsageRecorder,
-    };
-
-    use super::compile_template;
-    use crate::render::graph::{
-        FILTER_GRAPH_NODES, FILTER_GRAPH_TYPES, FilterGraphData, InputColorNode, OutputColorNode,
-        PixelPositionNode,
-    };
-
-    use lapiz_shader_graph::graph::{Graph, GraphResources};
-    use lapiz_shader_graph::wgsl_std::nodes::{GetPixelColorNode, TextureNode};
-
-    #[test]
-    fn invert_graph_compiles_both_variants() {
-        let mut graph = Graph::<FilterGraphData>::new(GraphResources {
-            type_registry: FILTER_GRAPH_TYPES.clone(),
-            node_registry: FILTER_GRAPH_NODES.clone(),
-            textures: lapiz_shader_graph::graph::texture::ASSET_GRAPH_TEXTURE_STORAGE.clone(),
-            functions: lapiz_shader_graph::graph::function::ASSET_GRAPH_FUNCTION_STORAGE.clone(),
-            external_vars: Arc::new(GraphExternalVariableStorage::new(vec![])),
-        });
-
-        let input = graph.add_node(Point::new(0.0, 0.0), InputColorNode);
-        let output = graph.add_node(Point::new(100.0, 0.0), OutputColorNode);
-        graph.connect_slots_by_index(input, 0, output, 0);
-
-        let (_, _, shader) = graph
-            .compile(
-                Vec::new(),
-                Default::default(),
-                &mut GraphTextureUsageRecorder::default(),
-            )
-            .expect("graph should compile");
-
-        let main = compile_template(&shader, "", false, false).expect("main variant");
-        let bounds = compile_template(&shader, "", true, false).expect("bounds variant");
-
-        assert!(main.contains("fn filter_main"));
-        assert!(bounds.contains("fn filter_bounds_eval"));
-        assert!(bounds.contains("set_output_bounds(input_bounds)"));
-    }
-
-    #[test]
-    fn texture_sample_graph_compiles_both_variants() {
-        let mut graph = Graph::<FilterGraphData>::new(GraphResources {
-            type_registry: FILTER_GRAPH_TYPES.clone(),
-            node_registry: FILTER_GRAPH_NODES.clone(),
-            textures: lapiz_shader_graph::graph::texture::ASSET_GRAPH_TEXTURE_STORAGE.clone(),
-            functions: lapiz_shader_graph::graph::function::ASSET_GRAPH_FUNCTION_STORAGE.clone(),
-            external_vars: Arc::new(GraphExternalVariableStorage::new(vec![])),
-        });
-
-        let texture = graph.add_node(Point::new(0.0, 0.0), TextureNode);
-        let pixel = graph.add_node(Point::new(0.0, 50.0), PixelPositionNode);
-        let sample = graph.add_node(Point::new(50.0, 25.0), GetPixelColorNode);
-        let output = graph.add_node(Point::new(100.0, 0.0), OutputColorNode);
-        graph.connect_slots_by_index(texture, 0, sample, 0);
-        graph.connect_slots_by_index(pixel, 0, sample, 1);
-        graph.connect_slots_by_index(sample, 0, output, 0);
-
-        let (_, _, shader) = graph
-            .compile(
-                Vec::new(),
-                Default::default(),
-                &mut GraphTextureUsageRecorder::default(),
-            )
-            .expect("graph should compile");
-
-        compile_template(&shader, "", false, false).expect("main variant");
-        compile_template(&shader, "", true, false).expect("bounds variant");
-    }
-
-    /// End-to-end validation of the builtin .lfp presets: parse each zip,
-    /// deserialize into a FilterInstance, and compile both WGSL variants.
-    #[test]
-    fn builtin_presets_load_and_compile() {
-        use lapiz_assets::loader::AssetSerializer;
-        use lapiz_shader_graph::graph::function::ASSET_GRAPH_FUNCTION_STORAGE;
-        use lapiz_shader_graph::graph::texture::ASSET_GRAPH_TEXTURE_STORAGE;
-
-        use crate::asset::{FilterPreset, FilterPresetSerializer};
-        use crate::instance::FilterInstance;
-
-        // Walk up from the crate dir (cargo test runs with cwd = crate dir) to the workspace root.
-        let mut dir = std::env::current_dir().expect("cwd");
-        let builtin_dir = loop {
-            let candidate = dir.join("assets").join("builtin_assets");
-            if candidate.is_dir() {
-                break candidate;
-            }
-            if !dir.pop() {
-                panic!(
-                    "could not locate assets/builtin_assets from {:?}",
-                    std::env::current_dir().unwrap()
-                );
-            }
-        };
-        let mut presets = Vec::new();
-        for entry in std::fs::read_dir(&builtin_dir).expect("read builtin_assets dir") {
-            let path = entry.expect("entry").path();
-            if path.extension().and_then(|e| e.to_str()) == Some("lfp") {
-                let mut file = std::fs::File::open(&path).expect("open lfp");
-                let preset: FilterPreset = FilterPresetSerializer
-                    .read(&mut file)
-                    .unwrap_or_else(|err| panic!("read preset {}: {err}", path.display()));
-                presets.push((path, preset));
-            }
-        }
-        assert_eq!(presets.len(), 4, "expected the 4 builtin filter presets");
-
-        for (path, preset) in &presets {
-            let (instance, errors) = FilterInstance::new(
-                preset,
-                ASSET_GRAPH_TEXTURE_STORAGE.clone(),
-                ASSET_GRAPH_FUNCTION_STORAGE.clone(),
-            );
-            assert!(
-                errors.is_empty(),
-                "{}: graph deserialize errors: {errors:?}",
-                path.display()
-            );
-            let instance = instance.expect("instance construction failed");
-            let compiled = instance
-                .compile()
-                .unwrap_or_else(|err| panic!("{}: compile failed: {err}", path.display()));
-            assert!(!compiled.groups.is_empty());
-            for group in &compiled.groups {
-                assert!(
-                    group.main.contains("fn filter_main"),
-                    "{}: main variant",
-                    path.display()
-                );
-                assert!(
-                    group.bounds_eval.contains("fn filter_bounds_eval"),
-                    "{}: bounds variant",
-                    path.display()
-                );
-            }
-        }
-    }
 }

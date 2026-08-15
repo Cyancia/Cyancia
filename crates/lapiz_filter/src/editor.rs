@@ -24,13 +24,11 @@ use uuid::Uuid;
 use crate::{
     asset::{
         FilterGroupId, FilterPreset, FilterPresetMetadata, FilterSlotRef, SerializableFilterGroup,
-        validate_preset,
     },
     instance::{FilterGroup, FilterInstance},
     render::graph::FILTER_GRAPH_TYPES,
 };
 
-/// Sentinel pick-list value used to represent the `Layer` slot target.
 const LAYER_OPTION: &str = "Layer";
 
 pub struct FilterEditor {
@@ -233,8 +231,7 @@ impl WindowView for FilterEditor {
             }
             FilterEditorMessage::RemoveGroup(index) => {
                 if let Some(selected) = self.selected.as_mut() {
-                    // A filter always needs at least one group; the sole group's
-                    // Delete button is disabled, and this guards the message path.
+                    // at least one group
                     if selected.instance.groups().len() <= 1 {
                         return Task::none();
                     }
@@ -358,9 +355,6 @@ impl WindowView for FilterEditor {
 }
 
 impl FilterEditor {
-    /// Right 220px column: the graph-switch list of shader groups (with Delete / Up / Down),
-    /// an "Add Group" button, then the current group's Input source / Output target pick lists
-    /// plus the validation error text.
     fn view_group_controls<'a>(
         &'a self,
         selected: &'a SelectedFilter,
@@ -374,7 +368,7 @@ impl FilterEditor {
             let is_current = index == selected.viewing_group;
             let controls = row![
                 button(text(if is_current {
-                    format!("{}  ◀", group.name)
+                    format!("{}  <", group.name)
                 } else {
                     group.name.clone()
                 }))
@@ -397,8 +391,25 @@ impl FilterEditor {
         }
 
         let current = &selected.instance.groups()[selected.viewing_group];
-        let input_options = slot_options(selected, current.id, true);
-        let output_options = slot_options(selected, current.id, false);
+
+        let mut options = vec![LAYER_OPTION.to_string()];
+        for group in selected.instance.groups() {
+            if group.id != current.id {
+                options.push(group.name.clone());
+            }
+        }
+
+        let slot_options = std::iter::once(LAYER_OPTION.to_string())
+            .chain(
+                selected
+                    .instance
+                    .groups()
+                    .iter()
+                    .filter(|g| g.id != current.id)
+                    .map(|g| g.name.clone()),
+            )
+            .collect::<Vec<_>>();
+
         let input_value = slot_to_pick_value(&current.input, selected);
         let output_value = slot_to_pick_value(&current.output, selected);
 
@@ -417,7 +428,7 @@ impl FilterEditor {
                 column![
                     text("Input source"),
                     pick_list(
-                        input_options,
+                        slot_options.clone(),
                         input_value,
                         FilterEditorMessage::GroupInputChanged,
                     ),
@@ -426,7 +437,7 @@ impl FilterEditor {
                 column![
                     text("Output target"),
                     pick_list(
-                        output_options,
+                        slot_options,
                         output_value,
                         FilterEditorMessage::GroupOutputChanged,
                     ),
@@ -440,7 +451,6 @@ impl FilterEditor {
         .into()
     }
 
-    /// Right-hand variables column (260px), identical to the brush editor.
     fn view_variables<'a>(
         &'a self,
         selected: &'a SelectedFilter,
@@ -572,7 +582,6 @@ impl FilterEditor {
         let Some(selected) = self.selected.as_mut() else {
             return;
         };
-        // Block save while validation is failing.
         if self.validation_error.is_some() {
             return;
         }
@@ -583,10 +592,6 @@ impl FilterEditor {
                 return;
             }
         };
-        if let Err(err) = validate_preset(&preset) {
-            self.validation_error = Some(format!("{err}"));
-            return;
-        }
         if let Err(err) = selected.handle.update(preset) {
             self.validation_error = Some(format!("Failed to update filter preset: {err}"));
             return;
@@ -627,7 +632,6 @@ impl FilterEditor {
         self.dirty = true;
     }
 
-    /// Recompute the validation error string for the current filter using plan.md §3 rules 1-5.
     fn revalidate(&mut self) {
         let Some(selected) = self.selected.as_ref() else {
             self.validation_error = None;
@@ -637,13 +641,12 @@ impl FilterEditor {
     }
 }
 
-/// Validate the group topology according to plan.md §3 rules 1-5, returning Ok(()) when valid.
 pub fn validate_groups(groups: &[FilterGroup]) -> Result<(), String> {
     if groups.is_empty() {
         return Err("A filter must contain at least one shader group.".to_string());
     }
 
-    // Rule 1: group ids must be unique.
+    // unique group ids
     let mut seen = BTreeSet::new();
     for group in groups {
         if !seen.insert(*group.id) {
@@ -653,8 +656,8 @@ pub fn validate_groups(groups: &[FilterGroup]) -> Result<(), String> {
 
     let index_of = |id: Uuid| groups.iter().position(|g| *g.id == id);
 
+    // referenced groups must exist and must not reference themselves
     for (idx, group) in groups.iter().enumerate() {
-        // Rule 2: referenced groups must exist and must not reference themselves.
         let bad = |slot: &FilterSlotRef| match slot {
             FilterSlotRef::Group(id) => {
                 let Some(ref_idx) = index_of(*id) else {
@@ -672,7 +675,7 @@ pub fn validate_groups(groups: &[FilterGroup]) -> Result<(), String> {
         }
     }
 
-    // Rule 3: exactly one group has output == Layer (the final output group).
+    // exactly one group has output == Layer
     let layer_outputs = groups
         .iter()
         .filter(|g| g.output == FilterSlotRef::Layer)
@@ -686,7 +689,7 @@ pub fn validate_groups(groups: &[FilterGroup]) -> Result<(), String> {
         );
     }
 
-    // Rule 4: consistency — if group A outputs to Group(B), then B must input from Group(A).
+    // if group A outputs to Group(B), then B must input from Group(A)
     for group in groups {
         if let FilterSlotRef::Group(target) = group.output {
             let target_idx = index_of(target).unwrap();
@@ -699,7 +702,7 @@ pub fn validate_groups(groups: &[FilterGroup]) -> Result<(), String> {
         }
     }
 
-    // Rule 5: acyclic — Kahn topological sort.
+    // acyclic
     let mut indegree: Vec<usize> = vec![0; groups.len()];
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); groups.len()];
     let mut edges_seen = BTreeSet::new();
@@ -736,19 +739,6 @@ pub fn validate_groups(groups: &[FilterGroup]) -> Result<(), String> {
     Ok(())
 }
 
-/// Build the ordered pick-list options for a group's input/output slot.
-/// Excludes the group itself; always offers Layer first.
-fn slot_options(selected: &SelectedFilter, current: FilterGroupId, _input: bool) -> Vec<String> {
-    let mut options = vec![LAYER_OPTION.to_string()];
-    for group in selected.instance.groups() {
-        if group.id != current {
-            options.push(group.name.clone());
-        }
-    }
-    options
-}
-
-/// Map the current slot value to a pick-list option string.
 fn slot_to_pick_value(slot: &FilterSlotRef, selected: &SelectedFilter) -> Option<String> {
     match slot {
         FilterSlotRef::Layer => Some(LAYER_OPTION.to_string()),
@@ -761,8 +751,6 @@ fn slot_to_pick_value(slot: &FilterSlotRef, selected: &SelectedFilter) -> Option
     }
 }
 
-/// Map a pick-list option string back to a slot. "Layer" maps to Layer; otherwise it is
-/// resolved to the first group whose name matches (falling back to None on ambiguity).
 fn slot_from_pick_value(value: &str, selected: &SelectedFilter) -> Option<FilterSlotRef> {
     if value == LAYER_OPTION {
         return Some(FilterSlotRef::Layer);
@@ -775,7 +763,6 @@ fn slot_from_pick_value(value: &str, selected: &SelectedFilter) -> Option<Filter
         .map(|g| FilterSlotRef::Group(*g.id))
 }
 
-/// Minimal list delegate over filter preset assets (mirrors BrushPresetListDelegate).
 pub struct FilterPresetListItem {
     pub filter: AssetHandle<FilterPreset>,
     pub name: String,

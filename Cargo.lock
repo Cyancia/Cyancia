@@ -3295,6 +3295,7 @@ dependencies = [
  "lapiz_widgets",
  "log",
  "parking_lot",
+ "parse-display",
  "ringbuffer",
  "serde",
  "thiserror 2.0.19",

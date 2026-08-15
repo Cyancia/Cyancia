@@ -15,20 +15,7 @@ use wgpu::{
 
 use crate::render::FilterResources;
 
-fn tile_info_storage_layout_entry(binding: u32) -> BindGroupLayoutEntry {
-    binding_types::storage_buffer_read_only::<GpuTileInfo>(false)
-        .build(binding, ShaderStages::COMPUTE)
-}
-
-fn output_texture_layout_entry(binding: u32, format: wgpu::TextureFormat) -> BindGroupLayoutEntry {
-    binding_types::texture_storage_2d_array(format, StorageTextureAccess::WriteOnly)
-        .build(binding, ShaderStages::COMPUTE)
-}
-
-/// Bindings shared by main and bounds-eval:
-/// 0 input texture, 1 input tile info, 4 selection texture,
-/// 5 selection tile info, 6 has_selection flag, 7 input bounds rect.
-fn filter_common_layout_entries(resources: &FilterResources) -> Vec<BindGroupLayoutEntry> {
+fn filter_common_layout_entries(resources: &FilterResources) -> DynamicBindGroupLayoutEntries {
     DynamicBindGroupLayoutEntries::new_with_indices(
         ShaderStages::COMPUTE,
         (
@@ -63,10 +50,8 @@ fn filter_common_layout_entries(resources: &FilterResources) -> Vec<BindGroupLay
             (12, binding_types::storage_buffer_read_only::<URect>(false)),
         ),
     )
-    .to_vec()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn filter_common_entries<'a>(
     resources: &'a FilterResources,
     input: &'a LayerBinding,
@@ -92,8 +77,6 @@ fn filter_common_entries<'a>(
     entries
 }
 
-/// Computed main pipeline. Reads an input buffer at bindings 0/1, the original
-/// layer at bindings 9/10 and writes per-out-tile pixels at bindings 2/3.
 #[derive(Clone)]
 pub struct FilterMainPipeline {
     layout: BindGroupLayout,
@@ -106,20 +89,32 @@ impl FilterMainPipeline {
         resources: &FilterResources,
         compiled_shader: Cow<'_, str>,
     ) -> Self {
-        let mut layout_entries = filter_common_layout_entries(resources);
-        layout_entries.push(output_texture_layout_entry(
-            2,
-            resources.target_layer_format.wgpu_format(),
+        let layout_entries = filter_common_layout_entries(resources).extend_with_indices((
+            (
+                2,
+                binding_types::texture_storage_2d_array(
+                    resources.target_layer_format.wgpu_format(),
+                    StorageTextureAccess::WriteOnly,
+                ),
+            ),
+            (
+                3,
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            ),
+            (
+                9,
+                binding_types::texture_storage_2d_array(
+                    resources.target_layer_format.wgpu_format(),
+                    StorageTextureAccess::ReadOnly,
+                ),
+            ),
+            (
+                10,
+                binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+            ),
         ));
-        layout_entries.push(tile_info_storage_layout_entry(3));
-        layout_entries.push(
-            binding_types::texture_storage_2d_array(
-                resources.target_layer_format.wgpu_format(),
-                StorageTextureAccess::ReadOnly,
-            )
-            .build(9, ShaderStages::COMPUTE),
-        );
-        layout_entries.push(tile_info_storage_layout_entry(10));
+
+        let mut layout_entries = layout_entries.to_vec();
         layout_entries.extend(resources.external_var_layouts.clone());
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("filter main layout"),
@@ -201,9 +196,6 @@ impl FilterMainPipeline {
     }
 }
 
-/// Computes the output pixel rectangle of a group given its input rectangle.
-/// Reads the input rect at binding 7, runs the group graph, writes the output
-/// bounds into the buffer at binding 8, read back asynchronously by the caller.
 #[derive(Clone)]
 pub struct FilterBoundsEvalPipeline {
     layout: BindGroupLayout,
@@ -216,9 +208,9 @@ impl FilterBoundsEvalPipeline {
         resources: &FilterResources,
         compiled_shader: Cow<'_, str>,
     ) -> Self {
-        let mut layout_entries = filter_common_layout_entries(resources);
-        layout_entries
-            .push(binding_types::storage_buffer::<URect>(false).build(8, ShaderStages::COMPUTE));
+        let layout_entries = filter_common_layout_entries(resources)
+            .extend_with_indices(((8, binding_types::storage_buffer::<URect>(false)),));
+        let mut layout_entries = layout_entries.to_vec();
         layout_entries.extend(resources.external_var_layouts.clone());
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {

@@ -36,6 +36,7 @@ lapiz_utils.workspace = true
 lapiz_widgets.workspace = true
 log.workspace = true
 parking_lot.workspace = true
+parse-display.workspace = true
 ringbuffer.workspace = true
 serde.workspace = true
 thiserror.workspace = true

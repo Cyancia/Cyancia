@@ -1,9 +1,7 @@
-// Filter panel: a fixed-size sub-window that lets the user pick a filter preset,
-// tweak its external variables with live preview, then confirm or cancel.
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
-use iced_core::{Alignment, Element, Length, Size, Theme, keyboard, window};
+use iced_core::{Alignment, Length, Size, Theme, keyboard, window};
 use iced_futures::Subscription;
 use iced_runtime::Task;
 use iced_widget::{Space, button, column, container, row, scrollable, text};
@@ -45,8 +43,6 @@ pub struct FilterPanel {
     results: HashMap<LayerId, DynamicLayerStorage>,
     preview_installed: bool,
     target_layers: Vec<LayerId>,
-    /// Canvas the current preview belongs to. Results must never be applied to
-    /// or broadcast for a different (e.g. newly selected) canvas.
     canvas_id: Option<CanvasId>,
 }
 
@@ -61,10 +57,6 @@ pub enum FilterPanelMessage {
     WindowClosed,
 }
 
-// iced requires `Message: Clone` because widgets clone the message they dispatch.
-// The `RenderFinished` variant is never dispatched through a widget (it is only
-// produced inside renderer task closures and moved straight to `update`), so it
-// is legitimately never cloned; any accidental clone is a programmer error.
 impl Clone for FilterPanelMessage {
     fn clone(&self) -> Self {
         match self {
@@ -77,6 +69,7 @@ impl Clone for FilterPanelMessage {
             FilterPanelMessage::Confirm => FilterPanelMessage::Confirm,
             FilterPanelMessage::Cancel => FilterPanelMessage::Cancel,
             FilterPanelMessage::RenderFinished(_, _) => {
+                // TODO DynamicLayerStorage is not clonable, but can we avoid this clone impl in the future?
                 unreachable!("FilterPanel RenderFinished is never cloned")
             }
             FilterPanelMessage::WindowClosed => FilterPanelMessage::WindowClosed,
@@ -84,7 +77,7 @@ impl Clone for FilterPanelMessage {
     }
 }
 
-type ElementW<'a> = Element<'a, FilterPanelMessage, Theme, iced_wgpu::Renderer>;
+type Element<'a> = iced_core::Element<'a, FilterPanelMessage, Theme, iced_wgpu::Renderer>;
 
 impl WindowView for FilterPanel {
     type Message = FilterPanelMessage;
@@ -128,8 +121,7 @@ impl WindowView for FilterPanel {
         )
     }
 
-    #[allow(refining_impl_trait_reachable)]
-    fn view<'a>(&'a self, _: window::Id, _: &'a Services) -> ElementW<'a> {
+    fn view<'a>(&'a self, _: window::Id, _: &'a Services) -> impl Into<Element<'a>> {
         let filter_list = self
             .filters
             .iter()
@@ -214,7 +206,6 @@ impl WindowView for FilterPanel {
         ]
         .width(Length::Fill)
         .height(Length::Fill)
-        .into()
     }
 
     fn update(
@@ -558,7 +549,6 @@ fn resolve_target_layers(canvas: &CCanvas) -> Vec<LayerId> {
             continue;
         };
         let props = node.properties();
-        // Skip group / non-pixel layers: only pixel layers carry a texel type.
         let Some(texel) = props.get_texel_type() else {
             log::warn!("Filter: skipping non-pixel layer {layer_id}");
             continue;

@@ -23,9 +23,6 @@ use lapiz_shader_graph::{
 use lapiz_utils::random_oklch;
 use serde::{Deserialize, Serialize};
 
-/// Graph data for a single filter shader group. Mirrors the plan's structure:
-/// the shared graph resources (type / node registries, textures, functions,
-/// external variables) are carried directly on the data.
 #[derive(Default, Clone)]
 pub struct FilterGraphData {
     pub resources: GraphResources<FilterGraphData>,
@@ -33,7 +30,6 @@ pub struct FilterGraphData {
 
 impl GraphData for FilterGraphData {}
 
-/// Current pixel position in floating-point pixel coordinates.
 #[derive(Default, Clone)]
 pub struct PixelPositionNode;
 
@@ -69,7 +65,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for PixelPositionNode {
     }
 }
 
-/// Color at the current pixel's position in the input (layer or previous group buffer).
 #[derive(Default, Clone)]
 pub struct InputColorNode;
 
@@ -108,7 +103,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for InputColorNode {
     }
 }
 
-/// Sample the input color at an arbitrary position.
 #[derive(Default, Clone)]
 pub struct SampleInputColorNode;
 
@@ -149,7 +143,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SampleInputColorNode {
     }
 }
 
-/// The pixel rectangle of the current input, used by bounds evaluation.
 #[derive(Default, Clone)]
 pub struct InputBoundsNode;
 
@@ -185,7 +178,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for InputBoundsNode {
     }
 }
 
-/// Writes the computed color to the output buffer for the current pixel.
 #[derive(Default, Clone)]
 pub struct OutputColorNode;
 
@@ -225,7 +217,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputColorNode {
     }
 }
 
-/// Sets the output pixel bounds (only takes effect during bounds evaluation).
 #[derive(Default, Clone)]
 pub struct OutputBoundsNode;
 
@@ -266,8 +257,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for OutputBoundsNode {
     }
 }
 
-/// Value of the canvas selection mask at an arbitrary pixel position.
-/// Mirrors `lapiz_brush::render::graph::SelectionMaskNode`.
 #[derive(Default, Clone)]
 pub struct SelectionMaskNode;
 
@@ -307,8 +296,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for SelectionMaskNode {
     }
 }
 
-/// Color of the original layer at an arbitrary pixel position.
-/// Mirrors `lapiz_brush::render::graph::LayerPixelColorNode`.
 #[derive(Default, Clone)]
 pub struct LayerPixelColorNode;
 
@@ -348,9 +335,6 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for LayerPixelColorNode {
     }
 }
 
-/// Blends a color over the original layer at the current pixel with the given
-/// opacity. Mirrors `lapiz_brush::render::graph::BlendWithLayerNode`; this is
-/// the replacement for the removed fixed `filter_blend.wesl` pass.
 #[derive(Default, Clone)]
 pub struct BlendWithLayerNode;
 
@@ -445,8 +429,6 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
     }
 }
 
-/// Blends a color over the current group input at the current pixel with the
-/// given opacity. Mirrors `lapiz_brush::render::graph::BlendWithInputNode`.
 #[derive(Default, Clone)]
 pub struct BlendWithInputNode;
 

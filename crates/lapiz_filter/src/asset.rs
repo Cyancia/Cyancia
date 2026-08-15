@@ -7,12 +7,13 @@ use anyhow::anyhow;
 use lapiz_assets::{asset::Asset, loader::AssetSerializer};
 use lapiz_shader_graph::save::{SerializableExternalVariable, SerializableGraph};
 use lapiz_utils::wrapper;
+use parse_display::Display;
 use serde::{Deserialize, Serialize, Serializer, de::Deserializer};
 use uuid::Uuid;
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
-/// A serializable filter preset: an ordered list of shader groups forming a
-/// directed acyclic chain plus a shared set of external variables.
+use crate::instance::FilterGroup;
+
 pub struct FilterPreset {
     pub metadata: FilterPresetMetadata,
     /// Ordered; serves as the execution reference order.
@@ -25,8 +26,6 @@ pub struct FilterPresetMetadata {
     pub name: String,
 }
 
-/// One shader group within a filter preset. The graph body is not part of the
-/// header; it is stored as a separate `<group_id>.csg` file in the .lfp zip.
 pub struct SerializableFilterGroup {
     pub id: FilterGroupId,
     pub name: String,
@@ -36,7 +35,7 @@ pub struct SerializableFilterGroup {
 }
 
 wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
     pub FilterGroupId : Uuid
 }
 
@@ -46,14 +45,6 @@ impl FilterGroupId {
     }
 }
 
-impl std::fmt::Display for FilterGroupId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// Where a shader group reads from / writes to. Serde representation is the
-/// string `"layer"` or `"group:<uuid>"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FilterSlotRef {
     Layer,
@@ -96,7 +87,6 @@ impl Asset for FilterPreset {
     const TYPE_NAME: &'static str = "filter_preset";
 }
 
-/// Header document stored in `filter.toml` inside the .lfp zip.
 #[derive(Serialize, Deserialize)]
 struct FilterToml {
     name: String,
@@ -204,9 +194,6 @@ impl AssetSerializer for FilterPresetSerializer {
             external_vars,
         };
 
-        validate_preset(&preset)
-            .map_err(|e| FilterPresetSerializerError::Invalid(e.to_string()))?;
-
         Ok(preset)
     }
 
@@ -215,8 +202,6 @@ impl AssetSerializer for FilterPresetSerializer {
         asset: &Self::Asset,
         writer: &mut dyn std::io::Write,
     ) -> Result<(), Self::Error> {
-        validate_preset(asset).map_err(|e| FilterPresetSerializerError::Invalid(e.to_string()))?;
-
         let mut buf = Vec::new();
         let mut zip = ZipWriter::new(Cursor::new(&mut buf));
 
@@ -255,127 +240,4 @@ impl AssetSerializer for FilterPresetSerializer {
 
         Ok(())
     }
-}
-
-/// Validates a filter preset against the structural rules in the design doc:
-/// 1. At least one group; group ids are unique.
-/// 2. Every `Group(x)` input/output reference exists and is not self.
-/// 3. Exactly one group outputs to Layer.
-/// 4. If group A outputs to Group(B), then B's input must be Group(A).
-/// 5. The group connection graph is acyclic (Kahn topological sort).
-pub fn validate_preset(preset: &FilterPreset) -> anyhow::Result<()> {
-    if preset.groups.is_empty() {
-        return Err(anyhow!("Filter preset must contain at least one group"));
-    }
-
-    // Rule 1: unique ids.
-    let mut seen = HashSet::new();
-    for group in &preset.groups {
-        if !seen.insert(group.id) {
-            return Err(anyhow!("Duplicate group id: {}", group.id.0));
-        }
-    }
-    let ids = seen;
-
-    // Rule 3: exactly one group outputs to Layer.
-    let layer_outputs = preset
-        .groups
-        .iter()
-        .filter(|g| g.output == FilterSlotRef::Layer)
-        .count();
-    if layer_outputs != 1 {
-        return Err(anyhow!(
-            "Exactly one group must output to Layer; found {layer_outputs}"
-        ));
-    }
-
-    // Rule 2: input/output Group references exist and are not self.
-    for group in &preset.groups {
-        if let FilterSlotRef::Group(target) = group.input {
-            let target = FilterGroupId::new(target);
-            if !ids.contains(&target) {
-                return Err(anyhow!(
-                    "Group {} references nonexistent input group {}",
-                    group.id.0,
-                    target.0
-                ));
-            }
-            if target == group.id {
-                return Err(anyhow!(
-                    "Group {} references itself as its input",
-                    group.id.0
-                ));
-            }
-        }
-        if let FilterSlotRef::Group(target) = group.output {
-            let target = FilterGroupId::new(target);
-            if !ids.contains(&target) {
-                return Err(anyhow!(
-                    "Group {} references nonexistent output group {}",
-                    group.id.0,
-                    target.0
-                ));
-            }
-            if target == group.id {
-                return Err(anyhow!(
-                    "Group {} references itself as its output",
-                    group.id.0
-                ));
-            }
-        }
-    }
-
-    // Rule 4: if A.output == Group(B), then B.input == Group(A).
-    for group in &preset.groups {
-        if let FilterSlotRef::Group(target) = group.output {
-            let consumer = preset
-                .groups
-                .iter()
-                .find(|c| c.id.0 == target)
-                .expect("referenced group exists (checked above)");
-            if consumer.input != FilterSlotRef::Group(group.id.0) {
-                return Err(anyhow!(
-                    "Group {} outputs to {} but that group's input is not Group({})",
-                    group.id.0,
-                    target,
-                    group.id.0
-                ));
-            }
-        }
-    }
-
-    // Rule 5: acyclicity via Kahn topological sort.
-    let mut indegree: HashMap<FilterGroupId, usize> =
-        preset.groups.iter().map(|g| (g.id, 0)).collect();
-    let mut edges: HashMap<FilterGroupId, Vec<FilterGroupId>> = HashMap::new();
-    for group in &preset.groups {
-        if let FilterSlotRef::Group(target) = group.output {
-            let target = FilterGroupId::new(target);
-            edges.entry(group.id).or_default().push(target);
-            *indegree.entry(target).or_insert(0) += 1;
-        }
-    }
-    let mut queue: VecDeque<FilterGroupId> = indegree
-        .iter()
-        .filter(|(_, d)| **d == 0)
-        .map(|(id, _)| *id)
-        .collect();
-    let mut order = Vec::with_capacity(preset.groups.len());
-    while let Some(id) = queue.pop_front() {
-        order.push(id);
-        if let Some(nexts) = edges.get(&id) {
-            for next in nexts {
-                let d = indegree.get_mut(next).expect("target in indegree map");
-                *d -= 1;
-                if *d == 0 {
-                    queue.push_back(*next);
-                }
-            }
-        }
-    }
-    if order.len() != preset.groups.len() {
-        return Err(anyhow!("Filter group graph contains a cycle"));
-    }
-
-    Ok(())
 }
