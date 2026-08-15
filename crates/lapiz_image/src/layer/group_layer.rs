@@ -7,8 +7,8 @@ use lapiz_render::{
     bind_group_entries::BindGroupEntries,
     bind_group_layout_entries::{BindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
+    wesl_jit,
 };
-use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,
     ComputePass, ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor,
@@ -91,40 +91,19 @@ impl Layer for GroupLayer {
         let blend_func = blend_funcs
             .get(blend_func_id)
             .unwrap_or_else(|| panic!("Blend function '{}' not found", blend_func_id));
-        let shader = include_str!("../blend_layers.wesl").replace(
-            "//CODEGEN_BLEND_FUNC",
-            &blend_func.wgsl_function_call("src", "dst"),
-        );
 
-        let mut resolver = VirtualResolver::new();
-        resolver.add_module("package::template".parse().unwrap(), shader.into());
-        resolver.add_module(
-            "package::image::blend_modes".parse().unwrap(),
-            include_str!("../shaders/blend_modes.wesl").into(),
-        );
-        resolver.add_module(
-            "package::image::image_tilling".parse().unwrap(),
-            include_str!("../shaders/image_tiling.wesl").into(),
-        );
-        resolver.add_module(
-            "package::image::texture_unpack".parse().unwrap(),
-            include_str!("../shaders/texture_unpack.wesl").into(),
-        );
-
-        let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-        compiler.set_mangler(Default::default());
-        compiler.set_options(Default::default());
-        let compiled_shader = match compiler.compile(&"package::template".parse().unwrap()) {
-            Ok(s) => s.to_string(),
-            Err(e) => {
-                // TODO: Don't panic.
-                panic!("Failed to compile blend shader: {}", e);
-            }
-        };
+        let shader = wesl_jit::compile_wesl(
+            include_str!("../blend_layers.wesl").replace(
+                "//CODEGEN_BLEND_FUNC",
+                &blend_func.wgsl_function_call("src", "dst"),
+            ),
+            &[&crate::image::PACKAGE],
+        )
+        .unwrap();
 
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
             label: "layer blend shader".into(),
-            source: ShaderSource::Wgsl(compiled_shader.into()),
+            source: ShaderSource::Wgsl(shader.into()),
         });
 
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {

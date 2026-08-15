@@ -156,10 +156,10 @@ impl BlendFunction for BlendMode {
         ALL_IDS.get(*self as usize).unwrap().clone()
     }
 
+    /// Notice, to make the function call valid, `lapiz_image` must be added as a dependency.
     fn wgsl_function_call(&self, src_ident: &str, dst_ident: &str) -> String {
         format!(
-            // FIXME: This isn't working if image module is added as a whole.
-            "return package::image::blend_modes::{}({}, {});",
+            "return image::blend_modes::{}({}, {});",
             self.shader_func(),
             src_ident,
             dst_ident

@@ -1,5 +1,5 @@
-import package::image::image_tilling::{TileInfo, TILE_SIZE};
-import package::image::texture_unpack::{pack_rgba8_texel, unpack_rgba8_texel};
+import image::image_tiling::{TileInfo, TILE_SIZE};
+import image::texture_unpack::{pack_rgba8_texel, unpack_rgba8_texel};
 
 struct BlendLayerParams {
     src_opacity: f32,

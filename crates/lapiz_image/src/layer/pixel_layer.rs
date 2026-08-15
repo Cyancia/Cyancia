@@ -9,9 +9,9 @@ use lapiz_render::{
         BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
     },
     buffer::DynamicBuffer,
+    wesl_jit,
 };
 use moxcms::ColorProfile;
-use wesl::{VirtualResolver, Wesl};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupLayoutDescriptor, BufferUsages, ComputePass,
     ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
@@ -83,41 +83,20 @@ impl Layer for PixelLayer {
             &blend_func.wgsl_function_call("src", "dst"),
         );
 
-        let mut resolver = VirtualResolver::new();
-        resolver.add_module("package::template".parse().unwrap(), shader.into());
-        resolver.add_module(
-            "package::image::blend_modes".parse().unwrap(),
-            include_str!("../shaders/blend_modes.wesl").into(),
-        );
-        resolver.add_module(
-            "package::image::image_tilling".parse().unwrap(),
-            include_str!("../shaders/image_tiling.wesl").into(),
-        );
-        resolver.add_module(
-            "package::image::texture_unpack".parse().unwrap(),
-            include_str!("../shaders/texture_unpack.wesl").into(),
-        );
+        let without_overrider_shader = wesl_jit::compile_wesl_with_config(
+            shader.clone(),
+            &[&crate::image::PACKAGE],
+            |compiler| {
+                compiler.set_feature("OVERRIDER", false);
+            },
+        )
+        .unwrap();
 
-        let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-        compiler.set_mangler(Default::default());
-        compiler.set_options(Default::default());
-        let without_overrider_shader = match compiler.compile(&"package::template".parse().unwrap())
-        {
-            Ok(s) => s.to_string(),
-            Err(e) => {
-                // TODO: Don't panic.
-                panic!("Failed to compile blend shader: {}", e);
-            }
-        };
-
-        compiler.set_feature("OVERRIDER", true);
-        let with_overrider_shader = match compiler.compile(&"package::template".parse().unwrap()) {
-            Ok(s) => s.to_string(),
-            Err(e) => {
-                // TODO: Don't panic.
-                panic!("Failed to compile blend shader: {}", e);
-            }
-        };
+        let with_overrider_shader =
+            wesl_jit::compile_wesl_with_config(shader, &[&crate::image::PACKAGE], |compiler| {
+                compiler.set_feature("OVERRIDER", true);
+            })
+            .unwrap();
 
         let with_overrider_shader_module = device.create_shader_module(ShaderModuleDescriptor {
             label: "pixel layer blend shader".into(),
