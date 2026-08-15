@@ -1,9 +1,8 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::HashMap,
     io::{Cursor, Read, Write},
 };
 
-use anyhow::anyhow;
 use lapiz_assets::{asset::Asset, loader::AssetSerializer};
 use lapiz_shader_graph::save::{SerializableExternalVariable, SerializableGraph};
 use lapiz_utils::wrapper;
@@ -12,7 +11,6 @@ use serde::{Deserialize, Serialize, Serializer, de::Deserializer};
 use uuid::Uuid;
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
-use crate::instance::FilterGroup;
 
 pub struct FilterPreset {
     pub metadata: FilterPresetMetadata,

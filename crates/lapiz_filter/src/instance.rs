@@ -20,7 +20,6 @@ use lapiz_shader_graph::{
     },
     save::{GraphDeserializeError, SerializableExternalVariable},
 };
-use wesl::{VirtualResolver, Wesl};
 
 use crate::{
     asset::{

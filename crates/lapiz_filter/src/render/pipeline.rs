@@ -7,8 +7,7 @@ use lapiz_render::{
     bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
 };
 use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, Buffer, ComputePass, ComputePipeline,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindingResource, Buffer, ComputePass, ComputePipeline,
     ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, ShaderModuleDescriptor,
     ShaderSource, ShaderStages, StorageTextureAccess, TextureSampleType,
 };

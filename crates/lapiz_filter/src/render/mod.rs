@@ -8,14 +8,13 @@ use lapiz_canvas::{CanvasAppExt, CanvasId};
 use lapiz_image::{
     layer::LayerId,
     scan_pixels::ScanPixelsPipeline,
-    texel::{TexelDepth, TexelFormat, TexelType},
+    texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, LayerBinding, TileStorageAppExt},
 };
 use lapiz_render::{
     buffer::DynamicBuffer,
     readback::{
         create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async,
-        readback_buffer_raw_on_submit_async,
     },
     render_context::RenderContextAppExt,
     texture::GpuImage,
