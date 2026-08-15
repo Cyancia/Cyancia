@@ -2247,8 +2247,8 @@ impl<Data: GraphData> GraphNode<Data> for CurveNode {
 
         Ok(format!(
             "
-let {} = package::render::math::sample_cubic_curve(
-    package::render::math::CubicCurve(
+let {} = render::math::sample_cubic_curve(
+    render::math::CubicCurve(
         array<vec2f, {}>({}),
         array<f32, {}>({}),
         {}
@@ -2310,7 +2310,7 @@ impl<Data: GraphData> StatelessCommonGraphNode<Data> for RandomNode {
         mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         Ok(format!(
-            "let {} = package::render::hash::hash11({});\nlet {} = package::render::hash::hash21({});\n",
+            "let {} = render::hash::hash11({});\nlet {} = render::hash::hash21({});\n",
             ctx.get_output(0)?,
             ctx.get_input(0)?,
             ctx.get_output(1)?,

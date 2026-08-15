@@ -856,7 +856,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendColorNode {
         let dst = ctx.get_input(1)?;
         let output = ctx.get_output(0)?;
         Ok(format!(
-            "let {} = package::image::blend_modes::{}({}, {});\n",
+            "let {} = image::blend_modes::{}({}, {});\n",
             output,
             state.blend_mode.shader_func(),
             src,
@@ -1035,7 +1035,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithInputNode {
         let color = ctx.get_input(0)?;
         let opacity = ctx.get_input(1)?;
         Ok(format!(
-            "let {} = package::image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), current_input_color(pixel_pos));\n",
+            "let {} = image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), current_input_color(pixel_pos));\n",
             ctx.get_output(0)?,
             state.blend_mode.shader_func()
         ))
@@ -1122,7 +1122,7 @@ impl<Data: GraphData> GraphNode<Data> for BlendWithLayerNode {
         let color = ctx.get_input(0)?;
         let opacity = ctx.get_input(1)?;
         Ok(format!(
-            "let {} = package::image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), target_layer_color(pixel_pos));\n",
+            "let {} = image::blend_modes::{}(vec4f({color}.rgb, {color}.a * {opacity}), target_layer_color(pixel_pos));\n",
             ctx.get_output(0)?,
             state.blend_mode.shader_func()
         ))

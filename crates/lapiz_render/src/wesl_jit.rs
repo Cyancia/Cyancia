@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
 use anyhow::Result;
 use wesl::{CodegenModule, CodegenPkg, ModulePath, VirtualResolver, Wesl, syntax::PathOrigin};
@@ -7,9 +7,10 @@ pub fn compile_wesl(shader: String, dependencies: &[&CodegenPkg]) -> Result<Stri
     compile_wesl_with_config(shader, dependencies, |_| {})
 }
 
-pub fn compile_wesl_with_config(
+pub fn compile_wesl_with_config_and_include<'a>(
     shader: String,
     dependencies: &[&CodegenPkg],
+    include: impl FnOnce(&mut VirtualResolver),
     config: impl Fn(&mut Wesl<VirtualResolver>),
 ) -> Result<String> {
     let mut resolver = VirtualResolver::new();
@@ -24,6 +25,8 @@ pub fn compile_wesl_with_config(
         );
     }
 
+    include(&mut resolver);
+
     let mut wesl = Wesl::new_barebones().set_custom_resolver(resolver);
     wesl.set_mangler(Default::default());
     wesl.set_options(Default::default());
@@ -31,6 +34,14 @@ pub fn compile_wesl_with_config(
     let shader = wesl.compile(&main_path)?;
 
     Ok(shader.to_string())
+}
+
+pub fn compile_wesl_with_config(
+    shader: String,
+    dependencies: &[&CodegenPkg],
+    config: impl Fn(&mut Wesl<VirtualResolver>),
+) -> Result<String> {
+    compile_wesl_with_config_and_include(shader, dependencies, |_| {}, config)
 }
 
 fn add_module(resolver: &mut VirtualResolver, module: &CodegenModule, base_path: ModulePath) {

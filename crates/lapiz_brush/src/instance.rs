@@ -4,6 +4,7 @@ use std::{
 };
 
 use lapiz_assets::asset::{AssetHandle, AssetId};
+use lapiz_render::wesl_jit;
 use lapiz_shader_graph::{
     graph::{
         Graph, GraphResources,
@@ -20,7 +21,6 @@ use lapiz_shader_graph::{
     save::{GraphDeserializeError, SerializableExternalVariable},
     wgsl_std::{builtin_nodes, builtin_types, nodes::TimeNode},
 };
-use wesl::{VirtualResolver, Wesl};
 
 use crate::{
     asset::{BrushPreset, BrushPresetMetadata},
@@ -369,33 +369,6 @@ impl BrushPresetInstance {
     }
 }
 
-fn add_modules(resolver: &mut VirtualResolver) {
-    resolver.add_module(
-        "package::image::texture_unpack".parse().unwrap(),
-        include_str!("../../lapiz_image/src/shaders/texture_unpack.wesl").into(),
-    );
-    resolver.add_module(
-        "package::brush::brush_types".parse().unwrap(),
-        include_str!("render/brush_types.wesl").into(),
-    );
-    resolver.add_module(
-        "package::render::math".parse().unwrap(),
-        include_str!("../../lapiz_render/src/shaders/math.wesl").into(),
-    );
-    resolver.add_module(
-        "package::render::hash".parse().unwrap(),
-        include_str!("../../lapiz_render/src/shaders/hash.wesl").into(),
-    );
-    resolver.add_module(
-        "package::image::blend_modes".parse().unwrap(),
-        include_str!("../../lapiz_image/src/shaders/blend_modes.wesl").into(),
-    );
-    resolver.add_module(
-        "package::image::image_tiling".parse().unwrap(),
-        include_str!("../../lapiz_image/src/shaders/image_tiling.wesl").into(),
-    );
-}
-
 fn compile_template(
     shader: &str,
     external_variable_bindings: &str,
@@ -409,18 +382,20 @@ fn compile_template(
             external_variable_bindings,
         );
 
-    let mut resolver = VirtualResolver::new();
-    resolver.add_module("package::template".parse().unwrap(), shader.into());
-    add_modules(&mut resolver);
-
-    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-    compiler.set_mangler(Default::default());
-    compiler.set_options(Default::default());
-    compiler.set_feature("POSTPROCESS", postprocess);
-    compiler.set_feature("BOUNDS_EVAL", bounds_eval);
-    let compiled_shader = compiler
-        .compile(&"package::template".parse().unwrap())?
-        .to_string();
+    let compiled_shader = wesl_jit::compile_wesl_with_config_and_include(
+        shader,
+        &[&lapiz_image::image::PACKAGE, &lapiz_render::render::PACKAGE],
+        |resolver| {
+            resolver.add_module(
+                "package::brush_types".parse().unwrap(),
+                include_str!("render/brush_types.wesl").into(),
+            );
+        },
+        |compiler| {
+            compiler.set_feature("POSTPROCESS", postprocess);
+            compiler.set_feature("BOUNDS_EVAL", bounds_eval);
+        },
+    )?;
 
     Ok(compiled_shader)
 }
@@ -442,16 +417,17 @@ fn compile_template_input_sampling(
             external_variable_bindings,
         );
 
-    let mut resolver = VirtualResolver::new();
-    resolver.add_module("package::template".parse().unwrap(), shader.into());
-    add_modules(&mut resolver);
-
-    let mut compiler = Wesl::new_barebones().set_custom_resolver(resolver);
-    compiler.set_mangler(Default::default());
-    compiler.set_options(Default::default());
-    let compiled_shader = compiler
-        .compile(&"package::template".parse().unwrap())?
-        .to_string();
+    let compiled_shader = wesl_jit::compile_wesl_with_config_and_include(
+        shader,
+        &[&lapiz_image::image::PACKAGE, &lapiz_render::render::PACKAGE],
+        |resolver| {
+            resolver.add_module(
+                "package::brush_types".parse().unwrap(),
+                include_str!("render/brush_types.wesl").into(),
+            );
+        },
+        |_| {},
+    )?;
 
     Ok(compiled_shader)
 }

@@ -1,5 +1,5 @@
-import package::brush::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, Time, CanvasResources};
-import package::render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angle};
+import package::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, Time, CanvasResources};
+import render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angle};
 
 @group(0) @binding(0) var<storage> new_input: PenInput;
 @group(0) @binding(1) var<storage, read_write> input_sampler: PenInputSampler;

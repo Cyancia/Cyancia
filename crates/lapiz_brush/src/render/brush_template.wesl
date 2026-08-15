@@ -1,6 +1,6 @@
-import package::image::image_tiling::{TileInfo, TILE_SIZE};
-import package::render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv, rotate_mat2x2};
-import package::brush::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo, CanvasResources};
+import image::image_tiling::{TileInfo, TILE_SIZE};
+import render::math::{Rect, IRect, URect, transform_rect, unsigned_div_ceil, sdf_ellipse, scale_rotate_transform_anchored, scale_rotate_transform_anchored_inv, rotate_mat2x2};
+import package::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, DabInfo, ComputedPenInput, PassFence, TILE_ALLOCATION_WORKGROUP_SIZE, MAIN_WORKGROUP_SIZE, PostprocessInfo, CanvasResources};
 
 @if(!BOUNDS_EVAL || POSTPROCESS) @group(0) @binding(0) var<storage> sample: GraphInput;
 @if(BOUNDS_EVAL && !POSTPROCESS) @group(0) @binding(0) var<storage> sample: OutputSamples;
@@ -114,7 +114,7 @@ fn current_input_color(pixel_pos: vec2i) -> vec4f {
         }
 
         let color = textureLoad(stroke_buffer_src, vec2i(tile_index.xy), tile_index.z);
-        return package::image::texture_unpack::unpack_rgba8_texel(color);
+        return image::texture_unpack::unpack_rgba8_texel(color);
     }
 }
 
@@ -123,7 +123,7 @@ fn target_layer_color(pixel_pos: vec2i) -> vec4f {
     if tile_index.z == 0xFFFFFFFFu {
         return vec4f(0.0);
     }
-    return package::image::texture_unpack::unpack_rgba8_texel(textureLoad(target_layer, vec2i(tile_index.xy), tile_index.z));
+    return image::texture_unpack::unpack_rgba8_texel(textureLoad(target_layer, vec2i(tile_index.xy), tile_index.z));
 }
 
 fn filter_within_mask(pixel: vec2i, color: vec4f, mask_local_index: u32, mask_scale: vec2f, mask_rotation: f32, mask_translation: vec2f, mask_anchor: vec2f) -> vec4f {
@@ -175,7 +175,7 @@ fn set_output_color(pixel_pos: vec2i, color: vec4f) {
         if tile_index.z == 0xFFFFFFFFu {
             return;
         }
-        let packed = package::image::texture_unpack::pack_rgba8_texel(color);
+        let packed = image::texture_unpack::pack_rgba8_texel(color);
         textureStore(stroke_buffer_dst, vec2i(tile_index.xy), tile_index.z, packed);
     }
 }

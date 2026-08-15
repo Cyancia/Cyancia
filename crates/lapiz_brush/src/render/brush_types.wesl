@@ -1,5 +1,5 @@
-import package::image::image_tiling::{TileInfo};
-import package::render::math::{IRect};
+import image::image_tiling::{TileInfo};
+import render::math::{IRect};
 
 const MAIN_WORKGROUP_SIZE = vec3u(16, 16, 1);
 const ESTIMATION_WORKGROUP_SIZE = vec3u(1, 1, 16);
