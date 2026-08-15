@@ -11,10 +11,10 @@ use lapiz_assets::{
     bundle::{ErasedAssetBundle, directory::AssetDirectory, standard::StandardAssetBundle},
 };
 use lapiz_brush::{BrushPlugin, editor::BrushEditor};
-use lapiz_filter::{FilterPlugin, editor::FilterEditor, panel::FilterPanel};
 use lapiz_bucket_tool::BucketPlugin;
 use lapiz_canvas::CanvasPlugin;
 use lapiz_color::ColorPlugin;
+use lapiz_filter::{FilterPlugin, editor::FilterEditor, panel::FilterPanel};
 use lapiz_image::ImagePlugin;
 use lapiz_input::InputPlugin;
 use lapiz_render::RenderPlugin;

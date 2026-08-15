@@ -13,9 +13,7 @@ use lapiz_image::{
 };
 use lapiz_render::{
     buffer::DynamicBuffer,
-    readback::{
-        create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async,
-    },
+    readback::{create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async},
     render_context::RenderContextAppExt,
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},

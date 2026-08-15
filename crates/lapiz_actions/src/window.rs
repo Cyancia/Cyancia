@@ -39,7 +39,9 @@ impl ActionFunction for ToggleFilterPanelAction {
     fn trigger(&self, services: &mut Services) -> Task<Self::Message> {
         services
             .service_mut::<WindowCommandBuffer>()
-            .push(ToggleWindowViewCommand::new(WindowViewId::new("filter_panel")));
+            .push(ToggleWindowViewCommand::new(WindowViewId::new(
+                "filter_panel",
+            )));
         Task::none()
     }
 }

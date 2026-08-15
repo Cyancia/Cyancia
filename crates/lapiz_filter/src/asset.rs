@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize, Serializer, de::Deserializer};
 use uuid::Uuid;
 use zip::{ZipArchive, ZipWriter, write::FileOptions};
 
-
 pub struct FilterPreset {
     pub metadata: FilterPresetMetadata,
     /// Ordered; serves as the execution reference order.

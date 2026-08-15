@@ -31,8 +31,7 @@ use lapiz_tools::{ErasedToolFunctionMessage, GlobalToolBindings, ToolFunction, T
 
 use crate::dock::{
     BRUSH_PRESETS_DOCK_ID, BrushPresetDock, COLOR_SELECTOR_DOCK_ID, CanvasDock, ColorSelectorDock,
-    LAYER_DOCK_ID, LayersDock, TOOL_OPTIONS_DOCK_ID, ToolOptionsDock,
-    construct_canvas_dock_id,
+    LAYER_DOCK_ID, LayersDock, TOOL_OPTIONS_DOCK_ID, ToolOptionsDock, construct_canvas_dock_id,
 };
 
 pub struct MainView {
