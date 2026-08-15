@@ -12,8 +12,10 @@ use lapiz_image::{
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, LayerBinding, TileStorageAppExt},
 };
 use lapiz_render::{
+    buffer::DynamicBuffer,
     readback::{
-        create_readback_buffer_and_schedule_copy_buffer, readback_buffer_raw_on_submit_async,
+        create_readback_buffer_and_schedule_copy_buffer, readback_buffer_on_submit_async,
+        readback_buffer_raw_on_submit_async,
     },
     render_context::RenderContextAppExt,
     texture::GpuImage,
@@ -21,6 +23,7 @@ use lapiz_render::{
 };
 use lapiz_runtime::Services;
 use lapiz_shader_graph::graph::external::GraphExternalVariableStorage;
+use lapiz_utils::log_err::LogErr;
 use parking_lot::Mutex;
 use std::{
     borrow::Cow,
@@ -339,7 +342,6 @@ async fn filter_worker(
     Ok(results)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn run_filter_on_layer(
     device: &Device,
     queue: &Queue,
@@ -375,8 +377,8 @@ async fn run_filter_on_layer(
         .position(|(_, output)| *output == FilterSlotRef::Layer)
         .ok_or_else(|| anyhow!("Filter preset has no group with output == Layer"))?;
     let final_group_uuid = group_ids[final_index].0;
-    let mut outputs: HashMap<Uuid, DynamicLayerStorage> = HashMap::new();
-    let mut out_bounds: HashMap<Uuid, IRect> = HashMap::new();
+    let mut outputs = HashMap::<Uuid, DynamicLayerStorage>::new();
+    let mut out_bounds = HashMap::<Uuid, IRect>::new();
 
     for i in 0..n_groups {
         let (input_ref, _output_ref) = wiring[i];
@@ -398,7 +400,14 @@ async fn run_filter_on_layer(
             }
         };
 
-        let bounds_input = write_bounds_buffer(device, queue, in_bounds);
+        let bounds_input = {
+            let mut buffer =
+                DynamicBuffer::new(Some("filter bounds input".into()), BufferUsages::STORAGE);
+            buffer.push(&in_bounds);
+            buffer.write_buffer(device, queue);
+            buffer.into_inner_buffer().unwrap()
+        };
+
         let out_bounds_i = run_bounds_eval(
             device,
             queue,
@@ -462,21 +471,6 @@ async fn run_filter_on_layer(
         .ok_or_else(|| anyhow!("Final filter group output is missing"))
 }
 
-fn write_bounds_buffer(device: &Device, queue: &Queue, rect: IRect) -> Buffer {
-    let mut bytes = Vec::with_capacity(16);
-    for value in [rect.min.x, rect.min.y, rect.max.x, rect.max.y] {
-        bytes.extend_from_slice(&value.to_ne_bytes());
-    }
-    let buffer = device.create_buffer(&BufferDescriptor {
-        label: Some("filter bounds input"),
-        size: 16,
-        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&buffer, 0, &bytes);
-    buffer
-}
-
 async fn run_bounds_eval(
     device: &Device,
     queue: &Queue,
@@ -487,7 +481,13 @@ async fn run_bounds_eval(
     has_selection: &Buffer,
     in_bounds: IRect,
 ) -> IRect {
-    let input_buf = write_bounds_buffer(device, queue, in_bounds);
+    let input_buf = {
+        let mut buffer =
+            DynamicBuffer::new(Some("filter bounds input".into()), BufferUsages::STORAGE);
+        buffer.push(&in_bounds);
+        buffer.write_buffer(device, queue);
+        buffer.into_inner_buffer().unwrap()
+    };
     let output_buf = device.create_buffer(&BufferDescriptor {
         label: Some("filter bounds eval output"),
         size: 16,
@@ -512,29 +512,17 @@ async fn run_bounds_eval(
         );
     }
     let readback = create_readback_buffer_and_schedule_copy_buffer(device, &mut ec, &output_buf);
-    let readback_async = readback_buffer_raw_on_submit_async(&mut ec, &readback, ..);
+    let readback_async = readback_buffer_on_submit_async::<IRect, _>(&mut ec, &readback, ..);
     queue.submit([ec.finish()]);
-    match readback_async.into_inner().await {
-        Ok(Ok(bytes)) if bytes.len() >= 16 => {
-            let vals: Vec<i32> = bytes[..16]
-                .chunks_exact(4)
-                .map(|c| i32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
-                .collect();
-            let rect = IRect {
-                min: IVec2::new(vals[0], vals[1]),
-                max: IVec2::new(vals[2], vals[3]),
-            };
-            if rect.min.x < rect.max.x && rect.min.y < rect.max.y {
-                return rect;
-            }
-            log::warn!("invalid rect {:?}; falling back", rect);
-        }
-        other => {
-            log::warn!(
-                "Filter bounds eval readback failed; falling back to input bounds ({:?})",
-                other.is_err()
-            );
-        }
-    }
-    in_bounds
+
+    readback_async
+        .into_inner()
+        .await
+        .logged_err()
+        .ok()
+        .and_then(|t| t.logged_err().ok())
+        .unwrap_or_else(|| {
+            log::warn!("invalid rect, falling back");
+            in_bounds
+        })
 }

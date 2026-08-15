@@ -13,6 +13,7 @@ anyhow.workspace = true
 bevy_math.workspace = true
 chrono.workspace = true
 dyn-clone.workspace = true
+encase.workspace = true
 futures.workspace = true
 glam.workspace = true
 iced_core.workspace = true

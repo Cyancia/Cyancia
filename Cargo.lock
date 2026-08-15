@@ -3272,6 +3272,7 @@ dependencies = [
  "bevy_math 0.18.1 (git+https://github.com/443eb9/bevy.git?branch=release-0.18.1)",
  "chrono",
  "dyn-clone",
+ "encase",
  "futures",
  "glam 0.30.10",
  "iced_core",
