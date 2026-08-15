@@ -1,4 +1,4 @@
-use std::{borrow::Cow, str::FromStr};
+use std::str::FromStr;
 
 use anyhow::Result;
 use wesl::{CodegenModule, CodegenPkg, ModulePath, VirtualResolver, Wesl, syntax::PathOrigin};
@@ -7,7 +7,7 @@ pub fn compile_wesl(shader: String, dependencies: &[&CodegenPkg]) -> Result<Stri
     compile_wesl_with_config(shader, dependencies, |_| {})
 }
 
-pub fn compile_wesl_with_config_and_include<'a>(
+pub fn compile_wesl_with_config_and_include(
     shader: String,
     dependencies: &[&CodegenPkg],
     include: impl FnOnce(&mut VirtualResolver),
