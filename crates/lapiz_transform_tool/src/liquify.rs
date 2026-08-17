@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    f32::consts::TAU,
-    fmt,
-};
+use std::{collections::HashMap, f32::consts::TAU};
 
 use bevy_math::IRect;
 use encase::ShaderType;
@@ -40,9 +36,7 @@ use lapiz_input::{
 };
 use lapiz_render::{
     bind_group_entries::DynamicBindGroupEntries,
-    bind_group_layout_entries::{
-        BindGroupLayoutEntries, DynamicBindGroupLayoutEntries, binding_types,
-    },
+    bind_group_layout_entries::{DynamicBindGroupLayoutEntries, binding_types},
     buffer::DynamicBuffer,
     render_context::RenderContextAppExt,
     wesl_jit,
@@ -298,6 +292,7 @@ pub enum LiquifyToolMessage {
     Cancel,
 }
 
+// TODO Undoing stroke
 #[derive(Default)]
 pub struct LiquifyTransformTool {
     props: LiquifyProperties,
