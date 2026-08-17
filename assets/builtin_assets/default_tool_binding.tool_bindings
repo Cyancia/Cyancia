@@ -59,6 +59,10 @@
     {
       "shortcut": "ctrl-t",
       "tool": "free_transform_tool"
+    },
+    {
+      "shortcut": "ctrl-shift-x",
+      "tool": "liquify_tool"
     }
   ]
 }

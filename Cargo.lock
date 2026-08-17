@@ -3566,6 +3566,7 @@ dependencies = [
  "lapiz_undo",
  "lapiz_utils",
  "lapiz_widgets",
+ "parse-display",
  "tracing",
  "wgpu",
 ]
