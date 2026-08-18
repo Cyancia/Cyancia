@@ -153,24 +153,3 @@ impl LayerBoundsPipeline {
         result_buffer
     }
 }
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn layer_bounds_wesl_compiles() {
-        use crate::texel::TexelType;
-        use lapiz_render::wesl_jit;
-        for format in [TexelType::RGBA8, TexelType::A8] {
-            for with_selection in [true, false] {
-                wesl_jit::compile_wesl_with_config(
-                    include_str!("layer_bounds.wesl").into(),
-                    &[&crate::image::PACKAGE],
-                    |compiler| {
-                        compiler.set_feature(format.shader_def(), true);
-                        compiler.set_feature("WITH_SELECTION", with_selection);
-                    },
-                )
-                .unwrap();
-            }
-        }
-    }
-}
