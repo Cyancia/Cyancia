@@ -9,10 +9,11 @@ use lapiz_brush::{
         STROKE_POSTPROCESS_GRAPH_NODES,
     },
     render::graph::{
-        CurrentPixelColorNode, DabIndexNode, DrawDirectionNode, ForegroundColorNode,
-        GraphDataWithInitialPenInput, GraphDataWithPenInput, InitialDrawDirectionNode,
-        OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, PenAngleNode,
-        PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, StrokeBoundsNode,
+        BackgroundColorNode, CurrentPixelColorNode, DabIndexNode, DrawDirectionNode,
+        ForegroundColorNode, GraphDataWithInitialPenInput, GraphDataWithPenInput,
+        InitialDrawDirectionNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
+        PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode,
+        StrokeBoundsNode,
     },
 };
 use lapiz_render::texture::Image;
@@ -31,10 +32,10 @@ use lapiz_shader_graph::{
 
 use crate::desc::wgsl::{
     AZIMUTH_INPUT, BrushPose, ColorAdjustment, DAB_INDEX_INPUT, DIRECTION_INPUT, Dynamics,
-    INITIAL_DIRECTION_INPUT, MAIN_BOUNDS_OUTPUT, MAIN_COLOR_OUTPUT, MAIN_FOREGROUND_COLOR_INPUT,
-    MAIN_PEN_POSITION_INPUT, MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT,
-    POSTPROCESS_INPUT_COLOR, POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT,
-    REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT, TILT_INPUT, computed_main,
+    INITIAL_DIRECTION_INPUT, MAIN_BACKGROUND_COLOR_INPUT, MAIN_BOUNDS_OUTPUT, MAIN_COLOR_OUTPUT,
+    MAIN_FOREGROUND_COLOR_INPUT, MAIN_PEN_POSITION_INPUT, MAIN_PIXEL_POSITION_INPUT,
+    MAIN_TIP_TEXTURE_INPUT, POSTPROCESS_INPUT_COLOR, POSTPROCESS_STROKE_BOUNDS_INPUT,
+    PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT, TILT_INPUT, computed_main,
     computed_required_spacing, opacity_postprocess, sampled_main,
 };
 
@@ -213,26 +214,34 @@ fn computed_main_graph(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
 ) -> Result<SerializableGraph> {
+    let has_color_dynamics = color_adjustment.is_some_and(|color| color.dynamics.is_some());
+    let needs_color_inputs = color_adjustment.is_some_and(ColorAdjustment::needs_dynamics_inputs);
+    let needs_stroke_time = color_adjustment.is_some_and(ColorAdjustment::needs_stroke_time);
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
         || flow_dynamics.is_some()
         || angle_dynamics.is_some()
-        || roundness_dynamics.is_some();
-    let has_color_jitter = color_adjustment.is_some_and(ColorAdjustment::has_jitter);
+        || roundness_dynamics.is_some()
+        || needs_color_inputs;
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
     let foreground_color = graph.add_node(Point::new(0.0, 200.0), ForegroundColorNode);
-    let stroke_time = has_color_jitter.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
+    let background_color =
+        has_color_dynamics.then(|| graph.add_node(Point::new(0.0, 300.0), BackgroundColorNode));
+    let stroke_time = needs_stroke_time.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
+    if has_color_dynamics {
+        state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
+    }
     if has_dynamics {
         add_dynamics_input_slots(&mut state);
     }
-    if has_color_jitter {
+    if needs_stroke_time {
         state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -267,11 +276,17 @@ fn computed_main_graph(
     graph.connect_slots_by_index(pixel_position, 0, expression, 0);
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
+    let dynamics_input = if let Some(background_color) = background_color {
+        graph.connect_slots_by_index(background_color, 0, expression, 3);
+        4
+    } else {
+        3
+    };
     if has_dynamics {
-        connect_dynamics_input_nodes(&mut graph, expression, 3);
+        connect_dynamics_input_nodes(&mut graph, expression, dynamics_input);
     }
     if let Some(stroke_time) = stroke_time {
-        let input = if has_dynamics { 9 } else { 3 };
+        let input = dynamics_input + if has_dynamics { 6 } else { 0 };
         graph.connect_slots_by_index(stroke_time, 1, expression, input);
     }
     graph.connect_slots_by_index(expression, 0, output_color, 0);
@@ -297,12 +312,15 @@ fn sampled_main_graph(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
 ) -> Result<SerializableGraph> {
+    let has_color_dynamics = color_adjustment.is_some_and(|color| color.dynamics.is_some());
+    let needs_color_inputs = color_adjustment.is_some_and(ColorAdjustment::needs_dynamics_inputs);
+    let needs_stroke_time = color_adjustment.is_some_and(ColorAdjustment::needs_stroke_time);
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
         || flow_dynamics.is_some()
         || angle_dynamics.is_some()
-        || roundness_dynamics.is_some();
-    let has_color_jitter = color_adjustment.is_some_and(ColorAdjustment::has_jitter);
+        || roundness_dynamics.is_some()
+        || needs_color_inputs;
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
@@ -313,17 +331,22 @@ fn sampled_main_graph(
         TextureNode,
         TextureId(Some(sample_asset)),
     );
-    let stroke_time = has_color_jitter.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
+    let background_color =
+        has_color_dynamics.then(|| graph.add_node(Point::new(0.0, 400.0), BackgroundColorNode));
+    let stroke_time = needs_stroke_time.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
     state.add_input::<TextureType>(MAIN_TIP_TEXTURE_INPUT);
+    if has_color_dynamics {
+        state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
+    }
     if has_dynamics {
         add_dynamics_input_slots(&mut state);
     }
-    if has_color_jitter {
+    if needs_stroke_time {
         state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -358,11 +381,17 @@ fn sampled_main_graph(
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
     graph.connect_slots_by_index(texture, 0, expression, 3);
+    let dynamics_input = if let Some(background_color) = background_color {
+        graph.connect_slots_by_index(background_color, 0, expression, 4);
+        5
+    } else {
+        4
+    };
     if has_dynamics {
-        connect_dynamics_input_nodes(&mut graph, expression, 4);
+        connect_dynamics_input_nodes(&mut graph, expression, dynamics_input);
     }
     if let Some(stroke_time) = stroke_time {
-        let input = if has_dynamics { 10 } else { 4 };
+        let input = dynamics_input + if has_dynamics { 6 } else { 0 };
         graph.connect_slots_by_index(stroke_time, 1, expression, input);
     }
     graph.connect_slots_by_index(expression, 0, output_color, 0);

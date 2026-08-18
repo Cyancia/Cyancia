@@ -7,6 +7,7 @@ use wesl_quote::{quote_expression, quote_statement};
 pub const MAIN_PIXEL_POSITION_INPUT: &str = "pixel_position";
 pub const MAIN_PEN_POSITION_INPUT: &str = "pen_position";
 pub const MAIN_FOREGROUND_COLOR_INPUT: &str = "foreground_color";
+pub const MAIN_BACKGROUND_COLOR_INPUT: &str = "background_color";
 pub const MAIN_TIP_TEXTURE_INPUT: &str = "tip_texture";
 pub const MAIN_COLOR_OUTPUT: &str = "color";
 pub const MAIN_BOUNDS_OUTPUT: &str = "bounds";
@@ -43,11 +44,26 @@ pub struct ColorAdjustment {
     pub saturation_jitter: f32,
     pub value_jitter: f32,
     pub purity: f32,
+    pub dynamics: Option<Dynamics>,
+    pub per_tip: bool,
+    pub foreground_color: Option<[f32; 3]>,
 }
 
 impl ColorAdjustment {
-    pub fn has_jitter(self) -> bool {
+    pub fn has_hsv_jitter(self) -> bool {
         self.hue_jitter > 0.0 || self.saturation_jitter > 0.0 || self.value_jitter > 0.0
+    }
+
+    pub fn has_random(self) -> bool {
+        self.has_hsv_jitter() || self.dynamics.is_some_and(|dynamics| dynamics.jitter > 0.0)
+    }
+
+    pub fn needs_dynamics_inputs(self) -> bool {
+        self.dynamics.is_some() || (self.per_tip && self.has_hsv_jitter())
+    }
+
+    pub fn needs_stroke_time(self) -> bool {
+        !self.per_tip && self.has_random()
     }
 }
 
@@ -58,6 +74,8 @@ static MAIN_PEN_POSITION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_PEN_POSITION_INPUT.to_string()));
 static MAIN_FOREGROUND_COLOR_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_FOREGROUND_COLOR_INPUT.to_string()));
+static MAIN_BACKGROUND_COLOR_IDENT: LazyLock<Ident> =
+    LazyLock::new(|| Ident::new(MAIN_BACKGROUND_COLOR_INPUT.to_string()));
 static MAIN_TIP_TEXTURE_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_TIP_TEXTURE_INPUT.to_string()));
 static MAIN_COLOR_IDENT: LazyLock<Ident> =
@@ -137,6 +155,14 @@ fn stroke_random(random_offset: f32) -> Expression {
     ))
 }
 
+fn color_random(per_tip: bool, random_offset: f32) -> Expression {
+    if per_tip {
+        dab_random(random_offset)
+    } else {
+        stroke_random(random_offset)
+    }
+}
+
 fn dynamics_control(dynamics: Dynamics, pose: BrushPose) -> Expression {
     let pressure = pose_pressure(pose);
     let tilt = pose_tilt(pose);
@@ -176,6 +202,22 @@ fn dynamics_factor(dynamics: Dynamics, random_offset: f32, pose: BrushPose) -> E
     let minimum = dynamics.minimum;
     let random = dab_random(random_offset);
 
+    quote_expression!(mix(
+        mix(#minimum, 1.0, #control),
+        #minimum,
+        #jitter * #random,
+    ))
+}
+
+fn color_dynamics_factor(dynamics: Dynamics, per_tip: bool, pose: BrushPose) -> Expression {
+    let control = dynamics_control(dynamics, pose);
+    let minimum = dynamics.minimum;
+    let jitter = dynamics.jitter;
+    let random = if per_tip {
+        dab_random(89.417)
+    } else {
+        stroke_random(89.417)
+    };
     quote_expression!(mix(
         mix(#minimum, 1.0, #control),
         #minimum,
@@ -289,29 +331,41 @@ fn tip_angle_expression(angle: f32, dynamics: Option<Dynamics>, pose: BrushPose)
     )
 }
 
-fn tip_foreground_statement(adjustment: Option<ColorAdjustment>) -> Statement {
-    let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
+fn tip_foreground_statement(adjustment: Option<ColorAdjustment>, pose: BrushPose) -> Statement {
+    let runtime_foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
     let Some(adjustment) = adjustment else {
         return quote_statement! {
-            tip_foreground = #foreground;
+            tip_foreground = #runtime_foreground;
         };
     };
+    let foreground = match adjustment.foreground_color {
+        Some([red, green, blue]) => quote_expression!(vec4f(#red, #green, #blue, 1.0)),
+        None => quote_expression!(#runtime_foreground),
+    };
+    let base_foreground = match adjustment.dynamics {
+        Some(dynamics) => {
+            let background = (*MAIN_BACKGROUND_COLOR_IDENT).clone();
+            let factor = color_dynamics_factor(dynamics, adjustment.per_tip, pose);
+            quote_expression!(mix(#background, #foreground, #factor))
+        }
+        None => foreground,
+    };
     let hue_offset = if adjustment.hue_jitter > 0.0 {
-        let random = stroke_random(17.131);
+        let random = color_random(adjustment.per_tip, 17.131);
         let jitter = adjustment.hue_jitter;
         quote_expression!((#random - 0.5) * #jitter)
     } else {
         quote_expression!(0.0)
     };
     let saturation_offset = if adjustment.saturation_jitter > 0.0 {
-        let random = stroke_random(21.7);
+        let random = color_random(adjustment.per_tip, 21.7);
         let jitter = adjustment.saturation_jitter;
         quote_expression!((#random * 2.0 - 1.0) * #jitter)
     } else {
         quote_expression!(0.0)
     };
     let value_offset = if adjustment.value_jitter > 0.0 {
-        let random = stroke_random(73.219);
+        let random = color_random(adjustment.per_tip, 73.219);
         let jitter = adjustment.value_jitter;
         quote_expression!((#random * 2.0 - 1.0) * #jitter)
     } else {
@@ -327,23 +381,24 @@ fn tip_foreground_statement(adjustment: Option<ColorAdjustment>) -> Statement {
     };
 
     quote_statement! {{
+        let source_foreground = #base_foreground;
         let color_min = min(
-            #foreground.r,
-            min(#foreground.g, #foreground.b),
+            source_foreground.r,
+            min(source_foreground.g, source_foreground.b),
         );
         let color_max = max(
-            #foreground.r,
-            max(#foreground.g, #foreground.b),
+            source_foreground.r,
+            max(source_foreground.g, source_foreground.b),
         );
         let color_delta = color_max - color_min;
         var hue: f32 = 0.0;
         if color_delta > 0.0 {
-            if color_max == #foreground.r {
-                hue = (#foreground.g - #foreground.b) / color_delta;
-            } else if color_max == #foreground.g {
-                hue = 2.0 + (#foreground.b - #foreground.r) / color_delta;
+            if color_max == source_foreground.r {
+                hue = (source_foreground.g - source_foreground.b) / color_delta;
+            } else if color_max == source_foreground.g {
+                hue = 2.0 + (source_foreground.b - source_foreground.r) / color_delta;
             } else {
-                hue = 4.0 + (#foreground.r - #foreground.g) / color_delta;
+                hue = 4.0 + (source_foreground.r - source_foreground.g) / color_delta;
             }
             hue /= 6.0;
         }
@@ -372,7 +427,7 @@ fn tip_foreground_statement(adjustment: Option<ColorAdjustment>) -> Statement {
         tip_foreground = vec4f(
             jittered_value
                 * mix(vec3f(1.0), hue_rgb, final_saturation),
-            #foreground.a,
+            source_foreground.a,
         );
     }}
 }
@@ -466,7 +521,7 @@ pub fn computed_main(
     let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
-    let tip_foreground = tip_foreground_statement(color_adjustment);
+    let tip_foreground = tip_foreground_statement(color_adjustment, pose);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
 
     quote_statement! {{
@@ -527,7 +582,7 @@ pub fn sampled_main(
     let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
-    let tip_foreground = tip_foreground_statement(color_adjustment);
+    let tip_foreground = tip_foreground_statement(color_adjustment, pose);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
 
     quote_statement! {{

@@ -47,16 +47,19 @@ pub fn parse_desc(
     sample_assets: &HashMap<Uuid, AssetId<Image>>,
     _pattern_assets: &HashMap<Uuid, AssetId<Image>>,
 ) -> Result<BrushPreset> {
-    let (opacity, flow, pressure_overrides_size, pressure_overrides_opacity) =
-        match &brush.tool_options {
-            Some(ToolOptions::Paint(options)) => (
-                (options.opacity as f32 / 100.0).clamp(0.0, 1.0),
-                (options.flow as f32 / 100.0).clamp(0.0, 1.0),
-                options.use_pressure_overrides_size,
-                options.use_pressure_overrides_opacity,
-            ),
-            _ => (1.0, 1.0, false, false),
-        };
+    let paint_options = match &brush.tool_options {
+        Some(ToolOptions::Paint(options)) => Some(options),
+        _ => None,
+    };
+    let (opacity, flow, pressure_overrides_size, pressure_overrides_opacity) = match paint_options {
+        Some(options) => (
+            (options.opacity as f32 / 100.0).clamp(0.0, 1.0),
+            (options.flow as f32 / 100.0).clamp(0.0, 1.0),
+            options.use_pressure_overrides_size,
+            options.use_pressure_overrides_opacity,
+        ),
+        None => (1.0, 1.0, false, false),
+    };
     let minimum_diameter = brush
         .minimum_diameter
         .as_ref()
@@ -151,40 +154,81 @@ pub fn parse_desc(
     } else {
         BrushPose::default()
     };
-    let hue_jitter = brush
-        .hue_jitter
-        .as_ref()
-        .map(|value| value.value as f32 / 100.0)
-        .unwrap_or(0.0)
-        .clamp(0.0, 1.0);
-    let saturation_jitter = brush
-        .saturation_jitter
-        .as_ref()
-        .map(|value| value.value as f32 / 100.0)
-        .unwrap_or(0.0)
-        .clamp(0.0, 1.0);
-    let value_jitter = brush
-        .value_jitter
-        .as_ref()
-        .map(|value| value.value as f32 / 100.0)
-        .unwrap_or(0.0)
-        .clamp(0.0, 1.0);
-    let purity = brush
-        .purity_jitter
-        .as_ref()
-        .map(|value| value.value as f32 / 100.0)
-        .unwrap_or(0.0)
-        .clamp(-1.0, 1.0);
+    let color_enabled = brush.use_color_dynamics;
+    let hue_jitter = if color_enabled {
+        brush
+            .hue_jitter
+            .as_ref()
+            .map(|value| value.value as f32 / 100.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let saturation_jitter = if color_enabled {
+        brush
+            .saturation_jitter
+            .as_ref()
+            .map(|value| value.value as f32 / 100.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let value_jitter = if color_enabled {
+        brush
+            .value_jitter
+            .as_ref()
+            .map(|value| value.value as f32 / 100.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let purity = if color_enabled {
+        brush
+            .purity_jitter
+            .as_ref()
+            .map(|value| value.value as f32 / 100.0)
+            .unwrap_or(0.0)
+            .clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    let color_dynamics = if color_enabled {
+        brush
+            .color_dynamics
+            .as_ref()
+            .or_else(|| paint_options.and_then(|options| options.color_dynamics.as_ref()))
+            .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("color dynamics"))
+            .transpose()?
+    } else {
+        None
+    };
+    let foreground_color = paint_options
+        .and_then(|options| options.foreground_color.as_ref())
+        .map(|color| {
+            [
+                (color.red as f32 / 255.0).clamp(0.0, 1.0),
+                (color.green as f32 / 255.0).clamp(0.0, 1.0),
+                (color.blue as f32 / 255.0).clamp(0.0, 1.0),
+            ]
+        });
     let has_hsv_jitter = hue_jitter > 0.0 || saturation_jitter > 0.0 || value_jitter > 0.0;
     ensure!(
         purity == 0.0 || !has_hsv_jitter,
         "unsupported purity with HSV jitter"
     );
-    let color_adjustment = (has_hsv_jitter || purity != 0.0).then_some(ColorAdjustment {
+    let has_color_adjustment =
+        has_hsv_jitter || purity != 0.0 || color_dynamics.is_some() || foreground_color.is_some();
+    let color_adjustment = has_color_adjustment.then_some(ColorAdjustment {
         hue_jitter,
         saturation_jitter,
         value_jitter,
         purity,
+        dynamics: color_dynamics,
+        per_tip: brush.color_dynamics_per_tip,
+        foreground_color,
     });
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
