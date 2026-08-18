@@ -30,11 +30,11 @@ use lapiz_shader_graph::{
 };
 
 use crate::desc::wgsl::{
-    AZIMUTH_INPUT, DAB_INDEX_INPUT, DIRECTION_INPUT, INITIAL_DIRECTION_INPUT, MAIN_BOUNDS_OUTPUT,
-    MAIN_COLOR_OUTPUT, MAIN_FOREGROUND_COLOR_INPUT, MAIN_PEN_POSITION_INPUT,
+    AZIMUTH_INPUT, DAB_INDEX_INPUT, DIRECTION_INPUT, Dynamics, INITIAL_DIRECTION_INPUT,
+    MAIN_BOUNDS_OUTPUT, MAIN_COLOR_OUTPUT, MAIN_FOREGROUND_COLOR_INPUT, MAIN_PEN_POSITION_INPUT,
     MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT, POSTPROCESS_INPUT_COLOR,
-    POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, SizeDynamics,
-    TILT_INPUT, computed_main, computed_required_spacing, opacity_postprocess, sampled_main,
+    POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, TILT_INPUT,
+    computed_main, computed_required_spacing, opacity_postprocess, sampled_main,
 };
 
 pub fn add_stateful_node<Data, T>(
@@ -92,7 +92,8 @@ pub fn computed_graphs(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
+    opacity_dynamics: Option<Dynamics>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics)?;
     let main_graph = computed_main_graph(
@@ -104,6 +105,7 @@ pub fn computed_graphs(
         flip_y,
         flow,
         size_dynamics,
+        opacity_dynamics,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -117,7 +119,8 @@ pub fn sampled_graphs(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
+    opacity_dynamics: Option<Dynamics>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics)?;
     let main_graph = sampled_main_graph(
@@ -129,6 +132,7 @@ pub fn sampled_graphs(
         flip_y,
         flow,
         size_dynamics,
+        opacity_dynamics,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -136,7 +140,7 @@ pub fn sampled_graphs(
 fn required_spacing_graph(
     diameter: f32,
     spacing: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(REQUIRED_SPACING_GRAPH_NODES.clone()));
     let mut state = CustomExpressionNodeState::default();
@@ -169,7 +173,8 @@ fn computed_main_graph(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
+    opacity_dynamics: Option<Dynamics>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -180,7 +185,7 @@ fn computed_main_graph(
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
-    if size_dynamics.is_some() {
+    if size_dynamics.is_some() || opacity_dynamics.is_some() {
         add_dynamics_input_slots(&mut state);
     }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -194,6 +199,7 @@ fn computed_main_graph(
         flip_y,
         flow,
         size_dynamics,
+        opacity_dynamics,
     ));
 
     let expression = add_stateful_node(
@@ -208,7 +214,7 @@ fn computed_main_graph(
     graph.connect_slots_by_index(pixel_position, 0, expression, 0);
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
-    if size_dynamics.is_some() {
+    if size_dynamics.is_some() || opacity_dynamics.is_some() {
         connect_dynamics_input_nodes(&mut graph, expression, 3);
     }
     graph.connect_slots_by_index(expression, 0, output_color, 0);
@@ -225,7 +231,8 @@ fn sampled_main_graph(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
+    opacity_dynamics: Option<Dynamics>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -243,7 +250,7 @@ fn sampled_main_graph(
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
     state.add_input::<TextureType>(MAIN_TIP_TEXTURE_INPUT);
-    if size_dynamics.is_some() {
+    if size_dynamics.is_some() || opacity_dynamics.is_some() {
         add_dynamics_input_slots(&mut state);
     }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -256,6 +263,7 @@ fn sampled_main_graph(
         flip_y,
         flow,
         size_dynamics,
+        opacity_dynamics,
     ));
 
     let expression = add_stateful_node(
@@ -271,7 +279,7 @@ fn sampled_main_graph(
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
     graph.connect_slots_by_index(texture, 0, expression, 3);
-    if size_dynamics.is_some() {
+    if size_dynamics.is_some() || opacity_dynamics.is_some() {
         connect_dynamics_input_nodes(&mut graph, expression, 4);
     }
     graph.connect_slots_by_index(expression, 0, output_color, 0);

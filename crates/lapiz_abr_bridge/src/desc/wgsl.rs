@@ -21,7 +21,7 @@ pub const INITIAL_DIRECTION_INPUT: &str = "initial_direction";
 pub const DAB_INDEX_INPUT: &str = "dab_index";
 
 #[derive(Clone, Copy)]
-pub struct SizeDynamics {
+pub struct Dynamics {
     pub control: DynamicsControl,
     pub fade_steps: i32,
     pub jitter: f32,
@@ -55,13 +55,7 @@ static INITIAL_DIRECTION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(INITIAL_DIRECTION_INPUT.to_string()));
 static DAB_INDEX_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(DAB_INDEX_INPUT.to_string()));
 
-fn size_diameter_statement(diameter: f32, dynamics: Option<SizeDynamics>) -> Statement {
-    let Some(dynamics) = dynamics else {
-        return quote_statement! {
-            tip_diameter = #diameter;
-        };
-    };
-
+fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
     let pressure = (*PRESSURE_IDENT).clone();
     let tilt = (*TILT_IDENT).clone();
     let azimuth = (*AZIMUTH_IDENT).clone();
@@ -95,24 +89,71 @@ fn size_diameter_statement(diameter: f32, dynamics: Option<SizeDynamics>) -> Sta
     let jitter = dynamics.jitter;
     let minimum = dynamics.minimum;
 
+    quote_expression!(mix(
+        mix(#minimum, 1.0, #control),
+        #minimum,
+        #jitter
+            * fract(
+                sin(f32(#dab_index) * 12.9898 + #random_offset)
+                    * 43758.5453
+            ),
+    ))
+}
+
+fn size_diameter_statement(diameter: f32, dynamics: Option<Dynamics>) -> Statement {
+    let Some(dynamics) = dynamics else {
+        return quote_statement! {
+            tip_diameter = #diameter;
+        };
+    };
+    let factor = dynamics_factor(dynamics, 78.233);
+
+    quote_statement! {
+        tip_diameter = #diameter * #factor;
+    }
+}
+
+fn tip_color_statement(flow: f32, opacity_dynamics: Option<Dynamics>) -> Statement {
+    let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
+    let color = (*MAIN_COLOR_IDENT).clone();
+    let Some(dynamics) = opacity_dynamics else {
+        return quote_statement! {{
+            let tip_color = vec4f(
+                #foreground.rgb,
+                #foreground.a * tip_mask * #flow,
+            );
+            #color = image::blend_modes::blend_normal(
+                tip_color,
+                current_input_color(pixel_pos),
+            );
+        }};
+    };
+    let opacity_factor = dynamics_factor(dynamics, 39.346);
+
     quote_statement! {{
-        let size_control = #control;
-        let size_random = fract(
-            sin(f32(#dab_index) * 12.9898 + 78.233) * 43758.5453
+        let tip_color = vec4f(
+            #foreground.rgb,
+            #foreground.a * tip_mask * #flow,
         );
-        let size_factor = mix(
-            mix(#minimum, 1.0, size_control),
-            #minimum,
-            #jitter * size_random,
+        let previous_color = current_input_color(pixel_pos);
+        let accumulated_color = image::blend_modes::blend_normal(
+            tip_color,
+            previous_color,
         );
-        tip_diameter = #diameter * size_factor;
+        #color = vec4f(
+            accumulated_color.rgb,
+            max(
+                previous_color.a,
+                min(accumulated_color.a, tip_mask * #opacity_factor),
+            ),
+        );
     }}
 }
 
 pub fn computed_required_spacing(
     diameter: f32,
     spacing: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
 ) -> String {
     let required_spacing = (*REQUIRED_SPACING_IDENT).clone();
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
@@ -132,16 +173,16 @@ pub fn computed_main(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
+    opacity_dynamics: Option<Dynamics>,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
-    let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
-    let color = (*MAIN_COLOR_IDENT).clone();
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
+    let tip_color = tip_color_statement(flow, opacity_dynamics);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -159,14 +200,7 @@ pub fn computed_main(
             max(tip_radii.x, tip_radii.y) * (1.0 - #hardness),
         );
         let tip_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
-        let tip_color = vec4f(
-            #foreground.rgb,
-            #foreground.a * tip_mask * #flow,
-        );
-        #color = image::blend_modes::blend_normal(
-            tip_color,
-            current_input_color(pixel_pos),
-        );
+        @#tip_color {}
         #bounds = Rect(
             #pen - vec2f(tip_radius),
             #pen + vec2f(tip_radius),
@@ -182,17 +216,17 @@ pub fn sampled_main(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    size_dynamics: Option<SizeDynamics>,
+    size_dynamics: Option<Dynamics>,
+    opacity_dynamics: Option<Dynamics>,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
-    let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
-    let color = (*MAIN_COLOR_IDENT).clone();
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
+    let tip_color = tip_color_statement(flow, opacity_dynamics);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -213,14 +247,7 @@ pub fn sampled_main(
             tip_anchor,
         );
         let tip_mask = tip_sample.a * (1.0 - tip_sample.r);
-        let tip_color = vec4f(
-            #foreground.rgb,
-            #foreground.a * tip_mask * #flow,
-        );
-        #color = image::blend_modes::blend_normal(
-            tip_color,
-            current_input_color(pixel_pos),
-        );
+        @#tip_color {}
         #bounds = filter_within_mask_bounds(
             #texture,
             tip_scale,
