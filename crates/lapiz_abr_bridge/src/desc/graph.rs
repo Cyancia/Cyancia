@@ -30,7 +30,7 @@ use lapiz_shader_graph::{
 };
 
 use crate::desc::wgsl::{
-    AZIMUTH_INPUT, BrushPose, ColorJitter, DAB_INDEX_INPUT, DIRECTION_INPUT, Dynamics,
+    AZIMUTH_INPUT, BrushPose, ColorAdjustment, DAB_INDEX_INPUT, DIRECTION_INPUT, Dynamics,
     INITIAL_DIRECTION_INPUT, MAIN_BOUNDS_OUTPUT, MAIN_COLOR_OUTPUT, MAIN_FOREGROUND_COLOR_INPUT,
     MAIN_PEN_POSITION_INPUT, MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT,
     POSTPROCESS_INPUT_COLOR, POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT,
@@ -100,7 +100,7 @@ pub fn computed_graphs(
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
     pose: BrushPose,
-    color_jitter: Option<ColorJitter>,
+    color_adjustment: Option<ColorAdjustment>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = computed_main_graph(
@@ -118,7 +118,7 @@ pub fn computed_graphs(
         roundness_dynamics,
         tilt_scale,
         pose,
-        color_jitter,
+        color_adjustment,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -139,7 +139,7 @@ pub fn sampled_graphs(
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
     pose: BrushPose,
-    color_jitter: Option<ColorJitter>,
+    color_adjustment: Option<ColorAdjustment>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = sampled_main_graph(
@@ -157,7 +157,7 @@ pub fn sampled_graphs(
         roundness_dynamics,
         tilt_scale,
         pose,
-        color_jitter,
+        color_adjustment,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -211,18 +211,19 @@ fn computed_main_graph(
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
     pose: BrushPose,
-    color_jitter: Option<ColorJitter>,
+    color_adjustment: Option<ColorAdjustment>,
 ) -> Result<SerializableGraph> {
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
         || flow_dynamics.is_some()
         || angle_dynamics.is_some()
         || roundness_dynamics.is_some();
+    let has_color_jitter = color_adjustment.is_some_and(ColorAdjustment::has_jitter);
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
     let foreground_color = graph.add_node(Point::new(0.0, 200.0), ForegroundColorNode);
-    let stroke_time = color_jitter.map(|_| graph.add_node(Point::new(0.0, 650.0), TimeNode));
+    let stroke_time = has_color_jitter.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
@@ -231,7 +232,7 @@ fn computed_main_graph(
     if has_dynamics {
         add_dynamics_input_slots(&mut state);
     }
-    if color_jitter.is_some() {
+    if has_color_jitter {
         state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -251,7 +252,7 @@ fn computed_main_graph(
         roundness_dynamics,
         tilt_scale,
         pose,
-        color_jitter,
+        color_adjustment,
     ));
 
     let expression = add_stateful_node(
@@ -294,13 +295,14 @@ fn sampled_main_graph(
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
     pose: BrushPose,
-    color_jitter: Option<ColorJitter>,
+    color_adjustment: Option<ColorAdjustment>,
 ) -> Result<SerializableGraph> {
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
         || flow_dynamics.is_some()
         || angle_dynamics.is_some()
         || roundness_dynamics.is_some();
+    let has_color_jitter = color_adjustment.is_some_and(ColorAdjustment::has_jitter);
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
@@ -311,7 +313,7 @@ fn sampled_main_graph(
         TextureNode,
         TextureId(Some(sample_asset)),
     );
-    let stroke_time = color_jitter.map(|_| graph.add_node(Point::new(0.0, 650.0), TimeNode));
+    let stroke_time = has_color_jitter.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
@@ -321,7 +323,7 @@ fn sampled_main_graph(
     if has_dynamics {
         add_dynamics_input_slots(&mut state);
     }
-    if color_jitter.is_some() {
+    if has_color_jitter {
         state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -340,7 +342,7 @@ fn sampled_main_graph(
         roundness_dynamics,
         tilt_scale,
         pose,
-        color_jitter,
+        color_adjustment,
     ));
 
     let expression = add_stateful_node(
