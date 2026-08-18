@@ -43,6 +43,8 @@ pub struct Scatter {
     pub amount: f32,
     pub both_axes: bool,
     pub dynamics: Option<Dynamics>,
+    pub count: u32,
+    pub count_dynamics: Option<Dynamics>,
 }
 
 #[derive(Clone, Copy)]
@@ -144,6 +146,17 @@ fn stroke_random(random_offset: f32) -> Expression {
     ))
 }
 
+fn scatter_copy_random(random_offset: f32) -> Expression {
+    let dab_index = (*DAB_INDEX_IDENT).clone();
+    quote_expression!(fract(
+        sin(
+            f32(#dab_index) * 12.9898
+                + f32(copy_index) * 78.233
+                + #random_offset
+        ) * 43758.5453
+    ))
+}
+
 fn color_random(per_tip: bool, random_offset: f32) -> Expression {
     if per_tip {
         dab_random(random_offset)
@@ -223,9 +236,9 @@ fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expre
         None => quote_expression!(1.0),
     };
     let amount = scatter.amount;
-    let first_random = dab_random(127.413);
+    let first_random = scatter_copy_random(127.413);
     if scatter.both_axes {
-        let second_random = dab_random(149.819);
+        let second_random = scatter_copy_random(149.819);
         quote_expression!(
             vec2f(
                 #first_random * 2.0 - 1.0,
@@ -244,6 +257,21 @@ fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expre
                 * #factor
         )
     }
+}
+
+fn scatter_count_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expression {
+    let Some(scatter) = scatter else {
+        return quote_expression!(1u);
+    };
+    let count = scatter.count.max(1) as f32;
+    let Some(dynamics) = scatter.count_dynamics else {
+        return quote_expression!(u32(#count));
+    };
+    let factor = dynamics_factor(dynamics, 173.531, pose);
+    quote_expression!(max(
+        1u,
+        min(u32(#count), u32(round(#count * #factor))),
+    ))
 }
 
 fn size_diameter_statement(
@@ -546,6 +574,7 @@ pub fn computed_main(
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
+    let active_copy_count = scatter_count_expression(scatter, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -555,28 +584,43 @@ pub fn computed_main(
         @#size_diameter {}
         @#tip_roundness {}
         @#tip_foreground {}
-        let tip_center = #pen + #scatter_offset;
         let tip_radius = tip_diameter * 0.5;
-        let tip_delta = (#pixel - tip_center) * vec2f(#flip_x, #flip_y);
         let tip_radii = vec2f(
             tip_radius,
             max(tip_radius * tip_roundness, 0.001),
-        );
-        let tip_distance = sdf_ellipse(
-            rotate_mat2x2(#tip_angle + roundness_angle) * tip_delta,
-            vec2f(0.0),
-            tip_radii,
         );
         let tip_edge = max(
             1.0,
             max(tip_radii.x, tip_radii.y) * (1.0 - #hardness),
         );
-        let tip_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
+        let active_copy_count = #active_copy_count;
+        var tip_mask = 0.0;
+        var combined_bounds: Rect;
+        for (var copy_index = 0u; copy_index < active_copy_count; copy_index++) {
+            let tip_center = #pen + #scatter_offset;
+            let tip_delta = (#pixel - tip_center) * vec2f(#flip_x, #flip_y);
+            let tip_distance = sdf_ellipse(
+                rotate_mat2x2(#tip_angle + roundness_angle) * tip_delta,
+                vec2f(0.0),
+                tip_radii,
+            );
+            let copy_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
+            tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
+            let copy_bounds = Rect(
+                tip_center - vec2f(tip_radius),
+                tip_center + vec2f(tip_radius),
+            );
+            if copy_index == 0u {
+                combined_bounds = copy_bounds;
+            } else {
+                combined_bounds = Rect(
+                    min(combined_bounds.min, copy_bounds.min),
+                    max(combined_bounds.max, copy_bounds.max),
+                );
+            }
+        }
         @#tip_color {}
-        #bounds = Rect(
-            tip_center - vec2f(tip_radius),
-            tip_center + vec2f(tip_radius),
-        );
+        #bounds = combined_bounds;
     }}
     .to_string()
 }
@@ -610,6 +654,7 @@ pub fn sampled_main(
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
+    let active_copy_count = scatter_count_expression(scatter, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -619,7 +664,6 @@ pub fn sampled_main(
         @#size_diameter {}
         @#tip_roundness {}
         @#tip_foreground {}
-        let tip_center = #pen + #scatter_offset;
         let tip_texture_size = vec2f(atlas_size(#texture));
         let tip_base_size = max(tip_texture_size.x, tip_texture_size.y);
         let tip_scale = vec2f(
@@ -627,23 +671,39 @@ pub fn sampled_main(
             #flip_y * tip_diameter * tip_roundness / tip_base_size,
         );
         let tip_anchor = vec2f(0.5);
-        let tip_sample = sample_transformed_local_texture_clamp(
-            #texture,
-            #pixel,
-            tip_scale,
-            #tip_angle + roundness_angle,
-            tip_center,
-            tip_anchor,
-        );
-        let tip_mask = tip_sample.a * (1.0 - tip_sample.r);
+        let active_copy_count = #active_copy_count;
+        var tip_mask = 0.0;
+        var combined_bounds: Rect;
+        for (var copy_index = 0u; copy_index < active_copy_count; copy_index++) {
+            let tip_center = #pen + #scatter_offset;
+            let tip_sample = sample_transformed_local_texture_clamp(
+                #texture,
+                #pixel,
+                tip_scale,
+                #tip_angle + roundness_angle,
+                tip_center,
+                tip_anchor,
+            );
+            let copy_mask = tip_sample.a * (1.0 - tip_sample.r);
+            tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
+            let copy_bounds = filter_within_mask_bounds(
+                #texture,
+                tip_scale,
+                #tip_angle + roundness_angle,
+                tip_center,
+                tip_anchor,
+            );
+            if copy_index == 0u {
+                combined_bounds = copy_bounds;
+            } else {
+                combined_bounds = Rect(
+                    min(combined_bounds.min, copy_bounds.min),
+                    max(combined_bounds.max, copy_bounds.max),
+                );
+            }
+        }
         @#tip_color {}
-        #bounds = filter_within_mask_bounds(
-            #texture,
-            tip_scale,
-            #tip_angle + roundness_angle,
-            tip_center,
-            tip_anchor,
-        );
+        #bounds = combined_bounds;
     }}
     .to_string()
 }

@@ -236,6 +236,19 @@ pub fn parse_desc(
             .as_ref()
             .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("scatter dynamics"))
             .transpose()?;
+        let count_dynamics = brush
+            .count_dynamics
+            .as_ref()
+            .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("count dynamics"))
+            .transpose()?;
+        let count = brush.scatter_count.round();
+        ensure!(
+            brush.scatter_count.is_finite()
+                && (brush.scatter_count - count).abs() < f64::EPSILON
+                && (1.0..=16.0).contains(&count),
+            "unsupported scatter count {}",
+            brush.scatter_count
+        );
         Some(Scatter {
             amount: brush
                 .scatter_spacing
@@ -245,6 +258,8 @@ pub fn parse_desc(
                 .max(0.0),
             both_axes: brush.scatter_both_axes,
             dynamics,
+            count: count as u32,
+            count_dynamics,
         })
     } else {
         None
