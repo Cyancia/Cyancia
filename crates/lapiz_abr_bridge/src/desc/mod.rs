@@ -10,10 +10,10 @@ use lapiz_brush::asset::BrushPreset;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
+use crate::desc::wgsl::Dynamics;
+
 pub mod graph;
 pub mod wgsl;
-
-use self::wgsl::Dynamics;
 
 fn parse_dynamics(
     dynamics: &AbrPropertyDynamics,
@@ -97,6 +97,11 @@ pub fn parse_desc(
     } else {
         opacity_dynamics
     };
+    let flow_dynamics = brush
+        .flow_dynamics
+        .as_ref()
+        .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("flow dynamics"))
+        .transpose()?;
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
@@ -112,6 +117,7 @@ pub fn parse_desc(
                 flow,
                 size_dynamics,
                 opacity_dynamics,
+                flow_dynamics,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -131,6 +137,7 @@ pub fn parse_desc(
                 flow,
                 size_dynamics,
                 opacity_dynamics,
+                flow_dynamics,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),

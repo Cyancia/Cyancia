@@ -113,14 +113,25 @@ fn size_diameter_statement(diameter: f32, dynamics: Option<Dynamics>) -> Stateme
     }
 }
 
-fn tip_color_statement(flow: f32, opacity_dynamics: Option<Dynamics>) -> Statement {
+fn tip_color_statement(
+    flow: f32,
+    flow_dynamics: Option<Dynamics>,
+    opacity_dynamics: Option<Dynamics>,
+) -> Statement {
     let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
     let color = (*MAIN_COLOR_IDENT).clone();
+    let effective_flow = match flow_dynamics {
+        Some(dynamics) => {
+            let factor = dynamics_factor(dynamics, 19.673);
+            quote_expression!(#flow * #factor)
+        }
+        None => quote_expression!(#flow * 1.0),
+    };
     let Some(dynamics) = opacity_dynamics else {
         return quote_statement! {{
             let tip_color = vec4f(
                 #foreground.rgb,
-                #foreground.a * tip_mask * #flow,
+                #foreground.a * tip_mask * #effective_flow,
             );
             #color = image::blend_modes::blend_normal(
                 tip_color,
@@ -133,7 +144,7 @@ fn tip_color_statement(flow: f32, opacity_dynamics: Option<Dynamics>) -> Stateme
     quote_statement! {{
         let tip_color = vec4f(
             #foreground.rgb,
-            #foreground.a * tip_mask * #flow,
+            #foreground.a * tip_mask * #effective_flow,
         );
         let previous_color = current_input_color(pixel_pos);
         let accumulated_color = image::blend_modes::blend_normal(
@@ -175,6 +186,7 @@ pub fn computed_main(
     flow: f32,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
+    flow_dynamics: Option<Dynamics>,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -182,7 +194,7 @@ pub fn computed_main(
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
-    let tip_color = tip_color_statement(flow, opacity_dynamics);
+    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -218,6 +230,7 @@ pub fn sampled_main(
     flow: f32,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
+    flow_dynamics: Option<Dynamics>,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -226,7 +239,7 @@ pub fn sampled_main(
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
-    let tip_color = tip_color_statement(flow, opacity_dynamics);
+    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
 
     quote_statement! {{
         var tip_diameter: f32;
