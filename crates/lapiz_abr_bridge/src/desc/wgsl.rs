@@ -100,6 +100,7 @@ pub struct DualBrush {
     pub blend_mode: TextureBlendMode,
     pub spacing: f32,
     pub main_spacing: f32,
+    pub scatter: Option<Scatter>,
 }
 
 #[derive(Clone, Copy)]
@@ -350,6 +351,68 @@ fn scatter_count_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expres
         return quote_expression!(u32(#count));
     };
     let factor = dynamics_factor(dynamics, 173.531, pose);
+    quote_expression!(max(
+        1u,
+        min(u32(#count), u32(round(#count * #factor))),
+    ))
+}
+
+fn dual_copy_random(random_offset: f32) -> Expression {
+    let dab_index = (*DAB_INDEX_IDENT).clone();
+    quote_expression!(fract(
+        sin(
+            f32(#dab_index) * 12.9898
+                + f32(dual_copy_index) * 78.233
+                + #random_offset
+        ) * 43758.5453
+    ))
+}
+
+fn dual_scatter_offset_expression(
+    scatter: Option<Scatter>,
+    pose: BrushPose,
+    diameter: f32,
+) -> Expression {
+    let Some(scatter) = scatter else {
+        return quote_expression!(vec2f(0.0));
+    };
+    let factor = match scatter.dynamics {
+        Some(dynamics) => dynamics_factor(dynamics, 229.731, pose),
+        None => quote_expression!(1.0),
+    };
+    let amount = scatter.amount;
+    let first_random = dual_copy_random(239.117);
+    if scatter.both_axes {
+        let second_random = dual_copy_random(251.173);
+        quote_expression!(
+            vec2f(
+                #first_random * 2.0 - 1.0,
+                #second_random * 2.0 - 1.0,
+            ) * #diameter
+                * #amount
+                * #factor
+        )
+    } else {
+        let direction = (*DIRECTION_IDENT).clone();
+        quote_expression!(
+            vec2f(-sin(#direction), cos(#direction))
+                * (#first_random * 2.0 - 1.0)
+                * #diameter
+                * #amount
+                * #factor
+        )
+    }
+}
+
+fn dual_scatter_count_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expression {
+    let Some(scatter) = scatter else {
+        return quote_expression!(1u);
+    };
+    let count = scatter.count.max(1) as f32;
+    let Some(dynamics) = scatter.count_dynamics else {
+        return quote_expression!(u32(#count));
+    };
+    let factor = dynamics_factor(dynamics, 263.719, pose);
     quote_expression!(max(
         1u,
         min(u32(#count), u32(round(#count * #factor))),
@@ -660,7 +723,7 @@ fn texture_mask_statement(
     }}
 }
 
-fn dual_mask_statement(dual: Option<DualBrush>) -> Statement {
+fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
     let Some(dual) = dual else {
         return quote_statement! {{}};
     };
@@ -674,7 +737,7 @@ fn dual_mask_statement(dual: Option<DualBrush>) -> Statement {
     let dual_spacing = (diameter * dual.spacing).max(0.001);
     let main_spacing = dual.main_spacing.max(0.001);
     let random_flip = if dual.flip {
-        let random = dab_random(281.917);
+        let random = dual_copy_random(281.917);
         quote_expression!(select(1.0, -1.0, #random < 0.5))
     } else {
         quote_expression!(1.0)
@@ -700,7 +763,7 @@ fn dual_mask_statement(dual: Option<DualBrush>) -> Statement {
                     vec2f(0.0),
                     vec2f(#radius, max(#radius * #roundness, 0.001)),
                 );
-                dual_mask = 1.0 - smoothstep(-#edge, 0.0, dual_distance);
+                dual_copy_mask = 1.0 - smoothstep(-#edge, 0.0, dual_distance);
             }}
         }
         DualTip::Sampled {
@@ -728,10 +791,12 @@ fn dual_mask_statement(dual: Option<DualBrush>) -> Statement {
                     dual_center,
                     vec2f(0.5),
                 );
-                dual_mask = dual_sample.a * dual_sample.r;
+                dual_copy_mask = dual_sample.a * dual_sample.r;
             }}
         }
     };
+    let scatter_offset = dual_scatter_offset_expression(dual.scatter, pose, diameter);
+    let active_copy_count = dual_scatter_count_expression(dual.scatter, pose);
     let blended_mask = match dual.blend_mode {
         TextureBlendMode::Multiply => {
             quote_expression!(image::blend_modes::blend_multiply(dual_color, mask_color).r)
@@ -772,9 +837,20 @@ fn dual_mask_statement(dual: Option<DualBrush>) -> Statement {
         let dual_distance_along_stroke = f32(#dab_index) * #main_spacing;
         let dual_phase = dual_distance_along_stroke
             - floor(dual_distance_along_stroke / #dual_spacing) * #dual_spacing;
-        let dual_center = #pen - vec2f(cos(#direction), sin(#direction)) * dual_phase;
+        let dual_stroke_center =
+            #pen - vec2f(cos(#direction), sin(#direction)) * dual_phase;
+        let dual_active_copy_count = #active_copy_count;
         var dual_mask = 0.0;
-        @#sample_dual {}
+        for (
+            var dual_copy_index = 0u;
+            dual_copy_index < dual_active_copy_count;
+            dual_copy_index++
+        ) {
+            let dual_center = dual_stroke_center + #scatter_offset;
+            var dual_copy_mask = 0.0;
+            @#sample_dual {}
+            dual_mask = 1.0 - (1.0 - dual_mask) * (1.0 - dual_copy_mask);
+        }
         let dual_color = vec4f(vec3f(dual_mask), 1.0);
         let mask_color = vec4f(vec3f(tip_mask), 1.0);
         tip_mask = select(0.0, #blended_mask, tip_mask > 0.0);
@@ -880,7 +956,7 @@ pub fn computed_main(
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
     let noise = noise_statement(noise);
-    let dual_mask = dual_mask_statement(dual_brush);
+    let dual_mask = dual_mask_statement(dual_brush, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -969,7 +1045,7 @@ pub fn sampled_main(
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
     let noise = noise_statement(noise);
-    let dual_mask = dual_mask_statement(dual_brush);
+    let dual_mask = dual_mask_statement(dual_brush, pose);
 
     quote_statement! {{
         var tip_diameter: f32;

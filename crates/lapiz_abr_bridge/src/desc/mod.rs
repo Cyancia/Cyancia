@@ -55,6 +55,40 @@ fn parse_dual_brush(
         BrushTip::Sampled(tip) => tip.diameter.value * tip.spacing.value / 100.0,
         BrushTip::DBrush(tip) => tip.diameter.value * tip.spacing.value / 100.0,
     } as f32;
+    let scatter = if dual.use_scatter {
+        let dynamics = dual
+            .scatter_dynamics
+            .as_ref()
+            .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("dual scatter dynamics"))
+            .transpose()?;
+        let count_dynamics = dual
+            .count_dynamics
+            .as_ref()
+            .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("dual count dynamics"))
+            .transpose()?;
+        let count = dual.scatter_count.round();
+        ensure!(
+            dual.scatter_count.is_finite()
+                && (dual.scatter_count - count).abs() < f64::EPSILON
+                && (1.0..=16.0).contains(&count),
+            "unsupported dual scatter count {}",
+            dual.scatter_count
+        );
+        Some(Scatter {
+            amount: dual
+                .spacing
+                .as_ref()
+                .map(|value| value.value as f32 / 100.0)
+                .unwrap_or(0.0)
+                .max(0.0),
+            both_axes: dual.scatter_both_axes,
+            dynamics,
+            count: count as u32,
+            count_dynamics,
+        })
+    } else {
+        None
+    };
     let (tip, sample_asset) = match tip {
         BrushTip::Computed(tip) => {
             ensure!(tip.interpolation, "unsupported dual computed interpolation");
@@ -97,6 +131,7 @@ fn parse_dual_brush(
                 .context("dual brush blend mode")?,
             spacing,
             main_spacing,
+            scatter,
         }),
         sample_asset,
     ))
