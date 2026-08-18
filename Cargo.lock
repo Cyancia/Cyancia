@@ -2994,10 +2994,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "iced_core",
  "image",
  "lapiz_abr",
  "lapiz_assets",
+ "lapiz_brush",
  "lapiz_render",
+ "lapiz_shader_graph",
  "log",
  "thiserror 2.0.19",
  "uuid",

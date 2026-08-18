@@ -3294,11 +3294,50 @@ struct SerializableCustomExpressionVariable {
     ty: String,
 }
 
+#[derive(Default)]
 pub struct CustomExpressionNodeState {
     inputs: IndexMap<CustomExpressionVariableId, CustomExpressionVariable>,
     outputs: IndexMap<CustomExpressionVariableId, CustomExpressionVariable>,
     code: String,
     draft: Option<CustomExpressionDraft>,
+}
+
+impl CustomExpressionNodeState {
+    pub fn set_code(&mut self, code: impl Into<String>) {
+        self.code = code.into();
+    }
+
+    pub fn add_input<T: GraphValueType + Default>(
+        &mut self,
+        name: impl Into<String>,
+    ) -> CustomExpressionVariableId {
+        Self::add_variable::<T>(&mut self.inputs, name)
+    }
+
+    pub fn add_output<T: GraphValueType + Default>(
+        &mut self,
+        name: impl Into<String>,
+    ) -> CustomExpressionVariableId {
+        Self::add_variable::<T>(&mut self.outputs, name)
+    }
+
+    fn add_variable<T: GraphValueType + Default>(
+        variables: &mut IndexMap<CustomExpressionVariableId, CustomExpressionVariable>,
+        name: impl Into<String>,
+    ) -> CustomExpressionVariableId {
+        let name = name.into();
+        let id = CustomExpressionVariableId::new(Uuid::new_v4());
+        variables.insert(
+            id,
+            CustomExpressionVariable {
+                id,
+                display_name: name.clone(),
+                name,
+                ty: Box::new(T::default()),
+            },
+        );
+        id
+    }
 }
 
 #[derive(Clone)]

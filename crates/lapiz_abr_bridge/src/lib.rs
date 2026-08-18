@@ -9,15 +9,17 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use lapiz_abr::Abr;
 use lapiz_assets::{
-    asset::{ErasedAsset, UntypedAssetId},
+    asset::{AssetId, ErasedAsset, UntypedAssetId},
     bundle::{AssetBundle, AssetBundleMetadata, BundleId, BundleManifest},
     loader::ErasedAssetSerializer,
     tag::{AssetTags, TagFile},
 };
+use lapiz_render::texture::Image;
 use thiserror::Error;
 use uuid::Uuid;
 use xxhash_rust::xxh3::xxh3_128;
 
+pub mod desc;
 pub mod patt;
 pub mod samp;
 
@@ -65,12 +67,15 @@ impl AbrAssetBundle {
             tags: BTreeMap::new(),
         };
         let mut assets = HashMap::new();
+        let mut sample_assets = HashMap::<Uuid, AssetId<Image>>::new();
+        let mut pattern_assets = HashMap::<Uuid, AssetId<Image>>::new();
 
         for sample in &abr.samples {
             let asset_id = UntypedAssetId::new(Uuid::new_v5(&bundle_id.0, sample.id.as_bytes()));
             let path = PathBuf::from(format!("samp-{asset_id}.lig"));
             match samp::parse_samp(sample) {
                 Ok(asset) => {
+                    sample_assets.insert(sample.id, asset_id.into_typed());
                     manifest.assets.insert(asset_id, path.clone());
                     assets.insert(path, Arc::new(asset) as Arc<dyn ErasedAsset>);
                 }
@@ -85,15 +90,30 @@ impl AbrAssetBundle {
             let path = PathBuf::from(format!("patt-{asset_id}.lig"));
             match patt::parse_patt(pattern) {
                 Ok(asset) => {
+                    pattern_assets.insert(pattern.id, asset_id.into_typed());
                     manifest.assets.insert(asset_id, path.clone());
                     assets.insert(path, Arc::new(asset) as Arc<dyn ErasedAsset>);
                 }
                 Err(error) => {
                     log::error!(
-                        "Failed to convert patt {} ({}) : {error}",
+                        "Failed to convert patt {} ({}): {error}",
                         pattern.name,
                         pattern.id
                     );
+                }
+            }
+        }
+
+        for brush in &abr.brushes {
+            let asset_id = UntypedAssetId::new(Uuid::new_v5(&bundle_id.0, brush.name.as_bytes()));
+            let path = PathBuf::from(format!("desc-{asset_id}.lapiz"));
+            match desc::parse_desc(brush, &sample_assets, &pattern_assets) {
+                Ok(asset) => {
+                    manifest.assets.insert(asset_id, path.clone());
+                    assets.insert(path, Arc::new(asset) as Arc<dyn ErasedAsset>);
+                }
+                Err(error) => {
+                    log::error!("Failed to convert desc {}: {error}", brush.name);
                 }
             }
         }
