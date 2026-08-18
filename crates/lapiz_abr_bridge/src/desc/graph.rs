@@ -171,9 +171,7 @@ fn required_spacing_graph(
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(REQUIRED_SPACING_GRAPH_NODES.clone()));
     let mut state = CustomExpressionNodeState::default();
-    if size_dynamics.is_some() {
-        add_dynamics_input_slots(&mut state);
-    }
+    add_dynamics_input_slots(&mut state);
     state.add_output::<F32Type>(REQUIRED_SPACING_OUTPUT);
     state.set_code(computed_required_spacing(
         diameter,
@@ -190,9 +188,7 @@ fn required_spacing_graph(
     );
     let output = graph.add_node(Point::new(300.0, 100.0), OutputRequiredSpacingNode);
     graph.connect_slots_by_index(expression, 0, output, 0);
-    if size_dynamics.is_some() {
-        connect_dynamics_input_nodes(&mut graph, expression, 0);
-    }
+    connect_dynamics_input_nodes(&mut graph, expression, 0);
 
     Ok(graph.as_serialized()?)
 }
@@ -214,36 +210,20 @@ fn computed_main_graph(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
 ) -> Result<SerializableGraph> {
-    let has_color_dynamics = color_adjustment.is_some_and(|color| color.dynamics.is_some());
-    let needs_color_inputs = color_adjustment.is_some_and(ColorAdjustment::needs_dynamics_inputs);
-    let needs_stroke_time = color_adjustment.is_some_and(ColorAdjustment::needs_stroke_time);
-    let has_dynamics = size_dynamics.is_some()
-        || opacity_dynamics.is_some()
-        || flow_dynamics.is_some()
-        || angle_dynamics.is_some()
-        || roundness_dynamics.is_some()
-        || needs_color_inputs;
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
     let foreground_color = graph.add_node(Point::new(0.0, 200.0), ForegroundColorNode);
-    let background_color =
-        has_color_dynamics.then(|| graph.add_node(Point::new(0.0, 300.0), BackgroundColorNode));
-    let stroke_time = needs_stroke_time.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
+    let background_color = graph.add_node(Point::new(0.0, 300.0), BackgroundColorNode);
+    let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
-    if has_color_dynamics {
-        state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
-    }
-    if has_dynamics {
-        add_dynamics_input_slots(&mut state);
-    }
-    if needs_stroke_time {
-        state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
-    }
+    state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
+    add_dynamics_input_slots(&mut state);
+    state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(MAIN_BOUNDS_OUTPUT);
     state.set_code(computed_main(
@@ -276,19 +256,9 @@ fn computed_main_graph(
     graph.connect_slots_by_index(pixel_position, 0, expression, 0);
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
-    let dynamics_input = if let Some(background_color) = background_color {
-        graph.connect_slots_by_index(background_color, 0, expression, 3);
-        4
-    } else {
-        3
-    };
-    if has_dynamics {
-        connect_dynamics_input_nodes(&mut graph, expression, dynamics_input);
-    }
-    if let Some(stroke_time) = stroke_time {
-        let input = dynamics_input + if has_dynamics { 6 } else { 0 };
-        graph.connect_slots_by_index(stroke_time, 1, expression, input);
-    }
+    graph.connect_slots_by_index(background_color, 0, expression, 3);
+    connect_dynamics_input_nodes(&mut graph, expression, 4);
+    graph.connect_slots_by_index(stroke_time, 1, expression, 10);
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
@@ -312,15 +282,6 @@ fn sampled_main_graph(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
 ) -> Result<SerializableGraph> {
-    let has_color_dynamics = color_adjustment.is_some_and(|color| color.dynamics.is_some());
-    let needs_color_inputs = color_adjustment.is_some_and(ColorAdjustment::needs_dynamics_inputs);
-    let needs_stroke_time = color_adjustment.is_some_and(ColorAdjustment::needs_stroke_time);
-    let has_dynamics = size_dynamics.is_some()
-        || opacity_dynamics.is_some()
-        || flow_dynamics.is_some()
-        || angle_dynamics.is_some()
-        || roundness_dynamics.is_some()
-        || needs_color_inputs;
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
@@ -331,24 +292,17 @@ fn sampled_main_graph(
         TextureNode,
         TextureId(Some(sample_asset)),
     );
-    let background_color =
-        has_color_dynamics.then(|| graph.add_node(Point::new(0.0, 400.0), BackgroundColorNode));
-    let stroke_time = needs_stroke_time.then(|| graph.add_node(Point::new(0.0, 650.0), TimeNode));
+    let background_color = graph.add_node(Point::new(0.0, 400.0), BackgroundColorNode);
+    let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
     state.add_input::<TextureType>(MAIN_TIP_TEXTURE_INPUT);
-    if has_color_dynamics {
-        state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
-    }
-    if has_dynamics {
-        add_dynamics_input_slots(&mut state);
-    }
-    if needs_stroke_time {
-        state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
-    }
+    state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
+    add_dynamics_input_slots(&mut state);
+    state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(MAIN_BOUNDS_OUTPUT);
     state.set_code(sampled_main(
@@ -381,19 +335,9 @@ fn sampled_main_graph(
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
     graph.connect_slots_by_index(texture, 0, expression, 3);
-    let dynamics_input = if let Some(background_color) = background_color {
-        graph.connect_slots_by_index(background_color, 0, expression, 4);
-        5
-    } else {
-        4
-    };
-    if has_dynamics {
-        connect_dynamics_input_nodes(&mut graph, expression, dynamics_input);
-    }
-    if let Some(stroke_time) = stroke_time {
-        let input = dynamics_input + if has_dynamics { 6 } else { 0 };
-        graph.connect_slots_by_index(stroke_time, 1, expression, input);
-    }
+    graph.connect_slots_by_index(background_color, 0, expression, 4);
+    connect_dynamics_input_nodes(&mut graph, expression, 5);
+    graph.connect_slots_by_index(stroke_time, 1, expression, 11);
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 

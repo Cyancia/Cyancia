@@ -49,24 +49,6 @@ pub struct ColorAdjustment {
     pub foreground_color: Option<[f32; 3]>,
 }
 
-impl ColorAdjustment {
-    pub fn has_hsv_jitter(self) -> bool {
-        self.hue_jitter > 0.0 || self.saturation_jitter > 0.0 || self.value_jitter > 0.0
-    }
-
-    pub fn has_random(self) -> bool {
-        self.has_hsv_jitter() || self.dynamics.is_some_and(|dynamics| dynamics.jitter > 0.0)
-    }
-
-    pub fn needs_dynamics_inputs(self) -> bool {
-        self.dynamics.is_some() || (self.per_tip && self.has_hsv_jitter())
-    }
-
-    pub fn needs_stroke_time(self) -> bool {
-        !self.per_tip && self.has_random()
-    }
-}
-
 // TODO: This is really ugly, can we avoid this?
 static MAIN_PIXEL_POSITION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new("pixel_position".to_string()));
