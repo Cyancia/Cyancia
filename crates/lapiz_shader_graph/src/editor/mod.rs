@@ -1018,7 +1018,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
                                     border: Border::default().rounded(NODE_BORDER_RADIUS),
                                     ..Default::default()
                                 },
-                                Color::WHITE,
+                                theme.palette().text,
                             );
                         }
                         child.widget.as_widget().draw(
