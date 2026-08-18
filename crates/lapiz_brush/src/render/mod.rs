@@ -1022,6 +1022,7 @@ pub struct InputSampler {
     pub last_sample: ComputedPenInput,
     pub has_last_sample: u32,
     pub has_initial_input: u32,
+    pub next_dab_index: u32,
 }
 
 #[derive(ShaderType, Debug, Default, Clone, Copy)]
@@ -1043,6 +1044,7 @@ pub struct ComputedPenInput {
     pub angle: Vec2,
     pub draw_direction_angle: f32,
     pub pressure: f32,
+    pub dab_index: u32,
     pub time: Time,
 }
 

@@ -27,12 +27,13 @@ use crate::{
     render::graph::{
         BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode,
         BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData,
-        CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode,
-        FilterWithinMaskNode, ForegroundColorNode, InitialDrawDirectionNode, InitialPenAngleNode,
-        InitialPenPositionNode, InitialPenPressureNode, InitialPenTiltNode, LayerPixelColorNode,
-        OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode,
-        PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode,
-        SelectionMaskNode, StrokeBoundsNode,
+        CurrentPixelColorNode, DabIndexNode, DrawDirectionNode, EllipticalMaskNode,
+        FilterWithinBoundsNode, FilterWithinMaskNode, ForegroundColorNode,
+        InitialDrawDirectionNode, InitialPenAngleNode, InitialPenPositionNode,
+        InitialPenPressureNode, InitialPenTiltNode, LayerPixelColorNode, OutputBoundsNode,
+        OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode,
+        PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode,
+        StrokeBoundsNode,
     },
 };
 
@@ -495,6 +496,7 @@ fn required_spacing_graph_nodes() -> GraphNodeRegistry<BrushRequiredSpacingGraph
     nodes.register::<PenAngleNode>();
     nodes.register::<PenTiltNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<DabIndexNode>();
     nodes.register::<InitialPenPositionNode>();
     nodes.register::<InitialPenPressureNode>();
     nodes.register::<InitialPenAngleNode>();
@@ -518,6 +520,7 @@ fn main_graph_nodes() -> GraphNodeRegistry<BrushMainGraphData> {
     nodes.register::<PenAngleNode>();
     nodes.register::<PenTiltNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<DabIndexNode>();
     nodes.register::<InitialPenPositionNode>();
     nodes.register::<InitialPenPressureNode>();
     nodes.register::<InitialPenAngleNode>();

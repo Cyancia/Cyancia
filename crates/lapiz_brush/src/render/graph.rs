@@ -19,7 +19,7 @@ use lapiz_shader_graph::{
     },
     wgsl_std::{
         nodes::{GraphDataWithTime, GraphTimes},
-        types::{ColorType, F32Type, RectType, TextureType, Vec2FType},
+        types::{ColorType, F32Type, I32Type, RectType, TextureType, Vec2FType},
     },
 };
 use lapiz_utils::random_oklch;
@@ -352,6 +352,45 @@ impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for PenAngleNod
             "let {} = {pen_input}.angle.x;\nlet {} = {pen_input}.angle.y;\n",
             ctx.get_output(0)?,
             ctx.get_output(1)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct DabIndexNode;
+
+#[stateless]
+impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for DabIndexNode {
+    fn name(&self) -> &'static str {
+        "Dab Index"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(DabIndexNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<I32Type>("Dab Index".into())]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = i32({}.dab_index);",
+            ctx.get_output(0)?,
+            Data::pen_input_field()
         ))
     }
 }
