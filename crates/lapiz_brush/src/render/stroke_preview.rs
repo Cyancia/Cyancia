@@ -11,7 +11,7 @@ use lapiz_assets::asset::AssetHandle;
 use lapiz_image::{
     layer_bounds::LayerBoundsPipeline,
     texel::TexelType,
-    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, LayerBinding},
+    tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, LayerBinding},
 };
 use lapiz_render::{
     bind_group_entries::BindGroupEntries,
