@@ -67,7 +67,16 @@ fn main() {
     let p2 = new_input.bezier_control_cur;
     let p3 = new_input.position;
 
-    let new_computed = compute_pen_input(new_input, new_input, p0, p1, p2, p3, 1.0, 0u);
+    let new_computed = compute_pen_input(
+        new_input,
+        new_input,
+        p0,
+        p1,
+        p2,
+        p3,
+        1.0,
+        input_sampler.next_dab_index,
+    );
 
     if input_sampler.has_last_sample == 0 {
         input_sampler.last_input = new_input;
@@ -89,8 +98,7 @@ fn main() {
     }
     let total_arc = arc_table[BEZIER_SAMPLES];
 
-    let spacing = compute_required_spacing(new_computed);
-    if total_arc < 0.0001 || spacing <= 0.0 {
+    if total_arc < 0.0001 {
         input_sampler.last_input = new_input;
         return;
     }
@@ -99,7 +107,21 @@ fn main() {
     while output_samples.n_samples < arrayLength(&output_samples.samples) {
         let target_arc = total_arc - remaining_arc;
         let t = bezier_t_for_arc_length(&arc_table, target_arc);
-        let interpolated = compute_pen_input(input_sampler.last_input, new_input, p0, p1, p2, p3, t, input_sampler.next_dab_index);
+        let interpolated = compute_pen_input(
+            input_sampler.last_input,
+            new_input,
+            p0,
+            p1,
+            p2,
+            p3,
+            t,
+            input_sampler.next_dab_index,
+        );
+        let spacing = compute_required_spacing(interpolated);
+        if spacing <= 0.0 {
+            input_sampler.last_input = new_input;
+            return;
+        }
         input_sampler.next_dab_index += 1u;
 
         output_samples.samples[output_samples.n_samples] = interpolated;
