@@ -16,6 +16,7 @@ image.workspace = true
 lapiz_abr.workspace = true
 lapiz_assets.workspace = true
 lapiz_brush.workspace = true
+lapiz_image.workspace = true
 lapiz_render.workspace = true
 lapiz_shader_graph.workspace = true
 log.workspace = true

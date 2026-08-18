@@ -16,6 +16,7 @@ use lapiz_brush::{
         StrokeBoundsNode,
     },
 };
+use lapiz_image::blend_modes::BlendMode;
 use lapiz_render::texture::Image;
 use lapiz_shader_graph::{
     graph::{
@@ -96,6 +97,7 @@ pub fn computed_graphs(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
+    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -120,6 +122,7 @@ pub fn computed_graphs(
         flip_x,
         flip_y,
         flow,
+        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,
@@ -147,6 +150,7 @@ pub fn sampled_graphs(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
+    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -171,6 +175,7 @@ pub fn sampled_graphs(
         flip_x,
         flip_y,
         flow,
+        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,
@@ -227,6 +232,7 @@ fn computed_main_graph(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
+    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -286,6 +292,7 @@ fn computed_main_graph(
         flip_x,
         flip_y,
         flow,
+        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,
@@ -335,6 +342,7 @@ fn sampled_main_graph(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
+    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -400,6 +408,7 @@ fn sampled_main_graph(
         flip_x,
         flip_y,
         flow,
+        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,

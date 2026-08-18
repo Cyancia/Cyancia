@@ -7,6 +7,7 @@ use lapiz_abr::{
 };
 use lapiz_assets::asset::AssetId;
 use lapiz_brush::asset::BrushPreset;
+use lapiz_image::blend_modes::BlendMode as ImageBlendMode;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
@@ -17,6 +18,43 @@ use crate::desc::wgsl::{
 
 pub mod graph;
 pub mod wgsl;
+
+fn parse_blend_mode(mode: BlendMode) -> ImageBlendMode {
+    match mode {
+        BlendMode::Normal => ImageBlendMode::Normal,
+        BlendMode::Dissolve => ImageBlendMode::Dissolve,
+        BlendMode::Behind => ImageBlendMode::Behind,
+        BlendMode::Clear => ImageBlendMode::Clear,
+        BlendMode::Darken => ImageBlendMode::Darken,
+        BlendMode::Multiply => ImageBlendMode::Multiply,
+        BlendMode::ColorBurn => ImageBlendMode::ColorBurn,
+        BlendMode::LinearBurn => ImageBlendMode::LinearBurn,
+        BlendMode::DarkerColor => ImageBlendMode::DarkerColor,
+        BlendMode::Lighten => ImageBlendMode::Lighten,
+        BlendMode::Screen => ImageBlendMode::Screen,
+        BlendMode::ColorDodge => ImageBlendMode::ColorDodge,
+        BlendMode::LinearDodge => ImageBlendMode::LinearDodge,
+        BlendMode::LighterColor => ImageBlendMode::LighterColor,
+        BlendMode::Overlay => ImageBlendMode::Overlay,
+        BlendMode::SoftLight => ImageBlendMode::SoftLight,
+        BlendMode::HardLight => ImageBlendMode::HardLight,
+        BlendMode::VividLight => ImageBlendMode::VividLight,
+        BlendMode::LinearLight => ImageBlendMode::LinearLight,
+        BlendMode::PinLight => ImageBlendMode::PinLight,
+        BlendMode::HardMix => ImageBlendMode::HardMix,
+        BlendMode::Difference => ImageBlendMode::Difference,
+        BlendMode::Exclusion => ImageBlendMode::Exclusion,
+        BlendMode::Subtract => ImageBlendMode::Subtract,
+        BlendMode::SubtractTexture => ImageBlendMode::Subtractive,
+        BlendMode::Divide => ImageBlendMode::Divide,
+        BlendMode::Hue => ImageBlendMode::Hue,
+        BlendMode::Saturation => ImageBlendMode::Saturation,
+        BlendMode::Color => ImageBlendMode::Color,
+        BlendMode::Luminosity => ImageBlendMode::Luminosity,
+        BlendMode::Height => ImageBlendMode::Height,
+        BlendMode::LinearHeight => ImageBlendMode::LinearHeight,
+    }
+}
 
 fn parse_texture_blend_mode(mode: Option<BlendMode>) -> Result<TextureBlendMode> {
     match mode {
@@ -175,15 +213,17 @@ pub fn parse_desc(
         Some(ToolOptions::Paint(options)) => Some(options),
         _ => None,
     };
-    let (opacity, flow, pressure_overrides_size, pressure_overrides_opacity) = match paint_options {
-        Some(options) => (
-            (options.opacity as f32 / 100.0).clamp(0.0, 1.0),
-            (options.flow as f32 / 100.0).clamp(0.0, 1.0),
-            options.use_pressure_overrides_size,
-            options.use_pressure_overrides_opacity,
-        ),
-        None => (1.0, 1.0, false, false),
-    };
+    let (opacity, flow, pressure_overrides_size, pressure_overrides_opacity, paint_blend_mode) =
+        match paint_options {
+            Some(options) => (
+                (options.opacity as f32 / 100.0).clamp(0.0, 1.0),
+                (options.flow as f32 / 100.0).clamp(0.0, 1.0),
+                options.use_pressure_overrides_size,
+                options.use_pressure_overrides_opacity,
+                parse_blend_mode(options.blend_mode),
+            ),
+            None => (1.0, 1.0, false, false, ImageBlendMode::Normal),
+        };
     let minimum_diameter = brush
         .minimum_diameter
         .as_ref()
@@ -192,6 +232,7 @@ pub fn parse_desc(
     let size_dynamics = brush
         .size_dynamics
         .as_ref()
+        .or_else(|| paint_options.and_then(|options| options.size_dynamics.as_ref()))
         .map(|dynamics| {
             parse_dynamics(dynamics, pressure_overrides_size, minimum_diameter)
                 .context("size dynamics")
@@ -210,6 +251,7 @@ pub fn parse_desc(
     let opacity_dynamics = brush
         .opacity_dynamics
         .as_ref()
+        .or_else(|| paint_options.and_then(|options| options.opacity_dynamics.as_ref()))
         .map(|dynamics| {
             parse_dynamics(dynamics, pressure_overrides_opacity, 0.0).context("opacity dynamics")
         })
@@ -227,6 +269,7 @@ pub fn parse_desc(
     let flow_dynamics = brush
         .flow_dynamics
         .as_ref()
+        .or_else(|| paint_options.and_then(|options| options.flow_dynamics.as_ref()))
         .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("flow dynamics"))
         .transpose()?;
     let angle_dynamics = brush
@@ -466,6 +509,7 @@ pub fn parse_desc(
                 tip.flip_x ^ brush.flip_x,
                 tip.flip_y ^ brush.flip_y,
                 flow,
+                paint_blend_mode,
                 size_dynamics,
                 opacity_dynamics,
                 flow_dynamics,
@@ -497,6 +541,7 @@ pub fn parse_desc(
                 tip.flip_x ^ brush.flip_x,
                 tip.flip_y ^ brush.flip_y,
                 flow,
+                paint_blend_mode,
                 size_dynamics,
                 opacity_dynamics,
                 flow_dynamics,

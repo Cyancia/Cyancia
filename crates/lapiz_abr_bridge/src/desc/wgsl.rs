@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
 use lapiz_abr::DynamicsControl;
+use lapiz_image::blend_modes::BlendMode;
 use wesl::syntax::*;
 use wesl_quote::{quote_expression, quote_statement};
 
@@ -859,11 +860,13 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
 
 fn tip_color_statement(
     flow: f32,
+    blend_mode: BlendMode,
     flow_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     pose: BrushPose,
 ) -> Statement {
     let color = (*MAIN_COLOR_IDENT).clone();
+    let blend = Ident::new(blend_mode.shader_func().to_string());
     let effective_flow = match flow_dynamics {
         Some(dynamics) => {
             let factor = dynamics_factor(dynamics, 19.673, pose);
@@ -877,7 +880,7 @@ fn tip_color_statement(
                 tip_foreground.rgb,
                 tip_foreground.a * tip_mask * #effective_flow,
             );
-            #color = image::blend_modes::blend_normal(
+            #color = image::blend_modes::#blend(
                 tip_color,
                 current_input_color(pixel_pos),
             );
@@ -891,7 +894,7 @@ fn tip_color_statement(
             tip_foreground.a * tip_mask * #effective_flow,
         );
         let previous_color = current_input_color(pixel_pos);
-        let accumulated_color = image::blend_modes::blend_normal(
+        let accumulated_color = image::blend_modes::#blend(
             tip_color,
             previous_color,
         );
@@ -929,6 +932,7 @@ pub fn computed_main(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
+    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -951,7 +955,7 @@ pub fn computed_main(
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
-    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
+    let tip_color = tip_color_statement(flow, blend_mode, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
@@ -1017,6 +1021,7 @@ pub fn sampled_main(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
+    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -1040,7 +1045,7 @@ pub fn sampled_main(
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
-    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
+    let tip_color = tip_color_statement(flow, blend_mode, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());

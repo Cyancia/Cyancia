@@ -2999,6 +2999,7 @@ dependencies = [
  "lapiz_abr",
  "lapiz_assets",
  "lapiz_brush",
+ "lapiz_image",
  "lapiz_render",
  "lapiz_shader_graph",
  "log",
