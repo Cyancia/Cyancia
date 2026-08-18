@@ -21,6 +21,12 @@ impl TextureId {
     pub const NULL: Self = Self(None);
 }
 
+impl Default for TextureId {
+    fn default() -> Self {
+        Self::NULL
+    }
+}
+
 #[derive(Clone)]
 pub struct TextureObject {
     pub external_id: AssetId<Image>,

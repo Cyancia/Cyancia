@@ -322,6 +322,7 @@ pub struct TextureType;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TextureReference {
     pub local_index: u32,
+    #[serde(default)]
     pub external_id: TextureId,
 }
 

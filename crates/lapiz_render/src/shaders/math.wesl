@@ -112,8 +112,8 @@ fn scale_rotate_transform_anchored_inv(scale: vec2f, angle: f32, translation: ve
     let m10 = s / scale.x;
     let m01 = -s / scale.y;
     let m11 = c / scale.y;
-    let m02 = anchor.x - (m00 * translation.x + m01 * translation.y);
-    let m12 = anchor.y - (m10 * translation.x + m11 * translation.y);
+    let m02 = anchor.x - (m00 * translation.x + m10 * translation.y);
+    let m12 = anchor.y - (m01 * translation.x + m11 * translation.y);
     return mat3x3f(
         m00, m01, 0.0,
         m10, m11, 0.0,
