@@ -113,6 +113,24 @@ pub fn parse_desc(
             parse_dynamics(dynamics, false, 0.0).context("angle dynamics")
         })
         .transpose()?;
+    let minimum_roundness = brush
+        .minimum_roundness
+        .as_ref()
+        .map(|value| value.value as f32 / 100.0)
+        .unwrap_or(0.0);
+    let roundness_dynamics = brush
+        .roundness_dynamics
+        .as_ref()
+        .map(|dynamics| {
+            parse_dynamics(dynamics, false, minimum_roundness).context("roundness dynamics")
+        })
+        .transpose()?;
+    let tilt_scale = brush
+        .tilt_scale
+        .as_ref()
+        .map(|value| value.value as f32 / 100.0)
+        .unwrap_or(2.0)
+        .clamp(0.0, 2.0);
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
@@ -130,6 +148,8 @@ pub fn parse_desc(
                 opacity_dynamics,
                 flow_dynamics,
                 angle_dynamics,
+                roundness_dynamics,
+                tilt_scale,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -151,6 +171,8 @@ pub fn parse_desc(
                 opacity_dynamics,
                 flow_dynamics,
                 angle_dynamics,
+                roundness_dynamics,
+                tilt_scale,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),

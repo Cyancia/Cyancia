@@ -62,14 +62,14 @@ fn dab_random(random_offset: f32) -> Expression {
     ))
 }
 
-fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
+fn dynamics_control(dynamics: Dynamics) -> Expression {
     let pressure = (*PRESSURE_IDENT).clone();
     let tilt = (*TILT_IDENT).clone();
     let azimuth = (*AZIMUTH_IDENT).clone();
     let direction = (*DIRECTION_IDENT).clone();
     let initial_direction = (*INITIAL_DIRECTION_IDENT).clone();
     let dab_index = (*DAB_INDEX_IDENT).clone();
-    let control = match dynamics.control {
+    match dynamics.control {
         DynamicsControl::Off => quote_expression!(1.0),
         DynamicsControl::Fade if dynamics.fade_steps <= 0 => quote_expression!(0.0),
         DynamicsControl::Fade => {
@@ -92,7 +92,11 @@ fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
             quote_expression!(fract(#azimuth / render::math::TAU + 1.0))
         }
         DynamicsControl::StylusWheel => unreachable!(),
-    };
+    }
+}
+
+fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
+    let control = dynamics_control(dynamics);
     let jitter = dynamics.jitter;
     let minimum = dynamics.minimum;
     let random = dab_random(random_offset);
@@ -115,6 +119,47 @@ fn size_diameter_statement(diameter: f32, dynamics: Option<Dynamics>) -> Stateme
     quote_statement! {
         tip_diameter = #diameter * #factor;
     }
+}
+
+fn tip_roundness_statement(
+    roundness: f32,
+    dynamics: Option<Dynamics>,
+    tilt_scale: f32,
+) -> Statement {
+    let Some(dynamics) = dynamics else {
+        return quote_statement! {{
+            tip_roundness = #roundness;
+            roundness_angle = 0.0;
+        }};
+    };
+    let tilt = (*TILT_IDENT).clone();
+    let (control, angle) = if dynamics.control == DynamicsControl::PenTilt {
+        (
+            quote_expression!(
+                1.0
+                    - clamp(
+                        length(#tilt) / render::math::FRAC_PI_2 * #tilt_scale,
+                        0.0,
+                        1.0,
+                    )
+            ),
+            quote_expression!(atan2(#tilt.y, #tilt.x)),
+        )
+    } else {
+        (dynamics_control(dynamics), quote_expression!(0.0))
+    };
+    let jitter = dynamics.jitter;
+    let minimum = dynamics.minimum.min(roundness);
+    let random = dab_random(91.417);
+
+    quote_statement! {{
+        tip_roundness = mix(
+            mix(#minimum, #roundness, #control),
+            #minimum,
+            #jitter * #random,
+        );
+        roundness_angle = #angle;
+    }}
 }
 
 fn tip_angle_expression(angle: f32, dynamics: Option<Dynamics>) -> Expression {
@@ -238,6 +283,8 @@ pub fn computed_main(
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
     angle_dynamics: Option<Dynamics>,
+    roundness_dynamics: Option<Dynamics>,
+    tilt_scale: f32,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -245,17 +292,24 @@ pub fn computed_main(
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
+    let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale);
     let tip_angle = tip_angle_expression(angle, angle_dynamics);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
 
     quote_statement! {{
         var tip_diameter: f32;
+        var tip_roundness: f32;
+        var roundness_angle: f32;
         @#size_diameter {}
+        @#tip_roundness {}
         let tip_radius = tip_diameter * 0.5;
         let tip_delta = (#pixel - #pen) * vec2f(#flip_x, #flip_y);
-        let tip_radii = vec2f(tip_radius, max(tip_radius * #roundness, 0.001));
+        let tip_radii = vec2f(
+            tip_radius,
+            max(tip_radius * tip_roundness, 0.001),
+        );
         let tip_distance = sdf_ellipse(
-            rotate_mat2x2(#tip_angle) * tip_delta,
+            rotate_mat2x2(#tip_angle + roundness_angle) * tip_delta,
             vec2f(0.0),
             tip_radii,
         );
@@ -284,6 +338,8 @@ pub fn sampled_main(
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
     angle_dynamics: Option<Dynamics>,
+    roundness_dynamics: Option<Dynamics>,
+    tilt_scale: f32,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -292,24 +348,28 @@ pub fn sampled_main(
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
+    let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale);
     let tip_angle = tip_angle_expression(angle, angle_dynamics);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
 
     quote_statement! {{
         var tip_diameter: f32;
+        var tip_roundness: f32;
+        var roundness_angle: f32;
         @#size_diameter {}
+        @#tip_roundness {}
         let tip_texture_size = vec2f(atlas_size(#texture));
         let tip_base_size = max(tip_texture_size.x, tip_texture_size.y);
         let tip_scale = vec2f(
             #flip_x * tip_diameter / tip_base_size,
-            #flip_y * tip_diameter * #roundness / tip_base_size,
+            #flip_y * tip_diameter * tip_roundness / tip_base_size,
         );
         let tip_anchor = vec2f(0.5);
         let tip_sample = sample_transformed_local_texture_clamp(
             #texture,
             #pixel,
             tip_scale,
-            #tip_angle,
+            #tip_angle + roundness_angle,
             #pen,
             tip_anchor,
         );
@@ -318,7 +378,7 @@ pub fn sampled_main(
         #bounds = filter_within_mask_bounds(
             #texture,
             tip_scale,
-            #tip_angle,
+            #tip_angle + roundness_angle,
             #pen,
             tip_anchor,
         );

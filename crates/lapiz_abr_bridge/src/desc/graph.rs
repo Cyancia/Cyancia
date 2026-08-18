@@ -96,6 +96,8 @@ pub fn computed_graphs(
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
     angle_dynamics: Option<Dynamics>,
+    roundness_dynamics: Option<Dynamics>,
+    tilt_scale: f32,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics)?;
     let main_graph = computed_main_graph(
@@ -110,6 +112,8 @@ pub fn computed_graphs(
         opacity_dynamics,
         flow_dynamics,
         angle_dynamics,
+        roundness_dynamics,
+        tilt_scale,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -127,6 +131,8 @@ pub fn sampled_graphs(
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
     angle_dynamics: Option<Dynamics>,
+    roundness_dynamics: Option<Dynamics>,
+    tilt_scale: f32,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics)?;
     let main_graph = sampled_main_graph(
@@ -141,6 +147,8 @@ pub fn sampled_graphs(
         opacity_dynamics,
         flow_dynamics,
         angle_dynamics,
+        roundness_dynamics,
+        tilt_scale,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -185,11 +193,14 @@ fn computed_main_graph(
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
     angle_dynamics: Option<Dynamics>,
+    roundness_dynamics: Option<Dynamics>,
+    tilt_scale: f32,
 ) -> Result<SerializableGraph> {
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
         || flow_dynamics.is_some()
-        || angle_dynamics.is_some();
+        || angle_dynamics.is_some()
+        || roundness_dynamics.is_some();
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
@@ -216,6 +227,8 @@ fn computed_main_graph(
         opacity_dynamics,
         flow_dynamics,
         angle_dynamics,
+        roundness_dynamics,
+        tilt_scale,
     ));
 
     let expression = add_stateful_node(
@@ -251,11 +264,14 @@ fn sampled_main_graph(
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
     angle_dynamics: Option<Dynamics>,
+    roundness_dynamics: Option<Dynamics>,
+    tilt_scale: f32,
 ) -> Result<SerializableGraph> {
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
         || flow_dynamics.is_some()
-        || angle_dynamics.is_some();
+        || angle_dynamics.is_some()
+        || roundness_dynamics.is_some();
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
@@ -288,6 +304,8 @@ fn sampled_main_graph(
         opacity_dynamics,
         flow_dynamics,
         angle_dynamics,
+        roundness_dynamics,
+        tilt_scale,
     ));
 
     let expression = add_stateful_node(
