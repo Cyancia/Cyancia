@@ -23,8 +23,16 @@ use lapiz_shader_graph::{
 };
 
 use crate::{
-    asset::{BrushPreset, BrushPresetMetadata}, render::graph::{
-        BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData, CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, ForegroundColorNode, InitialDrawDirectionNode, InitialPenAngleNode, InitialPenPositionNode, InitialPenPressureNode, InitialPenTiltNode, LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode, StrokeBoundsNode,
+    asset::{BrushPreset, BrushPresetMetadata},
+    render::graph::{
+        BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode,
+        BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData,
+        CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode,
+        FilterWithinMaskNode, ForegroundColorNode, InitialDrawDirectionNode, InitialPenAngleNode,
+        InitialPenPositionNode, InitialPenPressureNode, InitialPenTiltNode, LayerPixelColorNode,
+        OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode,
+        PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode,
+        SelectionMaskNode, StrokeBoundsNode,
     },
 };
 
