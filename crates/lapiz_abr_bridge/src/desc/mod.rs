@@ -10,7 +10,7 @@ use lapiz_brush::asset::BrushPreset;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
-use crate::desc::wgsl::{BrushPose, ColorAdjustment, Dynamics};
+use crate::desc::wgsl::{BrushPose, ColorAdjustment, Dynamics, Scatter};
 
 pub mod graph;
 pub mod wgsl;
@@ -230,6 +230,25 @@ pub fn parse_desc(
         per_tip: brush.color_dynamics_per_tip,
         foreground_color,
     });
+    let scatter = if brush.use_scatter {
+        let dynamics = brush
+            .scatter_dynamics
+            .as_ref()
+            .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("scatter dynamics"))
+            .transpose()?;
+        Some(Scatter {
+            amount: brush
+                .scatter_spacing
+                .as_ref()
+                .map(|value| value.value as f32 / 100.0)
+                .unwrap_or(0.0)
+                .max(0.0),
+            both_axes: brush.scatter_both_axes,
+            dynamics,
+        })
+    } else {
+        None
+    };
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
@@ -251,6 +270,7 @@ pub fn parse_desc(
                 tilt_scale,
                 pose,
                 color_adjustment,
+                scatter,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -276,6 +296,7 @@ pub fn parse_desc(
                 tilt_scale,
                 pose,
                 color_adjustment,
+                scatter,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),

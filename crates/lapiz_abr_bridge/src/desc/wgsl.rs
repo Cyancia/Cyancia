@@ -39,6 +39,13 @@ pub struct BrushPose {
 }
 
 #[derive(Clone, Copy)]
+pub struct Scatter {
+    pub amount: f32,
+    pub both_axes: bool,
+    pub dynamics: Option<Dynamics>,
+}
+
+#[derive(Clone, Copy)]
 pub struct ColorAdjustment {
     pub hue_jitter: f32,
     pub saturation_jitter: f32,
@@ -205,6 +212,38 @@ fn color_dynamics_factor(dynamics: Dynamics, per_tip: bool, pose: BrushPose) -> 
         #minimum,
         #jitter * #random,
     ))
+}
+
+fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expression {
+    let Some(scatter) = scatter else {
+        return quote_expression!(vec2f(0.0));
+    };
+    let factor = match scatter.dynamics {
+        Some(dynamics) => dynamics_factor(dynamics, 103.927, pose),
+        None => quote_expression!(1.0),
+    };
+    let amount = scatter.amount;
+    let first_random = dab_random(127.413);
+    if scatter.both_axes {
+        let second_random = dab_random(149.819);
+        quote_expression!(
+            vec2f(
+                #first_random * 2.0 - 1.0,
+                #second_random * 2.0 - 1.0,
+            ) * tip_diameter
+                * #amount
+                * #factor
+        )
+    } else {
+        let direction = (*DIRECTION_IDENT).clone();
+        quote_expression!(
+            vec2f(-sin(#direction), cos(#direction))
+                * (#first_random * 2.0 - 1.0)
+                * tip_diameter
+                * #amount
+                * #factor
+        )
+    }
 }
 
 fn size_diameter_statement(
@@ -494,6 +533,7 @@ pub fn computed_main(
     tilt_scale: f32,
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
+    scatter: Option<Scatter>,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -505,6 +545,7 @@ pub fn computed_main(
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
+    let scatter_offset = scatter_offset_expression(scatter, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -514,8 +555,9 @@ pub fn computed_main(
         @#size_diameter {}
         @#tip_roundness {}
         @#tip_foreground {}
+        let tip_center = #pen + #scatter_offset;
         let tip_radius = tip_diameter * 0.5;
-        let tip_delta = (#pixel - #pen) * vec2f(#flip_x, #flip_y);
+        let tip_delta = (#pixel - tip_center) * vec2f(#flip_x, #flip_y);
         let tip_radii = vec2f(
             tip_radius,
             max(tip_radius * tip_roundness, 0.001),
@@ -532,8 +574,8 @@ pub fn computed_main(
         let tip_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
         @#tip_color {}
         #bounds = Rect(
-            #pen - vec2f(tip_radius),
-            #pen + vec2f(tip_radius),
+            tip_center - vec2f(tip_radius),
+            tip_center + vec2f(tip_radius),
         );
     }}
     .to_string()
@@ -554,6 +596,7 @@ pub fn sampled_main(
     tilt_scale: f32,
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
+    scatter: Option<Scatter>,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -566,6 +609,7 @@ pub fn sampled_main(
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
+    let scatter_offset = scatter_offset_expression(scatter, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -575,6 +619,7 @@ pub fn sampled_main(
         @#size_diameter {}
         @#tip_roundness {}
         @#tip_foreground {}
+        let tip_center = #pen + #scatter_offset;
         let tip_texture_size = vec2f(atlas_size(#texture));
         let tip_base_size = max(tip_texture_size.x, tip_texture_size.y);
         let tip_scale = vec2f(
@@ -587,7 +632,7 @@ pub fn sampled_main(
             #pixel,
             tip_scale,
             #tip_angle + roundness_angle,
-            #pen,
+            tip_center,
             tip_anchor,
         );
         let tip_mask = tip_sample.a * (1.0 - tip_sample.r);
@@ -596,7 +641,7 @@ pub fn sampled_main(
             #texture,
             tip_scale,
             #tip_angle + roundness_angle,
-            #pen,
+            tip_center,
             tip_anchor,
         );
     }}
