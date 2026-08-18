@@ -102,6 +102,17 @@ pub fn parse_desc(
         .as_ref()
         .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("flow dynamics"))
         .transpose()?;
+    let angle_dynamics = brush
+        .angle_dynamics
+        .as_ref()
+        .map(|dynamics| {
+            ensure!(
+                dynamics.control != DynamicsControl::Fade,
+                "unsupported angle fade"
+            );
+            parse_dynamics(dynamics, false, 0.0).context("angle dynamics")
+        })
+        .transpose()?;
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
@@ -118,6 +129,7 @@ pub fn parse_desc(
                 size_dynamics,
                 opacity_dynamics,
                 flow_dynamics,
+                angle_dynamics,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -138,6 +150,7 @@ pub fn parse_desc(
                 size_dynamics,
                 opacity_dynamics,
                 flow_dynamics,
+                angle_dynamics,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),

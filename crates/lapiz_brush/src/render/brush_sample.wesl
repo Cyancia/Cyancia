@@ -62,7 +62,7 @@ fn compute_pen_input(last: PenInput, current: PenInput, p0: vec2f, p1: vec2f, p2
 fn main() {
     output_samples.n_samples = 0;
 
-    let p0 = input_sampler.last_sample.position;
+    let p0 = input_sampler.last_input.position;
     let p1 = new_input.bezier_control_prev;
     let p2 = new_input.bezier_control_cur;
     let p3 = new_input.position;
@@ -103,9 +103,9 @@ fn main() {
         return;
     }
 
-    var remaining_arc = total_arc;
-    while output_samples.n_samples < arrayLength(&output_samples.samples) {
-        let target_arc = total_arc - remaining_arc;
+    var target_arc = input_sampler.distance_to_next_dab;
+    while target_arc <= total_arc && output_samples.n_samples < arrayLength(&output_samples.samples)
+    {
         let t = bezier_t_for_arc_length(&arc_table, target_arc);
         let interpolated = compute_pen_input(
             input_sampler.last_input,
@@ -126,20 +126,20 @@ fn main() {
 
         output_samples.samples[output_samples.n_samples] = interpolated;
         output_samples.n_samples += 1u;
-        remaining_arc -= spacing;
+        target_arc += spacing;
 
         if input_sampler.has_initial_input == 0 {
             initial_pen_input = interpolated;
             input_sampler.has_initial_input = 1;
         }
-
-        if remaining_arc < spacing {
-            break;
-        }
     }
 
+    input_sampler.distance_to_next_dab = target_arc - total_arc;
     input_sampler.last_input = new_input;
-    input_sampler.last_sample = output_samples.samples[output_samples.n_samples - 1u];
-
-    bounds_eval_dispatch = vec3u(1u, 1u, unsigned_div_ceil(output_samples.n_samples, 16u));
+    if output_samples.n_samples > 0u {
+        input_sampler.last_sample = output_samples.samples[output_samples.n_samples - 1u];
+        bounds_eval_dispatch = vec3u(1u, 1u, unsigned_div_ceil(output_samples.n_samples, 16u));
+    } else {
+        bounds_eval_dispatch = vec3u(0u);
+    }
 }

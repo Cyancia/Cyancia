@@ -46,6 +46,7 @@ struct PenInputSampler {
     has_last_sample: u32,
     has_initial_input: u32,
     next_dab_index: u32,
+    distance_to_next_dab: f32,
 }
 
 struct PenInput {

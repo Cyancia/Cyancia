@@ -55,6 +55,13 @@ static INITIAL_DIRECTION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(INITIAL_DIRECTION_INPUT.to_string()));
 static DAB_INDEX_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(DAB_INDEX_INPUT.to_string()));
 
+fn dab_random(random_offset: f32) -> Expression {
+    let dab_index = (*DAB_INDEX_IDENT).clone();
+    quote_expression!(fract(
+        sin(f32(#dab_index) * 12.9898 + #random_offset) * 43758.5453
+    ))
+}
+
 fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
     let pressure = (*PRESSURE_IDENT).clone();
     let tilt = (*TILT_IDENT).clone();
@@ -88,15 +95,12 @@ fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
     };
     let jitter = dynamics.jitter;
     let minimum = dynamics.minimum;
+    let random = dab_random(random_offset);
 
     quote_expression!(mix(
         mix(#minimum, 1.0, #control),
         #minimum,
-        #jitter
-            * fract(
-                sin(f32(#dab_index) * 12.9898 + #random_offset)
-                    * 43758.5453
-            ),
+        #jitter * #random,
     ))
 }
 
@@ -111,6 +115,52 @@ fn size_diameter_statement(diameter: f32, dynamics: Option<Dynamics>) -> Stateme
     quote_statement! {
         tip_diameter = #diameter * #factor;
     }
+}
+
+fn tip_angle_expression(angle: f32, dynamics: Option<Dynamics>) -> Expression {
+    let Some(dynamics) = dynamics else {
+        return quote_expression!(#angle + 0.0);
+    };
+    let pressure = (*PRESSURE_IDENT).clone();
+    let tilt = (*TILT_IDENT).clone();
+    let azimuth = (*AZIMUTH_IDENT).clone();
+    let direction = (*DIRECTION_IDENT).clone();
+    let initial_direction = (*INITIAL_DIRECTION_IDENT).clone();
+    let minimum = dynamics.minimum;
+    let (orientation, amplitude) = match dynamics.control {
+        DynamicsControl::Off => (quote_expression!(0.0), quote_expression!(1.0)),
+        DynamicsControl::PenPressure => (
+            quote_expression!(0.0),
+            quote_expression!(mix(
+                #minimum,
+                1.0,
+                clamp(#pressure, 0.0, 1.0),
+            )),
+        ),
+        DynamicsControl::PenTilt => (
+            quote_expression!(0.0),
+            quote_expression!(mix(
+                #minimum,
+                1.0,
+                clamp(length(#tilt) / render::math::FRAC_PI_2, 0.0, 1.0),
+            )),
+        ),
+        DynamicsControl::InitialDirection => (
+            quote_expression!(#initial_direction),
+            quote_expression!(1.0),
+        ),
+        DynamicsControl::Direction => (quote_expression!(#direction), quote_expression!(1.0)),
+        DynamicsControl::Rotation => (quote_expression!(#azimuth), quote_expression!(1.0)),
+        DynamicsControl::Fade | DynamicsControl::StylusWheel => unreachable!(),
+    };
+    let jitter = dynamics.jitter;
+    let random = dab_random(59.719);
+
+    quote_expression!(
+        #angle
+            + #orientation
+            + (#random - 0.5) * render::math::TAU * #jitter * #amplitude
+    )
 }
 
 fn tip_color_statement(
@@ -187,6 +237,7 @@ pub fn computed_main(
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
+    angle_dynamics: Option<Dynamics>,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -194,6 +245,7 @@ pub fn computed_main(
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
+    let tip_angle = tip_angle_expression(angle, angle_dynamics);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
 
     quote_statement! {{
@@ -203,7 +255,7 @@ pub fn computed_main(
         let tip_delta = (#pixel - #pen) * vec2f(#flip_x, #flip_y);
         let tip_radii = vec2f(tip_radius, max(tip_radius * #roundness, 0.001));
         let tip_distance = sdf_ellipse(
-            rotate_mat2x2(#angle) * tip_delta,
+            rotate_mat2x2(#tip_angle) * tip_delta,
             vec2f(0.0),
             tip_radii,
         );
@@ -231,6 +283,7 @@ pub fn sampled_main(
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
+    angle_dynamics: Option<Dynamics>,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -239,6 +292,7 @@ pub fn sampled_main(
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let size_diameter = size_diameter_statement(diameter, size_dynamics);
+    let tip_angle = tip_angle_expression(angle, angle_dynamics);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
 
     quote_statement! {{
@@ -255,7 +309,7 @@ pub fn sampled_main(
             #texture,
             #pixel,
             tip_scale,
-            #angle,
+            #tip_angle,
             #pen,
             tip_anchor,
         );
@@ -264,7 +318,7 @@ pub fn sampled_main(
         #bounds = filter_within_mask_bounds(
             #texture,
             tip_scale,
-            #angle,
+            #tip_angle,
             #pen,
             tip_anchor,
         );

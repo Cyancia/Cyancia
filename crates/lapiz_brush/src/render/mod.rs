@@ -1076,6 +1076,7 @@ pub struct InputSampler {
     pub has_last_sample: u32,
     pub has_initial_input: u32,
     pub next_dab_index: u32,
+    pub distance_to_next_dab: f32,
 }
 
 #[derive(ShaderType, Debug, Default, Clone, Copy)]
