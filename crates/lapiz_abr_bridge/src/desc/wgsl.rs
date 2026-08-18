@@ -19,6 +19,7 @@ pub const AZIMUTH_INPUT: &str = "azimuth";
 pub const DIRECTION_INPUT: &str = "direction";
 pub const INITIAL_DIRECTION_INPUT: &str = "initial_direction";
 pub const DAB_INDEX_INPUT: &str = "dab_index";
+pub const STROKE_BEGIN_INPUT: &str = "stroke_begin";
 
 #[derive(Clone, Copy)]
 pub struct Dynamics {
@@ -34,6 +35,13 @@ pub struct BrushPose {
     pub azimuth: Option<f32>,
     pub tilt_x: Option<f32>,
     pub tilt_y: Option<f32>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ColorJitter {
+    pub hue: f32,
+    pub saturation: f32,
+    pub value: f32,
 }
 
 // TODO: This is really ugly, can we avoid this?
@@ -62,6 +70,8 @@ static DIRECTION_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(DIRECTION_
 static INITIAL_DIRECTION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(INITIAL_DIRECTION_INPUT.to_string()));
 static DAB_INDEX_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(DAB_INDEX_INPUT.to_string()));
+static STROKE_BEGIN_IDENT: LazyLock<Ident> =
+    LazyLock::new(|| Ident::new(STROKE_BEGIN_INPUT.to_string()));
 
 fn pose_pressure(pose: BrushPose) -> Expression {
     match pose.pressure {
@@ -110,6 +120,13 @@ fn dab_random(random_offset: f32) -> Expression {
     let dab_index = (*DAB_INDEX_IDENT).clone();
     quote_expression!(fract(
         sin(f32(#dab_index) * 12.9898 + #random_offset) * 43758.5453
+    ))
+}
+
+fn stroke_random(random_offset: f32) -> Expression {
+    let stroke_begin = (*STROKE_BEGIN_IDENT).clone();
+    quote_expression!(fract(
+        sin(#stroke_begin * 12.9898 + #random_offset) * 43758.5453
     ))
 }
 
@@ -265,13 +282,76 @@ fn tip_angle_expression(angle: f32, dynamics: Option<Dynamics>, pose: BrushPose)
     )
 }
 
+fn tip_foreground_statement(jitter: Option<ColorJitter>) -> Statement {
+    let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
+    let Some(jitter) = jitter else {
+        return quote_statement! {
+            tip_foreground = #foreground;
+        };
+    };
+    let hue_jitter = jitter.hue;
+    let saturation_jitter = jitter.saturation;
+    let value_jitter = jitter.value;
+    let hue_random = stroke_random(17.131);
+    let saturation_random = stroke_random(21.7);
+    let value_random = stroke_random(73.219);
+
+    quote_statement! {{
+        let color_min = min(
+            #foreground.r,
+            min(#foreground.g, #foreground.b),
+        );
+        let color_max = max(
+            #foreground.r,
+            max(#foreground.g, #foreground.b),
+        );
+        let color_delta = color_max - color_min;
+        var hue: f32 = 0.0;
+        if color_delta > 0.0 {
+            if color_max == #foreground.r {
+                hue = (#foreground.g - #foreground.b) / color_delta;
+            } else if color_max == #foreground.g {
+                hue = 2.0 + (#foreground.b - #foreground.r) / color_delta;
+            } else {
+                hue = 4.0 + (#foreground.r - #foreground.g) / color_delta;
+            }
+            hue /= 6.0;
+        }
+        let saturation = select(0.0, color_delta / color_max, color_max > 0.0);
+        hue = fract(hue + 1.0 + (#hue_random - 0.5) * #hue_jitter);
+        let jittered_saturation = clamp(
+            saturation + (#saturation_random * 2.0 - 1.0) * #saturation_jitter,
+            0.0,
+            1.0,
+        );
+        let jittered_value = clamp(
+            color_max + (#value_random * 2.0 - 1.0) * #value_jitter,
+            0.0,
+            1.0,
+        );
+        let hue_rgb = clamp(
+            abs(
+                fract(vec3f(hue) + vec3f(1.0, 0.6666666667, 0.3333333333))
+                    * 6.0
+                    - vec3f(3.0)
+            ) - vec3f(1.0),
+            vec3f(0.0),
+            vec3f(1.0),
+        );
+        tip_foreground = vec4f(
+            jittered_value
+                * mix(vec3f(1.0), hue_rgb, jittered_saturation),
+            #foreground.a,
+        );
+    }}
+}
+
 fn tip_color_statement(
     flow: f32,
     flow_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     pose: BrushPose,
 ) -> Statement {
-    let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
     let color = (*MAIN_COLOR_IDENT).clone();
     let effective_flow = match flow_dynamics {
         Some(dynamics) => {
@@ -283,8 +363,8 @@ fn tip_color_statement(
     let Some(dynamics) = opacity_dynamics else {
         return quote_statement! {{
             let tip_color = vec4f(
-                #foreground.rgb,
-                #foreground.a * tip_mask * #effective_flow,
+                tip_foreground.rgb,
+                tip_foreground.a * tip_mask * #effective_flow,
             );
             #color = image::blend_modes::blend_normal(
                 tip_color,
@@ -296,8 +376,8 @@ fn tip_color_statement(
 
     quote_statement! {{
         let tip_color = vec4f(
-            #foreground.rgb,
-            #foreground.a * tip_mask * #effective_flow,
+            tip_foreground.rgb,
+            tip_foreground.a * tip_mask * #effective_flow,
         );
         let previous_color = current_input_color(pixel_pos);
         let accumulated_color = image::blend_modes::blend_normal(
@@ -345,6 +425,7 @@ pub fn computed_main(
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
     pose: BrushPose,
+    color_jitter: Option<ColorJitter>,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -354,14 +435,17 @@ pub fn computed_main(
     let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
+    let tip_foreground = tip_foreground_statement(color_jitter);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
         var tip_roundness: f32;
         var roundness_angle: f32;
+        var tip_foreground: vec4f;
         @#size_diameter {}
         @#tip_roundness {}
+        @#tip_foreground {}
         let tip_radius = tip_diameter * 0.5;
         let tip_delta = (#pixel - #pen) * vec2f(#flip_x, #flip_y);
         let tip_radii = vec2f(
@@ -401,6 +485,7 @@ pub fn sampled_main(
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
     pose: BrushPose,
+    color_jitter: Option<ColorJitter>,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -411,14 +496,17 @@ pub fn sampled_main(
     let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
+    let tip_foreground = tip_foreground_statement(color_jitter);
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
         var tip_roundness: f32;
         var roundness_angle: f32;
+        var tip_foreground: vec4f;
         @#size_diameter {}
         @#tip_roundness {}
+        @#tip_foreground {}
         let tip_texture_size = vec2f(atlas_size(#texture));
         let tip_base_size = max(tip_texture_size.x, tip_texture_size.y);
         let tip_scale = vec2f(

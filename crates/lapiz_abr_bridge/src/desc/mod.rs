@@ -10,7 +10,7 @@ use lapiz_brush::asset::BrushPreset;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
-use crate::desc::wgsl::{BrushPose, Dynamics};
+use crate::desc::wgsl::{BrushPose, ColorJitter, Dynamics};
 
 pub mod graph;
 pub mod wgsl;
@@ -151,6 +151,30 @@ pub fn parse_desc(
     } else {
         BrushPose::default()
     };
+    let hue_jitter = brush
+        .hue_jitter
+        .as_ref()
+        .map(|value| value.value as f32 / 100.0)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let saturation_jitter = brush
+        .saturation_jitter
+        .as_ref()
+        .map(|value| value.value as f32 / 100.0)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let value_jitter = brush
+        .value_jitter
+        .as_ref()
+        .map(|value| value.value as f32 / 100.0)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let color_jitter = (hue_jitter > 0.0 || saturation_jitter > 0.0 || value_jitter > 0.0)
+        .then_some(ColorJitter {
+            hue: hue_jitter,
+            saturation: saturation_jitter,
+            value: value_jitter,
+        });
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
@@ -171,6 +195,7 @@ pub fn parse_desc(
                 roundness_dynamics,
                 tilt_scale,
                 pose,
+                color_jitter,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -195,6 +220,7 @@ pub fn parse_desc(
                 roundness_dynamics,
                 tilt_scale,
                 pose,
+                color_jitter,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
