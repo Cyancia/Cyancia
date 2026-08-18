@@ -371,14 +371,14 @@ impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for DabIndexNod
 
     fn create_inputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultInputSlot> {
         vec![]
     }
 
     fn create_outputs(
         &self,
-        ctx: GraphNodeCreateSlotsContext<'_, Data>,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
     ) -> Vec<GraphDefaultOutputSlot> {
         vec![GraphDefaultOutputSlot::new::<I32Type>("Dab Index".into())]
     }
