@@ -28,6 +28,14 @@ pub struct Dynamics {
     pub minimum: f32,
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct BrushPose {
+    pub pressure: Option<f32>,
+    pub azimuth: Option<f32>,
+    pub tilt_x: Option<f32>,
+    pub tilt_y: Option<f32>,
+}
+
 // TODO: This is really ugly, can we avoid this?
 static MAIN_PIXEL_POSITION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new("pixel_position".to_string()));
@@ -55,6 +63,49 @@ static INITIAL_DIRECTION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(INITIAL_DIRECTION_INPUT.to_string()));
 static DAB_INDEX_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(DAB_INDEX_INPUT.to_string()));
 
+fn pose_pressure(pose: BrushPose) -> Expression {
+    match pose.pressure {
+        Some(pressure) => quote_expression!(#pressure * 1.0),
+        None => {
+            let pressure = (*PRESSURE_IDENT).clone();
+            quote_expression!(#pressure)
+        }
+    }
+}
+
+fn pose_azimuth(pose: BrushPose) -> Expression {
+    match pose.azimuth {
+        Some(azimuth) => quote_expression!(#azimuth * 1.0),
+        None => {
+            let azimuth = (*AZIMUTH_IDENT).clone();
+            quote_expression!(#azimuth)
+        }
+    }
+}
+
+fn pose_tilt_components(pose: BrushPose) -> (Expression, Expression) {
+    let tilt = (*TILT_IDENT).clone();
+    let tilt_x = match pose.tilt_x {
+        Some(tilt_x) => quote_expression!(#tilt_x * 1.0),
+        None => quote_expression!(#tilt.x),
+    };
+    let tilt_y = match pose.tilt_y {
+        Some(tilt_y) => quote_expression!(#tilt_y * 1.0),
+        None => quote_expression!(#tilt.y),
+    };
+    (tilt_x, tilt_y)
+}
+
+fn pose_tilt(pose: BrushPose) -> Expression {
+    let (tilt_x, tilt_y) = pose_tilt_components(pose);
+    quote_expression!(vec2f(#tilt_x, #tilt_y))
+}
+
+fn pose_tilt_angle(pose: BrushPose) -> Expression {
+    let (tilt_x, tilt_y) = pose_tilt_components(pose);
+    quote_expression!(atan2(#tilt_y, #tilt_x))
+}
+
 fn dab_random(random_offset: f32) -> Expression {
     let dab_index = (*DAB_INDEX_IDENT).clone();
     quote_expression!(fract(
@@ -62,10 +113,10 @@ fn dab_random(random_offset: f32) -> Expression {
     ))
 }
 
-fn dynamics_control(dynamics: Dynamics) -> Expression {
-    let pressure = (*PRESSURE_IDENT).clone();
-    let tilt = (*TILT_IDENT).clone();
-    let azimuth = (*AZIMUTH_IDENT).clone();
+fn dynamics_control(dynamics: Dynamics, pose: BrushPose) -> Expression {
+    let pressure = pose_pressure(pose);
+    let tilt = pose_tilt(pose);
+    let azimuth = pose_azimuth(pose);
     let direction = (*DIRECTION_IDENT).clone();
     let initial_direction = (*INITIAL_DIRECTION_IDENT).clone();
     let dab_index = (*DAB_INDEX_IDENT).clone();
@@ -95,8 +146,8 @@ fn dynamics_control(dynamics: Dynamics) -> Expression {
     }
 }
 
-fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
-    let control = dynamics_control(dynamics);
+fn dynamics_factor(dynamics: Dynamics, random_offset: f32, pose: BrushPose) -> Expression {
+    let control = dynamics_control(dynamics, pose);
     let jitter = dynamics.jitter;
     let minimum = dynamics.minimum;
     let random = dab_random(random_offset);
@@ -108,13 +159,17 @@ fn dynamics_factor(dynamics: Dynamics, random_offset: f32) -> Expression {
     ))
 }
 
-fn size_diameter_statement(diameter: f32, dynamics: Option<Dynamics>) -> Statement {
+fn size_diameter_statement(
+    diameter: f32,
+    dynamics: Option<Dynamics>,
+    pose: BrushPose,
+) -> Statement {
     let Some(dynamics) = dynamics else {
         return quote_statement! {
             tip_diameter = #diameter;
         };
     };
-    let factor = dynamics_factor(dynamics, 78.233);
+    let factor = dynamics_factor(dynamics, 78.233, pose);
 
     quote_statement! {
         tip_diameter = #diameter * #factor;
@@ -125,6 +180,7 @@ fn tip_roundness_statement(
     roundness: f32,
     dynamics: Option<Dynamics>,
     tilt_scale: f32,
+    pose: BrushPose,
 ) -> Statement {
     let Some(dynamics) = dynamics else {
         return quote_statement! {{
@@ -132,7 +188,8 @@ fn tip_roundness_statement(
             roundness_angle = 0.0;
         }};
     };
-    let tilt = (*TILT_IDENT).clone();
+    let tilt = pose_tilt(pose);
+    let tilt_angle = pose_tilt_angle(pose);
     let (control, angle) = if dynamics.control == DynamicsControl::PenTilt {
         (
             quote_expression!(
@@ -143,10 +200,10 @@ fn tip_roundness_statement(
                         1.0,
                     )
             ),
-            quote_expression!(atan2(#tilt.y, #tilt.x)),
+            tilt_angle,
         )
     } else {
-        (dynamics_control(dynamics), quote_expression!(0.0))
+        (dynamics_control(dynamics, pose), quote_expression!(0.0))
     };
     let jitter = dynamics.jitter;
     let minimum = dynamics.minimum.min(roundness);
@@ -162,13 +219,13 @@ fn tip_roundness_statement(
     }}
 }
 
-fn tip_angle_expression(angle: f32, dynamics: Option<Dynamics>) -> Expression {
+fn tip_angle_expression(angle: f32, dynamics: Option<Dynamics>, pose: BrushPose) -> Expression {
     let Some(dynamics) = dynamics else {
         return quote_expression!(#angle + 0.0);
     };
-    let pressure = (*PRESSURE_IDENT).clone();
-    let tilt = (*TILT_IDENT).clone();
-    let azimuth = (*AZIMUTH_IDENT).clone();
+    let pressure = pose_pressure(pose);
+    let tilt = pose_tilt(pose);
+    let azimuth = pose_azimuth(pose);
     let direction = (*DIRECTION_IDENT).clone();
     let initial_direction = (*INITIAL_DIRECTION_IDENT).clone();
     let minimum = dynamics.minimum;
@@ -195,7 +252,7 @@ fn tip_angle_expression(angle: f32, dynamics: Option<Dynamics>) -> Expression {
             quote_expression!(1.0),
         ),
         DynamicsControl::Direction => (quote_expression!(#direction), quote_expression!(1.0)),
-        DynamicsControl::Rotation => (quote_expression!(#azimuth), quote_expression!(1.0)),
+        DynamicsControl::Rotation => (quote_expression!(#azimuth + 0.0), quote_expression!(1.0)),
         DynamicsControl::Fade | DynamicsControl::StylusWheel => unreachable!(),
     };
     let jitter = dynamics.jitter;
@@ -212,12 +269,13 @@ fn tip_color_statement(
     flow: f32,
     flow_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
+    pose: BrushPose,
 ) -> Statement {
     let foreground = (*MAIN_FOREGROUND_COLOR_IDENT).clone();
     let color = (*MAIN_COLOR_IDENT).clone();
     let effective_flow = match flow_dynamics {
         Some(dynamics) => {
-            let factor = dynamics_factor(dynamics, 19.673);
+            let factor = dynamics_factor(dynamics, 19.673, pose);
             quote_expression!(#flow * #factor)
         }
         None => quote_expression!(#flow * 1.0),
@@ -234,7 +292,7 @@ fn tip_color_statement(
             );
         }};
     };
-    let opacity_factor = dynamics_factor(dynamics, 39.346);
+    let opacity_factor = dynamics_factor(dynamics, 39.346, pose);
 
     quote_statement! {{
         let tip_color = vec4f(
@@ -260,9 +318,10 @@ pub fn computed_required_spacing(
     diameter: f32,
     spacing: f32,
     size_dynamics: Option<Dynamics>,
+    pose: BrushPose,
 ) -> String {
     let required_spacing = (*REQUIRED_SPACING_IDENT).clone();
-    let size_diameter = size_diameter_statement(diameter, size_dynamics);
+    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
     quote_statement! {{
         var tip_diameter: f32;
         @#size_diameter {}
@@ -285,16 +344,17 @@ pub fn computed_main(
     angle_dynamics: Option<Dynamics>,
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
+    pose: BrushPose,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
-    let size_diameter = size_diameter_statement(diameter, size_dynamics);
-    let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale);
-    let tip_angle = tip_angle_expression(angle, angle_dynamics);
-    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
+    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
+    let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
+    let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
+    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -340,6 +400,7 @@ pub fn sampled_main(
     angle_dynamics: Option<Dynamics>,
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
+    pose: BrushPose,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -347,10 +408,10 @@ pub fn sampled_main(
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
-    let size_diameter = size_diameter_statement(diameter, size_dynamics);
-    let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale);
-    let tip_angle = tip_angle_expression(angle, angle_dynamics);
-    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics);
+    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
+    let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
+    let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
+    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
 
     quote_statement! {{
         var tip_diameter: f32;

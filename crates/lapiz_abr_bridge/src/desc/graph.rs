@@ -30,7 +30,7 @@ use lapiz_shader_graph::{
 };
 
 use crate::desc::wgsl::{
-    AZIMUTH_INPUT, DAB_INDEX_INPUT, DIRECTION_INPUT, Dynamics, INITIAL_DIRECTION_INPUT,
+    AZIMUTH_INPUT, BrushPose, DAB_INDEX_INPUT, DIRECTION_INPUT, Dynamics, INITIAL_DIRECTION_INPUT,
     MAIN_BOUNDS_OUTPUT, MAIN_COLOR_OUTPUT, MAIN_FOREGROUND_COLOR_INPUT, MAIN_PEN_POSITION_INPUT,
     MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT, POSTPROCESS_INPUT_COLOR,
     POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, TILT_INPUT,
@@ -98,8 +98,9 @@ pub fn computed_graphs(
     angle_dynamics: Option<Dynamics>,
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
+    pose: BrushPose,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
-    let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics)?;
+    let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = computed_main_graph(
         diameter,
         hardness,
@@ -114,6 +115,7 @@ pub fn computed_graphs(
         angle_dynamics,
         roundness_dynamics,
         tilt_scale,
+        pose,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -133,8 +135,9 @@ pub fn sampled_graphs(
     angle_dynamics: Option<Dynamics>,
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
+    pose: BrushPose,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
-    let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics)?;
+    let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = sampled_main_graph(
         sample_asset,
         diameter,
@@ -149,6 +152,7 @@ pub fn sampled_graphs(
         angle_dynamics,
         roundness_dynamics,
         tilt_scale,
+        pose,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -157,6 +161,7 @@ fn required_spacing_graph(
     diameter: f32,
     spacing: f32,
     size_dynamics: Option<Dynamics>,
+    pose: BrushPose,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(REQUIRED_SPACING_GRAPH_NODES.clone()));
     let mut state = CustomExpressionNodeState::default();
@@ -164,7 +169,12 @@ fn required_spacing_graph(
         add_dynamics_input_slots(&mut state);
     }
     state.add_output::<F32Type>(REQUIRED_SPACING_OUTPUT);
-    state.set_code(computed_required_spacing(diameter, spacing, size_dynamics));
+    state.set_code(computed_required_spacing(
+        diameter,
+        spacing,
+        size_dynamics,
+        pose,
+    ));
 
     let expression = add_stateful_node(
         &mut graph,
@@ -195,6 +205,7 @@ fn computed_main_graph(
     angle_dynamics: Option<Dynamics>,
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
+    pose: BrushPose,
 ) -> Result<SerializableGraph> {
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
@@ -229,6 +240,7 @@ fn computed_main_graph(
         angle_dynamics,
         roundness_dynamics,
         tilt_scale,
+        pose,
     ));
 
     let expression = add_stateful_node(
@@ -266,6 +278,7 @@ fn sampled_main_graph(
     angle_dynamics: Option<Dynamics>,
     roundness_dynamics: Option<Dynamics>,
     tilt_scale: f32,
+    pose: BrushPose,
 ) -> Result<SerializableGraph> {
     let has_dynamics = size_dynamics.is_some()
         || opacity_dynamics.is_some()
@@ -306,6 +319,7 @@ fn sampled_main_graph(
         angle_dynamics,
         roundness_dynamics,
         tilt_scale,
+        pose,
     ));
 
     let expression = add_stateful_node(

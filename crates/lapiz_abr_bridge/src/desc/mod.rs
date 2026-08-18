@@ -10,7 +10,7 @@ use lapiz_brush::asset::BrushPreset;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
-use crate::desc::wgsl::Dynamics;
+use crate::desc::wgsl::{BrushPose, Dynamics};
 
 pub mod graph;
 pub mod wgsl;
@@ -131,6 +131,26 @@ pub fn parse_desc(
         .map(|value| value.value as f32 / 100.0)
         .unwrap_or(2.0)
         .clamp(0.0, 2.0);
+    let pose = if brush.use_brush_pose {
+        BrushPose {
+            pressure: brush
+                .override_pose_pressure
+                .then(|| brush.brush_pose_pressure.as_ref())
+                .flatten()
+                .map(|value| (value.value as f32 / 100.0).clamp(0.0, 1.0)),
+            azimuth: brush
+                .override_pose_angle
+                .then(|| (brush.brush_pose_angle as f32).to_radians()),
+            tilt_x: brush
+                .override_pose_tilt_x
+                .then(|| (brush.brush_pose_tilt_x as f32).to_radians()),
+            tilt_y: brush
+                .override_pose_tilt_y
+                .then(|| (brush.brush_pose_tilt_y as f32).to_radians()),
+        }
+    } else {
+        BrushPose::default()
+    };
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
@@ -150,6 +170,7 @@ pub fn parse_desc(
                 angle_dynamics,
                 roundness_dynamics,
                 tilt_scale,
+                pose,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -173,6 +194,7 @@ pub fn parse_desc(
                 angle_dynamics,
                 roundness_dynamics,
                 tilt_scale,
+                pose,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
