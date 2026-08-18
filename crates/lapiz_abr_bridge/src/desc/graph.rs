@@ -4,10 +4,13 @@ use anyhow::Result;
 use iced_core::Point;
 use lapiz_assets::asset::AssetId;
 use lapiz_brush::{
-    instance::{BRUSH_GRAPH_TYPES, MAIN_GRAPH_NODES, REQUIRED_SPACING_GRAPH_NODES},
+    instance::{
+        BRUSH_GRAPH_TYPES, MAIN_GRAPH_NODES, REQUIRED_SPACING_GRAPH_NODES,
+        STROKE_POSTPROCESS_GRAPH_NODES,
+    },
     render::graph::{
-        ForegroundColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
-        PenPositionNode, PixelPositionNode,
+        CurrentPixelColorNode, ForegroundColorNode, OutputBoundsNode, OutputColorNode,
+        OutputRequiredSpacingNode, PenPositionNode, PixelPositionNode, StrokeBoundsNode,
     },
 };
 use lapiz_render::texture::Image;
@@ -49,9 +52,11 @@ pub fn computed_graphs(
     spacing: f32,
     flip_x: bool,
     flip_y: bool,
+    flow: f32,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing)?;
-    let main_graph = computed_main_graph(diameter, hardness, angle, roundness, flip_x, flip_y)?;
+    let main_graph =
+        computed_main_graph(diameter, hardness, angle, roundness, flip_x, flip_y, flow)?;
     Ok((required_spacing_graph, main_graph))
 }
 
@@ -63,9 +68,18 @@ pub fn sampled_graphs(
     spacing: f32,
     flip_x: bool,
     flip_y: bool,
+    flow: f32,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing)?;
-    let main_graph = sampled_main_graph(sample_asset, diameter, angle, roundness, flip_x, flip_y)?;
+    let main_graph = sampled_main_graph(
+        sample_asset,
+        diameter,
+        angle,
+        roundness,
+        flip_x,
+        flip_y,
+        flow,
+    )?;
     Ok((required_spacing_graph, main_graph))
 }
 
@@ -94,6 +108,7 @@ fn computed_main_graph(
     roundness: f32,
     flip_x: bool,
     flip_y: bool,
+    flow: f32,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -107,7 +122,7 @@ fn computed_main_graph(
     state.add_output::<ColorType>(wgsl::MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(wgsl::MAIN_BOUNDS_OUTPUT);
     state.set_code(wgsl::computed_main(
-        diameter, hardness, angle, roundness, flip_x, flip_y,
+        diameter, hardness, angle, roundness, flip_x, flip_y, flow,
     ));
 
     let expression = add_stateful_node(
@@ -135,6 +150,7 @@ fn sampled_main_graph(
     roundness: f32,
     flip_x: bool,
     flip_y: bool,
+    flow: f32,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -155,7 +171,7 @@ fn sampled_main_graph(
     state.add_output::<ColorType>(wgsl::MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(wgsl::MAIN_BOUNDS_OUTPUT);
     state.set_code(wgsl::sampled_main(
-        diameter, angle, roundness, flip_x, flip_y,
+        diameter, angle, roundness, flip_x, flip_y, flow,
     ));
 
     let expression = add_stateful_node(
@@ -175,6 +191,41 @@ fn sampled_main_graph(
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
     Ok(graph.as_serialized()?)
+}
+
+pub fn opacity_postprocess_graph(opacity: f32) -> Result<Option<SerializableGraph>> {
+    if opacity >= 1.0 {
+        return Ok(None);
+    }
+
+    let mut graph = Graph::new(graph_resources(STROKE_POSTPROCESS_GRAPH_NODES.clone()));
+    let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
+    let current_color = graph.add_node(Point::new(200.0, 0.0), CurrentPixelColorNode);
+    let stroke_bounds = graph.add_node(Point::new(200.0, 150.0), StrokeBoundsNode);
+
+    let mut state = CustomExpressionNodeState::default();
+    state.add_input::<ColorType>(wgsl::POSTPROCESS_INPUT_COLOR);
+    state.add_input::<RectType>(wgsl::POSTPROCESS_STROKE_BOUNDS_INPUT);
+    state.add_output::<ColorType>(wgsl::MAIN_COLOR_OUTPUT);
+    state.add_output::<RectType>(wgsl::MAIN_BOUNDS_OUTPUT);
+    state.set_code(wgsl::opacity_postprocess(opacity));
+
+    let expression = add_stateful_node(
+        &mut graph,
+        Point::new(400.0, 75.0),
+        CustomExpressionNode,
+        state,
+    );
+    let output_color = graph.add_node(Point::new(650.0, 25.0), OutputColorNode);
+    let output_bounds = graph.add_node(Point::new(650.0, 125.0), OutputBoundsNode);
+
+    graph.connect_slots_by_index(pixel_position, 0, current_color, 0);
+    graph.connect_slots_by_index(current_color, 0, expression, 0);
+    graph.connect_slots_by_index(stroke_bounds, 0, expression, 1);
+    graph.connect_slots_by_index(expression, 0, output_color, 0);
+    graph.connect_slots_by_index(expression, 1, output_bounds, 0);
+
+    Ok(Some(graph.as_serialized()?))
 }
 
 fn graph_resources<Data: GraphData>(

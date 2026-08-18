@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail, ensure};
-use lapiz_abr::{BrushPreset as AbrBrushPreset, BrushTip};
+use lapiz_abr::{BrushPreset as AbrBrushPreset, BrushTip, ToolOptions};
 use lapiz_assets::asset::AssetId;
 use lapiz_brush::asset::BrushPreset;
 use lapiz_render::texture::Image;
@@ -15,6 +15,14 @@ pub fn parse_desc(
     sample_assets: &HashMap<Uuid, AssetId<Image>>,
     _pattern_assets: &HashMap<Uuid, AssetId<Image>>,
 ) -> Result<BrushPreset> {
+    let (opacity, flow) = match &brush.tool_options {
+        Some(ToolOptions::Paint(options)) => (
+            (options.opacity as f32 / 100.0).clamp(0.0, 1.0),
+            (options.flow as f32 / 100.0).clamp(0.0, 1.0),
+        ),
+        _ => (1.0, 1.0),
+    };
+
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
             ensure!(tip.interpolation, "unsupported computed interpolation");
@@ -26,6 +34,7 @@ pub fn parse_desc(
                 (tip.spacing.value / 100.0).max(0.001) as f32,
                 tip.flip_x ^ brush.flip_x,
                 tip.flip_y ^ brush.flip_y,
+                flow,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -42,10 +51,15 @@ pub fn parse_desc(
                 (tip.spacing.value / 100.0).max(0.001) as f32,
                 tip.flip_x ^ brush.flip_x,
                 tip.flip_y ^ brush.flip_y,
+                flow,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
     };
+
+    let stroke_postprocess_graphs = graph::opacity_postprocess_graph(opacity)?
+        .into_iter()
+        .collect();
 
     Ok(BrushPreset {
         metadata: lapiz_brush::asset::BrushPresetMetadata {
@@ -53,7 +67,7 @@ pub fn parse_desc(
         },
         required_spacing_graph,
         main_graph,
-        stroke_postprocess_graphs: Vec::new(),
+        stroke_postprocess_graphs,
         external_vars: Vec::new(),
     })
 }

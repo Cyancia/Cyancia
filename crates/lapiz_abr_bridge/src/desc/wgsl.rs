@@ -9,6 +9,8 @@ pub const MAIN_FOREGROUND_COLOR_INPUT: &str = "foreground_color";
 pub const MAIN_TIP_TEXTURE_INPUT: &str = "tip_texture";
 pub const MAIN_COLOR_OUTPUT: &str = "color";
 pub const MAIN_BOUNDS_OUTPUT: &str = "bounds";
+pub const POSTPROCESS_INPUT_COLOR: &str = "input_color";
+pub const POSTPROCESS_STROKE_BOUNDS_INPUT: &str = "stroke_bounds";
 pub const REQUIRED_SPACING_OUTPUT: &str = "required_spacing";
 
 // TODO: This is really ugly, can we avoid this?
@@ -24,6 +26,10 @@ static MAIN_COLOR_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_COLOR_OUTPUT.to_string()));
 static MAIN_BOUNDS_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_BOUNDS_OUTPUT.to_string()));
+static POSTPROCESS_INPUT_COLOR_IDENT: LazyLock<Ident> =
+    LazyLock::new(|| Ident::new(POSTPROCESS_INPUT_COLOR.to_string()));
+static POSTPROCESS_STROKE_BOUNDS_IDENT: LazyLock<Ident> =
+    LazyLock::new(|| Ident::new(POSTPROCESS_STROKE_BOUNDS_INPUT.to_string()));
 static REQUIRED_SPACING_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(REQUIRED_SPACING_OUTPUT.to_string()));
 
@@ -42,6 +48,7 @@ pub fn computed_main(
     roundness: f32,
     flip_x: bool,
     flip_y: bool,
+    flow: f32,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -67,7 +74,7 @@ pub fn computed_main(
         let tip_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
         let tip_color = vec4f(
             #foreground.rgb,
-            #foreground.a * tip_mask,
+            #foreground.a * tip_mask * #flow,
         );
         #color = image::blend_modes::blend_normal(
             tip_color,
@@ -87,6 +94,7 @@ pub fn sampled_main(
     roundness: f32,
     flip_x: bool,
     flip_y: bool,
+    flow: f32,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -116,7 +124,7 @@ pub fn sampled_main(
         let tip_mask = tip_sample.a * (1.0 - tip_sample.r);
         let tip_color = vec4f(
             #foreground.rgb,
-            #foreground.a * tip_mask,
+            #foreground.a * tip_mask * #flow,
         );
         #color = image::blend_modes::blend_normal(
             tip_color,
@@ -129,6 +137,22 @@ pub fn sampled_main(
             #pen,
             tip_anchor,
         );
+    }}
+    .to_string()
+}
+
+pub fn opacity_postprocess(opacity: f32) -> String {
+    let input_color = (*POSTPROCESS_INPUT_COLOR_IDENT).clone();
+    let stroke_bounds = (*POSTPROCESS_STROKE_BOUNDS_IDENT).clone();
+    let color = (*MAIN_COLOR_IDENT).clone();
+    let bounds = (*MAIN_BOUNDS_IDENT).clone();
+
+    quote_statement! {{
+        #color = vec4f(
+            #input_color.rgb,
+            #input_color.a * #opacity,
+        );
+        #bounds = #stroke_bounds;
     }}
     .to_string()
 }
