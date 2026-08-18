@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail, ensure};
 use lapiz_abr::{
-    BrushPreset as AbrBrushPreset, BrushTip, DynamicsControl,
+    BlendMode, BrushPreset as AbrBrushPreset, BrushTip, DynamicsControl,
     PropertyDynamics as AbrPropertyDynamics, ToolOptions,
 };
 use lapiz_assets::asset::AssetId;
@@ -10,10 +10,29 @@ use lapiz_brush::asset::BrushPreset;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
-use crate::desc::wgsl::{BrushPose, BrushTexture, ColorAdjustment, Dynamics, Scatter};
+use crate::desc::wgsl::{
+    BrushPose, BrushTexture, ColorAdjustment, Dynamics, Scatter, TextureBlendMode,
+};
 
 pub mod graph;
 pub mod wgsl;
+
+fn parse_texture_blend_mode(mode: Option<BlendMode>) -> Result<TextureBlendMode> {
+    match mode {
+        None | Some(BlendMode::Multiply) => Ok(TextureBlendMode::Multiply),
+        Some(BlendMode::Subtract | BlendMode::SubtractTexture) => Ok(TextureBlendMode::Subtract),
+        Some(BlendMode::Darken) => Ok(TextureBlendMode::Darken),
+        Some(BlendMode::Overlay) => Ok(TextureBlendMode::Overlay),
+        Some(BlendMode::ColorDodge) => Ok(TextureBlendMode::ColorDodge),
+        Some(BlendMode::ColorBurn) => Ok(TextureBlendMode::ColorBurn),
+        Some(BlendMode::LinearDodge) => Ok(TextureBlendMode::LinearDodge),
+        Some(BlendMode::LinearBurn) => Ok(TextureBlendMode::LinearBurn),
+        Some(BlendMode::HardMix) => Ok(TextureBlendMode::HardMix),
+        Some(BlendMode::Height) => Ok(TextureBlendMode::Height),
+        Some(BlendMode::LinearHeight) => Ok(TextureBlendMode::LinearHeight),
+        Some(mode) => bail!("unsupported texture blend mode {mode:?}"),
+    }
+}
 
 fn parse_dynamics(
     dynamics: &AbrPropertyDynamics,
@@ -320,6 +339,8 @@ pub fn parse_desc(
                 inverted: brush.texture_inverted,
                 depth,
                 depth_dynamics,
+                each_tip: brush.txt_c,
+                blend_mode: parse_texture_blend_mode(brush.texture_blend_mode)?,
             }),
             Some(pattern_asset),
         )

@@ -49,11 +49,28 @@ pub struct Scatter {
 }
 
 #[derive(Clone, Copy)]
+pub enum TextureBlendMode {
+    Multiply,
+    Subtract,
+    Darken,
+    Overlay,
+    ColorDodge,
+    ColorBurn,
+    LinearDodge,
+    LinearBurn,
+    HardMix,
+    Height,
+    LinearHeight,
+}
+
+#[derive(Clone, Copy)]
 pub struct BrushTexture {
     pub scale: f32,
     pub inverted: bool,
     pub depth: f32,
     pub depth_dynamics: Option<Dynamics>,
+    pub each_tip: bool,
+    pub blend_mode: TextureBlendMode,
 }
 
 #[derive(Clone, Copy)]
@@ -492,12 +509,39 @@ fn tip_foreground_statement(adjustment: Option<ColorAdjustment>, pose: BrushPose
     }}
 }
 
-fn texture_mask_statement(texture: Option<BrushTexture>, pose: BrushPose) -> Statement {
+fn texture_mask_statement(
+    texture: Option<BrushTexture>,
+    pose: BrushPose,
+    base_diameter: f32,
+    tip_angle: Expression,
+) -> Statement {
     let Some(texture) = texture else {
         return quote_statement! {{}};
     };
     let pattern = (*MAIN_PATTERN_TEXTURE_IDENT).clone();
     let scale = texture.scale;
+    let pattern_sample = if texture.each_tip {
+        quote_expression!(sample_transformed_local_texture_wrap(
+            #pattern,
+            pixel_position,
+            vec2f(
+                #scale * tip_diameter / #base_diameter,
+                #scale * tip_diameter * tip_roundness / #base_diameter,
+            ),
+            #tip_angle + roundness_angle,
+            tip_center,
+            vec2f(0.5),
+        ))
+    } else {
+        quote_expression!(sample_transformed_local_texture_wrap(
+            #pattern,
+            pixel_position,
+            vec2f(#scale),
+            0.0,
+            vec2f(0.0),
+            vec2f(0.0),
+        ))
+    };
     let texture_value = if texture.inverted {
         quote_expression!(1.0 - pattern_sample.r)
     } else {
@@ -518,16 +562,47 @@ fn texture_mask_statement(texture: Option<BrushTexture>, pose: BrushPose) -> Sta
         }
         None => quote_expression!(#depth * 1.0),
     };
+    let blended_mask = match texture.blend_mode {
+        TextureBlendMode::Multiply => {
+            quote_expression!(image::blend_modes::blend_multiply(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::Subtract => {
+            quote_expression!(image::blend_modes::blend_subtract(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::Darken => {
+            quote_expression!(image::blend_modes::blend_darken(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::Overlay => {
+            quote_expression!(image::blend_modes::blend_overlay(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::ColorDodge => {
+            quote_expression!(image::blend_modes::blend_color_dodge(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::ColorBurn => {
+            quote_expression!(image::blend_modes::blend_color_burn(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::LinearDodge => {
+            quote_expression!(image::blend_modes::blend_linear_dodge(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::LinearBurn => {
+            quote_expression!(image::blend_modes::blend_linear_burn(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::HardMix => {
+            quote_expression!(image::blend_modes::blend_hard_mix(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::Height => {
+            quote_expression!(image::blend_modes::blend_height(pattern_color, mask_color).r)
+        }
+        TextureBlendMode::LinearHeight => {
+            quote_expression!(image::blend_modes::blend_linear_height(pattern_color, mask_color).r)
+        }
+    };
     quote_statement! {{
-        let pattern_sample = sample_transformed_local_texture_wrap(
-            #pattern,
-            pixel_position,
-            vec2f(#scale),
-            0.0,
-            vec2f(0.0),
-            vec2f(0.0),
-        );
-        tip_mask *= mix(1.0, #texture_value, #effective_depth);
+        let pattern_sample = #pattern_sample;
+        let pattern_color = vec4f(vec3f(#texture_value), 1.0);
+        let mask_color = vec4f(vec3f(copy_mask), 1.0);
+        let textured_mask = select(0.0, #blended_mask, copy_mask > 0.0);
+        copy_mask = mix(copy_mask, textured_mask, #effective_depth);
     }}
 }
 
@@ -626,7 +701,7 @@ pub fn computed_main(
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
-    let texture_mask = texture_mask_statement(brush_texture, pose);
+    let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -656,7 +731,8 @@ pub fn computed_main(
                 vec2f(0.0),
                 tip_radii,
             );
-            let copy_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
+            var copy_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
+            @#texture_mask {}
             tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
             let copy_bounds = Rect(
                 tip_center - vec2f(tip_radius),
@@ -671,7 +747,6 @@ pub fn computed_main(
                 );
             }
         }
-        @#texture_mask {}
         @#tip_color {}
         #bounds = combined_bounds;
     }}
@@ -709,7 +784,7 @@ pub fn sampled_main(
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
-    let texture_mask = texture_mask_statement(brush_texture, pose);
+    let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -739,7 +814,8 @@ pub fn sampled_main(
                 tip_center,
                 tip_anchor,
             );
-            let copy_mask = tip_sample.a * (1.0 - tip_sample.r);
+            var copy_mask = tip_sample.a * (1.0 - tip_sample.r);
+            @#texture_mask {}
             tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
             let copy_bounds = filter_within_mask_bounds(
                 #texture,
@@ -757,7 +833,6 @@ pub fn sampled_main(
                 );
             }
         }
-        @#texture_mask {}
         @#tip_color {}
         #bounds = combined_bounds;
     }}
