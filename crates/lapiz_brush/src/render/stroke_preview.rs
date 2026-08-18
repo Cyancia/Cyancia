@@ -9,6 +9,7 @@ use iced_runtime::Task;
 use image::{ImageFormat, RgbaImage};
 use lapiz_assets::asset::AssetHandle;
 use lapiz_image::{
+    layer_bounds::LayerBoundsPipeline,
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileInfo, GpuTileStorage, LayerBinding},
 };
@@ -30,7 +31,7 @@ use lapiz_utils::log_err::LogErr;
 use tracing::info;
 use wesl::include_wesl;
 use wgpu::{
-    BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BufferUsages,
+    BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer, BufferUsages,
     ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, Extent3d,
     PipelineLayoutDescriptor, Queue, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     StorageTextureAccess, Texture, TextureDescriptor, TextureDimension, TextureFormat,
@@ -277,27 +278,18 @@ fn map_result_texture(
         view_formats: &[],
     });
 
-    let result_binding = result.binding();
-    let tile_bounds = result.compute_tile_bounds();
-    let Some(result_binding) = result_binding else {
+    let Some(result_binding) = result.binding() else {
         return output_texture;
     };
-    if tile_bounds.is_empty() {
-        return output_texture;
-    }
-    let pixel_bounds = GpuTileStorage::tile_rect_to_pixel(tile_bounds);
-
-    let mut result_bounds = DynamicBuffer::new(
-        Some("stroke preview result bounds".into()),
-        BufferUsages::STORAGE,
+    let mut ec = device.create_command_encoder(&Default::default());
+    let result_bounds = LayerBoundsPipeline::new(&device, TexelType::RGBA8, false).dispatch(
+        &device,
+        &queue,
+        &mut ec,
+        &result_binding,
+        None,
     );
-    result_bounds.push(&IVec4::new(
-        pixel_bounds.min.x,
-        pixel_bounds.min.y,
-        pixel_bounds.max.x,
-        pixel_bounds.max.y,
-    ));
-    result_bounds.write_buffer(&device, &queue);
+    queue.submit([ec.finish()]);
 
     ComposeStrokePreviewPipeline::new(&device).dispatch(
         &device,
@@ -362,7 +354,7 @@ impl ComposeStrokePreviewPipeline {
         device: &Device,
         queue: &Queue,
         result: &LayerBinding,
-        result_bounds: &DynamicBuffer<IVec4>,
+        result_bounds: &Buffer,
         output: &Texture,
     ) {
         let output_view = output.create_view(&TextureViewDescriptor::default());
@@ -372,7 +364,7 @@ impl ComposeStrokePreviewPipeline {
             entries: BindGroupEntries::sequential((
                 &result.texture,
                 result.tile_info_buffer.as_entire_binding(),
-                result_bounds.binding().unwrap(),
+                result_bounds.as_entire_binding(),
                 &output_view,
             ))
             .as_ref(),
