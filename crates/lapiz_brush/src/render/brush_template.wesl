@@ -90,8 +90,8 @@ fn sample_transformed_local_texture_clamp(local_index: u32, pixel: vec2f, scale:
 fn sample_transformed_local_texture_wrap(local_index: u32, pixel: vec2f, scale: vec2f, rotate: f32, translate: vec2f, anchor: vec2f) -> vec4f {
     let mat = texture_transform_mat_inv(local_index, scale, rotate, translate, anchor);
     let tex_px = (mat * vec3f(pixel, 1.0)).xy;
-    let tex_size = atlas_size(local_index);
-    let wrapped_tex_px = abs(vec2i(tex_px) % vec2i(tex_size));
+    let tex_size = vec2i(atlas_size(local_index));
+    let wrapped_tex_px = ((vec2i(tex_px) % tex_size) + tex_size) % tex_size;
     return sample_local_texture(local_index, vec2u(wrapped_tex_px));
 }
 

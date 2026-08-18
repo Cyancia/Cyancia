@@ -31,12 +31,13 @@ use lapiz_shader_graph::{
 };
 
 use crate::desc::wgsl::{
-    AZIMUTH_INPUT, BrushPose, ColorAdjustment, DAB_INDEX_INPUT, DIRECTION_INPUT, Dynamics,
-    INITIAL_DIRECTION_INPUT, MAIN_BACKGROUND_COLOR_INPUT, MAIN_BOUNDS_OUTPUT, MAIN_COLOR_OUTPUT,
-    MAIN_FOREGROUND_COLOR_INPUT, MAIN_PEN_POSITION_INPUT, MAIN_PIXEL_POSITION_INPUT,
-    MAIN_TIP_TEXTURE_INPUT, POSTPROCESS_INPUT_COLOR, POSTPROCESS_STROKE_BOUNDS_INPUT,
-    PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT, Scatter, TILT_INPUT,
-    computed_main, computed_required_spacing, opacity_postprocess, sampled_main,
+    AZIMUTH_INPUT, BrushPose, BrushTexture, ColorAdjustment, DAB_INDEX_INPUT, DIRECTION_INPUT,
+    Dynamics, INITIAL_DIRECTION_INPUT, MAIN_BACKGROUND_COLOR_INPUT, MAIN_BOUNDS_OUTPUT,
+    MAIN_COLOR_OUTPUT, MAIN_FOREGROUND_COLOR_INPUT, MAIN_PATTERN_TEXTURE_INPUT,
+    MAIN_PEN_POSITION_INPUT, MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT,
+    POSTPROCESS_INPUT_COLOR, POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT,
+    REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT, Scatter, TILT_INPUT, computed_main,
+    computed_required_spacing, opacity_postprocess, sampled_main,
 };
 
 pub fn add_stateful_node<Data, T>(
@@ -103,6 +104,8 @@ pub fn computed_graphs(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
+    brush_texture: Option<BrushTexture>,
+    pattern_asset: Option<AssetId<Image>>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = computed_main_graph(
@@ -122,6 +125,8 @@ pub fn computed_graphs(
         pose,
         color_adjustment,
         scatter,
+        brush_texture,
+        pattern_asset,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -144,6 +149,8 @@ pub fn sampled_graphs(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
+    brush_texture: Option<BrushTexture>,
+    pattern_asset: Option<AssetId<Image>>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = sampled_main_graph(
@@ -163,6 +170,8 @@ pub fn sampled_graphs(
         pose,
         color_adjustment,
         scatter,
+        brush_texture,
+        pattern_asset,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -214,12 +223,22 @@ fn computed_main_graph(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
+    brush_texture: Option<BrushTexture>,
+    pattern_asset: Option<AssetId<Image>>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
     let foreground_color = graph.add_node(Point::new(0.0, 200.0), ForegroundColorNode);
     let background_color = graph.add_node(Point::new(0.0, 300.0), BackgroundColorNode);
+    let pattern_texture = pattern_asset.map(|pattern_asset| {
+        add_stateful_node(
+            &mut graph,
+            Point::new(0.0, 400.0),
+            TextureNode,
+            TextureId(Some(pattern_asset)),
+        )
+    });
     let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
 
     let mut state = CustomExpressionNodeState::default();
@@ -227,6 +246,7 @@ fn computed_main_graph(
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
     state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
+    state.add_input::<TextureType>(MAIN_PATTERN_TEXTURE_INPUT);
     add_dynamics_input_slots(&mut state);
     state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -248,6 +268,7 @@ fn computed_main_graph(
         pose,
         color_adjustment,
         scatter,
+        brush_texture,
     ));
 
     let expression = add_stateful_node(
@@ -263,8 +284,11 @@ fn computed_main_graph(
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
     graph.connect_slots_by_index(background_color, 0, expression, 3);
-    connect_dynamics_input_nodes(&mut graph, expression, 4);
-    graph.connect_slots_by_index(stroke_time, 1, expression, 10);
+    if let Some(pattern_texture) = pattern_texture {
+        graph.connect_slots_by_index(pattern_texture, 0, expression, 4);
+    }
+    connect_dynamics_input_nodes(&mut graph, expression, 5);
+    graph.connect_slots_by_index(stroke_time, 1, expression, 11);
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
@@ -288,6 +312,8 @@ fn sampled_main_graph(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
+    brush_texture: Option<BrushTexture>,
+    pattern_asset: Option<AssetId<Image>>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -300,6 +326,14 @@ fn sampled_main_graph(
         TextureId(Some(sample_asset)),
     );
     let background_color = graph.add_node(Point::new(0.0, 400.0), BackgroundColorNode);
+    let pattern_texture = pattern_asset.map(|pattern_asset| {
+        add_stateful_node(
+            &mut graph,
+            Point::new(0.0, 450.0),
+            TextureNode,
+            TextureId(Some(pattern_asset)),
+        )
+    });
     let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
 
     let mut state = CustomExpressionNodeState::default();
@@ -308,6 +342,7 @@ fn sampled_main_graph(
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
     state.add_input::<TextureType>(MAIN_TIP_TEXTURE_INPUT);
     state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
+    state.add_input::<TextureType>(MAIN_PATTERN_TEXTURE_INPUT);
     add_dynamics_input_slots(&mut state);
     state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
@@ -328,6 +363,7 @@ fn sampled_main_graph(
         pose,
         color_adjustment,
         scatter,
+        brush_texture,
     ));
 
     let expression = add_stateful_node(
@@ -344,8 +380,11 @@ fn sampled_main_graph(
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
     graph.connect_slots_by_index(texture, 0, expression, 3);
     graph.connect_slots_by_index(background_color, 0, expression, 4);
-    connect_dynamics_input_nodes(&mut graph, expression, 5);
-    graph.connect_slots_by_index(stroke_time, 1, expression, 11);
+    if let Some(pattern_texture) = pattern_texture {
+        graph.connect_slots_by_index(pattern_texture, 0, expression, 5);
+    }
+    connect_dynamics_input_nodes(&mut graph, expression, 6);
+    graph.connect_slots_by_index(stroke_time, 1, expression, 12);
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 

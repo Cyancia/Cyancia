@@ -10,7 +10,7 @@ use lapiz_brush::asset::BrushPreset;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
-use crate::desc::wgsl::{BrushPose, ColorAdjustment, Dynamics, Scatter};
+use crate::desc::wgsl::{BrushPose, BrushTexture, ColorAdjustment, Dynamics, Scatter};
 
 pub mod graph;
 pub mod wgsl;
@@ -45,7 +45,7 @@ fn parse_dynamics(
 pub fn parse_desc(
     brush: &AbrBrushPreset,
     sample_assets: &HashMap<Uuid, AssetId<Image>>,
-    _pattern_assets: &HashMap<Uuid, AssetId<Image>>,
+    pattern_assets: &HashMap<Uuid, AssetId<Image>>,
 ) -> Result<BrushPreset> {
     let paint_options = match &brush.tool_options {
         Some(ToolOptions::Paint(options)) => Some(options),
@@ -265,6 +265,47 @@ pub fn parse_desc(
         None
     };
 
+    ensure!(!brush.protect_texture, "unsupported protect texture");
+    ensure!(
+        brush.interpretation != Some(false),
+        "unsupported texture interpretation"
+    );
+    ensure!(
+        brush.texture_brightness == 0,
+        "unsupported texture brightness {}",
+        brush.texture_brightness
+    );
+    ensure!(
+        brush.texture_contrast == 0,
+        "unsupported texture contrast {}",
+        brush.texture_contrast
+    );
+    let (brush_texture, pattern_asset) = if brush.use_texture {
+        let texture = brush
+            .texture
+            .as_ref()
+            .context("missing texture pattern reference")?;
+        let pattern_asset = pattern_assets
+            .get(&texture.id)
+            .copied()
+            .with_context(|| format!("missing texture pattern {}", texture.id))?;
+        let scale = brush
+            .texture_scale
+            .as_ref()
+            .map(|value| value.value as f32 / 100.0)
+            .unwrap_or(1.0);
+        ensure!(scale.is_finite() && scale > 0.0, "invalid texture scale");
+        (
+            Some(BrushTexture {
+                scale,
+                inverted: brush.texture_inverted,
+            }),
+            Some(pattern_asset),
+        )
+    } else {
+        (None, None)
+    };
+
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
             ensure!(tip.interpolation, "unsupported computed interpolation");
@@ -286,6 +327,8 @@ pub fn parse_desc(
                 pose,
                 color_adjustment,
                 scatter,
+                brush_texture,
+                pattern_asset,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -312,6 +355,8 @@ pub fn parse_desc(
                 pose,
                 color_adjustment,
                 scatter,
+                brush_texture,
+                pattern_asset,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),

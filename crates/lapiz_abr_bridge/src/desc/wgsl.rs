@@ -9,6 +9,7 @@ pub const MAIN_PEN_POSITION_INPUT: &str = "pen_position";
 pub const MAIN_FOREGROUND_COLOR_INPUT: &str = "foreground_color";
 pub const MAIN_BACKGROUND_COLOR_INPUT: &str = "background_color";
 pub const MAIN_TIP_TEXTURE_INPUT: &str = "tip_texture";
+pub const MAIN_PATTERN_TEXTURE_INPUT: &str = "pattern_texture";
 pub const MAIN_COLOR_OUTPUT: &str = "color";
 pub const MAIN_BOUNDS_OUTPUT: &str = "bounds";
 pub const POSTPROCESS_INPUT_COLOR: &str = "input_color";
@@ -48,6 +49,12 @@ pub struct Scatter {
 }
 
 #[derive(Clone, Copy)]
+pub struct BrushTexture {
+    pub scale: f32,
+    pub inverted: bool,
+}
+
+#[derive(Clone, Copy)]
 pub struct ColorAdjustment {
     pub hue_jitter: f32,
     pub saturation_jitter: f32,
@@ -69,6 +76,8 @@ static MAIN_BACKGROUND_COLOR_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_BACKGROUND_COLOR_INPUT.to_string()));
 static MAIN_TIP_TEXTURE_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_TIP_TEXTURE_INPUT.to_string()));
+static MAIN_PATTERN_TEXTURE_IDENT: LazyLock<Ident> =
+    LazyLock::new(|| Ident::new(MAIN_PATTERN_TEXTURE_INPUT.to_string()));
 static MAIN_COLOR_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_COLOR_OUTPUT.to_string()));
 static MAIN_BOUNDS_IDENT: LazyLock<Ident> =
@@ -481,6 +490,30 @@ fn tip_foreground_statement(adjustment: Option<ColorAdjustment>, pose: BrushPose
     }}
 }
 
+fn texture_mask_statement(texture: Option<BrushTexture>) -> Statement {
+    let Some(texture) = texture else {
+        return quote_statement! {{}};
+    };
+    let pattern = (*MAIN_PATTERN_TEXTURE_IDENT).clone();
+    let scale = texture.scale;
+    let texture_value = if texture.inverted {
+        quote_expression!(1.0 - pattern_sample.r)
+    } else {
+        quote_expression!(pattern_sample.r)
+    };
+    quote_statement! {{
+        let pattern_sample = sample_transformed_local_texture_wrap(
+            #pattern,
+            pixel_position,
+            vec2f(#scale),
+            0.0,
+            vec2f(0.0),
+            vec2f(0.0),
+        );
+        tip_mask *= #texture_value;
+    }}
+}
+
 fn tip_color_statement(
     flow: f32,
     flow_dynamics: Option<Dynamics>,
@@ -562,6 +595,7 @@ pub fn computed_main(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
+    brush_texture: Option<BrushTexture>,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -575,6 +609,7 @@ pub fn computed_main(
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
+    let texture_mask = texture_mask_statement(brush_texture);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -619,6 +654,7 @@ pub fn computed_main(
                 );
             }
         }
+        @#texture_mask {}
         @#tip_color {}
         #bounds = combined_bounds;
     }}
@@ -641,6 +677,7 @@ pub fn sampled_main(
     pose: BrushPose,
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
+    brush_texture: Option<BrushTexture>,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -655,6 +692,7 @@ pub fn sampled_main(
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
+    let texture_mask = texture_mask_statement(brush_texture);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -702,6 +740,7 @@ pub fn sampled_main(
                 );
             }
         }
+        @#texture_mask {}
         @#tip_color {}
         #bounds = combined_bounds;
     }}
