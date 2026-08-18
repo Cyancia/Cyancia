@@ -61,6 +61,31 @@ fn blend_normal(src: vec4f, dst: vec4f) -> vec4f {
     return blend_compose(src, dst, src.rgb);
 }
 
+// TODO use real random hashing with pixel position.
+fn blend_dissolve(src: vec4f, dst: vec4f) -> vec4f {
+    let src_a = clamp(src.a, 0.0, 1.0);
+    let hash = fract(
+        sin(dot(vec4f(src.rgb, dst.a), vec4f(12.9898, 78.233, 37.719, 4.1414))) * 43758.5453
+    );
+    return blend_compose(src, dst, select(dst.rgb, src.rgb, hash < src_a));
+}
+
+fn blend_behind(src: vec4f, dst: vec4f) -> vec4f {
+    return blend_compose(dst, src, dst.rgb);
+}
+
+fn blend_clear(src: vec4f, dst: vec4f) -> vec4f {
+    let src_a = clamp(src.a, 0.0, 1.0);
+    let dst_a = clamp(dst.a, 0.0, 1.0);
+    let out_a = dst_a * (1.0 - src_a);
+
+    if out_a <= BLEND_EPSILON {
+        return vec4f(0.0);
+    }
+
+    return vec4f(clamp01_rgb(dst.rgb), out_a);
+}
+
 fn blend_darken(src: vec4f, dst: vec4f) -> vec4f {
     return blend_compose(src, dst, min(src.rgb, dst.rgb));
 }
@@ -211,4 +236,16 @@ fn blend_color(src: vec4f, dst: vec4f) -> vec4f {
 
 fn blend_luminosity(src: vec4f, dst: vec4f) -> vec4f {
     return blend_compose(src, dst, set_lum(dst.rgb, lum(src.rgb)));
+}
+
+fn blend_height(src: vec4f, dst: vec4f) -> vec4f {
+    return blend_subtract(src, dst);
+}
+
+fn blend_linear_height(src: vec4f, dst: vec4f) -> vec4f {
+    let s = src.rgb;
+    let d = dst.rgb;
+    let inverse_multiply = d * (vec3f(1.0) - s);
+    let subtract = d - s;
+    return blend_compose(src, dst, clamp01_rgb(max(inverse_multiply, subtract)));
 }

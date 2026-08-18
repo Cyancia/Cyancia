@@ -48,10 +48,16 @@ pub enum BlendMode {
     Saturation,
     Color,
     Luminosity,
+
+    Dissolve,
+    Behind,
+    Clear,
+    Height,
+    LinearHeight,
 }
 
 impl BlendMode {
-    pub const ALL: [BlendMode; 28] = [
+    pub const ALL: [BlendMode; 33] = [
         BlendMode::Normal,
         BlendMode::Darken,
         BlendMode::Multiply,
@@ -80,10 +86,15 @@ impl BlendMode {
         BlendMode::Saturation,
         BlendMode::Color,
         BlendMode::Luminosity,
+        BlendMode::Dissolve,
+        BlendMode::Behind,
+        BlendMode::Clear,
+        BlendMode::Height,
+        BlendMode::LinearHeight,
     ];
 }
 
-pub static ALL_IDS: LazyLock<[BlendFunctionId; 28]> = LazyLock::new(|| {
+pub static ALL_IDS: LazyLock<[BlendFunctionId; 33]> = LazyLock::new(|| {
     [
         BlendFunctionId::new("blend_normal".into()),
         BlendFunctionId::new("blend_darken".into()),
@@ -113,6 +124,11 @@ pub static ALL_IDS: LazyLock<[BlendFunctionId; 28]> = LazyLock::new(|| {
         BlendFunctionId::new("blend_saturation".into()),
         BlendFunctionId::new("blend_color".into()),
         BlendFunctionId::new("blend_luminosity".into()),
+        BlendFunctionId::new("blend_dissolve".into()),
+        BlendFunctionId::new("blend_behind".into()),
+        BlendFunctionId::new("blend_clear".into()),
+        BlendFunctionId::new("blend_height".into()),
+        BlendFunctionId::new("blend_linear_height".into()),
     ]
 });
 
@@ -147,6 +163,11 @@ impl BlendMode {
             BlendMode::Saturation => "blend_saturation",
             BlendMode::Color => "blend_color",
             BlendMode::Luminosity => "blend_luminosity",
+            BlendMode::Dissolve => "blend_dissolve",
+            BlendMode::Behind => "blend_behind",
+            BlendMode::Clear => "blend_clear",
+            BlendMode::Height => "blend_height",
+            BlendMode::LinearHeight => "blend_linear_height",
         }
     }
 }
