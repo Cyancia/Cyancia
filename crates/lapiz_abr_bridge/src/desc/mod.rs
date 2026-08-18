@@ -295,10 +295,31 @@ pub fn parse_desc(
             .map(|value| value.value as f32 / 100.0)
             .unwrap_or(1.0);
         ensure!(scale.is_finite() && scale > 0.0, "invalid texture scale");
+        let depth = brush
+            .texture_depth
+            .as_ref()
+            .map(|value| value.value as f32 / 100.0)
+            .unwrap_or(1.0)
+            .clamp(0.0, 1.0);
+        let minimum_depth = brush
+            .texture_minimum_depth
+            .as_ref()
+            .map(|value| value.value as f32 / 100.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let depth_dynamics = brush
+            .texture_depth_dynamics
+            .as_ref()
+            .map(|dynamics| {
+                parse_dynamics(dynamics, false, minimum_depth).context("texture depth dynamics")
+            })
+            .transpose()?;
         (
             Some(BrushTexture {
                 scale,
                 inverted: brush.texture_inverted,
+                depth,
+                depth_dynamics,
             }),
             Some(pattern_asset),
         )

@@ -52,6 +52,8 @@ pub struct Scatter {
 pub struct BrushTexture {
     pub scale: f32,
     pub inverted: bool,
+    pub depth: f32,
+    pub depth_dynamics: Option<Dynamics>,
 }
 
 #[derive(Clone, Copy)]
@@ -490,7 +492,7 @@ fn tip_foreground_statement(adjustment: Option<ColorAdjustment>, pose: BrushPose
     }}
 }
 
-fn texture_mask_statement(texture: Option<BrushTexture>) -> Statement {
+fn texture_mask_statement(texture: Option<BrushTexture>, pose: BrushPose) -> Statement {
     let Some(texture) = texture else {
         return quote_statement! {{}};
     };
@@ -501,6 +503,21 @@ fn texture_mask_statement(texture: Option<BrushTexture>) -> Statement {
     } else {
         quote_expression!(pattern_sample.r)
     };
+    let depth = texture.depth;
+    let effective_depth = match texture.depth_dynamics {
+        Some(dynamics) => {
+            let control = dynamics_control(dynamics, pose);
+            let minimum = dynamics.minimum;
+            let jitter = dynamics.jitter;
+            let random = dab_random(197.731);
+            quote_expression!(mix(
+                mix(#minimum, #depth, #control),
+                #minimum,
+                #jitter * #random,
+            ))
+        }
+        None => quote_expression!(#depth * 1.0),
+    };
     quote_statement! {{
         let pattern_sample = sample_transformed_local_texture_wrap(
             #pattern,
@@ -510,7 +527,7 @@ fn texture_mask_statement(texture: Option<BrushTexture>) -> Statement {
             vec2f(0.0),
             vec2f(0.0),
         );
-        tip_mask *= #texture_value;
+        tip_mask *= mix(1.0, #texture_value, #effective_depth);
     }}
 }
 
@@ -609,7 +626,7 @@ pub fn computed_main(
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
-    let texture_mask = texture_mask_statement(brush_texture);
+    let texture_mask = texture_mask_statement(brush_texture, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -692,7 +709,7 @@ pub fn sampled_main(
     let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
-    let texture_mask = texture_mask_statement(brush_texture);
+    let texture_mask = texture_mask_statement(brush_texture, pose);
 
     quote_statement! {{
         var tip_diameter: f32;
