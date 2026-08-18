@@ -56,8 +56,8 @@ fn generate_graph_node_impl(impl_block: &ItemImpl, crate_path: &TokenStream2) ->
                 #crate_path::graph::node::StatelessState::default()
             }
 
-            fn header_color(&self, is_dark: bool) -> ::iced_core::Color {
-                <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::header_color(self, is_dark)
+            fn header_hue_chroma(&self) -> (f32, f32) {
+                <Self as #crate_path::graph::node::StatelessCommonGraphNode<#data_ty>>::header_hue_chroma(self)
             }
 
             fn create_inputs(

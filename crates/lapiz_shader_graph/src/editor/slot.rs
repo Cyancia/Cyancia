@@ -1,17 +1,20 @@
 use std::{any::Any, collections::HashMap};
 
+use bevy_color::{Oklcha, Srgba};
 use iced_core::{
     Border, Color, Element, Length, Point, Rectangle, Size, Widget,
     alignment::Vertical,
     layout, mouse,
     renderer::{self, Quad},
     text::IntoFragment,
+    theme::{Base, Mode},
     widget::{Operation, Tree},
 };
 use iced_widget::{row, text};
 
 use crate::{
     GraphRenderer, GraphTheme,
+    editor::themed_color,
     graph::slot::{
         ErasedGraphLiteralUpdateMessage, GraphInputSlotData, GraphInputSlotId, GraphOutputSlotData,
         GraphOutputSlotId,
@@ -78,13 +81,11 @@ impl GraphSlotPinPositionCollection {
 pub struct SlotPin {
     pub id: GraphSlotId,
     pub radius: f32,
-    pub color: Color,
+    pub hue: f32,
+    pub chroma: f32,
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for SlotPin
-where
-    Renderer: iced_core::Renderer,
-{
+impl<Message> Widget<Message, GraphTheme, GraphRenderer> for SlotPin {
     fn size(&self) -> Size<Length> {
         let d = self.radius * 2.0;
         Size::new(Length::Fixed(d), Length::Fixed(d))
@@ -93,7 +94,7 @@ where
     fn layout(
         &mut self,
         _tree: &mut Tree,
-        _renderer: &Renderer,
+        _renderer: &GraphRenderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         let d = self.radius * 2.0;
@@ -103,20 +104,21 @@ where
     fn draw(
         &self,
         _tree: &Tree,
-        renderer: &mut Renderer,
-        _theme: &Theme,
+        renderer: &mut GraphRenderer,
+        theme: &GraphTheme,
         _style: &renderer::Style,
         layout: layout::Layout<'_>,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
-        renderer.fill_quad(
+        iced_core::Renderer::fill_quad(
+            renderer,
             Quad {
                 bounds: layout.bounds(),
                 border: Border::default().rounded(self.radius),
                 ..Default::default()
             },
-            self.color,
+            themed_color(theme, self.hue, self.chroma),
         );
     }
 
@@ -124,7 +126,7 @@ where
         &mut self,
         _tree: &mut Tree,
         layout: layout::Layout<'_>,
-        _renderer: &Renderer,
+        _renderer: &GraphRenderer,
         operation: &mut dyn Operation,
     ) {
         operation.custom(None, layout.bounds(), &mut SlotPinState { id: self.id });
@@ -143,18 +145,14 @@ pub fn input_slot<'a>(
     slot_id: GraphInputSlotId,
     slot_name: impl IntoFragment<'a>,
     slot: &GraphInputSlotData,
-    is_dark: bool,
 ) -> Element<'a, ErasedGraphLiteralUpdateMessage, GraphTheme, GraphRenderer> {
+    let (hue, chroma) = slot.data.ty().hue_chroma();
     match slot.connected {
-        Some(_) => empty_slot(
-            slot_id.into(),
-            slot.data.ty().color(is_dark),
-            slot_name,
-            SlotSide::Left,
-        ),
+        Some(_) => empty_slot(slot_id.into(), hue, chroma, slot_name, SlotSide::Left),
         None => valued_slot(
             slot_id.into(),
-            slot.data.ty().color(is_dark),
+            hue,
+            chroma,
             slot_name,
             SlotSide::Left,
             slot.data.ty().view_literal(slot_id, slot.data.value()),
@@ -166,34 +164,29 @@ pub fn output_slot<'a, Message>(
     slot_id: GraphOutputSlotId,
     slot_name: impl IntoFragment<'a>,
     slot: &GraphOutputSlotData,
-    is_dark: bool,
 ) -> Element<'a, Message, GraphTheme, GraphRenderer>
 where
     Message: 'a,
 {
-    empty_slot(
-        slot_id.into(),
-        slot.data_ty.color(is_dark),
-        slot_name,
-        SlotSide::Right,
-    )
+    let (hue, chroma) = slot.data_ty.hue_chroma();
+    empty_slot(slot_id.into(), hue, chroma, slot_name, SlotSide::Right)
 }
 
-pub fn empty_slot<'a, Message, Theme, Renderer>(
+pub fn empty_slot<'a, Message>(
     id: GraphSlotId,
-    color: Color,
+    hue: f32,
+    chroma: f32,
     name: impl IntoFragment<'a>,
     slot_side: SlotSide,
-) -> Element<'a, Message, Theme, Renderer>
+) -> Element<'a, Message, GraphTheme, GraphRenderer>
 where
     Message: 'a,
-    Theme: text::Catalog + 'a,
-    Renderer: iced_core::renderer::Renderer + iced_core::text::Renderer + 'a,
 {
     let text = text(name);
     let pin = Element::new(SlotPin {
         id,
-        color,
+        hue,
+        chroma,
         radius: 3.0,
     });
 
@@ -211,22 +204,22 @@ where
     }
 }
 
-pub fn valued_slot<'a, Message, Theme, Renderer>(
+pub fn valued_slot<'a, Message>(
     id: GraphSlotId,
-    color: Color,
+    hue: f32,
+    chroma: f32,
     name: impl IntoFragment<'a>,
     slot_side: SlotSide,
-    widget: Element<'a, Message, Theme, Renderer>,
-) -> Element<'a, Message, Theme, Renderer>
+    widget: Element<'a, Message, GraphTheme, GraphRenderer>,
+) -> Element<'a, Message, GraphTheme, GraphRenderer>
 where
     Message: 'a,
-    Theme: text::Catalog + 'a,
-    Renderer: iced_core::renderer::Renderer + iced_core::text::Renderer + 'a,
 {
     let text = text(name);
     let pin = Element::new(SlotPin {
         id,
-        color,
+        hue,
+        chroma,
         radius: 3.0,
     });
 

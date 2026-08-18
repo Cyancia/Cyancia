@@ -4,9 +4,9 @@ use anyhow::Result;
 use bevy_math::Rect;
 use encase::{DynamicUniformBuffer, ShaderType};
 use glam::{Vec2, Vec4};
-use iced_core::{Color, Element};
+use iced_core::Element;
 use iced_widget::{checkbox, column, space};
-use lapiz_utils::random_oklch;
+use lapiz_utils::random_oklch_hue_chroma;
 use lapiz_widgets::spin_slider::SpinSlider;
 use serde::{Deserialize, Serialize};
 use wgpu::QueueWriteBufferView;
@@ -24,8 +24,8 @@ impl GraphValueType for F32Type {
 
     type Message = f32;
 
-    fn color(&self, is_dark: bool) -> Color {
-        random_oklch!(F32Type, is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(F32Type)
     }
 
     fn name(&self) -> &'static str {
@@ -83,8 +83,8 @@ impl GraphValueType for Vec2FType {
 
     type Message = Vec2FMessage;
 
-    fn color(&self, is_dark: bool) -> Color {
-        random_oklch!(Vec2FType, is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(Vec2FType)
     }
 
     fn name(&self) -> &'static str {
@@ -141,8 +141,8 @@ impl GraphValueType for I32Type {
 
     type Message = i32;
 
-    fn color(&self, is_dark: bool) -> Color {
-        random_oklch!(I32Type, is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(I32Type)
     }
 
     fn name(&self) -> &'static str {
@@ -191,8 +191,8 @@ impl GraphValueType for BoolType {
 
     type Message = bool;
 
-    fn color(&self, is_dark: bool) -> Color {
-        random_oklch!(BoolType, is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(BoolType)
     }
 
     fn name(&self) -> &'static str {
@@ -251,8 +251,8 @@ impl GraphValueType for ColorType {
 
     type Message = ColorMessage;
 
-    fn color(&self, is_dark: bool) -> Color {
-        random_oklch!(ColorType, is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(ColorType)
     }
 
     fn name(&self) -> &'static str {
@@ -343,8 +343,8 @@ impl GraphValueType for TextureType {
 
     type Message = ();
 
-    fn color(&self, is_dark: bool) -> Color {
-        random_oklch!(TextureType, is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(TextureType)
     }
 
     fn name(&self) -> &'static str {
@@ -399,8 +399,8 @@ impl GraphValueType for RectType {
 
     type Message = RectMessage;
 
-    fn color(&self, is_dark: bool) -> Color {
-        random_oklch!(RectType, is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(RectType)
     }
 
     fn name(&self) -> &'static str {

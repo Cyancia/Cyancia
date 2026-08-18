@@ -4,6 +4,7 @@ use std::{
     time::Instant,
 };
 
+use bevy_color::{Oklcha, Srgba};
 use iced_core::{
     Background, Border, Clipboard, Color, Element, Event, Layout, Length, Point, Shell, Size,
     Transformation, Vector,
@@ -14,6 +15,7 @@ use iced_core::{
     mouse::{self, Interaction},
     overlay,
     renderer::{self, Quad},
+    theme::{Base, Mode},
     widget::{Operation, Tree, tree},
 };
 use iced_graphics::{
@@ -133,8 +135,7 @@ impl<'a, Data: GraphData> From<GraphEditor<'a, Data>>
             graph,
             editor_state,
         } = value;
-        let editor_view =
-            GraphEditorView::new(editor_state.resolve_subgraph(graph), editor_state, true);
+        let editor_view = GraphEditorView::new(editor_state.resolve_subgraph(graph), editor_state);
 
         let mut cur_graph = graph;
         let subgraph_path = editor_state.path.iter().enumerate().map(|(index, comp)| {
@@ -219,9 +220,9 @@ pub struct GraphEditorView<'a, Data: GraphData> {
 }
 
 impl<'a, Data: GraphData> GraphEditorView<'a, Data> {
-    pub fn new(graph: &'a Graph<Data>, state: &'a GraphEditorState, is_dark: bool) -> Self {
+    pub fn new(graph: &'a Graph<Data>, state: &'a GraphEditorState) -> Self {
         Self {
-            graph: DrawableGraph::new(graph, is_dark),
+            graph: DrawableGraph::new(graph),
             node_creation_menu_items: graph
                 .resources
                 .node_registry
@@ -285,13 +286,13 @@ pub struct DrawableGraph<'a> {
 }
 
 impl<'a> DrawableGraph<'a> {
-    pub fn new<Data: GraphData>(graph: &'a Graph<Data>, is_dark: bool) -> Self {
+    pub fn new<Data: GraphData>(graph: &'a Graph<Data>) -> Self {
         let mut nodes = IndexMap::with_capacity(graph.nodes.len());
         let mut node_indices = HashMap::with_capacity(graph.nodes.len());
         for (index, (id, node)) in graph.nodes.iter().enumerate() {
             nodes.insert(
                 *id,
-                DrawableNode::new(*id, node, &graph.slots, graph.resources(), is_dark),
+                DrawableNode::new(*id, node, &graph.slots, graph.resources()),
             );
             node_indices.insert(*id, index);
         }
@@ -304,26 +305,19 @@ impl<'a> DrawableGraph<'a> {
                 let from = graph.slots.inputs.get(to)?.connected?;
                 let from_slot = graph.slots.outputs.get(&from)?;
 
-                let from_color = from_slot.data_ty.color(is_dark);
-                let to_color = to_slot.data.ty().color(is_dark);
-                let style = if from_color == to_color {
-                    geometry::Style::Solid(from_color)
-                } else {
-                    let g = Linear::new(Point::new(0.0, 0.0), Point::new(1000.0, 1000.0))
-                        .add_stops([
-                            ColorStop {
-                                offset: 0.0,
-                                color: from_color,
-                            },
-                            ColorStop {
-                                offset: 1.0,
-                                color: to_color,
-                            },
-                        ]);
-                    geometry::Style::Gradient(g.into())
-                };
+                let (from_hue, from_chroma) = from_slot.data_ty.hue_chroma();
+                let (to_hue, to_chroma) = to_slot.data.ty().hue_chroma();
 
-                Some((*to, DrawableEdge { from, style }))
+                Some((
+                    *to,
+                    DrawableEdge {
+                        from,
+                        from_hue,
+                        from_chroma,
+                        to_hue,
+                        to_chroma,
+                    },
+                ))
             })
             .collect();
 
@@ -332,20 +326,12 @@ impl<'a> DrawableGraph<'a> {
             .inputs
             .iter()
             .map(|(id, slot)| {
-                (
-                    (*id).into(),
-                    SlotData {
-                        color: slot.data.ty().color(is_dark),
-                    },
-                )
+                let (hue, chroma) = slot.data.ty().hue_chroma();
+                ((*id).into(), SlotData { hue, chroma })
             })
             .chain(graph.slots.outputs.iter().map(|(id, slot)| {
-                (
-                    (*id).into(),
-                    SlotData {
-                        color: slot.data_ty.color(is_dark),
-                    },
-                )
+                let (hue, chroma) = slot.data_ty.hue_chroma();
+                ((*id).into(), SlotData { hue, chroma })
             }))
             .collect();
 
@@ -359,12 +345,16 @@ impl<'a> DrawableGraph<'a> {
 }
 
 pub struct SlotData {
-    pub color: Color,
+    pub hue: f32,
+    pub chroma: f32,
 }
 
 pub struct DrawableEdge {
     from: GraphOutputSlotId,
-    style: geometry::Style,
+    from_hue: f32,
+    from_chroma: f32,
+    to_hue: f32,
+    to_chroma: f32,
 }
 
 pub struct DrawableNode<'a> {
@@ -381,12 +371,11 @@ impl<'a> DrawableNode<'a> {
         node: &'a GraphNodeData<Data>,
         slots: &GraphSlots,
         resources: &GraphResources<Data>,
-        is_dark: bool,
     ) -> Self {
-        let header_color = node.data.header_color(is_dark);
+        let (header_hue, header_chroma) = node.data.header_hue_chroma();
         let header = container(text(node.data.name()))
-            .style(move |_| container::Style {
-                background: Some(header_color.into()),
+            .style(move |theme| container::Style {
+                background: Some(themed_color(theme, header_hue, header_chroma).into()),
                 border: Border {
                     radius: Radius {
                         top_left: NODE_BORDER_RADIUS,
@@ -403,7 +392,7 @@ impl<'a> DrawableNode<'a> {
         let widget = container(
             column![
                 header,
-                node.view(node_id, slots, resources, is_dark)
+                node.view(node_id, slots, resources)
                     .map(|m| GraphEditorMessage::Graph(GraphEditorGraphMessage::NodeUpdate(m))),
             ]
             .width(NODE_WIDTH),
@@ -626,7 +615,8 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
 
                     state.interaction = InteractionState::EdgeConnecting {
                         resolved_source,
-                        color: slot_data.color,
+                        hue: slot_data.hue,
+                        chroma: slot_data.chroma,
                     };
                     shell.capture_event();
                     return;
@@ -970,18 +960,21 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
             let from_pos = state.slot_pins.get_output(&edge.from);
             let to_pos = state.slot_pins.get_input(to);
             if let (Some(from_pos), Some(to_pos)) = (from_pos, to_pos) {
-                let style = match edge.style {
-                    geometry::Style::Solid(color) => color.into(),
-                    geometry::Style::Gradient(gradient) => match gradient {
-                        geometry::Gradient::Linear(linear) => geometry::Style::Gradient(
-                            Linear {
-                                start: *from_pos,
-                                end: *to_pos,
-                                ..linear
-                            }
-                            .into(),
-                        ),
-                    },
+                let style = if edge.from_hue == edge.to_hue && edge.from_chroma == edge.to_chroma {
+                    geometry::Style::Solid(themed_color(theme, edge.from_hue, edge.from_chroma))
+                } else {
+                    let g = Linear::new(Point::new(0.0, 0.0), Point::new(1000.0, 1000.0))
+                        .add_stops([
+                            ColorStop {
+                                offset: 0.0,
+                                color: themed_color(theme, edge.from_hue, edge.from_chroma),
+                            },
+                            ColorStop {
+                                offset: 1.0,
+                                color: themed_color(theme, edge.to_hue, edge.to_chroma),
+                            },
+                        ]);
+                    geometry::Style::Gradient(g.into())
                 };
 
                 frame.stroke(
@@ -1055,7 +1048,8 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
         if let (
             InteractionState::EdgeConnecting {
                 resolved_source,
-                color,
+                hue,
+                chroma,
             },
             Some(cursor_pos),
         ) = (&state.interaction, graph_cursor.position())
@@ -1065,7 +1059,7 @@ impl<'a, Data: GraphData> Widget<GraphEditorMessage, GraphTheme, GraphRenderer>
             frame.stroke(
                 &geometry::Path::line(*start_pos, cursor_pos),
                 Stroke {
-                    style: (*color).into(),
+                    style: themed_color(theme, *hue, *chroma).into(),
                     width: 2.0,
                     ..Default::default()
                 },
@@ -1386,7 +1380,8 @@ enum InteractionState {
     },
     EdgeConnecting {
         resolved_source: GraphSlotId,
-        color: Color,
+        hue: f32,
+        chroma: f32,
     },
     SelectionDragging {
         cursor_origin: Point,
@@ -1403,4 +1398,24 @@ enum InteractionState {
 enum MarqueeMode {
     Replace,
     Add,
+}
+
+pub fn themed_color(theme: &GraphTheme, hue: f32, chroma: f32) -> Color {
+    let oklch = Oklcha::new(
+        match theme.mode() {
+            Mode::None => 0.5,
+            Mode::Light => 0.7,
+            Mode::Dark => 0.4,
+        },
+        chroma,
+        hue,
+        1.0,
+    );
+    let rgb = Srgba::from(oklch);
+    Color {
+        r: rgb.red,
+        g: rgb.green,
+        b: rgb.blue,
+        a: rgb.alpha,
+    }
 }

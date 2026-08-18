@@ -112,7 +112,7 @@ pub trait GraphValueType: Send + Sync + 'static + DynClone {
     type AssociatedLiteralType: GraphLiteralValue + Serialize + DeserializeOwned;
     type Message: GraphLiteralUpdateMessage;
 
-    fn color(&self, is_dark: bool) -> Color;
+    fn hue_chroma(&self) -> (f32, f32);
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Self::AssociatedLiteralType;
     fn wgsl_type(&self) -> Option<(&'static str, u64)>;
@@ -171,7 +171,7 @@ impl Clone for ErasedGraphLiteralUpdateMessage {
 }
 
 pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
-    fn color(&self, is_dark: bool) -> Color;
+    fn hue_chroma(&self) -> (f32, f32);
     fn name(&self) -> &'static str;
     fn default_literal(&self) -> Box<dyn GraphLiteralValue>;
     fn wgsl_type(&self) -> Option<(&'static str, u64)>;
@@ -204,8 +204,8 @@ pub trait ErasedGraphValueType: Send + Sync + 'static + DynClone {
 dyn_clone::clone_trait_object!(ErasedGraphValueType);
 
 impl<T: GraphValueType> ErasedGraphValueType for T {
-    fn color(&self, is_dark: bool) -> Color {
-        self.color(is_dark)
+    fn hue_chroma(&self) -> (f32, f32) {
+        self.hue_chroma()
     }
 
     fn name(&self) -> &'static str {

@@ -44,7 +44,7 @@ impl DemoEditor {
     }
 
     fn view(&self) -> iced_core::Element<'_, GraphEditorMessage, iced::Theme, iced_wgpu::Renderer> {
-        GraphEditorView::new(&self.graph, &self.editor_state, false).into()
+        GraphEditorView::new(&self.graph, &self.editor_state).into()
     }
 
     fn update(&mut self, message: GraphEditorMessage) {

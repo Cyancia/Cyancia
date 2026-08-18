@@ -2,8 +2,8 @@ use bevy_color::{Oklcha, Srgba};
 use iced_core::Color;
 
 #[macro_export]
-macro_rules! random_oklch {
-    ($struct_name:ty, $is_dark:expr) => {{
+macro_rules! random_oklch_hue_chroma {
+    ($struct_name:ty) => {{
         const CH: (f32, f32) = {
             let name = stringify!($struct_name).as_bytes();
             let mut i = 0;
@@ -15,12 +15,12 @@ macro_rules! random_oklch {
 
             const MIN_C: f32 = 0.05;
             const MAX_C: f32 = 0.15;
-            let c = MIN_C + (hash as f32 / u32::MAX as f32) * (MAX_C - MIN_C);
             let h = (hash % 360) as f32;
-            (c, h)
+            let c = MIN_C + (hash as f32 / u32::MAX as f32) * (MAX_C - MIN_C);
+            (h, c)
         };
 
-        lapiz_utils::themed_color::themed_oklch(CH.0, CH.1, $is_dark)
+        CH
     }};
 }
 
