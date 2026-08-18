@@ -10,6 +10,7 @@ pub const MAIN_FOREGROUND_COLOR_INPUT: &str = "foreground_color";
 pub const MAIN_BACKGROUND_COLOR_INPUT: &str = "background_color";
 pub const MAIN_TIP_TEXTURE_INPUT: &str = "tip_texture";
 pub const MAIN_PATTERN_TEXTURE_INPUT: &str = "pattern_texture";
+pub const DUAL_TIP_TEXTURE_INPUT: &str = "dual_tip_texture";
 pub const MAIN_COLOR_OUTPUT: &str = "color";
 pub const MAIN_BOUNDS_OUTPUT: &str = "bounds";
 pub const POSTPROCESS_INPUT_COLOR: &str = "input_color";
@@ -74,6 +75,34 @@ pub struct BrushTexture {
 }
 
 #[derive(Clone, Copy)]
+pub enum DualTip {
+    Computed {
+        diameter: f32,
+        hardness: f32,
+        angle: f32,
+        roundness: f32,
+        flip_x: bool,
+        flip_y: bool,
+    },
+    Sampled {
+        diameter: f32,
+        angle: f32,
+        roundness: f32,
+        flip_x: bool,
+        flip_y: bool,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub struct DualBrush {
+    pub tip: DualTip,
+    pub flip: bool,
+    pub blend_mode: TextureBlendMode,
+    pub spacing: f32,
+    pub main_spacing: f32,
+}
+
+#[derive(Clone, Copy)]
 pub struct ColorAdjustment {
     pub hue_jitter: f32,
     pub saturation_jitter: f32,
@@ -97,6 +126,8 @@ static MAIN_TIP_TEXTURE_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_TIP_TEXTURE_INPUT.to_string()));
 static MAIN_PATTERN_TEXTURE_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_PATTERN_TEXTURE_INPUT.to_string()));
+static DUAL_TIP_TEXTURE_IDENT: LazyLock<Ident> =
+    LazyLock::new(|| Ident::new(DUAL_TIP_TEXTURE_INPUT.to_string()));
 static MAIN_COLOR_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_COLOR_OUTPUT.to_string()));
 static MAIN_BOUNDS_IDENT: LazyLock<Ident> =
@@ -629,6 +660,127 @@ fn texture_mask_statement(
     }}
 }
 
+fn dual_mask_statement(dual: Option<DualBrush>) -> Statement {
+    let Some(dual) = dual else {
+        return quote_statement! {{}};
+    };
+    let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
+    let pen = (*MAIN_PEN_POSITION_IDENT).clone();
+    let direction = (*DIRECTION_IDENT).clone();
+    let dab_index = (*DAB_INDEX_IDENT).clone();
+    let diameter = match dual.tip {
+        DualTip::Computed { diameter, .. } | DualTip::Sampled { diameter, .. } => diameter,
+    };
+    let dual_spacing = (diameter * dual.spacing).max(0.001);
+    let main_spacing = dual.main_spacing.max(0.001);
+    let random_flip = if dual.flip {
+        let random = dab_random(281.917);
+        quote_expression!(select(1.0, -1.0, #random < 0.5))
+    } else {
+        quote_expression!(1.0)
+    };
+    let sample_dual = match dual.tip {
+        DualTip::Computed {
+            hardness,
+            angle,
+            roundness,
+            flip_x,
+            flip_y,
+            ..
+        } => {
+            let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
+            let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
+            let radius = diameter * 0.5;
+            let edge = (radius * (1.0 - hardness)).max(1.0);
+            quote_statement! {{
+                let dual_delta = (#pixel - dual_center)
+                    * vec2f(#flip_x * #random_flip, #flip_y);
+                let dual_distance = sdf_ellipse(
+                    rotate_mat2x2(#angle) * dual_delta,
+                    vec2f(0.0),
+                    vec2f(#radius, max(#radius * #roundness, 0.001)),
+                );
+                dual_mask = 1.0 - smoothstep(-#edge, 0.0, dual_distance);
+            }}
+        }
+        DualTip::Sampled {
+            angle,
+            roundness,
+            flip_x,
+            flip_y,
+            ..
+        } => {
+            let texture = (*DUAL_TIP_TEXTURE_IDENT).clone();
+            let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
+            let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
+            quote_statement! {{
+                let dual_texture_size = vec2f(atlas_size(#texture));
+                let dual_base_size = max(dual_texture_size.x, dual_texture_size.y);
+                let dual_scale = vec2f(
+                    #flip_x * #random_flip * #diameter / dual_base_size,
+                    #flip_y * #diameter * #roundness / dual_base_size,
+                );
+                let dual_sample = sample_transformed_local_texture_clamp(
+                    #texture,
+                    #pixel,
+                    dual_scale,
+                    #angle,
+                    dual_center,
+                    vec2f(0.5),
+                );
+                dual_mask = dual_sample.a * dual_sample.r;
+            }}
+        }
+    };
+    let blended_mask = match dual.blend_mode {
+        TextureBlendMode::Multiply => {
+            quote_expression!(image::blend_modes::blend_multiply(dual_color, mask_color).r)
+        }
+        TextureBlendMode::Subtract => {
+            quote_expression!(image::blend_modes::blend_subtract(dual_color, mask_color).r)
+        }
+        TextureBlendMode::Darken => {
+            quote_expression!(image::blend_modes::blend_darken(dual_color, mask_color).r)
+        }
+        TextureBlendMode::Overlay => {
+            quote_expression!(image::blend_modes::blend_overlay(dual_color, mask_color).r)
+        }
+        TextureBlendMode::ColorDodge => {
+            quote_expression!(image::blend_modes::blend_color_dodge(dual_color, mask_color).r)
+        }
+        TextureBlendMode::ColorBurn => {
+            quote_expression!(image::blend_modes::blend_color_burn(dual_color, mask_color).r)
+        }
+        TextureBlendMode::LinearDodge => {
+            quote_expression!(image::blend_modes::blend_linear_dodge(dual_color, mask_color).r)
+        }
+        TextureBlendMode::LinearBurn => {
+            quote_expression!(image::blend_modes::blend_linear_burn(dual_color, mask_color).r)
+        }
+        TextureBlendMode::HardMix => {
+            quote_expression!(image::blend_modes::blend_hard_mix(dual_color, mask_color).r)
+        }
+        TextureBlendMode::Height => {
+            quote_expression!(image::blend_modes::blend_height(dual_color, mask_color).r)
+        }
+        TextureBlendMode::LinearHeight => {
+            quote_expression!(image::blend_modes::blend_linear_height(dual_color, mask_color).r)
+        }
+    };
+
+    quote_statement! {{
+        let dual_distance_along_stroke = f32(#dab_index) * #main_spacing;
+        let dual_phase = dual_distance_along_stroke
+            - floor(dual_distance_along_stroke / #dual_spacing) * #dual_spacing;
+        let dual_center = #pen - vec2f(cos(#direction), sin(#direction)) * dual_phase;
+        var dual_mask = 0.0;
+        @#sample_dual {}
+        let dual_color = vec4f(vec3f(dual_mask), 1.0);
+        let mask_color = vec4f(vec3f(tip_mask), 1.0);
+        tip_mask = select(0.0, #blended_mask, tip_mask > 0.0);
+    }}
+}
+
 fn tip_color_statement(
     flow: f32,
     flow_dynamics: Option<Dynamics>,
@@ -712,6 +864,7 @@ pub fn computed_main(
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
     noise: bool,
+    dual_brush: Option<DualBrush>,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -727,6 +880,7 @@ pub fn computed_main(
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
     let noise = noise_statement(noise);
+    let dual_mask = dual_mask_statement(dual_brush);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -756,7 +910,7 @@ pub fn computed_main(
                 vec2f(0.0),
                 tip_radii,
             );
-            var copy_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
+            var copy_mask = 1.0 - smoothstep(-tip_edge, 0.0, tip_distance);
             @#noise {}
             @#texture_mask {}
             tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
@@ -773,6 +927,7 @@ pub fn computed_main(
                 );
             }
         }
+        @#dual_mask {}
         @#tip_color {}
         #bounds = combined_bounds;
     }}
@@ -797,6 +952,7 @@ pub fn sampled_main(
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
     noise: bool,
+    dual_brush: Option<DualBrush>,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -813,6 +969,7 @@ pub fn sampled_main(
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
     let noise = noise_statement(noise);
+    let dual_mask = dual_mask_statement(dual_brush);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -842,7 +999,7 @@ pub fn sampled_main(
                 tip_center,
                 tip_anchor,
             );
-            var copy_mask = tip_sample.a * (1.0 - tip_sample.r);
+            var copy_mask = tip_sample.a * tip_sample.r;
             @#noise {}
             @#texture_mask {}
             tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
@@ -862,6 +1019,7 @@ pub fn sampled_main(
                 );
             }
         }
+        @#dual_mask {}
         @#tip_color {}
         #bounds = combined_bounds;
     }}

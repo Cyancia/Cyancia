@@ -11,7 +11,8 @@ use lapiz_render::texture::Image;
 use uuid::Uuid;
 
 use crate::desc::wgsl::{
-    BrushPose, BrushTexture, ColorAdjustment, Dynamics, Scatter, TextureBlendMode,
+    BrushPose, BrushTexture, ColorAdjustment, DualBrush as WgslDualBrush, DualTip, Dynamics,
+    Scatter, TextureBlendMode,
 };
 
 pub mod graph;
@@ -32,6 +33,73 @@ fn parse_texture_blend_mode(mode: Option<BlendMode>) -> Result<TextureBlendMode>
         Some(BlendMode::LinearHeight) => Ok(TextureBlendMode::LinearHeight),
         Some(mode) => bail!("unsupported texture blend mode {mode:?}"),
     }
+}
+
+fn parse_dual_brush(
+    brush: &AbrBrushPreset,
+    sample_assets: &HashMap<Uuid, AssetId<Image>>,
+) -> Result<(Option<WgslDualBrush>, Option<AssetId<Image>>)> {
+    let dual = &brush.dual_brush;
+    if !dual.enabled {
+        return Ok((None, None));
+    }
+    let tip = dual.brush.as_ref().context("missing dual brush tip")?;
+    let spacing = match tip {
+        BrushTip::Computed(tip) => tip.spacing.value as f32 / 100.0,
+        BrushTip::Sampled(tip) => tip.spacing.value as f32 / 100.0,
+        BrushTip::DBrush(tip) => tip.spacing.value as f32 / 100.0,
+    }
+    .max(0.001);
+    let main_spacing = match &brush.brush {
+        BrushTip::Computed(tip) => tip.diameter.value * tip.spacing.value / 100.0,
+        BrushTip::Sampled(tip) => tip.diameter.value * tip.spacing.value / 100.0,
+        BrushTip::DBrush(tip) => tip.diameter.value * tip.spacing.value / 100.0,
+    } as f32;
+    let (tip, sample_asset) = match tip {
+        BrushTip::Computed(tip) => {
+            ensure!(tip.interpolation, "unsupported dual computed interpolation");
+            (
+                DualTip::Computed {
+                    diameter: tip.diameter.value as f32,
+                    hardness: (tip.hardness.value as f32 / 100.0).clamp(0.0, 1.0),
+                    angle: tip.angle.value.to_radians() as f32,
+                    roundness: (tip.roundness.value as f32 / 100.0).clamp(0.001, 1.0),
+                    flip_x: tip.flip_x,
+                    flip_y: tip.flip_y,
+                },
+                None,
+            )
+        }
+        BrushTip::Sampled(tip) => {
+            ensure!(tip.interpolation, "unsupported dual sampled interpolation");
+            let sample_asset = sample_assets
+                .get(&tip.id)
+                .copied()
+                .with_context(|| format!("dual brush sample not found {}", tip.id))?;
+            (
+                DualTip::Sampled {
+                    diameter: tip.diameter.value as f32,
+                    angle: tip.angle.value.to_radians() as f32,
+                    roundness: (tip.roundness.value as f32 / 100.0).clamp(0.001, 1.0),
+                    flip_x: tip.flip_x,
+                    flip_y: tip.flip_y,
+                },
+                Some(sample_asset),
+            )
+        }
+        BrushTip::DBrush(_) => bail!("unsupported dual dbrush tip"),
+    };
+    Ok((
+        Some(WgslDualBrush {
+            tip,
+            flip: dual.flip,
+            blend_mode: parse_texture_blend_mode(dual.blend_mode)
+                .context("dual brush blend mode")?,
+            spacing,
+            main_spacing,
+        }),
+        sample_asset,
+    ))
 }
 
 fn parse_dynamics(
@@ -349,6 +417,7 @@ pub fn parse_desc(
     } else {
         (None, None)
     };
+    let (dual_brush, dual_sample_asset) = parse_dual_brush(brush, sample_assets)?;
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
@@ -374,6 +443,8 @@ pub fn parse_desc(
                 brush_texture,
                 pattern_asset,
                 brush.noise,
+                dual_brush,
+                dual_sample_asset,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -403,6 +474,8 @@ pub fn parse_desc(
                 brush_texture,
                 pattern_asset,
                 brush.noise,
+                dual_brush,
+                dual_sample_asset,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),

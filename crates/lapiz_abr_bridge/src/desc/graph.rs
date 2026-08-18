@@ -32,12 +32,13 @@ use lapiz_shader_graph::{
 
 use crate::desc::wgsl::{
     AZIMUTH_INPUT, BrushPose, BrushTexture, ColorAdjustment, DAB_INDEX_INPUT, DIRECTION_INPUT,
-    Dynamics, INITIAL_DIRECTION_INPUT, MAIN_BACKGROUND_COLOR_INPUT, MAIN_BOUNDS_OUTPUT,
-    MAIN_COLOR_OUTPUT, MAIN_FOREGROUND_COLOR_INPUT, MAIN_PATTERN_TEXTURE_INPUT,
-    MAIN_PEN_POSITION_INPUT, MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT,
-    POSTPROCESS_INPUT_COLOR, POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT,
-    REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT, Scatter, TILT_INPUT, computed_main,
-    computed_required_spacing, opacity_postprocess, sampled_main,
+    DUAL_TIP_TEXTURE_INPUT, DualBrush, Dynamics, INITIAL_DIRECTION_INPUT,
+    MAIN_BACKGROUND_COLOR_INPUT, MAIN_BOUNDS_OUTPUT, MAIN_COLOR_OUTPUT,
+    MAIN_FOREGROUND_COLOR_INPUT, MAIN_PATTERN_TEXTURE_INPUT, MAIN_PEN_POSITION_INPUT,
+    MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT, POSTPROCESS_INPUT_COLOR,
+    POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT,
+    Scatter, TILT_INPUT, computed_main, computed_required_spacing, opacity_postprocess,
+    sampled_main,
 };
 
 pub fn add_stateful_node<Data, T>(
@@ -107,6 +108,8 @@ pub fn computed_graphs(
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
     noise: bool,
+    dual_brush: Option<DualBrush>,
+    dual_sample_asset: Option<AssetId<Image>>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = computed_main_graph(
@@ -129,6 +132,8 @@ pub fn computed_graphs(
         brush_texture,
         pattern_asset,
         noise,
+        dual_brush,
+        dual_sample_asset,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -154,6 +159,8 @@ pub fn sampled_graphs(
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
     noise: bool,
+    dual_brush: Option<DualBrush>,
+    dual_sample_asset: Option<AssetId<Image>>,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = sampled_main_graph(
@@ -176,6 +183,8 @@ pub fn sampled_graphs(
         brush_texture,
         pattern_asset,
         noise,
+        dual_brush,
+        dual_sample_asset,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -230,6 +239,8 @@ fn computed_main_graph(
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
     noise: bool,
+    dual_brush: Option<DualBrush>,
+    dual_sample_asset: Option<AssetId<Image>>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -245,6 +256,14 @@ fn computed_main_graph(
         )
     });
     let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
+    let dual_texture = dual_sample_asset.map(|sample_asset| {
+        add_stateful_node(
+            &mut graph,
+            Point::new(0.0, 700.0),
+            TextureNode,
+            TextureId(Some(sample_asset)),
+        )
+    });
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
@@ -254,6 +273,9 @@ fn computed_main_graph(
     state.add_input::<TextureType>(MAIN_PATTERN_TEXTURE_INPUT);
     add_dynamics_input_slots(&mut state);
     state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
+    if dual_texture.is_some() {
+        state.add_input::<TextureType>(DUAL_TIP_TEXTURE_INPUT);
+    }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(MAIN_BOUNDS_OUTPUT);
     state.set_code(computed_main(
@@ -275,6 +297,7 @@ fn computed_main_graph(
         scatter,
         brush_texture,
         noise,
+        dual_brush,
     ));
 
     let expression = add_stateful_node(
@@ -295,6 +318,9 @@ fn computed_main_graph(
     }
     connect_dynamics_input_nodes(&mut graph, expression, 5);
     graph.connect_slots_by_index(stroke_time, 1, expression, 11);
+    if let Some(dual_texture) = dual_texture {
+        graph.connect_slots_by_index(dual_texture, 0, expression, 12);
+    }
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
@@ -321,6 +347,8 @@ fn sampled_main_graph(
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
     noise: bool,
+    dual_brush: Option<DualBrush>,
+    dual_sample_asset: Option<AssetId<Image>>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -342,6 +370,14 @@ fn sampled_main_graph(
         )
     });
     let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
+    let dual_texture = dual_sample_asset.map(|sample_asset| {
+        add_stateful_node(
+            &mut graph,
+            Point::new(0.0, 700.0),
+            TextureNode,
+            TextureId(Some(sample_asset)),
+        )
+    });
 
     let mut state = CustomExpressionNodeState::default();
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
@@ -352,6 +388,9 @@ fn sampled_main_graph(
     state.add_input::<TextureType>(MAIN_PATTERN_TEXTURE_INPUT);
     add_dynamics_input_slots(&mut state);
     state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
+    if dual_texture.is_some() {
+        state.add_input::<TextureType>(DUAL_TIP_TEXTURE_INPUT);
+    }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(MAIN_BOUNDS_OUTPUT);
     state.set_code(sampled_main(
@@ -372,6 +411,7 @@ fn sampled_main_graph(
         scatter,
         brush_texture,
         noise,
+        dual_brush,
     ));
 
     let expression = add_stateful_node(
@@ -393,6 +433,9 @@ fn sampled_main_graph(
     }
     connect_dynamics_input_nodes(&mut graph, expression, 6);
     graph.connect_slots_by_index(stroke_time, 1, expression, 12);
+    if let Some(dual_texture) = dual_texture {
+        graph.connect_slots_by_index(dual_texture, 0, expression, 13);
+    }
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
