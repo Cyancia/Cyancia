@@ -106,6 +106,7 @@ pub fn computed_graphs(
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
+    noise: bool,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = computed_main_graph(
@@ -127,6 +128,7 @@ pub fn computed_graphs(
         scatter,
         brush_texture,
         pattern_asset,
+        noise,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -151,6 +153,7 @@ pub fn sampled_graphs(
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
+    noise: bool,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
     let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
     let main_graph = sampled_main_graph(
@@ -172,6 +175,7 @@ pub fn sampled_graphs(
         scatter,
         brush_texture,
         pattern_asset,
+        noise,
     )?;
     Ok((required_spacing_graph, main_graph))
 }
@@ -225,6 +229,7 @@ fn computed_main_graph(
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
+    noise: bool,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -269,6 +274,7 @@ fn computed_main_graph(
         color_adjustment,
         scatter,
         brush_texture,
+        noise,
     ));
 
     let expression = add_stateful_node(
@@ -314,6 +320,7 @@ fn sampled_main_graph(
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
     pattern_asset: Option<AssetId<Image>>,
+    noise: bool,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
@@ -364,6 +371,7 @@ fn sampled_main_graph(
         color_adjustment,
         scatter,
         brush_texture,
+        noise,
     ));
 
     let expression = add_stateful_node(

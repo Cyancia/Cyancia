@@ -185,6 +185,29 @@ fn scatter_copy_random(random_offset: f32) -> Expression {
     ))
 }
 
+fn pixel_random(random_offset: f32) -> Expression {
+    let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
+    let dab_index = (*DAB_INDEX_IDENT).clone();
+    quote_expression!(fract(
+        sin(
+            dot(#pixel, vec2f(12.9898, 78.233))
+                + f32(#dab_index) * 37.719
+                + f32(copy_index) * 19.193
+                + #random_offset
+        ) * 43758.5453
+    ))
+}
+
+fn noise_statement(noise: bool) -> Statement {
+    if !noise {
+        return quote_statement! {{}};
+    }
+    let random = pixel_random(211.327);
+    quote_statement! {
+        copy_mask = select(0.0, 1.0, #random < copy_mask);
+    }
+}
+
 fn color_random(per_tip: bool, random_offset: f32) -> Expression {
     if per_tip {
         dab_random(random_offset)
@@ -688,6 +711,7 @@ pub fn computed_main(
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
+    noise: bool,
 ) -> String {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
@@ -702,6 +726,7 @@ pub fn computed_main(
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
+    let noise = noise_statement(noise);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -732,6 +757,7 @@ pub fn computed_main(
                 tip_radii,
             );
             var copy_mask = smoothstep(tip_edge, -tip_edge, tip_distance);
+            @#noise {}
             @#texture_mask {}
             tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
             let copy_bounds = Rect(
@@ -770,6 +796,7 @@ pub fn sampled_main(
     color_adjustment: Option<ColorAdjustment>,
     scatter: Option<Scatter>,
     brush_texture: Option<BrushTexture>,
+    noise: bool,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
@@ -785,6 +812,7 @@ pub fn sampled_main(
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
+    let noise = noise_statement(noise);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -815,6 +843,7 @@ pub fn sampled_main(
                 tip_anchor,
             );
             var copy_mask = tip_sample.a * (1.0 - tip_sample.r);
+            @#noise {}
             @#texture_mask {}
             tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
             let copy_bounds = filter_within_mask_bounds(

@@ -66,6 +66,8 @@ pub fn parse_desc(
     sample_assets: &HashMap<Uuid, AssetId<Image>>,
     pattern_assets: &HashMap<Uuid, AssetId<Image>>,
 ) -> Result<BrushPreset> {
+    ensure!(!brush.wtdg, "unsupported wet edges");
+    ensure!(!brush.repeat, "unsupported repeat");
     let paint_options = match &brush.tool_options {
         Some(ToolOptions::Paint(options)) => Some(options),
         _ => None,
@@ -371,6 +373,7 @@ pub fn parse_desc(
                 scatter,
                 brush_texture,
                 pattern_asset,
+                brush.noise,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -399,6 +402,7 @@ pub fn parse_desc(
                 scatter,
                 brush_texture,
                 pattern_asset,
+                brush.noise,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
