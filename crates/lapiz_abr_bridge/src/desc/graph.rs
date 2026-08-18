@@ -97,7 +97,6 @@ pub fn computed_graphs(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -122,7 +121,6 @@ pub fn computed_graphs(
         flip_x,
         flip_y,
         flow,
-        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,
@@ -150,7 +148,6 @@ pub fn sampled_graphs(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -175,7 +172,6 @@ pub fn sampled_graphs(
         flip_x,
         flip_y,
         flow,
-        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,
@@ -232,7 +228,6 @@ fn computed_main_graph(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -292,7 +287,6 @@ fn computed_main_graph(
         flip_x,
         flip_y,
         flow,
-        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,
@@ -342,7 +336,6 @@ fn sampled_main_graph(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -408,7 +401,6 @@ fn sampled_main_graph(
         flip_x,
         flip_y,
         flow,
-        blend_mode,
         size_dynamics,
         opacity_dynamics,
         flow_dynamics,
@@ -451,11 +443,7 @@ fn sampled_main_graph(
     Ok(graph.as_serialized()?)
 }
 
-pub fn opacity_postprocess_graph(opacity: f32) -> Result<Option<SerializableGraph>> {
-    if opacity >= 1.0 {
-        return Ok(None);
-    }
-
+pub fn opacity_postprocess_graph(opacity: f32, blend_mode: BlendMode) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(STROKE_POSTPROCESS_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let current_color = graph.add_node(Point::new(200.0, 0.0), CurrentPixelColorNode);
@@ -466,7 +454,7 @@ pub fn opacity_postprocess_graph(opacity: f32) -> Result<Option<SerializableGrap
     state.add_input::<RectType>(POSTPROCESS_STROKE_BOUNDS_INPUT);
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(MAIN_BOUNDS_OUTPUT);
-    state.set_code(opacity_postprocess(opacity));
+    state.set_code(opacity_postprocess(opacity, blend_mode));
 
     let expression = add_stateful_node(
         &mut graph,
@@ -483,7 +471,7 @@ pub fn opacity_postprocess_graph(opacity: f32) -> Result<Option<SerializableGrap
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
-    Ok(Some(graph.as_serialized()?))
+    Ok(graph.as_serialized()?)
 }
 
 fn graph_resources<Data: GraphData>(

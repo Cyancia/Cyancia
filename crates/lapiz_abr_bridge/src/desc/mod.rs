@@ -214,15 +214,25 @@ pub fn parse_desc(
         _ => None,
     };
     let (opacity, flow, pressure_overrides_size, pressure_overrides_opacity, paint_blend_mode) =
-        match paint_options {
-            Some(options) => (
+        match &brush.tool_options {
+            Some(ToolOptions::Paint(options)) => (
                 (options.opacity as f32 / 100.0).clamp(0.0, 1.0),
                 (options.flow as f32 / 100.0).clamp(0.0, 1.0),
                 options.use_pressure_overrides_size,
                 options.use_pressure_overrides_opacity,
                 parse_blend_mode(options.blend_mode),
             ),
-            None => (1.0, 1.0, false, false, ImageBlendMode::Normal),
+            Some(ToolOptions::Eraser(options)) => {
+                ensure!(!options.magic_eraser, "unsupported magic eraser");
+                (
+                    (options.opacity as f32 / 100.0).clamp(0.0, 1.0),
+                    (options.flow as f32 / 100.0).clamp(0.0, 1.0),
+                    options.use_pressure_overrides_size,
+                    options.use_pressure_overrides_opacity,
+                    ImageBlendMode::Clear,
+                )
+            }
+            _ => (1.0, 1.0, false, false, ImageBlendMode::Normal),
         };
     let minimum_diameter = brush
         .minimum_diameter
@@ -509,7 +519,6 @@ pub fn parse_desc(
                 tip.flip_x ^ brush.flip_x,
                 tip.flip_y ^ brush.flip_y,
                 flow,
-                paint_blend_mode,
                 size_dynamics,
                 opacity_dynamics,
                 flow_dynamics,
@@ -541,7 +550,6 @@ pub fn parse_desc(
                 tip.flip_x ^ brush.flip_x,
                 tip.flip_y ^ brush.flip_y,
                 flow,
-                paint_blend_mode,
                 size_dynamics,
                 opacity_dynamics,
                 flow_dynamics,
@@ -561,9 +569,8 @@ pub fn parse_desc(
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
     };
 
-    let stroke_postprocess_graphs = graph::opacity_postprocess_graph(opacity)?
-        .into_iter()
-        .collect();
+    let stroke_postprocess_graphs =
+        vec![graph::opacity_postprocess_graph(opacity, paint_blend_mode)?];
 
     Ok(BrushPreset {
         metadata: lapiz_brush::asset::BrushPresetMetadata {

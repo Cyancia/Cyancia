@@ -860,13 +860,11 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
 
 fn tip_color_statement(
     flow: f32,
-    blend_mode: BlendMode,
     flow_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     pose: BrushPose,
 ) -> Statement {
     let color = (*MAIN_COLOR_IDENT).clone();
-    let blend = Ident::new(blend_mode.shader_func().to_string());
     let effective_flow = match flow_dynamics {
         Some(dynamics) => {
             let factor = dynamics_factor(dynamics, 19.673, pose);
@@ -880,7 +878,7 @@ fn tip_color_statement(
                 tip_foreground.rgb,
                 tip_foreground.a * tip_mask * #effective_flow,
             );
-            #color = image::blend_modes::#blend(
+            #color = image::blend_modes::blend_normal(
                 tip_color,
                 current_input_color(pixel_pos),
             );
@@ -894,7 +892,7 @@ fn tip_color_statement(
             tip_foreground.a * tip_mask * #effective_flow,
         );
         let previous_color = current_input_color(pixel_pos);
-        let accumulated_color = image::blend_modes::#blend(
+        let accumulated_color = image::blend_modes::blend_normal(
             tip_color,
             previous_color,
         );
@@ -932,7 +930,6 @@ pub fn computed_main(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -955,7 +952,7 @@ pub fn computed_main(
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
-    let tip_color = tip_color_statement(flow, blend_mode, flow_dynamics, opacity_dynamics, pose);
+    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
@@ -1021,7 +1018,6 @@ pub fn sampled_main(
     flip_x: bool,
     flip_y: bool,
     flow: f32,
-    blend_mode: BlendMode,
     size_dynamics: Option<Dynamics>,
     opacity_dynamics: Option<Dynamics>,
     flow_dynamics: Option<Dynamics>,
@@ -1045,7 +1041,7 @@ pub fn sampled_main(
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
-    let tip_color = tip_color_statement(flow, blend_mode, flow_dynamics, opacity_dynamics, pose);
+    let tip_color = tip_color_statement(flow, flow_dynamics, opacity_dynamics, pose);
     let scatter_offset = scatter_offset_expression(scatter, pose);
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
@@ -1107,16 +1103,21 @@ pub fn sampled_main(
     .to_string()
 }
 
-pub fn opacity_postprocess(opacity: f32) -> String {
+pub fn opacity_postprocess(opacity: f32, blend_mode: BlendMode) -> String {
     let input_color = (*POSTPROCESS_INPUT_COLOR_IDENT).clone();
     let stroke_bounds = (*POSTPROCESS_STROKE_BOUNDS_IDENT).clone();
     let color = (*MAIN_COLOR_IDENT).clone();
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
+    let blend = Ident::new(blend_mode.shader_func().to_string());
 
     quote_statement! {{
-        #color = vec4f(
+        let stroke_color = vec4f(
             #input_color.rgb,
             #input_color.a * #opacity,
+        );
+        #color = image::blend_modes::#blend(
+            stroke_color,
+            target_layer_color(pixel_pos),
         );
         #bounds = #stroke_bounds;
     }}

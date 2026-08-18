@@ -81,8 +81,9 @@ pub fn load_cached_stroke_preview_or_generate(
         ));
     };
 
-    let texture = create_stroke_preview_predefined_curve(
+    let texture = create_stroke_preview(
         &instance,
+        &predefined_curve_samples(CACHED_STROKE_PREVIEW_SIZE.0, CACHED_STROKE_PREVIEW_SIZE.1),
         CACHED_STROKE_PREVIEW_SIZE.0,
         CACHED_STROKE_PREVIEW_SIZE.1,
         services,
@@ -132,17 +133,9 @@ fn readback_preview(device: Device, queue: Queue, texture: Texture) -> Task<Resu
     })
 }
 
-pub fn create_stroke_preview_predefined_curve(
-    brush: &BrushPresetInstance,
-    width: u32,
-    height: u32,
-    services: &Services,
-    canvas_resources: &CanvasResources,
-) -> Result<Task<Texture>> {
-    const N_SAMPLES: usize = 32;
-
-    let samples: [RawPenInput; N_SAMPLES] = std::array::from_fn(|i| {
-        let t = i as f32 / (N_SAMPLES - 1) as f32;
+pub fn predefined_curve_samples(width: u32, height: u32) -> [RawPenInput; 32] {
+    std::array::from_fn(|i| {
+        let t = i as f32 / 31.0;
         let azimuth = t * TAU;
         let altitude = (30.0 + 30.0 * t).to_radians();
         let tan_altitude = altitude.tan();
@@ -163,9 +156,7 @@ pub fn create_stroke_preview_predefined_curve(
                 stroke_begin: 0.0,
             },
         }
-    });
-
-    create_stroke_preview(brush, &samples, width, height, services, canvas_resources)
+    })
 }
 
 pub fn create_stroke_preview(
@@ -175,6 +166,33 @@ pub fn create_stroke_preview(
     height: u32,
     services: &Services,
     canvas_resources: &CanvasResources,
+) -> Result<Task<Texture>> {
+    let target_layer = DynamicLayerStorage::new(
+        services.render_device().clone(),
+        services.render_queue().clone(),
+        GpuLayerInfo {
+            texel_type: TexelType::RGBA8,
+        },
+    );
+    create_stroke_preview_on_target(
+        brush,
+        samples,
+        width,
+        height,
+        services,
+        canvas_resources,
+        target_layer,
+    )
+}
+
+pub fn create_stroke_preview_on_target(
+    brush: &BrushPresetInstance,
+    samples: &[RawPenInput],
+    width: u32,
+    height: u32,
+    services: &Services,
+    canvas_resources: &CanvasResources,
+    target_layer: DynamicLayerStorage,
 ) -> Result<Task<Texture>> {
     ensure!(
         samples.len() >= 2,
@@ -187,14 +205,6 @@ pub fn create_stroke_preview(
 
     let device = services.render_device();
     let queue = services.render_queue();
-
-    let target_layer = DynamicLayerStorage::new(
-        device.clone(),
-        queue.clone(),
-        GpuLayerInfo {
-            texel_type: TexelType::RGBA8,
-        },
-    );
     let selection_layer = DynamicLayerStorage::new(
         device.clone(),
         queue.clone(),
