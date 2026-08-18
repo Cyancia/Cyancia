@@ -1,6 +1,5 @@
 use std::sync::{Arc, LazyLock};
 
-use iced_core::Color;
 use iced_widget::pick_list;
 use lapiz_image::blend_modes::BlendMode;
 use lapiz_shader_graph::{

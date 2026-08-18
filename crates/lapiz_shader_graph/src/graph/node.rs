@@ -8,7 +8,7 @@ use std::{
 use anyhow::Result;
 use downcast_rs::Downcast;
 use dyn_clone::DynClone;
-use iced_core::{Color, Length, Point};
+use iced_core::{Length, Point};
 use iced_widget::Column;
 use lapiz_utils::{cloneable_any::ClonableAnySync, wrapper};
 use serde::{Deserialize, Serialize};

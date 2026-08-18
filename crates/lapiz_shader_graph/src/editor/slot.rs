@@ -1,13 +1,11 @@
 use std::{any::Any, collections::HashMap};
 
-use bevy_color::{Oklcha, Srgba};
 use iced_core::{
-    Border, Color, Element, Length, Point, Rectangle, Size, Widget,
+    Border, Element, Length, Point, Rectangle, Size, Widget,
     alignment::Vertical,
     layout, mouse,
     renderer::{self, Quad},
     text::IntoFragment,
-    theme::{Base, Mode},
     widget::{Operation, Tree},
 };
 use iced_widget::{row, text};
