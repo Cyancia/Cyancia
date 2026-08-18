@@ -43,6 +43,7 @@ struct PenInputSampler {
     last_input: PenInput,
     last_sample: ComputedPenInput,
     has_last_sample: u32,
+    has_initial_input: u32,
 }
 
 struct PenInput {

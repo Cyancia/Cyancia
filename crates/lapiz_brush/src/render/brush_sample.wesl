@@ -6,6 +6,7 @@ import render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_a
 @group(0) @binding(2) var<storage, read_write> output_samples: OutputSamples;
 @group(0) @binding(3) var<storage, read_write> bounds_eval_dispatch: vec3u;
 @group(0) @binding(4) var<storage> canvas_resources: CanvasResources;
+@group(0) @binding(5) var<storage, read_write> initial_pen_input: ComputedPenInput;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
@@ -103,6 +104,11 @@ fn main() {
         output_samples.samples[output_samples.n_samples] = interpolated;
         output_samples.n_samples += 1u;
         remaining_arc -= spacing;
+
+        if input_sampler.has_initial_input == 0 {
+            initial_pen_input = interpolated;
+            input_sampler.has_initial_input = 1;
+        }
 
         if remaining_arc < spacing {
             break;

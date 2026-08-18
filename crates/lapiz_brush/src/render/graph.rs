@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::render::{ComputedPenInput, Time};
 
 // TODO We may move to another crate.
-#[derive(Default, Clone, ShaderType)]
+#[derive(Debug, Default, Clone, ShaderType)]
 pub struct CanvasResources {
     pub foreground_color: Vec4,
     pub background_color: Vec4,
@@ -54,9 +54,10 @@ pub struct BrushRequiredSpacingGraphData {
 
 impl GraphData for BrushRequiredSpacingGraphData {}
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone, ShaderType)]
 pub struct BrushMainGraphData {
     pub pen_input: ComputedPenInput,
+    pub initial_pen_input: ComputedPenInput,
     pub resources: CanvasResources,
 }
 
@@ -64,6 +65,10 @@ impl GraphData for BrushMainGraphData {}
 
 pub trait GraphDataWithPenInput: GraphData {
     fn pen_input_field() -> String;
+}
+
+pub trait GraphDataWithInitialPenInput: GraphData {
+    fn initial_pen_input_field() -> String;
 }
 
 // TODO This is kinda mess
@@ -76,6 +81,18 @@ impl GraphDataWithPenInput for BrushMainGraphData {
 impl GraphDataWithPenInput for BrushRequiredSpacingGraphData {
     fn pen_input_field() -> String {
         "graph_input".into()
+    }
+}
+
+impl GraphDataWithInitialPenInput for BrushMainGraphData {
+    fn initial_pen_input_field() -> String {
+        "initial_pen_input".into()
+    }
+}
+
+impl GraphDataWithInitialPenInput for BrushRequiredSpacingGraphData {
+    fn initial_pen_input_field() -> String {
+        "initial_pen_input".into()
     }
 }
 
@@ -331,6 +348,211 @@ impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for PenAngleNod
         mut ctx: GraphNodeCodeGenContext<'_, Data>,
     ) -> Result<String, GraphNodeCodeGenError> {
         let pen_input = Data::pen_input_field();
+        Ok(format!(
+            "let {} = {pen_input}.angle.x;\nlet {} = {pen_input}.angle.y;\n",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct InitialPenPositionNode;
+
+#[stateless]
+impl<Data: GraphDataWithInitialPenInput> StatelessCommonGraphNode<Data> for InitialPenPositionNode {
+    fn name(&self) -> &'static str {
+        "Initial Pen Position"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(InitialPenPositionNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<Vec2FType>("Position".into())]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = {}.position;",
+            ctx.get_output(0)?,
+            Data::initial_pen_input_field()
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct InitialDrawDirectionNode;
+
+#[stateless]
+impl<Data: GraphDataWithInitialPenInput> StatelessCommonGraphNode<Data>
+    for InitialDrawDirectionNode
+{
+    fn name(&self) -> &'static str {
+        "Initial Draw Direction"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(InitialDrawDirectionNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        _: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>("Angle".into()),
+            GraphDefaultOutputSlot::new::<Vec2FType>("Direction".into()),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let pen_input = Data::initial_pen_input_field();
+        Ok(format!(
+            "let {} = {pen_input}.draw_direction_angle;\nlet {} = {pen_input}.draw_direction_vec;\n",
+            ctx.get_output(0)?,
+            ctx.get_output(1)?
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct InitialPenPressureNode;
+
+#[stateless]
+impl<Data: GraphDataWithInitialPenInput> StatelessCommonGraphNode<Data> for InitialPenPressureNode {
+    fn name(&self) -> &'static str {
+        "Initial Pen Pressure"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(InitialPenPressureNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<F32Type>("Pressure".into())]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = {}.pressure;\n",
+            ctx.get_output(0)?,
+            Data::initial_pen_input_field()
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct InitialPenTiltNode;
+
+#[stateless]
+impl<Data: GraphDataWithInitialPenInput> StatelessCommonGraphNode<Data> for InitialPenTiltNode {
+    fn name(&self) -> &'static str {
+        "Initial Pen Tilt"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(InitialPenTiltNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<Vec2FType>("Tilt".into())]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = {}.tilt;\n",
+            ctx.get_output(0)?,
+            Data::initial_pen_input_field()
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct InitialPenAngleNode;
+
+#[stateless]
+impl<Data: GraphDataWithInitialPenInput> StatelessCommonGraphNode<Data> for InitialPenAngleNode {
+    fn name(&self) -> &'static str {
+        "Initial Pen Angle"
+    }
+
+    fn header_color(&self, is_dark: bool) -> Color {
+        random_oklch!(InitialPenAngleNode, is_dark)
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![
+            GraphDefaultOutputSlot::new::<F32Type>("Altitude".into()),
+            GraphDefaultOutputSlot::new::<F32Type>("Azimuth".into()),
+        ]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        let pen_input = Data::initial_pen_input_field();
         Ok(format!(
             "let {} = {pen_input}.angle.x;\nlet {} = {pen_input}.angle.y;\n",
             ctx.get_output(0)?,

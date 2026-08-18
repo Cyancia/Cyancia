@@ -23,15 +23,8 @@ use lapiz_shader_graph::{
 };
 
 use crate::{
-    asset::{BrushPreset, BrushPresetMetadata},
-    render::graph::{
-        BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode,
-        BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData,
-        CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode,
-        FilterWithinMaskNode, ForegroundColorNode, LayerPixelColorNode, OutputBoundsNode,
-        OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode,
-        PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode,
-        StrokeBoundsNode,
+    asset::{BrushPreset, BrushPresetMetadata}, render::graph::{
+        BackgroundColorNode, BlendColorNode, BlendWithInputNode, BlendWithLayerNode, BrushMainGraphData, BrushRequiredSpacingGraphData, BrushStrokePostprocessGraphData, CurrentPixelColorNode, DrawDirectionNode, EllipticalMaskNode, FilterWithinBoundsNode, FilterWithinMaskNode, ForegroundColorNode, InitialDrawDirectionNode, InitialPenAngleNode, InitialPenPositionNode, InitialPenPressureNode, InitialPenTiltNode, LayerPixelColorNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode, StrokeBoundsNode,
     },
 };
 
@@ -494,6 +487,12 @@ fn required_spacing_graph_nodes() -> GraphNodeRegistry<BrushRequiredSpacingGraph
     nodes.register::<PenAngleNode>();
     nodes.register::<PenTiltNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<InitialPenPositionNode>();
+    nodes.register::<InitialPenPressureNode>();
+    nodes.register::<InitialPenAngleNode>();
+    nodes.register::<InitialPenTiltNode>();
+    nodes.register::<InitialDrawDirectionNode>();
+
     nodes.register::<TimeNode>();
     nodes.register::<OutputRequiredSpacingNode>();
     nodes.register::<ForegroundColorNode>();
@@ -511,6 +510,12 @@ fn main_graph_nodes() -> GraphNodeRegistry<BrushMainGraphData> {
     nodes.register::<PenAngleNode>();
     nodes.register::<PenTiltNode>();
     nodes.register::<DrawDirectionNode>();
+    nodes.register::<InitialPenPositionNode>();
+    nodes.register::<InitialPenPressureNode>();
+    nodes.register::<InitialPenAngleNode>();
+    nodes.register::<InitialPenTiltNode>();
+    nodes.register::<InitialDrawDirectionNode>();
+
     nodes.register::<TimeNode>();
     nodes.register::<PixelPositionNode>();
     nodes.register::<FilterWithinMaskNode>();

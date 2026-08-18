@@ -18,8 +18,8 @@ use wgpu::{
 };
 
 use crate::render::{
-    ComputedPenInput, DabInfo, InputSampler, OutputSamples, PenInput, StrokePostprocessData,
-    StrokeResources, graph::CanvasResources,
+    ComputedPenInput, DabInfo, InputSampler, MAX_DABS_PER_STROKE, OutputSamples, PenInput,
+    StrokePostprocessData, StrokeResources, graph::CanvasResources,
 };
 
 pub struct BrushInputSamplingPipeline {
@@ -40,7 +40,8 @@ impl BrushInputSamplingPipeline {
                 binding_types::storage_buffer::<InputSampler>(false),
                 binding_types::storage_buffer::<OutputSamples>(false),
                 binding_types::storage_buffer::<UVec4>(false),
-                binding_types::storage_buffer::<CanvasResources>(false),
+                binding_types::storage_buffer_read_only::<CanvasResources>(false),
+                binding_types::storage_buffer::<ComputedPenInput>(false),
             ),
         )
         .to_vec();
@@ -82,6 +83,7 @@ impl BrushInputSamplingPipeline {
         output_samples: &DynamicBuffer<OutputSamples>,
         bounds_eval_dispatch: &Buffer,
         resources: &StrokeResources,
+        initial_pen_input: &DynamicBuffer<ComputedPenInput>,
     ) {
         let mut entries = BindGroupEntries::sequential((
             pen_input.binding().unwrap(),
@@ -89,6 +91,7 @@ impl BrushInputSamplingPipeline {
             output_samples.inner_buffer().unwrap().as_entire_binding(),
             bounds_eval_dispatch.as_entire_binding(),
             resources.canvas_resources.as_entire_binding(),
+            initial_pen_input.binding().unwrap(),
         ))
         .to_vec();
         entries.extend(resources.external_var_bindings());
@@ -148,6 +151,10 @@ impl BrushMainPipeline {
                         ),
                     ),
                     (8, binding_types::storage_buffer::<DabInfo>(true)),
+                    (
+                        13,
+                        binding_types::storage_buffer_read_only::<ComputedPenInput>(false),
+                    ),
                 ),
             )
             .to_vec(),
@@ -195,6 +202,7 @@ impl BrushMainPipeline {
         dab_infos: &DynamicBuffer<DabInfo>,
         dab_info_offsets: &[u32],
         resources: &StrokeResources,
+        initial_pen_input: &Buffer,
         intermediate_buffers: &[LayerBinding; 2],
         round: &mut u32,
     ) {
@@ -218,6 +226,7 @@ impl BrushMainPipeline {
                     (6, &intermediate_buffers[read_idx].texture),
                     (7, &intermediate_buffers[write_idx].texture),
                     (8, dab_infos.binding().unwrap()),
+                    (13, initial_pen_input.as_entire_binding()),
                 ))
                 .to_vec(),
             );
@@ -438,6 +447,10 @@ impl BrushMainBoundsEvalPipeline {
                         binding_types::storage_buffer_read_only::<OutputSamples>(false),
                     ),
                     (8, binding_types::storage_buffer::<DabInfo>(false)),
+                    (
+                        13,
+                        binding_types::storage_buffer_read_only::<ComputedPenInput>(false),
+                    ),
                 ),
             )
             .to_vec(),
@@ -482,10 +495,9 @@ impl BrushMainBoundsEvalPipeline {
         has_selection: &Buffer,
         selection_layer_texture: &TextureView,
         selection_layer_tile_info: &Buffer,
+        initial_pen_input: &DynamicBuffer<ComputedPenInput>,
         resources: &StrokeResources,
     ) {
-        use crate::render::MAX_DABS_PER_STROKE;
-
         let mut bind_group_entries = common_bind_group_entries(
             resources,
             target_layer_texture,
@@ -498,6 +510,7 @@ impl BrushMainBoundsEvalPipeline {
             DynamicBindGroupEntries::new_with_indices((
                 (0, samples.inner_buffer().unwrap().as_entire_binding()),
                 (8, dab_infos.inner_buffer().unwrap().as_entire_binding()),
+                (13, initial_pen_input.binding().unwrap()),
             ))
             .to_vec(),
         );

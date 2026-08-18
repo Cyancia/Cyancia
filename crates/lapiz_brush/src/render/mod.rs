@@ -354,6 +354,7 @@ struct StrokePostprocessPipelines {
 
 struct StrokeSession {
     shared: Arc<Mutex<SharedBrushRendererState>>,
+    initial_pen_input: DynamicBuffer<ComputedPenInput>,
     target_layer: LayerBinding,
     has_selection: Buffer,
     selection_layer: LayerBinding,
@@ -465,6 +466,13 @@ impl BrushPresetRenderer {
         self.input_sampler_buffer.push(&InputSampler::default());
         self.input_sampler_buffer.write_buffer(device, queue);
 
+        let mut initial_pen_input = DynamicBuffer::new(
+            Some("initial pen input buffer".into()),
+            BufferUsages::STORAGE,
+        );
+        initial_pen_input.push(&ComputedPenInput::default());
+        initial_pen_input.write_buffer(device, queue);
+
         let has_selection = self
             .scan_pixels
             .scan_to_binary_buffer(device, queue, &selection_layer);
@@ -494,6 +502,7 @@ impl BrushPresetRenderer {
 
         self.session = Some(StrokeSession {
             shared: Arc::new(Mutex::new(shared)),
+            initial_pen_input,
             target_layer,
             has_selection,
             selection_layer,
@@ -586,6 +595,7 @@ impl BrushPresetRenderer {
                 &output_samples,
                 &bounds_eval_dispatch,
                 &self.resources,
+                &session.initial_pen_input,
             );
             self.main_bounds_eval.dispatch(
                 device,
@@ -597,6 +607,7 @@ impl BrushPresetRenderer {
                 &session.has_selection,
                 &session.selection_layer.texture,
                 &session.selection_layer.tile_info_buffer,
+                &session.initial_pen_input,
                 &self.resources,
             );
         }
@@ -633,6 +644,7 @@ impl BrushPresetRenderer {
         let scan_pixels = self.scan_pixels.clone();
         let target_layer = session.target_layer.clone();
         let selection_layer = session.selection_layer.clone();
+        let initial_pen_input = session.initial_pen_input.inner_buffer().unwrap().clone();
 
         let (new_previous_finished_tx, new_previous_finished_rx) = oneshot::channel();
         let previous_finished =
@@ -645,6 +657,7 @@ impl BrushPresetRenderer {
                 shared,
                 samples_readback,
                 dab_info_readback,
+                initial_pen_input,
                 device,
                 queue,
                 main,
@@ -678,6 +691,7 @@ async fn brush_renderer_worker_main(
     shared: Arc<Mutex<SharedBrushRendererState>>,
     samples: AsyncBufferReadback<OutputSamples>,
     dab_infos: AsyncBufferReadback<Vec<DabInfo>>,
+    initial_pen_input: Buffer,
 
     device: Device,
     queue: Queue,
@@ -761,6 +775,7 @@ async fn brush_renderer_worker_main(
                 &dab_infos_buffer,
                 &dab_info_offsets,
                 &resources,
+                &initial_pen_input,
                 &[
                     shared.intermediate_buffers[0].binding().unwrap(),
                     shared.intermediate_buffers[1].binding().unwrap(),
@@ -1006,6 +1021,7 @@ pub struct InputSampler {
     pub last_input: PenInput,
     pub last_sample: ComputedPenInput,
     pub has_last_sample: u32,
+    pub has_initial_input: u32,
 }
 
 #[derive(ShaderType, Debug, Default, Clone, Copy)]

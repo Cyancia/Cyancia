@@ -17,6 +17,7 @@ import package::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, 
 @group(0) @binding(10) var<storage> selection_tile_info: array<TileInfo>;
 @group(0) @binding(11) var<storage> has_selection: u32;
 @group(0) @binding(12) var<storage> canvas_resources: CanvasResources;
+@group(0) @binding(13) var<storage> initial_pen_input: ComputedPenInput;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
