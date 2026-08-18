@@ -21,4 +21,6 @@ lapiz_shader_graph.workspace = true
 log.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+wesl.workspace = true
+wesl-quote.workspace = true
 xxhash-rust.workspace = true
