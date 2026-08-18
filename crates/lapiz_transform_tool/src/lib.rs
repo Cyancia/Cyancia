@@ -1,10 +1,13 @@
 use lapiz_runtime::{Application, plugin::Plugin};
 use lapiz_tools::ToolsAppExt;
 
-use crate::{free::FreeTransformTool, liquify::LiquifyTransformTool};
+use crate::{
+    free::FreeTransformTool, liquify::LiquifyTransformTool, perspective::PerspectiveTransformTool,
+};
 
 pub mod free;
 pub mod liquify;
+pub mod perspective;
 
 pub struct FreeTransformPlugin;
 
@@ -13,6 +16,7 @@ impl Plugin for FreeTransformPlugin {
         app.runtime_mut()
             .services_mut()
             .add_tool_function::<FreeTransformTool>()
-            .add_tool_function::<LiquifyTransformTool>();
+            .add_tool_function::<LiquifyTransformTool>()
+            .add_tool_function::<PerspectiveTransformTool>();
     }
 }
