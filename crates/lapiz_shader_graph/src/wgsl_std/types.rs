@@ -6,6 +6,7 @@ use encase::{DynamicUniformBuffer, ShaderType};
 use glam::{Vec2, Vec4};
 use iced_core::{Color, Element};
 use iced_widget::{checkbox, column, space};
+use lapiz_utils::random_oklch;
 use lapiz_widgets::spin_slider::SpinSlider;
 use serde::{Deserialize, Serialize};
 use wgpu::QueueWriteBufferView;
@@ -13,7 +14,6 @@ use wgpu::QueueWriteBufferView;
 use crate::{
     GraphRenderer, GraphTheme,
     graph::{slot::GraphValueType, texture::TextureId},
-    wgsl_std::themed_color,
 };
 
 #[derive(Default, Clone)]
@@ -25,7 +25,7 @@ impl GraphValueType for F32Type {
     type Message = f32;
 
     fn color(&self, is_dark: bool) -> Color {
-        themed_color(stringify!(F32Type), is_dark)
+        random_oklch!(F32Type, is_dark)
     }
 
     fn name(&self) -> &'static str {
@@ -84,7 +84,7 @@ impl GraphValueType for Vec2FType {
     type Message = Vec2FMessage;
 
     fn color(&self, is_dark: bool) -> Color {
-        themed_color(stringify!(Vec2FType), is_dark)
+        random_oklch!(Vec2FType, is_dark)
     }
 
     fn name(&self) -> &'static str {
@@ -142,7 +142,7 @@ impl GraphValueType for I32Type {
     type Message = i32;
 
     fn color(&self, is_dark: bool) -> Color {
-        themed_color(stringify!(I32Type), is_dark)
+        random_oklch!(I32Type, is_dark)
     }
 
     fn name(&self) -> &'static str {
@@ -192,7 +192,7 @@ impl GraphValueType for BoolType {
     type Message = bool;
 
     fn color(&self, is_dark: bool) -> Color {
-        themed_color(stringify!(BoolType), is_dark)
+        random_oklch!(BoolType, is_dark)
     }
 
     fn name(&self) -> &'static str {
@@ -252,7 +252,7 @@ impl GraphValueType for ColorType {
     type Message = ColorMessage;
 
     fn color(&self, is_dark: bool) -> Color {
-        themed_color(stringify!(ColorType), is_dark)
+        random_oklch!(ColorType, is_dark)
     }
 
     fn name(&self) -> &'static str {
@@ -344,7 +344,7 @@ impl GraphValueType for TextureType {
     type Message = ();
 
     fn color(&self, is_dark: bool) -> Color {
-        themed_color(stringify!(TextureType), is_dark)
+        random_oklch!(TextureType, is_dark)
     }
 
     fn name(&self) -> &'static str {
@@ -400,7 +400,7 @@ impl GraphValueType for RectType {
     type Message = RectMessage;
 
     fn color(&self, is_dark: bool) -> Color {
-        themed_color(stringify!(RectType), is_dark)
+        random_oklch!(RectType, is_dark)
     }
 
     fn name(&self) -> &'static str {

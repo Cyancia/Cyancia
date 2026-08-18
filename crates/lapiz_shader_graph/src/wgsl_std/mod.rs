@@ -1,27 +1,8 @@
-use bevy_color::{Oklcha, Srgba};
-use iced_core::Color;
-
 use crate::graph::{GraphData, node::GraphNodeRegistry, variable::GraphTypeRegistry};
 
 pub mod casters;
 pub mod nodes;
 pub mod types;
-
-pub(crate) fn themed_color(name: &str, is_dark: bool) -> Color {
-    let hash = name.bytes().fold(0_u32, |hash, byte| {
-        (hash << 5).wrapping_sub(hash) + byte as u32
-    });
-    let chroma = 0.05 + (hash as f32 / u32::MAX as f32) * 0.1;
-    let hue = (hash % 360) as f32;
-    let lightness = if is_dark { 0.4 } else { 0.7 };
-    let color = Srgba::from(Oklcha::new(lightness, chroma, hue, 1.0));
-    Color::from_rgba(
-        color.red.clamp(0.0, 1.0),
-        color.green.clamp(0.0, 1.0),
-        color.blue.clamp(0.0, 1.0),
-        color.alpha.clamp(0.0, 1.0),
-    )
-}
 
 pub fn builtin_nodes<Data: GraphData>() -> GraphNodeRegistry<Data> {
     use nodes::*;
