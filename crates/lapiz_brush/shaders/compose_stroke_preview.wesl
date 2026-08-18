@@ -32,14 +32,24 @@ fn sample_result(pixel: vec2f) -> vec4f {
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3u) {
-    let output_size = textureDimensions(output);
-    if any(global_id.xy >= output_size) {
+    if any(global_id.xy >= textureDimensions(output)) {
         return;
     }
 
+    let output_size = vec2f(textureDimensions(output));
     let bounds_min = vec2f(result_bounds.xy);
     let bounds_size = vec2f(result_bounds.zw - result_bounds.xy);
-    let uv = (vec2f(global_id.xy) + 0.5) / vec2f(output_size);
-    let result_pixel = bounds_min + uv * bounds_size - 0.5;
+
+    if any(bounds_size == vec2f(0.0)) {
+        return;
+    }
+
+    let scale = min(output_size.x / bounds_size.x, output_size.y / bounds_size.y);
+    let scaled_bounds_size = bounds_size * scale;
+    let scaled_bounds_min = (output_size - scaled_bounds_size) * 0.5;
+
+    let pixel = vec2f(global_id.xy) + 0.5;
+    let result_pixel = bounds_min + (pixel - scaled_bounds_min) / scale - 0.5;
+
     textureStore(output, global_id.xy, sample_result(result_pixel));
 }
