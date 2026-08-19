@@ -44,6 +44,10 @@ fn load_selection_value(pixel: vec2i) -> f32 {
     return 0.0;
 }
 
+fn blend(src: vec4f, dst: vec4f) -> vec4f {
+    //CODEGEN_FLAG_BLEND_FUNCTION
+}
+
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3u) {
@@ -65,6 +69,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3u) {
     let dst_color = image::texture_unpack::unpack_rgba8_texel(textureLoad(dst, local_index, dst_layer_index));
 
     let selection_value = load_selection_value(global_index);
-    let color = image::blend_modes::blend_normal(vec4f(src_color.rgb, src_color.a * selection_value), dst_color);
+    let color = blend(vec4f(src_color.rgb, src_color.a * selection_value), dst_color);
     textureStore(output, local_index, output_layer_index, image::texture_unpack::pack_rgba8_texel(color));
 }

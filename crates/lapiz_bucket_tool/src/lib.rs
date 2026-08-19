@@ -2,10 +2,14 @@ use glam::{Vec2, Vec4};
 use iced_core::{Element, Length, Theme};
 use iced_runtime::Task;
 use iced_wgpu::Renderer;
-use iced_widget::{button, container, row};
+use iced_widget::{button, container, pick_list, row};
 use lapiz_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
 use lapiz_color::ForegroundBackgroundColorExt;
-use lapiz_image::tile::TileStorageAppExt;
+use lapiz_image::{
+    blend_modes::BlendMode,
+    composite::{BlendFunction, BlendFunctionId, BlendFunctionRegistry},
+    tile::TileStorageAppExt,
+};
 use lapiz_input::{key::KeyboardState, mouse::PressedMouseState};
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::{Application, Services, plugin::Plugin};
@@ -14,6 +18,7 @@ use lapiz_utils::log_err::LogErr;
 use lapiz_widgets::{
     fluent_builder::When, form::Form, spin_slider::SpinSlider, style::ButtonStyle,
 };
+use tracing::error;
 
 use crate::bucket::{Bucket, BucketAntialiasApproach, BucketParams};
 
@@ -37,6 +42,7 @@ pub struct BucketTool {
     pub grow: i32,
     pub close_gap: u32,
     pub cached_feather: u32,
+    pub blend_function: BlendFunctionId,
     pub aa_approach: BucketAntialiasApproach,
 }
 
@@ -48,6 +54,7 @@ impl Default for BucketTool {
             grow: 0,
             close_gap: 0,
             cached_feather: 0,
+            blend_function: BlendMode::Normal.id(),
             aa_approach: BucketAntialiasApproach::Fxaa,
         }
     }
@@ -60,6 +67,7 @@ pub enum BucketToolMessage {
     GrowChanged(i32),
     CloseGapChanged(u32),
     FeatherChanged(u32),
+    BlendFunctionChanged(BlendFunctionId),
     AaApproachSelected(BucketAntialiasApproach),
 }
 
@@ -132,12 +140,20 @@ impl ToolFunction for BucketTool {
 
         let device = services.render_device();
         let queue = services.render_queue();
+        let Some(blend_function) = services
+            .service::<BlendFunctionRegistry>()
+            .get(&self.blend_function)
+        else {
+            error!("Failed to get blend function: {}", self.blend_function);
+            return Task::none();
+        };
 
-        let bucket = Bucket::new(
+        let mut bucket = Bucket::new(
             device,
             ref_layer_info_buffer.texel_type,
             output_layer_info.texel_type,
         );
+        bucket.set_blend_function(device, blend_function.as_ref());
         let result = bucket.dispatch_composite(
             device,
             queue,
@@ -179,6 +195,7 @@ impl ToolFunction for BucketTool {
                     self.aa_approach = BucketAntialiasApproach::Feather(value);
                 }
             }
+            BucketToolMessage::BlendFunctionChanged(value) => self.blend_function = value,
             BucketToolMessage::AaApproachSelected(approach) => {
                 self.aa_approach = match approach {
                     BucketAntialiasApproach::Feather(_) => {
@@ -194,8 +211,10 @@ impl ToolFunction for BucketTool {
 
     fn tool_option_widget<'a>(
         &'a self,
-        _: &'a Services,
+        services: &'a Services,
     ) -> Option<Element<'a, Self::Message, Theme, Renderer>> {
+        let blend_functions = services.service::<BlendFunctionRegistry>();
+
         let fields = Form::new()
             .push(
                 "Threshold",
@@ -214,6 +233,15 @@ impl ToolFunction for BucketTool {
                 "Close Gap",
                 SpinSlider::new(0..=64, self.close_gap)
                     .on_confirm(BucketToolMessage::CloseGapChanged),
+            )
+            .push(
+                "Blend Function",
+                pick_list(
+                    // TODO i18n
+                    blend_functions.all_ids().cloned().collect::<Vec<_>>(),
+                    Some(&self.blend_function),
+                    BucketToolMessage::BlendFunctionChanged,
+                ),
             )
             .push(
                 "Antialiasing Approach",
