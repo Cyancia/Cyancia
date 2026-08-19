@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, bail, ensure};
 use lapiz_abr::{
     BlendMode, BrushTip, Descriptor, DynamicsControl, PropertyDynamics as AbrPropertyDynamics,
-    ToolOptions,
+    ToolOptions, UnitFloat,
 };
 use lapiz_assets::asset::AssetId;
 use lapiz_brush::asset::BrushPreset;
@@ -99,9 +99,8 @@ fn parse_dual_brush(
             amount: dual
                 .spacing
                 .as_ref()
-                .map(|value| value.value as f32 / 100.0)
-                .unwrap_or(0.0)
-                .max(0.0),
+                .and_then(UnitFloat::as_percentage_01)
+                .unwrap_or(0.0),
             both_axes: dual.scatter_both_axes,
             dynamics,
             count: count as u32,
@@ -174,7 +173,7 @@ fn parse_dynamics(
     let dynamics_minimum = dynamics
         .minimum
         .as_ref()
-        .map(|value| value.value as f32 / 100.0)
+        .and_then(UnitFloat::as_percentage_01)
         .unwrap_or(0.0);
     Ok(Dynamics {
         control,
@@ -224,7 +223,7 @@ pub fn parse_desc(
     let minimum_diameter = brush
         .minimum_diameter
         .as_ref()
-        .map(|value| value.value as f32 / 100.0)
+        .and_then(UnitFloat::as_percentage_01)
         .unwrap_or(0.0);
     let size_dynamics = brush
         .size_dynamics
@@ -283,7 +282,7 @@ pub fn parse_desc(
     let minimum_roundness = brush
         .minimum_roundness
         .as_ref()
-        .map(|value| value.value as f32 / 100.0)
+        .and_then(UnitFloat::as_percentage_01)
         .unwrap_or(0.0);
     let roundness_dynamics = brush
         .roundness_dynamics
@@ -295,7 +294,7 @@ pub fn parse_desc(
     let tilt_scale = brush
         .tilt_scale
         .as_ref()
-        .map(|value| value.value as f32 / 100.0)
+        .and_then(UnitFloat::as_percentage_01)
         .unwrap_or(2.0)
         .clamp(0.0, 2.0);
     let pose = if brush.use_brush_pose {
@@ -323,9 +322,8 @@ pub fn parse_desc(
         brush
             .hue_jitter
             .as_ref()
-            .map(|value| value.value as f32 / 100.0)
+            .and_then(UnitFloat::as_percentage_01)
             .unwrap_or(0.0)
-            .clamp(0.0, 1.0)
     } else {
         0.0
     };
@@ -333,9 +331,8 @@ pub fn parse_desc(
         brush
             .saturation_jitter
             .as_ref()
-            .map(|value| value.value as f32 / 100.0)
+            .and_then(UnitFloat::as_percentage_01)
             .unwrap_or(0.0)
-            .clamp(0.0, 1.0)
     } else {
         0.0
     };
@@ -343,9 +340,8 @@ pub fn parse_desc(
         brush
             .value_jitter
             .as_ref()
-            .map(|value| value.value as f32 / 100.0)
+            .and_then(UnitFloat::as_percentage_01)
             .unwrap_or(0.0)
-            .clamp(0.0, 1.0)
     } else {
         0.0
     };
@@ -413,9 +409,8 @@ pub fn parse_desc(
             amount: brush
                 .scatter_spacing
                 .as_ref()
-                .map(|value| value.value as f32 / 100.0)
-                .unwrap_or(0.0)
-                .max(0.0),
+                .and_then(UnitFloat::as_percentage_01)
+                .unwrap_or(0.0),
             both_axes: brush.scatter_both_axes,
             dynamics,
             count: count as u32,
@@ -442,21 +437,19 @@ pub fn parse_desc(
         let scale = brush
             .texture_scale
             .as_ref()
-            .map(|value| value.value as f32 / 100.0)
+            .and_then(UnitFloat::as_percentage_01)
             .unwrap_or(1.0);
         ensure!(scale.is_finite() && scale > 0.0, "invalid texture scale");
         let depth = brush
             .texture_depth
             .as_ref()
-            .map(|value| value.value as f32 / 100.0)
-            .unwrap_or(1.0)
-            .clamp(0.0, 1.0);
+            .and_then(UnitFloat::as_percentage_01)
+            .unwrap_or(1.0);
         let minimum_depth = brush
             .texture_minimum_depth
             .as_ref()
-            .map(|value| value.value as f32 / 100.0)
-            .unwrap_or(0.0)
-            .clamp(0.0, 1.0);
+            .and_then(UnitFloat::as_percentage_01)
+            .unwrap_or(0.0);
         let depth_dynamics = brush
             .texture_depth_dynamics
             .as_ref()

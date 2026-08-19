@@ -20,6 +20,15 @@ pub struct UnitFloat {
     pub value: f64,
 }
 
+impl UnitFloat {
+    pub fn as_percentage_01(&self) -> Option<f32> {
+        match self.unit {
+            DescriptorUnit::Percent => Some((self.value as f32 * 0.01).clamp(0.0, 1.0)),
+            _ => None,
+        }
+    }
+}
+
 pub trait AbrValue: Sized {
     fn parse_value(cursor: &mut Cursor<'_>, value_type: [u8; 4], offset: usize) -> Result<Self>;
 
