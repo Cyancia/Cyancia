@@ -64,7 +64,7 @@ pub struct BrushTexture {
 }
 
 #[derive(Clone, Copy)]
-pub enum DualTip {
+pub enum DualBrushTip {
     Computed {
         diameter: f32,
         hardness: f32,
@@ -84,7 +84,7 @@ pub enum DualTip {
 
 #[derive(Clone, Copy)]
 pub struct DualBrush {
-    pub tip: DualTip,
+    pub tip: DualBrushTip,
     pub flip: bool,
     pub blend_mode: BlendMode,
     pub spacing: f32,
@@ -702,7 +702,9 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
     let direction = (*DIRECTION_IDENT).clone();
     let dab_index = (*DAB_INDEX_IDENT).clone();
     let diameter = match dual.tip {
-        DualTip::Computed { diameter, .. } | DualTip::Sampled { diameter, .. } => diameter,
+        DualBrushTip::Computed { diameter, .. } | DualBrushTip::Sampled { diameter, .. } => {
+            diameter
+        }
     };
     let dual_spacing = (diameter * dual.spacing).max(0.001);
     let main_spacing = dual.main_spacing.max(0.001);
@@ -713,7 +715,7 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
         quote_expression!(1.0)
     };
     let sample_dual = match dual.tip {
-        DualTip::Computed {
+        DualBrushTip::Computed {
             hardness,
             angle,
             roundness,
@@ -736,7 +738,7 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
                 dual_copy_mask = 1.0 - smoothstep(-#edge, 0.0, dual_distance);
             }}
         }
-        DualTip::Sampled {
+        DualBrushTip::Sampled {
             angle,
             roundness,
             flip_x,

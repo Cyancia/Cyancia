@@ -12,7 +12,7 @@ use lapiz_render::texture::Image;
 use uuid::Uuid;
 
 use crate::desc::wgsl::{
-    BrushPose, BrushTexture, ColorAdjustment, DualBrush as WgslDualBrush, DualTip, Dynamics,
+    BrushPose, BrushTexture, ColorAdjustment, DualBrush as WgslDualBrush, DualBrushTip, Dynamics,
     Scatter,
 };
 
@@ -113,7 +113,7 @@ fn parse_dual_brush(
         BrushTip::Computed(tip) => {
             ensure!(tip.interpolation, "unsupported dual computed interpolation");
             (
-                DualTip::Computed {
+                DualBrushTip::Computed {
                     diameter: tip.diameter.value as f32,
                     hardness: (tip.hardness.value as f32 / 100.0).clamp(0.0, 1.0),
                     angle: tip.angle.value.to_radians() as f32,
@@ -131,7 +131,7 @@ fn parse_dual_brush(
                 .copied()
                 .with_context(|| format!("dual brush sample not found {}", tip.id))?;
             (
-                DualTip::Sampled {
+                DualBrushTip::Sampled {
                     diameter: tip.diameter.value as f32,
                     angle: tip.angle.value.to_radians() as f32,
                     roundness: (tip.roundness.value as f32 / 100.0).clamp(0.001, 1.0),
