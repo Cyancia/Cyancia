@@ -95,6 +95,7 @@ impl ToolFunction for MagicWandSelectionTool {
             fill_color: Vec4::ZERO,
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
+            contiguous: true,
             close_gap: self.close_gap,
             grow: self.grow,
             aa_approach: match self.aa_approach {

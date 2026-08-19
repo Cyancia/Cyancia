@@ -2,7 +2,7 @@ use glam::{Vec2, Vec4};
 use iced_core::{Element, Length, Theme};
 use iced_runtime::Task;
 use iced_wgpu::Renderer;
-use iced_widget::{button, container, pick_list, row};
+use iced_widget::{button, checkbox, container, pick_list, row};
 use lapiz_canvas::{CanvasAppExt, CanvasUndoStackAppExt, command::TileReplaceCommand};
 use lapiz_color::ForegroundBackgroundColorExt;
 use lapiz_image::{
@@ -34,12 +34,11 @@ impl Plugin for BucketPlugin {
     }
 }
 
-// TODO Blending mode and contiguous
-//      Hold shift to disable contiguous
 pub struct BucketTool {
     pub threshold: f32,
     pub alpha_threshold: f32,
     pub grow: i32,
+    pub contiguous: bool,
     pub close_gap: u32,
     pub cached_feather: u32,
     pub blend_function: BlendFunctionId,
@@ -52,6 +51,7 @@ impl Default for BucketTool {
             threshold: 0.08,
             alpha_threshold: 0.02,
             grow: 0,
+            contiguous: true,
             close_gap: 0,
             cached_feather: 0,
             blend_function: BlendMode::Normal.id(),
@@ -65,6 +65,7 @@ pub enum BucketToolMessage {
     ThresholdChanged(f32),
     AlphaThresholdChanged(f32),
     GrowChanged(i32),
+    ContiguousChanged(bool),
     CloseGapChanged(u32),
     FeatherChanged(u32),
     BlendFunctionChanged(BlendFunctionId),
@@ -127,6 +128,7 @@ impl ToolFunction for BucketTool {
             fill_color: Vec4::new(fg_color.r, fg_color.g, fg_color.b, 1.0),
             threshold: self.threshold,
             alpha_threshold: self.alpha_threshold,
+            contiguous: self.contiguous,
             close_gap: self.close_gap,
             grow: self.grow,
             aa_approach: match self.aa_approach {
@@ -188,6 +190,7 @@ impl ToolFunction for BucketTool {
             BucketToolMessage::ThresholdChanged(value) => self.threshold = value,
             BucketToolMessage::AlphaThresholdChanged(value) => self.alpha_threshold = value,
             BucketToolMessage::GrowChanged(value) => self.grow = value,
+            BucketToolMessage::ContiguousChanged(value) => self.contiguous = value,
             BucketToolMessage::CloseGapChanged(value) => self.close_gap = value,
             BucketToolMessage::FeatherChanged(value) => {
                 self.cached_feather = value;
@@ -228,6 +231,10 @@ impl ToolFunction for BucketTool {
             .push(
                 "Grow",
                 SpinSlider::new(-64..=64, self.grow).on_confirm(BucketToolMessage::GrowChanged),
+            )
+            .push(
+                "Contiguous",
+                checkbox(self.contiguous).on_toggle(BucketToolMessage::ContiguousChanged),
             )
             .push(
                 "Close Gap",

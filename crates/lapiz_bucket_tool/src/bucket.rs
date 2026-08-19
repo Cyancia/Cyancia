@@ -40,6 +40,7 @@ pub struct BucketParams {
     pub fill_color: Vec4,
     pub threshold: f32,
     pub alpha_threshold: f32,
+    pub contiguous: bool,
     pub close_gap: u32,
     pub grow: i32,
     pub aa_approach: BucketAntialiasApproach,
@@ -873,65 +874,67 @@ impl Bucket {
             queue.submit([ec.finish()]);
         }
 
-        let total_pixels =
-            mask.len() as u32 * GpuTileStorage::TILE_SIZE * GpuTileStorage::TILE_SIZE;
+        if bucket_params.contiguous {
+            let total_pixels =
+                mask.len() as u32 * GpuTileStorage::TILE_SIZE * GpuTileStorage::TILE_SIZE;
 
-        let labels_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("labels_buffer"),
-            size: (total_pixels * 4) as u64,
-            usage: BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-
-        let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("ccl_bind_group"),
-            layout: &self.ccl_layout,
-            entries: &BindGroupEntries::sequential((
-                bucket_params_buffer.binding().unwrap(),
-                BindingResource::TextureView(mask.texture_view().unwrap()),
-                labels_buffer.as_entire_binding(),
-                mask.tile_info_buffer().unwrap().as_entire_binding(),
-            )),
-        });
-
-        let mut ec = device.create_command_encoder(&Default::default());
-
-        {
-            let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("ccl_pass"),
-                timestamp_writes: None,
+            let labels_buffer = device.create_buffer(&BufferDescriptor {
+                label: Some("labels_buffer"),
+                size: (total_pixels * 4) as u64,
+                usage: BufferUsages::STORAGE,
+                mapped_at_creation: false,
             });
 
-            pass.push_debug_group("ccl_init_pass");
-            pass.set_pipeline(&self.ccl_init_pipeline);
-            pass.set_bind_group(0, &ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
-            pass.pop_debug_group();
+            let ccl_bind_group = device.create_bind_group(&BindGroupDescriptor {
+                label: Some("ccl_bind_group"),
+                layout: &self.ccl_layout,
+                entries: &BindGroupEntries::sequential((
+                    bucket_params_buffer.binding().unwrap(),
+                    BindingResource::TextureView(mask.texture_view().unwrap()),
+                    labels_buffer.as_entire_binding(),
+                    mask.tile_info_buffer().unwrap().as_entire_binding(),
+                )),
+            });
 
-            pass.push_debug_group("ccl_merge_pass");
-            pass.set_pipeline(&self.ccl_merge_pipeline);
-            pass.set_bind_group(0, &ccl_bind_group, &[]);
-            let max_distance = (total_pixels as f32).sqrt().ceil() as u32;
-            let ccl_iterations = (max_distance as f32).log2().ceil() as u32 + 1;
-            for _ in 0..ccl_iterations {
+            let mut ec = device.create_command_encoder(&Default::default());
+
+            {
+                let mut pass = ec.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("ccl_pass"),
+                    timestamp_writes: None,
+                });
+
+                pass.push_debug_group("ccl_init_pass");
+                pass.set_pipeline(&self.ccl_init_pipeline);
+                pass.set_bind_group(0, &ccl_bind_group, &[]);
                 pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
+                pass.pop_debug_group();
+
+                pass.push_debug_group("ccl_merge_pass");
+                pass.set_pipeline(&self.ccl_merge_pipeline);
+                pass.set_bind_group(0, &ccl_bind_group, &[]);
+                let max_distance = (total_pixels as f32).sqrt().ceil() as u32;
+                let ccl_iterations = (max_distance as f32).log2().ceil() as u32 + 1;
+                for _ in 0..ccl_iterations {
+                    pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
+                }
+                pass.pop_debug_group();
+
+                pass.push_debug_group("ccl_compress_pass");
+                pass.set_pipeline(&self.ccl_compress_pipeline);
+                pass.set_bind_group(0, &ccl_bind_group, &[]);
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
+                pass.pop_debug_group();
+
+                pass.push_debug_group("ccl_extract_pass");
+                pass.set_pipeline(&self.ccl_extract_pipeline);
+                pass.set_bind_group(0, &ccl_bind_group, &[]);
+                pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
+                pass.pop_debug_group();
             }
-            pass.pop_debug_group();
 
-            pass.push_debug_group("ccl_compress_pass");
-            pass.set_pipeline(&self.ccl_compress_pipeline);
-            pass.set_bind_group(0, &ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
-            pass.pop_debug_group();
-
-            pass.push_debug_group("ccl_extract_pass");
-            pass.set_pipeline(&self.ccl_extract_pipeline);
-            pass.set_bind_group(0, &ccl_bind_group, &[]);
-            pass.dispatch_workgroups(dispatch_xy, dispatch_xy, mask.len() as u32);
-            pass.pop_debug_group();
+            queue.submit([ec.finish()]);
         }
-
-        queue.submit([ec.finish()]);
 
         if inner_params.grow > 0 {
             let grown_mask = mask.create_allocated_empty_sibling();
