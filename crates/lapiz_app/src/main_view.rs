@@ -14,7 +14,6 @@ use lapiz_actions::{
 use lapiz_assets::AssetAppExt;
 use lapiz_canvas::CanvasToolProxyAppExt;
 use lapiz_canvas::{
-    CanvasAppExt, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
     tools::PanTool,
 };
@@ -28,7 +27,7 @@ use lapiz_runtime::{
     event::Event,
     windows::{WindowView, WindowViewId},
 };
-use lapiz_tools::{ErasedToolFunctionMessage, GlobalToolBindings, ToolFunction, ToolProxies};
+use lapiz_tools::{ErasedToolFunctionMessage, GlobalToolBindings, ToolFunction};
 
 use crate::dock::{
     BRUSH_PRESETS_DOCK_ID, BrushPresetDock, COLOR_SELECTOR_DOCK_ID, CanvasDock, ColorSelectorDock,

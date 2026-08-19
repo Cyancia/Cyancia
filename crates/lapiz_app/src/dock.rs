@@ -47,7 +47,7 @@ use lapiz_image::{
 use lapiz_input::{key::KeyboardState, mouse::PressedMouseState};
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::{Services, event::Event};
-use lapiz_tools::{ErasedToolFunctionMessage, ToolProxies};
+use lapiz_tools::ErasedToolFunctionMessage;
 use lapiz_utils::log_err::LogErr;
 use moxcms::ColorProfile;
 
