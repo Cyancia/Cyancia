@@ -9,8 +9,7 @@ use lapiz_render::texture::Image;
 use uuid::Uuid;
 
 use crate::desc::wgsl::{
-    BrushPose, BrushTexture, ColorAdjustment, DualBrush as WgslDualBrush, DualBrushTip, Dynamics,
-    Scatter,
+    BrushPose, BrushTexture, ColorAdjustment, DualBrush, DualBrushTip, Dynamics, Scatter,
 };
 
 pub mod graph;
@@ -56,7 +55,7 @@ fn parse_blend_mode(mode: lapiz_abr::BlendMode) -> BlendMode {
 fn parse_dual_brush(
     brush: &Descriptor,
     sample_assets: &HashMap<Uuid, AssetId<Image>>,
-) -> Result<(Option<WgslDualBrush>, Option<AssetId<Image>>)> {
+) -> Result<(Option<DualBrush>, Option<AssetId<Image>>)> {
     let dual = &brush.dual_brush;
     if !dual.enabled {
         return Ok((None, None));
@@ -141,7 +140,7 @@ fn parse_dual_brush(
         BrushTip::DBrush(_) => bail!("unsupported dual dbrush tip"),
     };
     Ok((
-        Some(WgslDualBrush {
+        Some(DualBrush {
             tip,
             flip: dual.flip,
             blend_mode: parse_blend_mode(dual.blend_mode.unwrap_or(lapiz_abr::BlendMode::Multiply)),
