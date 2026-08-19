@@ -3070,6 +3070,7 @@ dependencies = [
  "iced_runtime",
  "iced_wgpu",
  "iced_widget",
+ "lapiz_abr_bridge",
  "lapiz_actions",
  "lapiz_assets",
  "lapiz_brush",

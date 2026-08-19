@@ -5,6 +5,7 @@ use crate::main_view::MainView;
 mod dock;
 mod main_view;
 
+use lapiz_abr_bridge::AbrAssetBundle;
 use lapiz_actions::ActionPlugin;
 use lapiz_assets::{
     AssetsPlugin,
@@ -53,6 +54,26 @@ fn main() {
         }
         asset_bundles.extend(
             standard_bundles
+                .into_iter()
+                .map(|b| Arc::new(b) as Arc<dyn ErasedAssetBundle>),
+        );
+    }
+
+    {
+        let (abr_bundles, errs) = AbrAssetBundle::scan_bundles("assets");
+        log::info!(
+            "Loaded {} abr bundles with {} errors",
+            abr_bundles.len(),
+            errs.len()
+        );
+        for err in errs {
+            log::error!("Error loading ABR asset bundle: {}", err);
+        }
+        for bundle in &abr_bundles {
+            log::info!("Loaded ABR asset bundle: {}", bundle.path().display());
+        }
+        asset_bundles.extend(
+            abr_bundles
                 .into_iter()
                 .map(|b| Arc::new(b) as Arc<dyn ErasedAssetBundle>),
         );

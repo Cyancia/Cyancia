@@ -209,6 +209,11 @@ pub fn parse_desc(
 ) -> Result<BrushPreset> {
     ensure!(!brush.wtdg, "unsupported wet edges");
     ensure!(!brush.repeat, "unsupported repeat");
+    match &brush.tool_options {
+        Some(ToolOptions::Smudge(_)) => bail!("unsupported smudge tool"),
+        Some(ToolOptions::Sh(_)) => bail!("unsupported sh tool"),
+        _ => {}
+    }
     let paint_options = match &brush.tool_options {
         Some(ToolOptions::Paint(options)) => Some(options),
         _ => None,
