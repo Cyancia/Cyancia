@@ -573,9 +573,7 @@ fn tip_foreground_statement(adjustment: Option<ColorAdjustment>, pose: BrushPose
     let adjusted_saturation = if purity < 0.0 {
         quote_expression!(jittered_saturation * (1.0 + #purity))
     } else {
-        quote_expression!(
-            jittered_saturation + (1.0 - jittered_saturation) * #purity
-        )
+        quote_expression!(jittered_saturation + (1.0 - jittered_saturation) * #purity)
     };
 
     quote_statement! {{

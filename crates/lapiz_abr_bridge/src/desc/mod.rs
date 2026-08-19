@@ -397,10 +397,6 @@ pub fn parse_desc(
             ]
         });
     let has_hsv_jitter = hue_jitter > 0.0 || saturation_jitter > 0.0 || value_jitter > 0.0;
-    ensure!(
-        purity == 0.0 || !has_hsv_jitter,
-        "unsupported purity with HSV jitter"
-    );
     let has_color_adjustment =
         has_hsv_jitter || purity != 0.0 || color_dynamics.is_some() || foreground_color.is_some();
     let color_adjustment = has_color_adjustment.then_some(ColorAdjustment {
