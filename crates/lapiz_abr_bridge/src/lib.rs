@@ -104,7 +104,7 @@ impl AbrAssetBundle {
             }
         }
 
-        for brush in &abr.brushes {
+        for brush in &abr.descriptors {
             let asset_id = UntypedAssetId::new(Uuid::new_v5(&bundle_id.0, brush.name.as_bytes()));
             let path = PathBuf::from(format!("desc-{asset_id}.lapiz"));
             match desc::parse_desc(brush, &sample_assets, &pattern_assets) {

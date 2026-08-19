@@ -11,8 +11,8 @@ use descriptor::BrushDescriptorRoot;
 
 pub use cursor::Cursor;
 pub use descriptor::{
-    AbrClass, AbrEnum, AbrIntegerEnum, AbrObject, AbrValue, BlendMode, BrushGroup, BrushPreset,
-    BrushTip, ComputedBrushTip, DBrushTip, DescriptorUnit, DualBrush, DynamicsControl,
+    AbrClass, AbrEnum, AbrIntegerEnum, AbrObject, AbrValue, BlendMode, BrushGroup, BrushTip,
+    ComputedBrushTip, DBrushTip, Descriptor, DescriptorUnit, DualBrush, DynamicsControl,
     EraserToolOptions, PaintToolOptions, PatternReference, PropertyDynamics, RgbColor,
     SampledBrushTip, ShToolOptions, SmudgeToolOptions, ToolOptions, UnitFloat,
 };
@@ -24,7 +24,7 @@ pub use sample::{Sample, SampleImage};
 
 pub struct Abr {
     pub header: AbrHeader,
-    pub brushes: Vec<BrushPreset>,
+    pub descriptors: Vec<Descriptor>,
     pub hierarchy: HierarchyNode,
     pub samples: Vec<Sample>,
     pub patterns: Vec<Pattern>,
@@ -68,7 +68,7 @@ impl Abr {
 
         Ok(Self {
             header,
-            brushes,
+            descriptors: brushes,
             hierarchy,
             samples,
             patterns,

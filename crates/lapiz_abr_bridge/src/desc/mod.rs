@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail, ensure};
 use lapiz_abr::{
-    BlendMode, BrushPreset as AbrBrushPreset, BrushTip, DynamicsControl,
-    PropertyDynamics as AbrPropertyDynamics, ToolOptions,
+    BlendMode, BrushTip, Descriptor, DynamicsControl, PropertyDynamics as AbrPropertyDynamics,
+    ToolOptions,
 };
 use lapiz_assets::asset::AssetId;
 use lapiz_brush::asset::BrushPreset;
@@ -74,7 +74,7 @@ fn parse_texture_blend_mode(mode: Option<BlendMode>) -> Result<TextureBlendMode>
 }
 
 fn parse_dual_brush(
-    brush: &AbrBrushPreset,
+    brush: &Descriptor,
     sample_assets: &HashMap<Uuid, AssetId<Image>>,
 ) -> Result<(Option<WgslDualBrush>, Option<AssetId<Image>>)> {
     let dual = &brush.dual_brush;
@@ -203,7 +203,7 @@ fn parse_dynamics(
 }
 
 pub fn parse_desc(
-    brush: &AbrBrushPreset,
+    brush: &Descriptor,
     sample_assets: &HashMap<Uuid, AssetId<Image>>,
     pattern_assets: &HashMap<Uuid, AssetId<Image>>,
 ) -> Result<BrushPreset> {
