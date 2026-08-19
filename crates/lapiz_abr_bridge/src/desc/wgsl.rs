@@ -73,6 +73,9 @@ pub struct BrushTexture {
     pub depth_dynamics: Option<Dynamics>,
     pub each_tip: bool,
     pub blend_mode: TextureBlendMode,
+    pub brightness: f32,
+    pub contrast: f32,
+    pub use_legacy: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -660,10 +663,26 @@ fn texture_mask_statement(
             vec2f(0.0),
         ))
     };
-    let texture_value = if texture.inverted {
-        quote_expression!(1.0 - pattern_sample.r)
+    let base_value = quote_expression!(pattern_sample.r);
+    let adjusted_value = if texture.use_legacy {
+        let b = texture.brightness;
+        let c = texture.contrast + 1.0;
+        quote_expression!(clamp((#base_value - 0.5) * #c + #b + 0.5, 0.0, 1.0))
     } else {
-        quote_expression!(pattern_sample.r)
+        let b = texture.brightness / 2.0;
+        let c = texture.contrast;
+        let slant = ((c + 1.0) * std::f32::consts::FRAC_PI_4).tan();
+        let brightness_adjusted = if b < 0.0 {
+            quote_expression!(#base_value * (1.0 + #b))
+        } else {
+            quote_expression!(#base_value + (1.0 - #base_value) * #b)
+        };
+        quote_expression!(clamp((#brightness_adjusted - 0.5) * #slant + 0.5, 0.0, 1.0))
+    };
+    let texture_value = if texture.inverted {
+        quote_expression!(1.0 - #adjusted_value)
+    } else {
+        adjusted_value
     };
     let depth = texture.depth;
     let effective_depth = match texture.depth_dynamics {

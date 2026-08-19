@@ -452,16 +452,6 @@ pub fn parse_desc(
         brush.interpretation != Some(false),
         "unsupported texture interpretation"
     );
-    ensure!(
-        brush.texture_brightness == 0,
-        "unsupported texture brightness {}",
-        brush.texture_brightness
-    );
-    ensure!(
-        brush.texture_contrast == 0,
-        "unsupported texture contrast {}",
-        brush.texture_contrast
-    );
     let (brush_texture, pattern_asset) = if brush.use_texture {
         let texture = brush
             .texture
@@ -496,6 +486,21 @@ pub fn parse_desc(
                 parse_dynamics(dynamics, false, minimum_depth).context("texture depth dynamics")
             })
             .transpose()?;
+        let brightness = (brush.texture_brightness as f32 / 150.0).clamp(-1.0, 1.0);
+        let contrast = if brush.texture_contrast < 0 {
+            brush.texture_contrast as f32 / 50.0
+        } else {
+            brush.texture_contrast as f32 / 100.0
+        }
+        .clamp(-1.0, 1.0);
+        let use_legacy = match &brush.tool_options {
+            Some(ToolOptions::Paint(o)) => o.use_legacy,
+            Some(ToolOptions::Smudge(o)) => o.use_legacy,
+            Some(ToolOptions::Sh(o)) => o.use_legacy,
+            Some(ToolOptions::Eraser(o)) => o.use_legacy,
+            None => false,
+        };
+
         (
             Some(BrushTexture {
                 scale,
@@ -504,6 +509,9 @@ pub fn parse_desc(
                 depth_dynamics,
                 each_tip: brush.txt_c,
                 blend_mode: parse_texture_blend_mode(brush.texture_blend_mode)?,
+                brightness,
+                contrast,
+                use_legacy,
             }),
             Some(pattern_asset),
         )
