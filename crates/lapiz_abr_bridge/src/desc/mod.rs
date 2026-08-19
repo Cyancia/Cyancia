@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::desc::wgsl::{
     BrushPose, BrushTexture, ColorAdjustment, DualBrush as WgslDualBrush, DualTip, Dynamics,
-    Scatter, TextureBlendMode,
+    Scatter,
 };
 
 pub mod graph;
@@ -53,23 +53,6 @@ fn parse_blend_mode(mode: BlendMode) -> ImageBlendMode {
         BlendMode::Luminosity => ImageBlendMode::Luminosity,
         BlendMode::Height => ImageBlendMode::Height,
         BlendMode::LinearHeight => ImageBlendMode::LinearHeight,
-    }
-}
-
-fn parse_texture_blend_mode(mode: Option<BlendMode>) -> Result<TextureBlendMode> {
-    match mode {
-        None | Some(BlendMode::Multiply) => Ok(TextureBlendMode::Multiply),
-        Some(BlendMode::Subtract | BlendMode::SubtractTexture) => Ok(TextureBlendMode::Subtract),
-        Some(BlendMode::Darken) => Ok(TextureBlendMode::Darken),
-        Some(BlendMode::Overlay) => Ok(TextureBlendMode::Overlay),
-        Some(BlendMode::ColorDodge) => Ok(TextureBlendMode::ColorDodge),
-        Some(BlendMode::ColorBurn) => Ok(TextureBlendMode::ColorBurn),
-        Some(BlendMode::LinearDodge) => Ok(TextureBlendMode::LinearDodge),
-        Some(BlendMode::LinearBurn) => Ok(TextureBlendMode::LinearBurn),
-        Some(BlendMode::HardMix) => Ok(TextureBlendMode::HardMix),
-        Some(BlendMode::Height) => Ok(TextureBlendMode::Height),
-        Some(BlendMode::LinearHeight) => Ok(TextureBlendMode::LinearHeight),
-        Some(mode) => bail!("unsupported texture blend mode {mode:?}"),
     }
 }
 
@@ -165,8 +148,7 @@ fn parse_dual_brush(
         Some(WgslDualBrush {
             tip,
             flip: dual.flip,
-            blend_mode: parse_texture_blend_mode(dual.blend_mode)
-                .context("dual brush blend mode")?,
+            blend_mode: parse_blend_mode(dual.blend_mode.unwrap_or(BlendMode::Multiply)),
             spacing,
             main_spacing,
             scatter,
@@ -504,7 +486,9 @@ pub fn parse_desc(
                 depth,
                 depth_dynamics,
                 each_tip: brush.txt_c,
-                blend_mode: parse_texture_blend_mode(brush.texture_blend_mode)?,
+                blend_mode: parse_blend_mode(
+                    brush.texture_blend_mode.unwrap_or(BlendMode::Multiply),
+                ),
                 brightness,
                 contrast,
                 use_legacy,

@@ -51,28 +51,13 @@ pub struct Scatter {
 }
 
 #[derive(Clone, Copy)]
-pub enum TextureBlendMode {
-    Multiply,
-    Subtract,
-    Darken,
-    Overlay,
-    ColorDodge,
-    ColorBurn,
-    LinearDodge,
-    LinearBurn,
-    HardMix,
-    Height,
-    LinearHeight,
-}
-
-#[derive(Clone, Copy)]
 pub struct BrushTexture {
     pub scale: f32,
     pub inverted: bool,
     pub depth: f32,
     pub depth_dynamics: Option<Dynamics>,
     pub each_tip: bool,
-    pub blend_mode: TextureBlendMode,
+    pub blend_mode: BlendMode,
     pub brightness: f32,
     pub contrast: f32,
     pub use_legacy: bool,
@@ -101,7 +86,7 @@ pub enum DualTip {
 pub struct DualBrush {
     pub tip: DualTip,
     pub flip: bool,
-    pub blend_mode: TextureBlendMode,
+    pub blend_mode: BlendMode,
     pub spacing: f32,
     pub main_spacing: f32,
     pub scatter: Option<Scatter>,
@@ -697,46 +682,13 @@ fn texture_mask_statement(
         }
         None => quote_expression!(#depth * 1.0),
     };
-    let blended_mask = match texture.blend_mode {
-        TextureBlendMode::Multiply => {
-            quote_expression!(image::blend_modes::blend_multiply(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::Subtract => {
-            quote_expression!(image::blend_modes::blend_subtract(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::Darken => {
-            quote_expression!(image::blend_modes::blend_darken(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::Overlay => {
-            quote_expression!(image::blend_modes::blend_overlay(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::ColorDodge => {
-            quote_expression!(image::blend_modes::blend_color_dodge(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::ColorBurn => {
-            quote_expression!(image::blend_modes::blend_color_burn(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::LinearDodge => {
-            quote_expression!(image::blend_modes::blend_linear_dodge(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::LinearBurn => {
-            quote_expression!(image::blend_modes::blend_linear_burn(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::HardMix => {
-            quote_expression!(image::blend_modes::blend_hard_mix(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::Height => {
-            quote_expression!(image::blend_modes::blend_height(pattern_color, mask_color).r)
-        }
-        TextureBlendMode::LinearHeight => {
-            quote_expression!(image::blend_modes::blend_linear_height(pattern_color, mask_color).r)
-        }
-    };
+    let blend = Ident::new(texture.blend_mode.shader_func().to_string());
+
     quote_statement! {{
         let pattern_sample = #pattern_sample;
         let pattern_color = vec4f(vec3f(#texture_value), 1.0);
         let mask_color = vec4f(vec3f(copy_mask), 1.0);
-        let textured_mask = select(0.0, #blended_mask, copy_mask > 0.0);
+        let textured_mask = select(0.0, image::blend_modes::#blend(pattern_color, mask_color).r, copy_mask > 0.0);
         copy_mask = mix(copy_mask, textured_mask, #effective_depth);
     }}
 }
@@ -815,41 +767,7 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
     };
     let scatter_offset = dual_scatter_offset_expression(dual.scatter, pose, diameter);
     let active_copy_count = dual_scatter_count_expression(dual.scatter, pose);
-    let blended_mask = match dual.blend_mode {
-        TextureBlendMode::Multiply => {
-            quote_expression!(image::blend_modes::blend_multiply(dual_color, mask_color).r)
-        }
-        TextureBlendMode::Subtract => {
-            quote_expression!(image::blend_modes::blend_subtract(dual_color, mask_color).r)
-        }
-        TextureBlendMode::Darken => {
-            quote_expression!(image::blend_modes::blend_darken(dual_color, mask_color).r)
-        }
-        TextureBlendMode::Overlay => {
-            quote_expression!(image::blend_modes::blend_overlay(dual_color, mask_color).r)
-        }
-        TextureBlendMode::ColorDodge => {
-            quote_expression!(image::blend_modes::blend_color_dodge(dual_color, mask_color).r)
-        }
-        TextureBlendMode::ColorBurn => {
-            quote_expression!(image::blend_modes::blend_color_burn(dual_color, mask_color).r)
-        }
-        TextureBlendMode::LinearDodge => {
-            quote_expression!(image::blend_modes::blend_linear_dodge(dual_color, mask_color).r)
-        }
-        TextureBlendMode::LinearBurn => {
-            quote_expression!(image::blend_modes::blend_linear_burn(dual_color, mask_color).r)
-        }
-        TextureBlendMode::HardMix => {
-            quote_expression!(image::blend_modes::blend_hard_mix(dual_color, mask_color).r)
-        }
-        TextureBlendMode::Height => {
-            quote_expression!(image::blend_modes::blend_height(dual_color, mask_color).r)
-        }
-        TextureBlendMode::LinearHeight => {
-            quote_expression!(image::blend_modes::blend_linear_height(dual_color, mask_color).r)
-        }
-    };
+    let blend = Ident::new(dual.blend_mode.shader_func().to_string());
 
     quote_statement! {{
         let dual_distance_along_stroke = f32(#dab_index) * #main_spacing;
@@ -871,7 +789,7 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
         }
         let dual_color = vec4f(vec3f(dual_mask), 1.0);
         let mask_color = vec4f(vec3f(tip_mask), 1.0);
-        tip_mask = select(0.0, #blended_mask, tip_mask > 0.0);
+        tip_mask = select(0.0, image::blend_modes::#blend(dual_color, mask_color).r, tip_mask > 0.0);
     }}
 }
 
