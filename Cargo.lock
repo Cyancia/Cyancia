@@ -3150,6 +3150,7 @@ dependencies = [
  "encase",
  "glam 0.30.10",
  "iced_core",
+ "iced_futures",
  "iced_runtime",
  "iced_wgpu",
  "iced_widget",

@@ -1,5 +1,9 @@
 use glam::{Vec2, Vec4};
-use iced_core::{Element, Length, Theme};
+use iced_core::{
+    Element, Length, Theme,
+    keyboard::{self, key},
+};
+use iced_futures::Subscription;
 use iced_runtime::Task;
 use iced_wgpu::Renderer;
 use iced_widget::{button, checkbox, container, pick_list, row};
@@ -286,5 +290,20 @@ impl ToolFunction for BucketTool {
             );
 
         Some(container(fields).padding(8).width(Length::Fill).into())
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        iced_futures::keyboard::listen().filter_map(|event| match event {
+            keyboard::Event::KeyPressed {
+                physical_key: key::Physical::Code(key::Code::ShiftLeft),
+                repeat: false,
+                ..
+            } => Some(BucketToolMessage::ContiguousChanged(false)),
+            keyboard::Event::KeyReleased {
+                physical_key: key::Physical::Code(key::Code::ShiftLeft),
+                ..
+            } => Some(BucketToolMessage::ContiguousChanged(true)),
+            _ => None,
+        })
     }
 }
