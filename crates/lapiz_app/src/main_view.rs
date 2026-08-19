@@ -12,6 +12,7 @@ use lapiz_actions::{
     manifest::{ActionCollection, KeyBindingDefManifest},
 };
 use lapiz_assets::AssetAppExt;
+use lapiz_canvas::CanvasToolProxyAppExt;
 use lapiz_canvas::{
     CanvasAppExt, CanvasManager,
     event::{CanvasCreated, CanvasRemoved},
@@ -56,37 +57,29 @@ impl MainView {
         services: &mut Services,
         is_keydown: bool,
     ) -> Task<MainViewMessage> {
-        let tool_proxy = services
-            .current_canvas()
-            .map(|canvas| canvas.tool_proxy_id());
+        services
+            .update_current_tool_proxy(|tool_proxy, services| {
+                let keyboard_state = services.service::<KeyboardState>();
+                let seq = keyboard_state.get_sequence();
 
-        if let Some(tool_proxy) = tool_proxy {
-            services
-                .service_scope::<ToolProxies, _>(|tool_proxies, services| {
-                    let tool_proxy = tool_proxies.get_mut(&tool_proxy);
-                    let keyboard_state = services.service::<KeyboardState>();
-                    let seq = keyboard_state.get_sequence();
+                let config = services
+                    .service::<GlobalToolBindings>()
+                    .binding_for(seq)
+                    .cloned();
+                let Some(config) = config else {
+                    return tool_proxy.switch_override_tool(None, services);
+                };
 
-                    let config = services
-                        .service::<GlobalToolBindings>()
-                        .binding_for(seq)
-                        .cloned();
-                    let Some(config) = config else {
-                        return tool_proxy.switch_override_tool(None, services);
-                    };
-
-                    if config.is_temporary {
-                        tool_proxy.switch_override_tool(Some(config.tool.clone()), services)
-                    } else if is_keydown {
-                        tool_proxy.switch_tool(config.tool.clone(), services)
-                    } else {
-                        Task::none()
-                    }
-                })
-                .map(MainViewMessage::ToolFunctionMessage)
-        } else {
-            Task::none()
-        }
+                if config.is_temporary {
+                    tool_proxy.switch_override_tool(Some(config.tool.clone()), services)
+                } else if is_keydown {
+                    tool_proxy.switch_tool(config.tool.clone(), services)
+                } else {
+                    Task::none()
+                }
+            })
+            .unwrap_or_else(Task::none)
+            .map(MainViewMessage::ToolFunctionMessage)
     }
 }
 
@@ -240,18 +233,12 @@ impl WindowView for MainView {
             }
             MainViewMessage::CanvasCreated(e) => {
                 log::info!("Canvas created: {}", e.id);
-                let tool_proxy_id = services
-                    .service::<CanvasManager>()
-                    .get(&e.id)
-                    .unwrap()
-                    .tool_proxy_id();
-                let tool_task =
-                    services.service_scope::<ToolProxies, _>(|tool_proxies, services| {
-                        tool_proxies
-                            .get_mut(&tool_proxy_id)
-                            .switch_tool(PanTool::id(), services)
-                    });
-                let dock = CanvasDock::new(e.id, tool_proxy_id, self.dock_manager.main_window().id);
+                let tool_task = services
+                    .update_tool_proxy(&e.id, |tool_proxy, services| {
+                        tool_proxy.switch_tool(PanTool::id(), services)
+                    })
+                    .unwrap_or_else(Task::none);
+                let dock = CanvasDock::new(e.id, self.dock_manager.main_window().id);
                 let id = <CanvasDock as Dock<Theme, Renderer>>::id(&dock);
                 self.dock_manager.register_dock(dock);
                 Task::batch([
@@ -280,20 +267,12 @@ impl WindowView for MainView {
                     Task::none()
                 }
             }
-            MainViewMessage::ToolFunctionMessage(message) => {
-                let Some(canvas) = services.current_canvas() else {
-                    return Task::none();
-                };
-
-                let tool_proxy_id = canvas.tool_proxy_id();
-                services
-                    .service_scope::<ToolProxies, _>(|tool_proxies, services| {
-                        tool_proxies
-                            .get_mut(&tool_proxy_id)
-                            .handle_message(message, services)
-                    })
-                    .map(MainViewMessage::ToolFunctionMessage)
-            }
+            MainViewMessage::ToolFunctionMessage(message) => services
+                .update_current_tool_proxy(|tool_proxy, services| {
+                    tool_proxy.handle_message(message, services)
+                })
+                .unwrap_or_else(Task::none)
+                .map(MainViewMessage::ToolFunctionMessage),
         }
     }
 

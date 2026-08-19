@@ -10,7 +10,7 @@ use lapiz_input::{
     mouse::{HoverMouseState, PressedMouseState},
 };
 use lapiz_runtime::{Application, Services, plugin::Plugin, service::Service};
-use lapiz_utils::wrapper;
+use lapiz_utils::{Deref, DerefMut, wrapper};
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -557,37 +557,12 @@ impl ToolProxy {
     }
 }
 
-wrapper! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub ToolProxyId : Uuid
-}
-
-#[derive(Default)]
+#[derive(Default, Deref, DerefMut)]
 pub struct ToolProxies {
-    proxies: HashMap<ToolProxyId, ToolProxy>,
+    proxies: HashMap<Uuid, ToolProxy>,
 }
 
 impl Service for ToolProxies {}
-
-impl ToolProxies {
-    pub fn get(&self, id: &ToolProxyId) -> &ToolProxy {
-        self.proxies.get(id).unwrap()
-    }
-
-    pub fn get_mut(&mut self, id: &ToolProxyId) -> &mut ToolProxy {
-        self.proxies.get_mut(id).unwrap()
-    }
-
-    pub fn add(&mut self, tool_proxy: ToolProxy) -> ToolProxyId {
-        let id = ToolProxyId::new(Uuid::new_v4());
-        self.proxies.insert(id, tool_proxy);
-        id
-    }
-
-    pub fn remove(&mut self, id: &ToolProxyId) -> Option<ToolProxy> {
-        self.proxies.remove(id)
-    }
-}
 
 #[derive(Default)]
 pub struct GlobalToolBindings {

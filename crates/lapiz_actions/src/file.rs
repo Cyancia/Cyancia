@@ -54,14 +54,16 @@ impl ActionFunction for OpenFileAction {
         };
         log::info!("Opened image from file {:?}.", path);
 
-        let tool_proxy = ToolProxy::new(services.service::<ToolFunctionRegistry>());
-        let tool_proxy_id = services.service_mut::<ToolProxies>().add(tool_proxy);
-        let canvas = CCanvas::new(path, image, archive, tool_proxy_id);
+        let canvas = CCanvas::new(path, image, archive);
         let canvas_id = canvas.id();
-
+        let tool_proxy = ToolProxy::new(services.service::<ToolFunctionRegistry>());
+        services
+            .service_mut::<ToolProxies>()
+            .insert(*canvas_id, tool_proxy);
+        let undo_stack = UndoStack::new(*canvas_id, 200);
         services
             .service_mut::<UndoStacks>()
-            .insert(*canvas_id, UndoStack::new(*canvas_id, 200));
+            .insert(*canvas_id, undo_stack);
 
         // TODO this should not be done here
         let tiles = services.tile_storage();

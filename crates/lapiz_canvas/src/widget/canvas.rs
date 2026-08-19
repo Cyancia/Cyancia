@@ -54,7 +54,7 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
         }
 
         if let Event::Mouse(event) = event
-            && let Some(cursor_pos) = cursor.position_over(bounds)
+            && let Some(cursor_pos) = cursor.land().position_over(bounds)
         {
             if self.is_focusing {
                 shell.publish((self.on_mouse_event)(*event));

@@ -12,11 +12,11 @@ use iced::{
 use iced_core::Point;
 use iced_runtime::task;
 use iced_wgpu::Renderer;
-use iced_widget::{container, scrollable, stack};
+use iced_widget::{container, scrollable, space, stack};
 use lapiz_assets::AssetAppExt;
 use lapiz_brush::{asset::BrushPreset, tool::BrushServicesExt, widget::BrushPresetListDelegate};
 use lapiz_canvas::{
-    CanvasAppExt, CanvasId, CanvasManager, CanvasUndoStackAppExt,
+    CanvasAppExt, CanvasId, CanvasManager, CanvasToolProxyAppExt, CanvasUndoStackAppExt,
     command::{LayerPropertyChangeCommand, MoveLayersCommand},
     event::{CanvasRemoved, CanvasUpdated},
     widget::{
@@ -47,7 +47,7 @@ use lapiz_image::{
 use lapiz_input::{key::KeyboardState, mouse::PressedMouseState};
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::{Services, event::Event};
-use lapiz_tools::{ErasedToolFunctionMessage, ToolProxies, ToolProxyId};
+use lapiz_tools::{ErasedToolFunctionMessage, ToolProxies};
 use lapiz_utils::log_err::LogErr;
 use moxcms::ColorProfile;
 
@@ -569,7 +569,6 @@ pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
 
 pub struct CanvasDock {
     canvas: CanvasId,
-    tool_proxy: ToolProxyId,
 
     compositor: ImageCompositor,
     cursor_position: Point,
@@ -580,10 +579,9 @@ pub struct CanvasDock {
 }
 
 impl CanvasDock {
-    pub fn new(canvas: CanvasId, tool_proxy: ToolProxyId, window_id: window::Id) -> Self {
+    pub fn new(canvas: CanvasId, window_id: window::Id) -> Self {
         Self {
             canvas,
-            tool_proxy,
             compositor: ImageCompositor::default(),
             cursor_position: Point::default(),
             window_id: RefCell::new(window_id),
@@ -627,11 +625,11 @@ impl Dock<Theme, Renderer> for CanvasDock {
             return Space::new().into();
         };
 
-        let canvas_overlay = services
-            .service::<ToolProxies>()
-            .get(&canvas.tool_proxy_id())
-            .canvas_overlay(services)
-            .map(CanvasDockMessage::ToolFunctionMessage);
+        let canvas_overlay = services.tool_proxy(&self.canvas).map(|proxy| {
+            proxy
+                .canvas_overlay(services)
+                .map(CanvasDockMessage::ToolFunctionMessage)
+        });
 
         let canvas = CanvasWidget {
             is_focusing: canvas_manager.current_id() == Some(self.canvas),
@@ -681,51 +679,50 @@ impl Dock<Theme, Renderer> for CanvasDock {
                 Task::none()
             }
             CanvasDockMessage::MouseEvent(event) => {
-                let canvas_manager = services.service_mut::<CanvasManager>();
-                if canvas_manager.current_id() != Some(self.canvas) {
+                if services.current_canvas_id() != Some(self.canvas) {
                     return Task::none();
                 }
 
-                let task = services.service_scope::<ToolProxies, _>(|tool_proxies, services| {
-                    let tool_proxy = tool_proxies.get_mut(&self.tool_proxy);
-                    let keyboard_state = services.service::<KeyboardState>().clone();
+                services
+                    .update_tool_proxy(&self.canvas, |tool_proxy, services| {
+                        let keyboard_state = services.service::<KeyboardState>().clone();
 
-                    match event {
-                        mouse::Event::ButtonPressed(button) => {
-                            if button != mouse::Button::Left {
-                                return Task::none();
+                        match event {
+                            mouse::Event::ButtonPressed(button) => {
+                                if button != mouse::Button::Left {
+                                    return Task::none();
+                                }
+
+                                tool_proxy.mouse_pressed(
+                                    &keyboard_state,
+                                    &PressedMouseState {
+                                        position: self.cursor_position,
+                                    },
+                                    services,
+                                )
                             }
+                            mouse::Event::ButtonReleased(button) => {
+                                if button != mouse::Button::Left {
+                                    return Task::none();
+                                }
 
-                            tool_proxy.mouse_pressed(
-                                &keyboard_state,
-                                &PressedMouseState {
-                                    position: self.cursor_position,
-                                },
-                                services,
-                            )
-                        }
-                        mouse::Event::ButtonReleased(button) => {
-                            if button != mouse::Button::Left {
-                                return Task::none();
+                                tool_proxy.mouse_released(
+                                    &keyboard_state,
+                                    &PressedMouseState {
+                                        position: self.cursor_position,
+                                    },
+                                    services,
+                                )
                             }
-
-                            tool_proxy.mouse_released(
-                                &keyboard_state,
-                                &PressedMouseState {
-                                    position: self.cursor_position,
-                                },
-                                services,
-                            )
+                            mouse::Event::CursorMoved { position } => {
+                                self.cursor_position = position;
+                                tool_proxy.mouse_moved(&keyboard_state, position, services)
+                            }
+                            _ => Task::none(),
                         }
-                        mouse::Event::CursorMoved { position } => {
-                            self.cursor_position = position;
-                            tool_proxy.mouse_moved(&keyboard_state, position, services)
-                        }
-                        _ => Task::none(),
-                    }
-                });
-
-                task.map(CanvasDockMessage::ToolFunctionMessage)
+                    })
+                    .unwrap_or_else(Task::none)
+                    .map(CanvasDockMessage::ToolFunctionMessage)
             }
             CanvasDockMessage::CanvasFocus(cursor_pos) => {
                 self.cursor_position = cursor_pos;
@@ -741,20 +738,13 @@ impl Dock<Theme, Renderer> for CanvasDock {
                 }
                 Task::none()
             }
-            CanvasDockMessage::ToolFunctionMessage(message) => {
-                let Some(canvas) = services.service::<CanvasManager>().get(&self.canvas) else {
-                    return Task::none();
-                };
-
-                let tool_proxy_id = canvas.tool_proxy_id();
-                services
-                    .service_scope::<ToolProxies, _>(|tool_proxies, services| {
-                        tool_proxies
-                            .get_mut(&tool_proxy_id)
-                            .handle_message(message, services)
-                    })
-                    .map(CanvasDockMessage::ToolFunctionMessage)
-            }
+            CanvasDockMessage::ToolFunctionMessage(message) => services
+                .update_tool_proxy(&self.canvas, |tool_proxy, services| {
+                    dbg!();
+                    tool_proxy.handle_message(message, services)
+                })
+                .unwrap_or_else(Task::none)
+                .map(CanvasDockMessage::ToolFunctionMessage),
             CanvasDockMessage::WindowMoved => {
                 let window_id = *self.window_id.borrow();
 
@@ -808,9 +798,8 @@ impl Dock<Theme, Renderer> for CanvasDock {
                     }
                 });
         let tool = services
-            .service::<ToolProxies>()
-            .get(&self.tool_proxy)
-            .subscription()
+            .tool_proxy(&self.canvas)
+            .and_then(|tool_proxy| tool_proxy.subscription())
             .unwrap_or_else(Subscription::none)
             .map(CanvasDockMessage::ToolFunctionMessage);
 
@@ -842,12 +831,10 @@ impl Dock<Theme, iced_wgpu::Renderer> for ToolOptionsDock {
         _window_id: window::Id,
         services: &'a Services,
     ) -> Element<'a, Self::Message, Theme, iced_wgpu::Renderer> {
-        let Some(canvas) = services.service::<CanvasManager>().current() else {
-            return Space::new().into();
+        let Some(tool_proxy) = services.current_tool_proxy() else {
+            return space().into();
         };
 
-        let tool_proxy_id = canvas.tool_proxy_id();
-        let tool_proxy = services.service::<ToolProxies>().get(&tool_proxy_id);
         let indicator = text(format!(
             "Tool: {} | override: {}",
             tool_proxy
@@ -871,20 +858,12 @@ impl Dock<Theme, iced_wgpu::Renderer> for ToolOptionsDock {
 
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {
         match message {
-            ToolOptionsDockMessage::ToolFunction(message) => {
-                let Some(canvas) = services.service::<CanvasManager>().current() else {
-                    return Task::none();
-                };
-
-                let tool_proxy_id = canvas.tool_proxy_id();
-                services
-                    .service_scope::<ToolProxies, _>(|tool_proxies, services| {
-                        tool_proxies
-                            .get_mut(&tool_proxy_id)
-                            .handle_message(message, services)
-                    })
-                    .map(ToolOptionsDockMessage::ToolFunction)
-            }
+            ToolOptionsDockMessage::ToolFunction(message) => services
+                .update_current_tool_proxy(|tool_proxy, services| {
+                    tool_proxy.handle_message(message, services)
+                })
+                .unwrap_or_else(Task::none)
+                .map(ToolOptionsDockMessage::ToolFunction),
         }
     }
 }

@@ -8,7 +8,7 @@ use lapiz_image::{
 };
 use lapiz_lazuli::LazuliArchive;
 use lapiz_runtime::{Application, Services, event::Event, plugin::Plugin, service::Service};
-use lapiz_tools::{ToolProxyId, ToolsAppExt};
+use lapiz_tools::{ToolProxies, ToolProxy, ToolsAppExt};
 use lapiz_undo::{QueuedUndoCommand, UndoCommand, UndoStack, UndoStacks};
 use lapiz_utils::wrapper;
 use parse_display::Display;
@@ -37,7 +37,6 @@ wrapper! {
 
 pub struct CCanvas {
     id: CanvasId,
-    tool_proxy_id: ToolProxyId,
     pub image: CImage,
     file_path: PathBuf,
     pub archive: LazuliArchive,
@@ -47,12 +46,7 @@ pub struct CCanvas {
 }
 
 impl CCanvas {
-    pub fn new(
-        path: PathBuf,
-        image: CImage,
-        archive: LazuliArchive,
-        tool_proxy_id: ToolProxyId,
-    ) -> Self {
+    pub fn new(path: PathBuf, image: CImage, archive: LazuliArchive) -> Self {
         let background_layer = *image
             .layer_stack()
             .root_node()
@@ -62,7 +56,6 @@ impl CCanvas {
 
         Self {
             id: CanvasId::new(Uuid::new_v4()),
-            tool_proxy_id,
             file_path: path,
             image,
             archive,
@@ -74,10 +67,6 @@ impl CCanvas {
 
     pub fn id(&self) -> CanvasId {
         self.id
-    }
-
-    pub fn tool_proxy_id(&self) -> ToolProxyId {
-        self.tool_proxy_id
     }
 
     pub fn file_path(&self) -> &PathBuf {
@@ -403,5 +392,56 @@ impl CanvasUndoStackAppExt for Services {
             .get_mut(&**id)
             .ok_or_else(|| anyhow::anyhow!("Undo stack for canvas {} not found", id))
             .map(UndoStack::queue)
+    }
+}
+
+pub trait CanvasToolProxyAppExt {
+    fn current_tool_proxy(&self) -> Option<&ToolProxy>;
+    fn tool_proxy(&self, canvas_id: &CanvasId) -> Option<&ToolProxy>;
+    fn current_tool_proxy_mut(&mut self) -> Option<&mut ToolProxy>;
+    fn tool_proxy_mut(&mut self, canvas_id: &CanvasId) -> Option<&mut ToolProxy>;
+    fn update_current_tool_proxy<R>(
+        &mut self,
+        f: impl FnOnce(&mut ToolProxy, &mut Services) -> R,
+    ) -> Option<R>;
+    fn update_tool_proxy<R>(
+        &mut self,
+        canvas_id: &CanvasId,
+        f: impl FnOnce(&mut ToolProxy, &mut Services) -> R,
+    ) -> Option<R>;
+}
+
+impl CanvasToolProxyAppExt for Services {
+    fn current_tool_proxy(&self) -> Option<&ToolProxy> {
+        self.tool_proxy(&self.current_canvas_id()?)
+    }
+
+    fn tool_proxy(&self, canvas_id: &CanvasId) -> Option<&ToolProxy> {
+        self.service::<ToolProxies>().get(canvas_id)
+    }
+
+    fn current_tool_proxy_mut(&mut self) -> Option<&mut ToolProxy> {
+        self.tool_proxy_mut(&self.current_canvas_id()?)
+    }
+
+    fn tool_proxy_mut(&mut self, canvas_id: &CanvasId) -> Option<&mut ToolProxy> {
+        self.service_mut::<ToolProxies>().get_mut(canvas_id)
+    }
+
+    fn update_current_tool_proxy<R>(
+        &mut self,
+        f: impl FnOnce(&mut ToolProxy, &mut Services) -> R,
+    ) -> Option<R> {
+        self.update_tool_proxy(&self.current_canvas_id()?, f)
+    }
+
+    fn update_tool_proxy<R>(
+        &mut self,
+        canvas_id: &CanvasId,
+        f: impl FnOnce(&mut ToolProxy, &mut Services) -> R,
+    ) -> Option<R> {
+        self.service_scope::<ToolProxies, Option<R>>(|proxies, services| {
+            Some(f(proxies.get_mut(canvas_id)?, services))
+        })
     }
 }
