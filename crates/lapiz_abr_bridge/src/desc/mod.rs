@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail, ensure};
-use lapiz_abr::{
-    BlendMode, BrushTip, Descriptor, DynamicsControl, PropertyDynamics as AbrPropertyDynamics,
-    ToolOptions, UnitFloat,
-};
+use lapiz_abr::{BrushTip, Descriptor, DynamicsControl, PropertyDynamics, ToolOptions, UnitFloat};
 use lapiz_assets::asset::AssetId;
 use lapiz_brush::asset::BrushPreset;
-use lapiz_image::blend_modes::BlendMode as ImageBlendMode;
+use lapiz_image::blend_modes::BlendMode;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
@@ -19,40 +16,40 @@ use crate::desc::wgsl::{
 pub mod graph;
 pub mod wgsl;
 
-fn parse_blend_mode(mode: BlendMode) -> ImageBlendMode {
+fn parse_blend_mode(mode: lapiz_abr::BlendMode) -> BlendMode {
     match mode {
-        BlendMode::Normal => ImageBlendMode::Normal,
-        BlendMode::Dissolve => ImageBlendMode::Dissolve,
-        BlendMode::Behind => ImageBlendMode::Behind,
-        BlendMode::Clear => ImageBlendMode::Clear,
-        BlendMode::Darken => ImageBlendMode::Darken,
-        BlendMode::Multiply => ImageBlendMode::Multiply,
-        BlendMode::ColorBurn => ImageBlendMode::ColorBurn,
-        BlendMode::LinearBurn => ImageBlendMode::LinearBurn,
-        BlendMode::DarkerColor => ImageBlendMode::DarkerColor,
-        BlendMode::Lighten => ImageBlendMode::Lighten,
-        BlendMode::Screen => ImageBlendMode::Screen,
-        BlendMode::ColorDodge => ImageBlendMode::ColorDodge,
-        BlendMode::LinearDodge => ImageBlendMode::LinearDodge,
-        BlendMode::LighterColor => ImageBlendMode::LighterColor,
-        BlendMode::Overlay => ImageBlendMode::Overlay,
-        BlendMode::SoftLight => ImageBlendMode::SoftLight,
-        BlendMode::HardLight => ImageBlendMode::HardLight,
-        BlendMode::VividLight => ImageBlendMode::VividLight,
-        BlendMode::LinearLight => ImageBlendMode::LinearLight,
-        BlendMode::PinLight => ImageBlendMode::PinLight,
-        BlendMode::HardMix => ImageBlendMode::HardMix,
-        BlendMode::Difference => ImageBlendMode::Difference,
-        BlendMode::Exclusion => ImageBlendMode::Exclusion,
-        BlendMode::Subtract => ImageBlendMode::Subtract,
-        BlendMode::SubtractTexture => ImageBlendMode::Subtractive,
-        BlendMode::Divide => ImageBlendMode::Divide,
-        BlendMode::Hue => ImageBlendMode::Hue,
-        BlendMode::Saturation => ImageBlendMode::Saturation,
-        BlendMode::Color => ImageBlendMode::Color,
-        BlendMode::Luminosity => ImageBlendMode::Luminosity,
-        BlendMode::Height => ImageBlendMode::Height,
-        BlendMode::LinearHeight => ImageBlendMode::LinearHeight,
+        lapiz_abr::BlendMode::Normal => BlendMode::Normal,
+        lapiz_abr::BlendMode::Dissolve => BlendMode::Dissolve,
+        lapiz_abr::BlendMode::Behind => BlendMode::Behind,
+        lapiz_abr::BlendMode::Clear => BlendMode::Clear,
+        lapiz_abr::BlendMode::Darken => BlendMode::Darken,
+        lapiz_abr::BlendMode::Multiply => BlendMode::Multiply,
+        lapiz_abr::BlendMode::ColorBurn => BlendMode::ColorBurn,
+        lapiz_abr::BlendMode::LinearBurn => BlendMode::LinearBurn,
+        lapiz_abr::BlendMode::DarkerColor => BlendMode::DarkerColor,
+        lapiz_abr::BlendMode::Lighten => BlendMode::Lighten,
+        lapiz_abr::BlendMode::Screen => BlendMode::Screen,
+        lapiz_abr::BlendMode::ColorDodge => BlendMode::ColorDodge,
+        lapiz_abr::BlendMode::LinearDodge => BlendMode::LinearDodge,
+        lapiz_abr::BlendMode::LighterColor => BlendMode::LighterColor,
+        lapiz_abr::BlendMode::Overlay => BlendMode::Overlay,
+        lapiz_abr::BlendMode::SoftLight => BlendMode::SoftLight,
+        lapiz_abr::BlendMode::HardLight => BlendMode::HardLight,
+        lapiz_abr::BlendMode::VividLight => BlendMode::VividLight,
+        lapiz_abr::BlendMode::LinearLight => BlendMode::LinearLight,
+        lapiz_abr::BlendMode::PinLight => BlendMode::PinLight,
+        lapiz_abr::BlendMode::HardMix => BlendMode::HardMix,
+        lapiz_abr::BlendMode::Difference => BlendMode::Difference,
+        lapiz_abr::BlendMode::Exclusion => BlendMode::Exclusion,
+        lapiz_abr::BlendMode::Subtract => BlendMode::Subtract,
+        lapiz_abr::BlendMode::SubtractTexture => BlendMode::Subtractive,
+        lapiz_abr::BlendMode::Divide => BlendMode::Divide,
+        lapiz_abr::BlendMode::Hue => BlendMode::Hue,
+        lapiz_abr::BlendMode::Saturation => BlendMode::Saturation,
+        lapiz_abr::BlendMode::Color => BlendMode::Color,
+        lapiz_abr::BlendMode::Luminosity => BlendMode::Luminosity,
+        lapiz_abr::BlendMode::Height => BlendMode::Height,
+        lapiz_abr::BlendMode::LinearHeight => BlendMode::LinearHeight,
     }
 }
 
@@ -147,7 +144,7 @@ fn parse_dual_brush(
         Some(WgslDualBrush {
             tip,
             flip: dual.flip,
-            blend_mode: parse_blend_mode(dual.blend_mode.unwrap_or(BlendMode::Multiply)),
+            blend_mode: parse_blend_mode(dual.blend_mode.unwrap_or(lapiz_abr::BlendMode::Multiply)),
             spacing,
             main_spacing,
             scatter,
@@ -157,7 +154,7 @@ fn parse_dual_brush(
 }
 
 fn parse_dynamics(
-    dynamics: &AbrPropertyDynamics,
+    dynamics: &PropertyDynamics,
     pressure_override: bool,
     minimum: f32,
 ) -> Result<Dynamics> {
@@ -215,10 +212,10 @@ pub fn parse_desc(
                     (options.flow as f32 / 100.0).clamp(0.0, 1.0),
                     options.use_pressure_overrides_size,
                     options.use_pressure_overrides_opacity,
-                    ImageBlendMode::Clear,
+                    BlendMode::Clear,
                 )
             }
-            _ => (1.0, 1.0, false, false, ImageBlendMode::Normal),
+            _ => (1.0, 1.0, false, false, BlendMode::Normal),
         };
     let minimum_diameter = brush
         .minimum_diameter
@@ -480,7 +477,9 @@ pub fn parse_desc(
                 depth_dynamics,
                 each_tip: brush.txt_c,
                 blend_mode: parse_blend_mode(
-                    brush.texture_blend_mode.unwrap_or(BlendMode::Multiply),
+                    brush
+                        .texture_blend_mode
+                        .unwrap_or(lapiz_abr::BlendMode::Multiply),
                 ),
                 brightness,
                 contrast,
