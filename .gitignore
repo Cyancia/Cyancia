@@ -4,3 +4,6 @@
 .vscode
 .zed
 .claude
+
+# We may not include any external abr bundles for copyright reasons.
+*.abr
