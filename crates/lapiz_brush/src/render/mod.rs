@@ -316,6 +316,11 @@ struct StrokeSession {
     target_layer: LayerBinding,
     has_selection: Buffer,
     selection_layer: LayerBinding,
+
+    pen_input: DynamicBuffer<PenInput>,
+    output_samples: DynamicBuffer<OutputSamples>,
+    dab_infos: BufferVec<DabInfo>,
+    bounds_eval_dispatch: Buffer,
 }
 
 pub struct BrushStrokePreview {
@@ -454,12 +459,44 @@ impl BrushPresetRenderer {
             accumulated_tile_bounds: IRect::EMPTY,
         };
 
+        let pen_input_buffer =
+            DynamicBuffer::new(Some("pen input buffer".into()), BufferUsages::STORAGE);
+
+        let bounds_eval_dispatch = device.create_buffer(&BufferDescriptor {
+            label: Some("bounds eval dispatch"),
+            size: 16,
+            usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
+            mapped_at_creation: false,
+        });
+        let mut output_samples = DynamicBuffer::new(
+            Some("output samples buffer".into()),
+            BufferUsages::COPY_SRC | BufferUsages::STORAGE,
+        );
+        // TODO Use uninit buffer
+        output_samples.push(&OutputSamples::new(MAX_DABS_PER_STROKE));
+        output_samples.write_buffer(device, queue);
+
+        let mut dab_infos = BufferVec::new(
+            Some("dab info buffer".into()),
+            BufferUsages::COPY_SRC | BufferUsages::STORAGE,
+        );
+        // TODO Use uninit buffer
+        for _ in 0..MAX_DABS_PER_STROKE {
+            dab_infos.push(&DabInfo::default());
+        }
+        dab_infos.write_buffer(device, queue);
+
         self.session = Some(StrokeSession {
             shared: Arc::new(Mutex::new(shared)),
             initial_pen_input,
             target_layer,
             has_selection,
             selection_layer,
+
+            pen_input: pen_input_buffer,
+            output_samples,
+            dab_infos,
+            bounds_eval_dispatch,
         });
     }
 
@@ -501,34 +538,9 @@ impl BrushPresetRenderer {
 
         self.resources.update_external_var_buffers(queue);
 
-        let mut pen_input_buffer =
-            DynamicBuffer::new(Some("pen input buffer".into()), BufferUsages::STORAGE);
-        pen_input_buffer.push(&pen_input);
-        pen_input_buffer.write_buffer(device, queue);
-
-        let bounds_eval_dispatch = device.create_buffer(&BufferDescriptor {
-            label: Some("bounds eval dispatch"),
-            size: 16,
-            usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
-            mapped_at_creation: false,
-        });
-        let mut output_samples = DynamicBuffer::new(
-            Some("output samples buffer".into()),
-            BufferUsages::COPY_SRC | BufferUsages::STORAGE,
-        );
-        // TODO Use uninit buffer
-        output_samples.push(&OutputSamples::new(MAX_DABS_PER_STROKE));
-        output_samples.write_buffer(device, queue);
-
-        let mut dab_infos = BufferVec::new(
-            Some("dab info buffer".into()),
-            BufferUsages::COPY_SRC | BufferUsages::STORAGE,
-        );
-        // TODO Use uninit buffer
-        for _ in 0..MAX_DABS_PER_STROKE {
-            dab_infos.push(&DabInfo::default());
-        }
-        dab_infos.write_buffer(device, queue);
+        session.pen_input.clear();
+        session.pen_input.push(&pen_input);
+        session.pen_input.write_buffer(device, queue);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -542,18 +554,18 @@ impl BrushPresetRenderer {
             self.input_sample.dispatch(
                 device,
                 &mut pass,
-                &pen_input_buffer,
+                &session.pen_input,
                 &self.input_sampler_buffer,
-                &output_samples,
-                &bounds_eval_dispatch,
+                &session.output_samples,
+                &session.bounds_eval_dispatch,
                 &self.resources,
                 &session.initial_pen_input,
             );
             self.main_bounds_eval.dispatch(
                 device,
                 &mut pass,
-                &output_samples,
-                &dab_infos,
+                &session.output_samples,
+                &session.dab_infos,
                 &session.target_layer.texture,
                 &session.target_layer.tile_info_buffer,
                 &session.has_selection,
@@ -565,19 +577,19 @@ impl BrushPresetRenderer {
         }
         ec.pop_debug_group();
 
-        let output_samples_readback = create_readback_buffer_and_schedule_copy_buffer(
+        let output_samples_staging = create_readback_buffer_and_schedule_copy_buffer(
             device,
             &mut ec,
-            output_samples.inner_buffer().unwrap(),
+            session.output_samples.inner_buffer().unwrap(),
         );
-        let dab_info_readback = create_readback_buffer_and_schedule_copy_buffer(
+        let dab_info_staging = create_readback_buffer_and_schedule_copy_buffer(
             device,
             &mut ec,
-            dab_infos.inner_buffer().unwrap(),
+            session.dab_infos.inner_buffer().unwrap(),
         );
         let samples_readback =
-            readback_buffer_on_submit_async(&mut ec, &output_samples_readback, ..);
-        let dab_info_readback = readback_buffer_on_submit_async(&mut ec, &dab_info_readback, ..);
+            readback_buffer_on_submit_async(&mut ec, &output_samples_staging, ..);
+        let dab_info_readback = readback_buffer_on_submit_async(&mut ec, &dab_info_staging, ..);
 
         // unsafe {
         //     device.start_graphics_debugger_capture();
