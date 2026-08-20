@@ -1034,41 +1034,30 @@ async fn postprocess_stroke(
                 max: new_dab_info.bound_max,
             });
         }
-    }
 
-    let intermediate_buffers = [
-        intermediate_buffers[0].binding().unwrap(),
-        intermediate_buffers[1].binding().unwrap(),
-    ];
+        let intermediate_buffers = [
+            intermediate_buffers[0].binding().unwrap(),
+            intermediate_buffers[1].binding().unwrap(),
+        ];
 
-    let mut ec = device.create_command_encoder(&Default::default());
-
-    {
-        let mut pass = ec.begin_compute_pass(&Default::default());
-
-        for StrokePostprocessPipelineCache {
-            pipeline,
-            dab_info_buffer,
-            stroke_pp_data,
-            ..
-        } in pipeline_cache.iter_mut()
+        let prepared = pipeline.main.prepare(
+            device,
+            &stroke_pp_data,
+            &target_layer,
+            &has_selection,
+            &selection_layer,
+            &dab_info_buffer,
+            &resources,
+            &intermediate_buffers,
+            *round,
+        );
+        let mut ec = device.create_command_encoder(&Default::default());
         {
-            let prepared = pipeline.main.prepare(
-                device,
-                &stroke_pp_data,
-                &target_layer,
-                &has_selection,
-                &selection_layer,
-                &dab_info_buffer,
-                &resources,
-                &intermediate_buffers,
-                *round,
-            );
+            let mut pass = ec.begin_compute_pass(&Default::default());
             pipeline.main.dispatch(&mut pass, &prepared, round);
         }
+        queue.submit([ec.finish()]);
     }
-
-    queue.submit([ec.finish()]);
 }
 
 #[derive(ShaderType, Debug, Clone)]
