@@ -47,8 +47,8 @@ use crate::{
         pipeline::{
             BrushInputSamplingPipeline, BrushMainBoundsEvalPipeline, BrushMainPipeline,
             BrushPostProcessBoundsEvalPipeline, BrushPostProcessPipeline,
-            PreparedBrushMainBoundsEvalPipelineData, PreparedDynamicBrushMainPipelineData,
-            PreparedInputSamplingPipelineData, PreparedStaticBrushMainPipelineData,
+            PreparedBrushMainBoundsEvalPipelineData, PreparedBrushMainPipelineData,
+            PreparedInputSamplingPipelineData,
         },
     },
 };
@@ -326,7 +326,7 @@ struct StrokeSession {
 
     input_sample_prepared: PreparedInputSamplingPipelineData,
     main_bounds_eval_prepared: PreparedBrushMainBoundsEvalPipelineData,
-    main_prepared_static: PreparedStaticBrushMainPipelineData,
+    main_prepared: PreparedBrushMainPipelineData,
 }
 
 pub struct BrushStrokePreview {
@@ -506,7 +506,7 @@ impl BrushPresetRenderer {
             ),
         ];
 
-        let main_prepared_static = self.main.prepare_static(
+        let main_prepared = self.main.prepare(
             device,
             &target_layer,
             &has_selection,
@@ -514,11 +514,7 @@ impl BrushPresetRenderer {
             &output_samples_aligned,
             &dab_infos_aligned,
             &self.resources,
-            &initial_pen_input,
-        );
-
-        let main_prepared_dynamic = self.main.prepare_dynamic(
-            device,
+            initial_pen_input.inner_buffer().unwrap(),
             &[
                 intermediate_buffers[0].binding_or_empty(),
                 intermediate_buffers[1].binding_or_empty(),
@@ -555,12 +551,16 @@ impl BrushPresetRenderer {
             round: 0,
             accumulated_tile_bounds: IRect::EMPTY,
 
-            samples_buffer: output_samples_aligned,
-            dab_infos_buffer: dab_infos_aligned,
-            main_prepared_static: main_prepared_static.clone(),
-            main_prepared_dynamic: main_prepared_dynamic,
+            main_prepared: main_prepared.clone(),
             samples_offsets,
             dab_info_offsets,
+            target_layer: target_layer.clone(),
+            has_selection: has_selection.clone(),
+            selection_layer: selection_layer.clone(),
+            output_samples_aligned,
+            dab_infos_aligned,
+            resources: self.resources.clone(),
+            initial_pen_input: initial_pen_input.inner_buffer().unwrap().clone(),
         };
 
         self.session = Some(StrokeSession {
@@ -578,7 +578,7 @@ impl BrushPresetRenderer {
 
             input_sample_prepared,
             main_bounds_eval_prepared,
-            main_prepared_static,
+            main_prepared,
         });
     }
 
@@ -745,15 +745,19 @@ struct SharedBrushRendererMainPassState {
     queue: Queue,
 
     main: BrushMainPipeline,
+    target_layer: LayerBinding,
+    has_selection: Buffer,
+    selection_layer: LayerBinding,
+    output_samples_aligned: DynamicBuffer<ComputedPenInput>,
+    dab_infos_aligned: DynamicBuffer<DabInfo>,
+    resources: StrokeResources,
+    initial_pen_input: Buffer,
 
     intermediate_buffers: [DynamicLayerStorage; 2],
     round: u32,
     accumulated_tile_bounds: IRect,
 
-    samples_buffer: DynamicBuffer<ComputedPenInput>,
-    dab_infos_buffer: DynamicBuffer<DabInfo>,
-    main_prepared_static: PreparedStaticBrushMainPipelineData,
-    main_prepared_dynamic: PreparedDynamicBrushMainPipelineData,
+    main_prepared: PreparedBrushMainPipelineData,
     samples_offsets: Vec<u32>,
     dab_info_offsets: Vec<u32>,
 }
@@ -772,13 +776,17 @@ async fn brush_renderer_worker_main(
             device,
             queue,
             main,
+            target_layer,
+            has_selection,
+            selection_layer,
+            output_samples_aligned,
+            dab_infos_aligned,
+            resources,
+            initial_pen_input,
             intermediate_buffers,
             round,
             accumulated_tile_bounds,
-            samples_buffer,
-            dab_infos_buffer,
-            main_prepared_static,
-            main_prepared_dynamic,
+            main_prepared,
             samples_offsets,
             dab_info_offsets,
         } = &mut *shared;
@@ -786,8 +794,8 @@ async fn brush_renderer_worker_main(
         let dispatch_span = tracing::info_span!("main_dispatch");
         let _span = dispatch_span.enter();
 
-        samples_buffer.clear();
-        dab_infos_buffer.clear();
+        output_samples_aligned.clear();
+        dab_infos_aligned.clear();
 
         let previous_tiles = intermediate_buffers[0].len();
 
@@ -797,8 +805,8 @@ async fn brush_renderer_worker_main(
             .take(samples.n_samples as usize)
             .zip(dab_infos)
         {
-            samples_buffer.push(&sample);
-            dab_infos_buffer.push(&dab_info);
+            output_samples_aligned.push(&sample);
+            dab_infos_aligned.push(&dab_info);
 
             for b in intermediate_buffers.as_mut() {
                 b.allocate_tiles(IRect {
@@ -814,21 +822,28 @@ async fn brush_renderer_worker_main(
 
         let new_tiles = intermediate_buffers[0].len();
         if previous_tiles != new_tiles {
-            *main_prepared_dynamic = main.prepare_dynamic(
+            *main_prepared = main.prepare(
                 device,
+                target_layer,
+                has_selection,
+                selection_layer,
+                output_samples_aligned,
+                dab_infos_aligned,
+                resources,
+                initial_pen_input,
                 &[
                     intermediate_buffers[0].binding_or_empty(),
                     intermediate_buffers[1].binding_or_empty(),
                 ],
-            );
+            )
         }
 
         if accumulated_tile_bounds.is_empty() {
             return Err(anyhow::anyhow!("accumulated_tile_bounds is empty"));
         }
 
-        samples_buffer.write_buffer(&device, &queue);
-        dab_infos_buffer.write_buffer(&device, &queue);
+        output_samples_aligned.write_buffer(&device, &queue);
+        dab_infos_aligned.write_buffer(&device, &queue);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -839,8 +854,7 @@ async fn brush_renderer_worker_main(
             });
             main.dispatch(
                 &mut pass,
-                &main_prepared_static,
-                &main_prepared_dynamic,
+                &main_prepared,
                 &samples_offsets,
                 &dab_info_offsets,
                 round,

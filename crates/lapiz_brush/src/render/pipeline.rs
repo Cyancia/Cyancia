@@ -120,19 +120,14 @@ impl BrushInputSamplingPipeline {
 }
 
 #[derive(Clone)]
-pub struct PreparedStaticBrushMainPipelineData {
-    bind_group: BindGroup,
-}
-
-pub struct PreparedDynamicBrushMainPipelineData {
+pub struct PreparedBrushMainPipelineData {
     bind_groups: [BindGroup; 2],
     workgroups: UVec3,
 }
 
 #[derive(Clone)]
 pub struct BrushMainPipeline {
-    static_layout: BindGroupLayout,
-    dynamic_layout: BindGroupLayout,
+    layout: BindGroupLayout,
     pipeline: ComputePipeline,
 }
 
@@ -151,6 +146,24 @@ impl BrushMainPipeline {
                         0,
                         binding_types::storage_buffer_read_only::<ComputedPenInput>(true),
                     ),
+                    (
+                        5,
+                        binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    ),
+                    (
+                        6,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::ReadOnly,
+                        ),
+                    ),
+                    (
+                        7,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::WriteOnly,
+                        ),
+                    ),
                     (8, binding_types::storage_buffer::<DabInfo>(true)),
                     (
                         13,
@@ -161,28 +174,9 @@ impl BrushMainPipeline {
             .to_vec(),
         );
 
-        let static_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("brush main static layout"),
-            entries: &layout_entries,
-        });
-
-        let dynamic_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush main dynamic layout"),
-            entries: BindGroupLayoutEntries::sequential(
-                ShaderStages::COMPUTE,
-                (
-                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-                    binding_types::texture_storage_2d_array(
-                        resources.target_layer_format.wgpu_format(),
-                        StorageTextureAccess::ReadOnly,
-                    ),
-                    binding_types::texture_storage_2d_array(
-                        resources.target_layer_format.wgpu_format(),
-                        StorageTextureAccess::WriteOnly,
-                    ),
-                ),
-            )
-            .as_ref(),
+            entries: &layout_entries,
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -192,7 +186,7 @@ impl BrushMainPipeline {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("brush main pipeline layout"),
-            bind_group_layouts: &[&static_layout, &dynamic_layout],
+            bind_group_layouts: &[&layout],
             push_constant_ranges: &[],
         });
 
@@ -205,15 +199,11 @@ impl BrushMainPipeline {
             cache: None,
         });
 
-        Self {
-            pipeline,
-            static_layout,
-            dynamic_layout,
-        }
+        Self { pipeline, layout }
     }
 
     #[must_use]
-    pub fn prepare_static(
+    pub fn prepare(
         &self,
         device: &Device,
         target_layer: &LayerBinding,
@@ -222,57 +212,46 @@ impl BrushMainPipeline {
         samples: &DynamicBuffer<ComputedPenInput>,
         dab_infos: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
-        initial_pen_input: &DynamicBuffer<ComputedPenInput>,
-    ) -> PreparedStaticBrushMainPipelineData {
-        let mut entries = common_bind_group_entries(
-            resources,
-            &target_layer.texture,
-            &target_layer.tile_info_buffer,
-            has_selection,
-            &selection_layer.texture,
-            &selection_layer.tile_info_buffer,
-        );
-        entries.extend(
-            DynamicBindGroupEntries::new_with_indices((
-                (0, samples.binding().unwrap()),
-                (8, dab_infos.binding().unwrap()),
-                (13, initial_pen_input.binding().unwrap()),
-            ))
-            .to_vec(),
-        );
-
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush main static bind group"),
-            layout: &self.static_layout,
-            entries: &entries,
-        });
-
-        PreparedStaticBrushMainPipelineData { bind_group }
-    }
-
-    pub fn prepare_dynamic(
-        &self,
-        device: &Device,
+        initial_pen_input: &Buffer,
         intermediate_buffers: &[LayerBinding; 2],
-    ) -> PreparedDynamicBrushMainPipelineData {
+    ) -> PreparedBrushMainPipelineData {
         let entries = |is_even| {
+            let mut entries = common_bind_group_entries(
+                resources,
+                &target_layer.texture,
+                &target_layer.tile_info_buffer,
+                has_selection,
+                &selection_layer.texture,
+                &selection_layer.tile_info_buffer,
+            );
+
             let (read_idx, write_idx) = if is_even { (0, 1) } else { (1, 0) };
-            DynamicBindGroupEntries::sequential((
-                intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
-                &intermediate_buffers[read_idx].texture,
-                &intermediate_buffers[write_idx].texture,
-            ))
+            entries.extend(
+                DynamicBindGroupEntries::new_with_indices((
+                    (0, samples.binding().unwrap()),
+                    (
+                        5,
+                        intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
+                    ),
+                    (6, &intermediate_buffers[read_idx].texture),
+                    (7, &intermediate_buffers[write_idx].texture),
+                    (8, dab_infos.binding().unwrap()),
+                    (13, initial_pen_input.as_entire_binding()),
+                ))
+                .to_vec(),
+            );
+            entries
         };
 
         let bind_group_even = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group even"),
-            layout: &self.dynamic_layout,
+            layout: &self.layout,
             entries: &entries(true),
         });
 
         let bind_group_odd = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush main bind group odd"),
-            layout: &self.dynamic_layout,
+            layout: &self.layout,
             entries: &entries(false),
         });
 
@@ -287,7 +266,7 @@ impl BrushMainPipeline {
             n_tiles,
         );
 
-        PreparedDynamicBrushMainPipelineData {
+        PreparedBrushMainPipelineData {
             bind_groups: [bind_group_even, bind_group_odd],
             workgroups,
         }
@@ -296,8 +275,7 @@ impl BrushMainPipeline {
     pub fn dispatch(
         &self,
         pass: &mut ComputePass,
-        static_data: &PreparedStaticBrushMainPipelineData,
-        dynamic_data: &PreparedDynamicBrushMainPipelineData,
+        data: &PreparedBrushMainPipelineData,
         samples_offsets: &[u32],
         dab_info_offsets: &[u32],
         round: &mut u32,
@@ -311,16 +289,10 @@ impl BrushMainPipeline {
                 pass.push_debug_group(&format!("brush preset main dispatch {}", i));
                 pass.set_bind_group(
                     0,
-                    &static_data.bind_group,
+                    &data.bind_groups[*round as usize % 2],
                     &[samples_offsets[i], dab_info_offsets[i]],
                 );
-
-                pass.set_bind_group(1, &dynamic_data.bind_groups[*round as usize % 2], &[]);
-                pass.dispatch_workgroups(
-                    dynamic_data.workgroups.x,
-                    dynamic_data.workgroups.y,
-                    dynamic_data.workgroups.z,
-                );
+                pass.dispatch_workgroups(data.workgroups.x, data.workgroups.y, data.workgroups.z);
                 pass.pop_debug_group();
                 *round += 1;
             }
@@ -336,15 +308,13 @@ impl BrushMainPipeline {
 }
 
 pub struct PreparedBrushPostProcessPipelineData {
-    static_bind_group: BindGroup,
-    dynamic_bind_group: BindGroup,
+    bind_group: BindGroup,
     workgroups: UVec3,
 }
 
 #[derive(Clone)]
 pub struct BrushPostProcessPipeline {
-    static_layout: BindGroupLayout,
-    dynamic_layout: BindGroupLayout,
+    layout: BindGroupLayout,
     pipeline: ComputePipeline,
 }
 
@@ -363,34 +333,33 @@ impl BrushPostProcessPipeline {
                         0,
                         binding_types::storage_buffer_read_only::<StrokePostprocessData>(false),
                     ),
+                    (
+                        5,
+                        binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
+                    ),
+                    (
+                        6,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::ReadOnly,
+                        ),
+                    ),
+                    (
+                        7,
+                        binding_types::texture_storage_2d_array(
+                            resources.target_layer_format.wgpu_format(),
+                            StorageTextureAccess::WriteOnly,
+                        ),
+                    ),
                     (8, binding_types::storage_buffer::<DabInfo>(false)),
                 ),
             )
             .to_vec(),
         );
 
-        let static_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("brush postprocess layout"),
             entries: &layout_entries,
-        });
-
-        let dynamic_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("brush postprocess dynamic layout"),
-            entries: BindGroupLayoutEntries::sequential(
-                ShaderStages::COMPUTE,
-                (
-                    binding_types::storage_buffer_read_only::<GpuTileInfo>(false),
-                    binding_types::texture_storage_2d_array(
-                        resources.target_layer_format.wgpu_format(),
-                        StorageTextureAccess::ReadOnly,
-                    ),
-                    binding_types::texture_storage_2d_array(
-                        resources.target_layer_format.wgpu_format(),
-                        StorageTextureAccess::WriteOnly,
-                    ),
-                ),
-            )
-            .as_ref(),
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -400,7 +369,7 @@ impl BrushPostProcessPipeline {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("brush postprocess pipeline layout"),
-            bind_group_layouts: &[&static_layout, &dynamic_layout],
+            bind_group_layouts: &[&layout],
             push_constant_ranges: &[],
         });
 
@@ -413,11 +382,7 @@ impl BrushPostProcessPipeline {
             cache: None,
         });
 
-        Self {
-            pipeline,
-            static_layout,
-            dynamic_layout,
-        }
+        Self { pipeline, layout }
     }
 
     #[must_use]
@@ -449,25 +414,20 @@ impl BrushPostProcessPipeline {
         bind_group_entries.extend(
             DynamicBindGroupEntries::new_with_indices((
                 (0, stroke_pp_data.binding().unwrap()),
+                (
+                    5,
+                    intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
+                ),
+                (6, &intermediate_buffers[read_idx].texture),
+                (7, &intermediate_buffers[write_idx].texture),
                 (8, dab_info.binding().unwrap()),
             ))
             .to_vec(),
         );
-        let static_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("brush postprocess static bind group"),
-            layout: &self.static_layout,
+            layout: &self.layout,
             entries: &bind_group_entries,
-        });
-
-        let dynamic_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("brush postprocess dynamic bind group"),
-            layout: &self.dynamic_layout,
-            entries: &DynamicBindGroupEntries::sequential((
-                intermediate_buffers[0].tile_info_buffer.as_entire_binding(),
-                &intermediate_buffers[read_idx].texture,
-                &intermediate_buffers[write_idx].texture,
-            ))
-            .to_vec(),
         });
 
         let n_tiles = intermediate_buffers[0]
@@ -476,8 +436,7 @@ impl BrushPostProcessPipeline {
             .depth_or_array_layers();
 
         PreparedBrushPostProcessPipelineData {
-            static_bind_group,
-            dynamic_bind_group,
+            bind_group,
             workgroups: UVec3::new(
                 GpuTileStorage::TILE_SIZE.div_ceil(16),
                 GpuTileStorage::TILE_SIZE.div_ceil(16),
@@ -495,8 +454,7 @@ impl BrushPostProcessPipeline {
         pass.push_debug_group("brush preset postprocess");
         {
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &data.static_bind_group, &[]);
-            pass.set_bind_group(1, &data.dynamic_bind_group, &[]);
+            pass.set_bind_group(0, &data.bind_group, &[]);
             pass.dispatch_workgroups(data.workgroups.x, data.workgroups.y, data.workgroups.z);
         }
         pass.pop_debug_group();

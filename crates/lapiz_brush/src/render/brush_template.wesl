@@ -8,6 +8,9 @@ import package::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, 
 @group(0) @binding(2) var<storage> texture_bounds: array<URect>;
 @group(0) @binding(3) var<storage> target_layer_tile_info: array<TileInfo>;
 @group(0) @binding(4) var target_layer: texture_storage_2d_array<r32uint, read>;
+@if(!BOUNDS_EVAL) @group(0) @binding(5) var<storage> buffer_tile_info: array<TileInfo>;
+@if(!BOUNDS_EVAL) @group(0) @binding(6) var stroke_buffer_src: texture_storage_2d_array<r32uint, read>;
+@if(!BOUNDS_EVAL) @group(0) @binding(7) var stroke_buffer_dst: texture_storage_2d_array<r32uint, write>;
 @if(!BOUNDS_EVAL || POSTPROCESS) @group(0) @binding(8) var<storage, read_write> dab_info: DabInfo;
 @if(BOUNDS_EVAL && !POSTPROCESS) @group(0) @binding(8) var<storage, read_write> dab_info: array<DabInfo>;
 @group(0) @binding(9) var selection: texture_storage_2d_array<r8unorm, read>;
@@ -15,10 +18,6 @@ import package::brush_types::{StrokeInfo, StrokePostprocessData, OutputSamples, 
 @group(0) @binding(11) var<storage> has_selection: u32;
 @group(0) @binding(12) var<storage> canvas_resources: CanvasResources;
 @group(0) @binding(13) var<storage> initial_pen_input: ComputedPenInput;
-
-@if(!BOUNDS_EVAL) @group(1) @binding(0) var<storage> buffer_tile_info: array<TileInfo>;
-@if(!BOUNDS_EVAL) @group(1) @binding(1) var stroke_buffer_src: texture_storage_2d_array<r32uint, read>;
-@if(!BOUNDS_EVAL) @group(1) @binding(2) var stroke_buffer_dst: texture_storage_2d_array<r32uint, write>;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
