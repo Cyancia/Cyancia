@@ -76,6 +76,7 @@ pub struct BrushTool {
     next_stroke_id: u64,
     active_stroke_id: Option<u64>,
     queued_commands: HashMap<u64, QueuedUndoCommand>,
+    request_preview_when_preview_ongoing: bool,
     preview_ongoing: bool,
 }
 
@@ -142,6 +143,7 @@ impl ToolFunction for BrushTool {
             .try_service_scope::<CurrentBrushPreset, _>(|brush, services| {
                 let render = brush.0.update_stroke(mouse, services).discard();
                 if self.preview_ongoing {
+                    self.request_preview_when_preview_ongoing = true;
                     return render;
                 }
 
@@ -201,7 +203,18 @@ impl ToolFunction for BrushTool {
                     dirty_tiles,
                 });
 
-                Task::none()
+                if !self.request_preview_when_preview_ongoing {
+                    return Task::none();
+                }
+
+                self.request_preview_when_preview_ongoing = false;
+                self.preview_ongoing = true;
+
+                services
+                    .try_service_scope::<CurrentBrushPreset, _>(|brush, services| {
+                        brush.0.preview().map(BrushToolMessage::StrokePreview)
+                    })
+                    .unwrap_or_else(Task::none)
             }
             BrushToolMessage::StrokeResult(BrushStrokeResult {
                 stroke_id,
