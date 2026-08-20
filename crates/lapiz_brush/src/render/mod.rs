@@ -636,11 +636,19 @@ impl BrushPresetRenderer {
         Task::future(async move {
             let (mut intermediate_buffers, mut round, mut accumulated_tile_bounds) = {
                 let shared = shared.lock();
+
                 (
-                    [
-                        shared.intermediate_buffers[0].deep_clone(),
-                        shared.intermediate_buffers[1].deep_clone(),
-                    ],
+                    if shared.round % 2 == 0 {
+                        [
+                            shared.intermediate_buffers[0].deep_clone(),
+                            shared.intermediate_buffers[1].create_allocated_empty_sibling(),
+                        ]
+                    } else {
+                        [
+                            shared.intermediate_buffers[0].create_allocated_empty_sibling(),
+                            shared.intermediate_buffers[1].deep_clone(),
+                        ]
+                    },
                     shared.round,
                     shared.accumulated_tile_bounds,
                 )
@@ -797,10 +805,17 @@ async fn brush_renderer_worker_stroke_postprocess(
     let (mut intermediate_buffers, mut round, mut accumulated_tile_bounds) = {
         let shared = shared.lock();
         (
-            [
-                shared.intermediate_buffers[0].deep_clone(),
-                shared.intermediate_buffers[1].deep_clone(),
-            ],
+            if shared.round % 2 == 0 {
+                [
+                    shared.intermediate_buffers[0].deep_clone(),
+                    shared.intermediate_buffers[1].create_allocated_empty_sibling(),
+                ]
+            } else {
+                [
+                    shared.intermediate_buffers[0].create_allocated_empty_sibling(),
+                    shared.intermediate_buffers[1].deep_clone(),
+                ]
+            },
             shared.round,
             shared.accumulated_tile_bounds,
         )
