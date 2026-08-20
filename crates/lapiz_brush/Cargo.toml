@@ -35,6 +35,7 @@ iced_runtime.workspace = true
 iced_wgpu.workspace = true
 iced_widget.workspace = true
 image.workspace = true
+indexmap.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 ringbuffer.workspace = true

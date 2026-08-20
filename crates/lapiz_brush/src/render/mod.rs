@@ -7,6 +7,7 @@ use encase::ShaderType;
 use futures::channel::oneshot;
 use glam::{IVec2, Vec2, Vec4};
 use iced_runtime::Task;
+use indexmap::IndexSet;
 use lapiz_assets::{AssetAppExt, store::AssetRegistry};
 use lapiz_canvas::{CanvasAppExt, CanvasId};
 use lapiz_color::ForegroundBackgroundColorExt;
@@ -826,8 +827,9 @@ async fn brush_renderer_worker_main(
         output_samples_aligned.clear();
         dab_infos_aligned.clear();
 
-        let previous_tiles = intermediate_buffers[0].len();
+        let old_generation = intermediate_buffers[0].allocation_generation();
 
+        let mut tiles_to_allocate = IndexSet::new();
         for (sample, dab_info) in samples
             .samples
             .into_iter()
@@ -837,20 +839,24 @@ async fn brush_renderer_worker_main(
             output_samples_aligned.push(&sample);
             dab_infos_aligned.push(&dab_info);
 
-            for b in intermediate_buffers.as_mut() {
-                b.allocate_tiles(IRect {
-                    min: dab_info.bound_min,
-                    max: dab_info.bound_max,
-                });
-            }
-            *accumulated_tile_bounds = accumulated_tile_bounds.union(IRect {
+            let rect = IRect {
                 min: dab_info.bound_min,
                 max: dab_info.bound_max,
-            });
+            };
+            tiles_to_allocate.extend(
+                (rect.min.y..rect.max.y)
+                    .flat_map(|y| (rect.min.x..rect.max.x).map(move |x| IVec2::new(x, y))),
+            );
+            *accumulated_tile_bounds = accumulated_tile_bounds.union(rect);
         }
 
+        for b in intermediate_buffers.as_mut() {
+            b.allocate_tiles_batch(&tiles_to_allocate);
+        }
+
+        let new_generation = intermediate_buffers[0].allocation_generation();
         let new_tiles = intermediate_buffers[0].len();
-        if previous_tiles != new_tiles {
+        if old_generation != new_generation {
             *main_prepared = main.prepare(
                 device,
                 target_layer,

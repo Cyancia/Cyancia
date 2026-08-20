@@ -351,6 +351,7 @@ pub struct DynamicLayerStorage {
     texture: Option<TextureView>,
     tiles: IndexMap<IVec2, TextureView>,
     tile_info_buffer: BufferVec<GpuTileInfo>,
+    allocation_generation: u64,
 }
 
 impl DynamicLayerStorage {
@@ -385,7 +386,12 @@ impl DynamicLayerStorage {
                 ),
                 tile_info_buffer_usage.unwrap_or(DEFAULT_LAYER_TILE_INFO_BUFFER_USAGES),
             ),
+            allocation_generation: 0,
         }
+    }
+
+    pub fn allocation_generation(&self) -> u64 {
+        self.allocation_generation
     }
 
     pub fn layer_info(&self) -> &GpuLayerInfo {
@@ -573,11 +579,12 @@ impl DynamicLayerStorage {
     }
 
     pub fn reserve(&mut self, additional: usize) {
-        if self.len() + additional <= self.capacity() {
+        let required = self.len() + additional;
+        if required <= self.capacity() {
             return;
         }
 
-        let new_capacity = self.len() + additional;
+        let new_capacity = required.max(self.capacity().max(1) * 2);
         let new_texture = self.device.create_texture(&TextureDescriptor {
             label: Some(&self.texture_label),
             size: Extent3d {
@@ -619,6 +626,12 @@ impl DynamicLayerStorage {
                 ..Default::default()
             });
         }
+
+        self.tile_info_buffer.reserve_capacity(
+            &self.device,
+            new_capacity * u64::from(GpuTileInfo::min_size()) as usize,
+        );
+        self.allocation_generation += 1;
     }
 
     pub fn clear(&mut self) {
@@ -715,6 +728,7 @@ impl DynamicLayerStorage {
             texture: Some(new_texture_view),
             tiles: new_tiles,
             tile_info_buffer: new_tile_info_buffer,
+            allocation_generation: 0,
         }
     }
 

@@ -231,6 +231,26 @@ impl<T: ShaderType + WriteInto> BufferVec<T> {
         self.last_written = Some(len);
     }
 
+    pub fn reserve_capacity(&mut self, device: &Device, capacity_bytes: usize) {
+        let current = self
+            .buffer
+            .as_ref()
+            .map(|b| b.size() as usize)
+            .unwrap_or_default();
+        if current >= capacity_bytes {
+            return;
+        }
+
+        let mut contents = self.data.clone();
+        contents.resize(capacity_bytes, 0);
+        let buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: self.label.as_deref(),
+            contents: &contents,
+            usage: self.usage,
+        });
+        self.buffer = Some(buffer);
+    }
+
     pub fn binding(&self) -> Option<BindingResource<'_>> {
         Some(BindingResource::Buffer(BufferBinding {
             buffer: self.buffer.as_ref()?,

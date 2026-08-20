@@ -3115,6 +3115,7 @@ dependencies = [
  "iced_wgpu",
  "iced_widget",
  "image",
+ "indexmap",
  "lapiz_assets",
  "lapiz_canvas",
  "lapiz_color",
