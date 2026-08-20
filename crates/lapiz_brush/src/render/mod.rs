@@ -325,7 +325,7 @@ struct StrokeSession {
     pen_input: DynamicBuffer<PenInput>,
     output_samples_packed: DynamicBuffer<OutputSamples>,
     dab_infos_packed: BufferVec<DabInfo>,
-    bounds_eval_dispatch: Buffer,
+    main_bounds_eval_dispatch: Buffer,
 
     input_sample_prepared: PreparedInputSamplingPipelineData,
     main_bounds_eval_prepared: PreparedBrushMainBoundsEvalPipelineData,
@@ -452,9 +452,9 @@ impl BrushPresetRenderer {
         pen_input_buffer.push(&PenInput::default());
         pen_input_buffer.write_buffer(device, queue);
 
-        let bounds_eval_dispatch = device.create_buffer(&BufferDescriptor {
+        let main_bounds_eval_dispatch = device.create_buffer(&BufferDescriptor {
             label: Some("bounds eval dispatch"),
-            size: 16,
+            size: std::mem::size_of::<u32>() as u64 * 4,
             usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
             mapped_at_creation: false,
         });
@@ -529,7 +529,7 @@ impl BrushPresetRenderer {
             &pen_input_buffer,
             &self.input_sampler_buffer,
             &output_samples_packed,
-            &bounds_eval_dispatch,
+            &main_bounds_eval_dispatch,
             &self.resources,
             &initial_pen_input,
         );
@@ -616,7 +616,7 @@ impl BrushPresetRenderer {
             output_samples_packed,
             dab_infos_packed,
 
-            bounds_eval_dispatch,
+            main_bounds_eval_dispatch,
 
             input_sample_prepared,
             main_bounds_eval_prepared,
@@ -667,8 +667,11 @@ impl BrushPresetRenderer {
 
             self.input_sample
                 .dispatch(&mut pass, &session.input_sample_prepared);
-            self.main_bounds_eval
-                .dispatch(&mut pass, &session.main_bounds_eval_prepared);
+            self.main_bounds_eval.dispatch(
+                &mut pass,
+                &session.main_bounds_eval_prepared,
+                &session.main_bounds_eval_dispatch,
+            );
         }
         ec.pop_debug_group();
 

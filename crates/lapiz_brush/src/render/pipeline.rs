@@ -561,12 +561,17 @@ impl BrushMainBoundsEvalPipeline {
         PreparedBrushMainBoundsEvalPipelineData { bind_group }
     }
 
-    pub fn dispatch(&self, pass: &mut ComputePass, data: &PreparedBrushMainBoundsEvalPipelineData) {
+    pub fn dispatch(
+        &self,
+        pass: &mut ComputePass,
+        data: &PreparedBrushMainBoundsEvalPipelineData,
+        workgroups: &Buffer,
+    ) {
         pass.push_debug_group("brush preset main bounds eval");
         {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &data.bind_group, &[]);
-            pass.dispatch_workgroups(1, 1, MAX_DABS_PER_STROKE.div_ceil(16));
+            pass.dispatch_workgroups_indirect(workgroups, 0);
         }
         pass.pop_debug_group();
     }
@@ -675,7 +680,7 @@ impl BrushPostProcessBoundsEvalPipeline {
         {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &data.bind_group, &[]);
-            pass.dispatch_workgroups(1, 1, MAX_DABS_PER_STROKE.div_ceil(16));
+            pass.dispatch_workgroups(1, 1, 1);
         }
         pass.pop_debug_group();
     }
