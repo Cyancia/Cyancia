@@ -67,7 +67,7 @@ fn main() {
     let p2 = new_input.bezier_control_cur;
     let p3 = new_input.position;
 
-    let new_computed = compute_pen_input(new_input, new_input, p0, p1, p2, p3, 1.0);
+    let new_computed = compute_pen_input(new_input, new_input, p0, p1, p2, p3, 1.0, 0);
 
     if input_sampler.has_last_sample == 0 {
         input_sampler.last_input = new_input;

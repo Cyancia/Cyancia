@@ -740,7 +740,6 @@ impl Dock<Theme, Renderer> for CanvasDock {
             }
             CanvasDockMessage::ToolFunctionMessage(message) => services
                 .update_tool_proxy(&self.canvas, |tool_proxy, services| {
-                    dbg!();
                     tool_proxy.handle_message(message, services)
                 })
                 .unwrap_or_else(Task::none)

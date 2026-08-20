@@ -25,7 +25,7 @@ use crate::{
     asset::BrushPreset,
     input_processing::{BasicStabilizer, InputProcessor},
     instance::BrushPresetInstance,
-    render::{BrushRenderUpdate, CanvasBrushPresetOperator},
+    render::{BrushStrokePreview, BrushStrokeResult, CanvasBrushPresetOperator},
 };
 
 pub struct CurrentBrushPreset(pub CanvasBrushPresetOperator);
@@ -76,12 +76,14 @@ pub struct BrushTool {
     next_stroke_id: u64,
     active_stroke_id: Option<u64>,
     queued_commands: HashMap<u64, QueuedUndoCommand>,
+    preview_ongoing: bool,
 }
 
 // TODO
 #[allow(clippy::large_enum_variant)]
 pub enum BrushToolMessage {
-    Render(BrushRenderUpdate),
+    StrokePreview(Option<BrushStrokePreview>),
+    StrokeResult(BrushStrokeResult),
     UpdateExternalVariable {
         id: ExternalVariableId,
         message: ErasedGraphLiteralUpdateMessage,
@@ -120,7 +122,7 @@ impl ToolFunction for BrushTool {
                 brush
                     .0
                     .begin_stroke(mouse, stroke_id, canvas_id, services)
-                    .map(BrushToolMessage::Render)
+                    .discard()
             })
             .unwrap_or_else(Task::none)
     }
@@ -134,10 +136,15 @@ impl ToolFunction for BrushTool {
     ) -> Task<Self::Message> {
         services
             .try_service_scope::<CurrentBrushPreset, _>(|brush, services| {
-                brush
-                    .0
-                    .update_stroke(mouse, services)
-                    .map(BrushToolMessage::Render)
+                let render = brush.0.update_stroke(mouse, services).discard();
+                if self.preview_ongoing {
+                    return render;
+                }
+
+                let preview = brush.0.preview().map(BrushToolMessage::StrokePreview);
+                self.preview_ongoing = true;
+
+                render.chain(preview)
             })
             .unwrap_or_else(Task::none)
     }
@@ -155,7 +162,7 @@ impl ToolFunction for BrushTool {
                 brush
                     .0
                     .end_stroke(mouse, services)
-                    .map(BrushToolMessage::Render)
+                    .map(BrushToolMessage::StrokeResult)
             })
             .unwrap_or_else(Task::none)
     }
@@ -166,16 +173,23 @@ impl ToolFunction for BrushTool {
         services: &mut Services,
     ) -> Task<Self::Message> {
         match message {
-            BrushToolMessage::Render(BrushRenderUpdate::Preview {
-                stroke_id,
-                canvas_id,
-                target_layer_id,
-                overrider,
-                dirty_tiles,
-            }) => {
+            BrushToolMessage::StrokePreview(maybe_preview) => {
+                self.preview_ongoing = false;
+                let Some(BrushStrokePreview {
+                    stroke_id,
+                    canvas_id,
+                    target_layer_id,
+                    overrider,
+                    dirty_tiles,
+                }) = maybe_preview
+                else {
+                    return Task::none();
+                };
+
                 if self.active_stroke_id != Some(stroke_id) {
                     return Task::none();
                 }
+
                 services
                     .service_mut::<LayerPreviewOverriders>()
                     .insert_overrider(target_layer_id, overrider);
@@ -186,7 +200,7 @@ impl ToolFunction for BrushTool {
 
                 Task::none()
             }
-            BrushToolMessage::Render(BrushRenderUpdate::Finished {
+            BrushToolMessage::StrokeResult(BrushStrokeResult {
                 stroke_id,
                 canvas_id,
                 target_layer_id,
