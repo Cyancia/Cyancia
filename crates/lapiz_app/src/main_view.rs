@@ -179,6 +179,7 @@ impl WindowView for MainView {
                         }
                         keyboard_state.press(*code);
 
+                        // TODO prevent any action from triggering when a tool is updating.
                         if let Some(action) = self
                             .action_collection
                             .get_action_id(keyboard_state.get_sequence())

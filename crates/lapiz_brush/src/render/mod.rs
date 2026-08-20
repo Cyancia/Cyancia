@@ -13,6 +13,7 @@ use lapiz_color::ForegroundBackgroundColorExt;
 use lapiz_image::{
     composite::{LayerPreviewOverriders, PixelPreviewOverrider},
     layer::{LayerId, properties::LayerTexelTypeProp},
+    layer_bounds::LayerBoundsPipeline,
     scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, LayerBinding, TileStorageAppExt},
@@ -27,6 +28,7 @@ use lapiz_render::{
     render_context::RenderContextAppExt,
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
+    util::DevicePollExt,
 };
 use lapiz_runtime::Services;
 use lapiz_shader_graph::graph::external::GraphExternalVariableStorage;
@@ -470,7 +472,6 @@ impl BrushPresetRenderer {
         let queue = queue.clone();
         let stroke_pp = self.stroke_pp.clone();
         let resources = self.resources.clone();
-        let scan_pixels = self.scan_pixels.clone();
 
         Task::future(async move {
             brush_renderer_worker_stroke_postprocess(
@@ -479,8 +480,8 @@ impl BrushPresetRenderer {
                 queue,
                 stroke_pp,
                 resources,
-                scan_pixels,
                 session.target_layer,
+                session.has_selection,
                 session.selection_layer,
             )
             .await
@@ -591,8 +592,8 @@ impl BrushPresetRenderer {
         let queue = queue.clone();
         let main = self.main.clone();
         let resources = self.resources.clone();
-        let scan_pixels = self.scan_pixels.clone();
         let target_layer = session.target_layer.clone();
+        let has_selection = session.has_selection.clone();
         let selection_layer = session.selection_layer.clone();
         let initial_pen_input = session.initial_pen_input.inner_buffer().unwrap().clone();
 
@@ -606,8 +607,8 @@ impl BrushPresetRenderer {
                 queue,
                 main,
                 resources,
-                scan_pixels,
                 target_layer,
+                has_selection,
                 selection_layer,
             )
             .await
@@ -627,8 +628,8 @@ impl BrushPresetRenderer {
         let queue = queue.clone();
         let stroke_pp = self.stroke_pp.clone();
         let resources = self.resources.clone();
-        let scan_pixels = self.scan_pixels.clone();
         let target_layer = session.target_layer.clone();
+        let has_selection = session.has_selection.clone();
         let selection_layer = session.selection_layer.clone();
 
         let shared = session.shared.clone();
@@ -665,12 +666,12 @@ impl BrushPresetRenderer {
                 &device,
                 &queue,
                 &target_layer,
+                &has_selection,
                 &selection_layer,
                 Time::default(),
                 &mut intermediate_buffers,
                 &mut round,
                 &mut accumulated_tile_bounds,
-                &scan_pixels,
                 &stroke_pp,
                 &resources,
             )
@@ -702,9 +703,9 @@ async fn brush_renderer_worker_main(
 
     main: BrushMainPipeline,
     resources: StrokeResources,
-    scan_pixels: ScanPixelsPipeline,
 
     target_layer: LayerBinding,
+    has_selection: Buffer,
     selection_layer: LayerBinding,
 ) -> Result<()> {
     let samples = samples.into_inner().await??;
@@ -712,7 +713,6 @@ async fn brush_renderer_worker_main(
 
     {
         let mut shared = shared.lock();
-        let has_selection = scan_pixels.scan_to_binary_buffer(&device, &queue, &selection_layer);
 
         let dispatch_span = tracing::info_span!("main_dispatch");
         let _span = dispatch_span.enter();
@@ -797,9 +797,9 @@ async fn brush_renderer_worker_stroke_postprocess(
 
     stroke_pp: Vec<StrokePostprocessPipelines>,
     resources: StrokeResources,
-    scan_pixels: ScanPixelsPipeline,
 
     target_layer: LayerBinding,
+    has_selection: Buffer,
     selection_layer: LayerBinding,
 ) -> DynamicLayerStorage {
     let (mut intermediate_buffers, mut round, mut accumulated_tile_bounds) = {
@@ -825,13 +825,13 @@ async fn brush_renderer_worker_stroke_postprocess(
         &device,
         &queue,
         &target_layer,
+        &has_selection,
         &selection_layer,
         // TODO
         Time::default(),
         &mut intermediate_buffers,
         &mut round,
         &mut accumulated_tile_bounds,
-        &scan_pixels,
         &stroke_pp,
         &resources,
     )
@@ -845,20 +845,18 @@ async fn postprocess_stroke(
     device: &Device,
     queue: &Queue,
     target_layer: &LayerBinding,
+    has_selection: &Buffer,
     selection_layer: &LayerBinding,
     time: Time,
     intermediate_buffers: &mut [DynamicLayerStorage; 2],
     round: &mut u32,
     accumulated_tile_bounds: &mut IRect,
-    scan_pixels: &ScanPixelsPipeline,
     stroke_pp: &[StrokePostprocessPipelines],
     resources: &StrokeResources,
 ) {
     if accumulated_tile_bounds.is_empty() {
         return;
     }
-
-    let has_selection = scan_pixels.scan_to_binary_buffer(device, queue, selection_layer);
 
     let mut dab_info_buffer = DynamicBuffer::new(
         Some("pp dab info buffer".into()),
