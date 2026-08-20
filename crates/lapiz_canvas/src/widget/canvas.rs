@@ -3,7 +3,7 @@ use glam::Vec2;
 use iced_core::{
     Clipboard, Element, Event, Layout, Length, Point, Rectangle, Shell, Size, Widget,
     layout::{self, Limits},
-    mouse, renderer,
+    mouse, renderer, touch,
     widget::Tree,
 };
 use iced_wgpu::primitive::Renderer;
@@ -63,6 +63,31 @@ impl<Message, Theme> Widget<Message, Theme, iced_wgpu::Renderer> for CanvasWidge
                 shell.publish((self.on_focus)(cursor_pos));
                 shell.publish((self.on_mouse_event)(*event));
                 shell.capture_event();
+            }
+        }
+
+        if let Event::Touch(event) = event {
+            match event {
+                touch::Event::FingerPressed { position, .. } => {
+                    shell.publish((self.on_focus)(*position));
+                    shell.publish((self.on_mouse_event)(mouse::Event::ButtonPressed(
+                        mouse::Button::Left,
+                    )));
+                    shell.capture_event();
+                }
+                touch::Event::FingerMoved { position, .. } if self.is_focusing => {
+                    shell.publish((self.on_mouse_event)(mouse::Event::CursorMoved {
+                        position: *position,
+                    }));
+                    shell.capture_event();
+                }
+                touch::Event::FingerLifted { .. } => {
+                    shell.publish((self.on_mouse_event)(mouse::Event::ButtonReleased(
+                        mouse::Button::Left,
+                    )));
+                    shell.capture_event();
+                }
+                _ => {}
             }
         }
     }
