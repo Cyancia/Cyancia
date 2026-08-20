@@ -111,6 +111,10 @@ impl ToolFunction for BrushTool {
             return Task::none();
         }
 
+        if self.active_stroke_id.is_some() {
+            return Task::none();
+        }
+
         self.next_stroke_id += 1;
         let stroke_id = self.next_stroke_id;
         self.active_stroke_id = Some(stroke_id);
@@ -158,7 +162,6 @@ impl ToolFunction for BrushTool {
     ) -> Task<Self::Message> {
         services
             .try_service_scope::<CurrentBrushPreset, _>(|brush, services| {
-                self.active_stroke_id = None;
                 brush
                     .0
                     .end_stroke(mouse, services)
@@ -207,7 +210,7 @@ impl ToolFunction for BrushTool {
                 result,
             }) => {
                 let command = self.queued_commands.remove(&stroke_id).unwrap();
-                if self.active_stroke_id == Some(stroke_id) {
+                if self.active_stroke_id.take() == Some(stroke_id) {
                     services
                         .service_mut::<LayerPreviewOverriders>()
                         .remove_overrider(&target_layer_id);

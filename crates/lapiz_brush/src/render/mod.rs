@@ -255,9 +255,6 @@ impl CanvasBrushPresetOperator {
             updates.push(renderer.update(&self.device, &self.queue, sample));
         }
         let end_task = renderer.end(&self.device, &self.queue);
-        services
-            .service_mut::<LayerPreviewOverriders>()
-            .remove_overrider(&session.target_layer_id);
 
         let updates = Task::batch(updates).discard();
 
