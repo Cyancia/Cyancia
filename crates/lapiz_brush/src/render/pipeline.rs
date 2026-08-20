@@ -639,7 +639,7 @@ impl BrushPostProcessBoundsEvalPipeline {
         target_layer: &LayerBinding,
         has_selection: &Buffer,
         selection_layer: &LayerBinding,
-        dab_infos: &DynamicBuffer<DabInfo>,
+        dab_info: &DynamicBuffer<DabInfo>,
         resources: &StrokeResources,
     ) -> PreparedBrushPostProcessBoundsEvalPipelineData {
         let mut bind_group_entries = common_bind_group_entries(
@@ -653,7 +653,7 @@ impl BrushPostProcessBoundsEvalPipeline {
         bind_group_entries.extend(
             DynamicBindGroupEntries::new_with_indices((
                 (0, stroke_pp_data.binding().unwrap()),
-                (8, dab_infos.binding().unwrap()),
+                (8, dab_info.binding().unwrap()),
             ))
             .to_vec(),
         );
