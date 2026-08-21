@@ -18,8 +18,8 @@ use wgpu::{
 };
 
 use crate::render::{
-    ComputedPenInput, DabInfo, InputSampler, MAX_DABS_PER_STROKE, OutputSamples, PenInput,
-    StrokePostprocessData, StrokeResources, graph::CanvasResources,
+    ComputedPenInput, DabInfo, InputSampler, OutputSamples, PenInput, StrokePostprocessData,
+    StrokeResources, graph::CanvasResources,
 };
 
 pub struct PreparedInputSamplingPipelineData {

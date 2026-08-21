@@ -4,7 +4,6 @@ use anyhow::Result;
 use bevy_math::IRect;
 use chrono::{DateTime, Utc};
 use encase::ShaderType;
-use futures::channel::oneshot;
 use glam::{IVec2, Vec2, Vec4};
 use iced_runtime::Task;
 use indexmap::IndexSet;
@@ -12,9 +11,8 @@ use lapiz_assets::{AssetAppExt, store::AssetRegistry};
 use lapiz_canvas::{CanvasAppExt, CanvasId};
 use lapiz_color::ForegroundBackgroundColorExt;
 use lapiz_image::{
-    composite::{LayerPreviewOverriders, PixelPreviewOverrider},
+    composite::PixelPreviewOverrider,
     layer::{LayerId, properties::LayerTexelTypeProp},
-    layer_bounds::LayerBoundsPipeline,
     scan_pixels::ScanPixelsPipeline,
     texel::TexelType,
     tile::{DynamicLayerStorage, GpuLayerInfo, GpuTileStorage, LayerBinding, TileStorageAppExt},
@@ -29,7 +27,6 @@ use lapiz_render::{
     render_context::RenderContextAppExt,
     texture::GpuImage,
     texture_atlas::{TextureAtlas, TextureAtlasBuilder},
-    util::DevicePollExt,
 };
 use lapiz_runtime::Services;
 use lapiz_shader_graph::graph::external::GraphExternalVariableStorage;
@@ -49,8 +46,7 @@ use crate::{
             BrushInputSamplingPipeline, BrushMainBoundsEvalPipeline, BrushMainPipeline,
             BrushPostProcessBoundsEvalPipeline, BrushPostProcessPipeline,
             PreparedBrushMainBoundsEvalPipelineData, PreparedBrushMainPipelineData,
-            PreparedBrushPostProcessBoundsEvalPipelineData, PreparedBrushPostProcessPipelineData,
-            PreparedInputSamplingPipelineData,
+            PreparedBrushPostProcessBoundsEvalPipelineData, PreparedInputSamplingPipelineData,
         },
     },
 };
@@ -318,11 +314,6 @@ struct StrokeSession {
     shared: Arc<Mutex<SharedBrushRendererMainPassState>>,
     stroke_pp_cache: Arc<futures::lock::Mutex<StrokePostprocessCache>>,
 
-    initial_pen_input: DynamicBuffer<ComputedPenInput>,
-    target_layer: LayerBinding,
-    has_selection: Buffer,
-    selection_layer: LayerBinding,
-
     pen_input: DynamicBuffer<PenInput>,
     output_samples_packed: DynamicBuffer<OutputSamples>,
     dab_infos_packed: BufferVec<DabInfo>,
@@ -330,7 +321,6 @@ struct StrokeSession {
 
     input_sample_prepared: PreparedInputSamplingPipelineData,
     main_bounds_eval_prepared: PreparedBrushMainBoundsEvalPipelineData,
-    main_prepared: PreparedBrushMainPipelineData,
 }
 
 pub struct BrushStrokePreview {
@@ -555,7 +545,7 @@ impl BrushPresetRenderer {
             round: 0,
             accumulated_tile_bounds: IRect::EMPTY,
 
-            main_prepared: main_prepared.clone(),
+            main_prepared,
             samples_offsets,
             dab_info_offsets,
             target_layer: target_layer.clone(),
@@ -599,19 +589,15 @@ impl BrushPresetRenderer {
 
         let stroke_pp_cache = StrokePostprocessCache {
             resources: self.resources.clone(),
-            target_layer: target_layer.clone(),
-            has_selection: has_selection.clone(),
-            selection_layer: selection_layer.clone(),
+            target_layer,
+            has_selection,
+            selection_layer,
             pipeline_cache: stroke_pp_pipeline_cache,
         };
 
         self.session = Some(StrokeSession {
             shared: Arc::new(Mutex::new(shared)),
             stroke_pp_cache: Arc::new(futures::lock::Mutex::new(stroke_pp_cache)),
-            initial_pen_input,
-            target_layer,
-            has_selection,
-            selection_layer,
 
             pen_input: pen_input_buffer,
             output_samples_packed,
@@ -621,7 +607,6 @@ impl BrushPresetRenderer {
 
             input_sample_prepared,
             main_bounds_eval_prepared,
-            main_prepared,
         });
     }
 
@@ -855,7 +840,7 @@ async fn brush_renderer_worker_main(
         }
 
         let new_generation = intermediate_buffers[0].allocation_generation();
-        let new_tiles = intermediate_buffers[0].len();
+        let _new_tiles = intermediate_buffers[0].len();
         if old_generation != new_generation {
             *main_prepared = main.prepare(
                 device,
@@ -877,8 +862,8 @@ async fn brush_renderer_worker_main(
             return Err(anyhow::anyhow!("accumulated_tile_bounds is empty"));
         }
 
-        output_samples_aligned.write_buffer(&device, &queue);
-        dab_infos_aligned.write_buffer(&device, &queue);
+        output_samples_aligned.write_buffer(device, queue);
+        dab_infos_aligned.write_buffer(device, queue);
 
         let mut ec = device.create_command_encoder(&Default::default());
 
@@ -889,9 +874,9 @@ async fn brush_renderer_worker_main(
             });
             main.dispatch(
                 &mut pass,
-                &main_prepared,
-                &samples_offsets,
-                &dab_info_offsets,
+                main_prepared,
+                samples_offsets,
+                dab_info_offsets,
                 round,
                 samples.n_samples,
             );
@@ -929,7 +914,7 @@ async fn brush_renderer_worker_stroke_postprocess(
     let (mut intermediate_buffers, mut round, mut accumulated_tile_bounds) = {
         let shared = shared.lock();
         (
-            if shared.round % 2 == 0 {
+            if shared.round.is_multiple_of(2) {
                 [
                     shared.intermediate_buffers[0].deep_clone(),
                     shared.intermediate_buffers[1].create_allocated_empty_sibling(),
@@ -1048,12 +1033,12 @@ async fn postprocess_stroke(
 
         let prepared = pipeline.main.prepare(
             device,
-            &stroke_pp_data,
-            &target_layer,
-            &has_selection,
-            &selection_layer,
-            &dab_info_buffer,
-            &resources,
+            stroke_pp_data,
+            target_layer,
+            has_selection,
+            selection_layer,
+            dab_info_buffer,
+            resources,
             &intermediate_buffers,
             *round,
         );

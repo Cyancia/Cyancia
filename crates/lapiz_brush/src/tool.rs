@@ -207,7 +207,7 @@ impl ToolFunction for BrushTool {
                 self.preview_ongoing = true;
 
                 services
-                    .try_service_scope::<CurrentBrushPreset, _>(|brush, services| {
+                    .try_service_scope::<CurrentBrushPreset, _>(|brush, _services| {
                         brush.0.preview().map(BrushToolMessage::StrokePreview)
                     })
                     .unwrap_or_else(Task::none)
