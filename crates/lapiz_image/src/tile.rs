@@ -23,10 +23,10 @@ use lapiz_runtime::{
 use lapiz_utils::Deref;
 use moxcms::{ColorProfile, TransformOptions};
 use wgpu::{
-    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, Origin3d, Queue, TexelCopyBufferInfo,
-    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
-    TextureDimension, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
-    util::DeviceExt,
+    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, ImageSubresourceRange, Origin3d,
+    Queue, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture,
+    TextureAspect, TextureDescriptor, TextureDimension, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension, util::DeviceExt,
 };
 
 use crate::{
@@ -642,7 +642,13 @@ impl DynamicLayerStorage {
 
         if let Some(tex) = self.texture.as_ref() {
             let mut ec = self.device.create_command_encoder(&Default::default());
-            ec.clear_texture(tex.texture(), &Default::default());
+            ec.clear_texture(
+                tex.texture(),
+                &ImageSubresourceRange {
+                    array_layer_count: Some(self.len() as u32),
+                    ..Default::default()
+                },
+            );
             self.queue.submit([ec.finish()]);
         };
     }
