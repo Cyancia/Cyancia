@@ -740,7 +740,11 @@ impl DynamicLayerStorage {
             ce.copy_texture_to_texture(
                 self.texture.as_ref().unwrap().texture().as_image_copy(),
                 sibling.texture.as_ref().unwrap().texture().as_image_copy(),
-                sibling.texture.as_ref().unwrap().texture().size(),
+                Extent3d {
+                    width: GpuTileStorage::TILE_SIZE,
+                    height: GpuTileStorage::TILE_SIZE,
+                    depth_or_array_layers: self.len() as u32,
+                },
             );
             self.queue.submit([ce.finish()]);
         }
