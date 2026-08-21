@@ -105,7 +105,7 @@ pub struct ColorAdjustment {
 
 // TODO: This is really ugly, can we avoid this?
 static MAIN_PIXEL_POSITION_IDENT: LazyLock<Ident> =
-    LazyLock::new(|| Ident::new("pixel_position".to_string()));
+    LazyLock::new(|| Ident::new(MAIN_PIXEL_POSITION_INPUT.to_string()));
 static MAIN_PEN_POSITION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_PEN_POSITION_INPUT.to_string()));
 static MAIN_FOREGROUND_COLOR_IDENT: LazyLock<Ident> =
