@@ -42,7 +42,7 @@ opt-level = 3
 [workspace.package]
 publish = false
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.96.0"
 
 [workspace.lints.clippy]
 type_complexity = "allow"

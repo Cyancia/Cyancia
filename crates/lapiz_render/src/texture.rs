@@ -204,7 +204,7 @@ impl GpuImage {
                 let mut local_data =
                     Vec::with_capacity(width as usize * height as usize * pixel_size);
 
-                for pixel in image.into_raw().as_chunks::<3>().0 {
+                for pixel in image.into_raw().chunks_exact(3) {
                     // TODO: use the array_chunks method once stabilized
                     // https://github.com/rust-lang/rust/issues/74985
                     let r = pixel[0];
