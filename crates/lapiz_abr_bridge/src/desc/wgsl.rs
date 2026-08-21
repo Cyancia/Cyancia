@@ -781,11 +781,7 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
             #pen - vec2f(cos(#direction), sin(#direction)) * dual_phase;
         let dual_active_copy_count = #active_copy_count;
         var dual_mask = 0.0;
-        for (
-            var dual_copy_index = 0u;
-            dual_copy_index < dual_active_copy_count;
-            dual_copy_index++
-        ) {
+        for (var dual_copy_index = 0u; dual_copy_index < dual_active_copy_count; dual_copy_index += 1u) {
             let dual_center = dual_stroke_center + #scatter_offset;
             var dual_copy_mask = 0.0;
             @#sample_dual {}
@@ -923,7 +919,7 @@ pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String 
         );
         let active_copy_count = #active_copy_count;
         var tip_mask = 0.0;
-        var combined_bounds: Rect;
+        var combined_bounds = Rect(vec2f(1000000.0), vec2f(-1000000.0));
         for (var copy_index = 0u; copy_index < active_copy_count; copy_index++) {
             let tip_center = #pen + #scatter_offset;
             let tip_delta = (#pixel - tip_center) * vec2f(#flip_x, #flip_y);
@@ -940,14 +936,10 @@ pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String 
                 tip_center - vec2f(tip_radius),
                 tip_center + vec2f(tip_radius),
             );
-            if copy_index == 0u {
-                combined_bounds = copy_bounds;
-            } else {
-                combined_bounds = Rect(
-                    min(combined_bounds.min, copy_bounds.min),
-                    max(combined_bounds.max, copy_bounds.max),
-                );
-            }
+            combined_bounds = Rect(
+                min(combined_bounds.min, copy_bounds.min),
+                max(combined_bounds.max, copy_bounds.max),
+            );
         }
         @#dual_mask {}
         @#tip_color {}
@@ -1016,8 +1008,8 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
         let tip_anchor = vec2f(0.5);
         let active_copy_count = #active_copy_count;
         var tip_mask = 0.0;
-        var combined_bounds: Rect;
-        for (var copy_index = 0u; copy_index < active_copy_count; copy_index++) {
+        var combined_bounds = Rect(vec2f(1000000.0), vec2f(-1000000.0));
+        for (var copy_index = 0u; copy_index < active_copy_count; copy_index += 1u) {
             let tip_center = #pen + #scatter_offset;
             let tip_sample = sample_transformed_local_texture_clamp(
                 #texture,
@@ -1038,14 +1030,10 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
                 tip_center,
                 tip_anchor,
             );
-            if copy_index == 0u {
-                combined_bounds = copy_bounds;
-            } else {
-                combined_bounds = Rect(
-                    min(combined_bounds.min, copy_bounds.min),
-                    max(combined_bounds.max, copy_bounds.max),
-                );
-            }
+            combined_bounds = Rect(
+                min(combined_bounds.min, copy_bounds.min),
+                max(combined_bounds.max, copy_bounds.max),
+            );
         }
         @#dual_mask {}
         @#tip_color {}
