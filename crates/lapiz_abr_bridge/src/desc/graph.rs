@@ -88,105 +88,78 @@ fn connect_dynamics_input_nodes<Data>(
     graph.connect_slots_by_index(dab_index, 0, expression, input_offset + 5);
 }
 
+#[derive(Clone, Copy)]
+pub struct MainGraphOptions {
+    pub flow: f32,
+    pub size_dynamics: Option<Dynamics>,
+    pub opacity_dynamics: Option<Dynamics>,
+    pub flow_dynamics: Option<Dynamics>,
+    pub angle_dynamics: Option<Dynamics>,
+    pub roundness_dynamics: Option<Dynamics>,
+    pub tilt_scale: f32,
+    pub pose: BrushPose,
+    pub color_adjustment: Option<ColorAdjustment>,
+    pub scatter: Option<Scatter>,
+    pub brush_texture: Option<BrushTexture>,
+    pub pattern_asset: Option<AssetId<Image>>,
+    pub noise: bool,
+    pub dual_brush: Option<DualBrush>,
+    pub dual_sample_asset: Option<AssetId<Image>>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ComputedMainTip {
+    pub diameter: f32,
+    pub hardness: f32,
+    pub angle: f32,
+    pub roundness: f32,
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub spacing: f32,
+}
+
+#[derive(Clone, Copy)]
+pub struct SampledMainTip {
+    pub sample_asset: AssetId<Image>,
+    pub diameter: f32,
+    pub angle: f32,
+    pub roundness: f32,
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub spacing: f32,
+}
+
+#[derive(Clone, Copy)]
+pub enum MainTip {
+    Computed(ComputedMainTip),
+    Sampled(SampledMainTip),
+}
+
 pub fn computed_graphs(
-    diameter: f32,
-    hardness: f32,
-    angle: f32,
-    roundness: f32,
-    spacing: f32,
-    flip_x: bool,
-    flip_y: bool,
-    flow: f32,
-    size_dynamics: Option<Dynamics>,
-    opacity_dynamics: Option<Dynamics>,
-    flow_dynamics: Option<Dynamics>,
-    angle_dynamics: Option<Dynamics>,
-    roundness_dynamics: Option<Dynamics>,
-    tilt_scale: f32,
-    pose: BrushPose,
-    color_adjustment: Option<ColorAdjustment>,
-    scatter: Option<Scatter>,
-    brush_texture: Option<BrushTexture>,
-    pattern_asset: Option<AssetId<Image>>,
-    noise: bool,
-    dual_brush: Option<DualBrush>,
-    dual_sample_asset: Option<AssetId<Image>>,
+    tip: ComputedMainTip,
+    options: MainGraphOptions,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
-    let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
-    let main_graph = computed_main_graph(
-        diameter,
-        hardness,
-        angle,
-        roundness,
-        flip_x,
-        flip_y,
-        flow,
-        size_dynamics,
-        opacity_dynamics,
-        flow_dynamics,
-        angle_dynamics,
-        roundness_dynamics,
-        tilt_scale,
-        pose,
-        color_adjustment,
-        scatter,
-        brush_texture,
-        pattern_asset,
-        noise,
-        dual_brush,
-        dual_sample_asset,
+    let required_spacing_graph = required_spacing_graph(
+        tip.diameter,
+        tip.spacing,
+        options.size_dynamics,
+        options.pose,
     )?;
+    let main_graph = build_main_graph(MainTip::Computed(tip), options)?;
     Ok((required_spacing_graph, main_graph))
 }
 
 pub fn sampled_graphs(
-    sample_asset: AssetId<Image>,
-    diameter: f32,
-    angle: f32,
-    roundness: f32,
-    spacing: f32,
-    flip_x: bool,
-    flip_y: bool,
-    flow: f32,
-    size_dynamics: Option<Dynamics>,
-    opacity_dynamics: Option<Dynamics>,
-    flow_dynamics: Option<Dynamics>,
-    angle_dynamics: Option<Dynamics>,
-    roundness_dynamics: Option<Dynamics>,
-    tilt_scale: f32,
-    pose: BrushPose,
-    color_adjustment: Option<ColorAdjustment>,
-    scatter: Option<Scatter>,
-    brush_texture: Option<BrushTexture>,
-    pattern_asset: Option<AssetId<Image>>,
-    noise: bool,
-    dual_brush: Option<DualBrush>,
-    dual_sample_asset: Option<AssetId<Image>>,
+    tip: SampledMainTip,
+    options: MainGraphOptions,
 ) -> Result<(SerializableGraph, SerializableGraph)> {
-    let required_spacing_graph = required_spacing_graph(diameter, spacing, size_dynamics, pose)?;
-    let main_graph = sampled_main_graph(
-        sample_asset,
-        diameter,
-        angle,
-        roundness,
-        flip_x,
-        flip_y,
-        flow,
-        size_dynamics,
-        opacity_dynamics,
-        flow_dynamics,
-        angle_dynamics,
-        roundness_dynamics,
-        tilt_scale,
-        pose,
-        color_adjustment,
-        scatter,
-        brush_texture,
-        pattern_asset,
-        noise,
-        dual_brush,
-        dual_sample_asset,
+    let required_spacing_graph = required_spacing_graph(
+        tip.diameter,
+        tip.spacing,
+        options.size_dynamics,
+        options.pose,
     )?;
+    let main_graph = build_main_graph(MainTip::Sampled(tip), options)?;
     Ok((required_spacing_graph, main_graph))
 }
 
@@ -220,149 +193,22 @@ fn required_spacing_graph(
     Ok(graph.as_serialized()?)
 }
 
-fn computed_main_graph(
-    diameter: f32,
-    hardness: f32,
-    angle: f32,
-    roundness: f32,
-    flip_x: bool,
-    flip_y: bool,
-    flow: f32,
-    size_dynamics: Option<Dynamics>,
-    opacity_dynamics: Option<Dynamics>,
-    flow_dynamics: Option<Dynamics>,
-    angle_dynamics: Option<Dynamics>,
-    roundness_dynamics: Option<Dynamics>,
-    tilt_scale: f32,
-    pose: BrushPose,
-    color_adjustment: Option<ColorAdjustment>,
-    scatter: Option<Scatter>,
-    brush_texture: Option<BrushTexture>,
-    pattern_asset: Option<AssetId<Image>>,
-    noise: bool,
-    dual_brush: Option<DualBrush>,
-    dual_sample_asset: Option<AssetId<Image>>,
-) -> Result<SerializableGraph> {
+fn build_main_graph(tip: MainTip, options: MainGraphOptions) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
     let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
     let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
     let foreground_color = graph.add_node(Point::new(0.0, 200.0), ForegroundColorNode);
-    let background_color = graph.add_node(Point::new(0.0, 300.0), BackgroundColorNode);
-    let pattern_texture = pattern_asset.map(|pattern_asset| {
-        add_stateful_node(
+    let tip_texture = match &tip {
+        MainTip::Sampled(tip) => Some(add_stateful_node(
             &mut graph,
-            Point::new(0.0, 400.0),
+            Point::new(0.0, 300.0),
             TextureNode,
-            TextureId(Some(pattern_asset)),
-        )
-    });
-    let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
-    let dual_texture = dual_sample_asset.map(|sample_asset| {
-        add_stateful_node(
-            &mut graph,
-            Point::new(0.0, 700.0),
-            TextureNode,
-            TextureId(Some(sample_asset)),
-        )
-    });
-
-    let mut state = CustomExpressionNodeState::default();
-    state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
-    state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
-    state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
-    state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
-    state.add_input::<TextureType>(MAIN_PATTERN_TEXTURE_INPUT);
-    add_dynamics_input_slots(&mut state);
-    state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
-    if dual_texture.is_some() {
-        state.add_input::<TextureType>(DUAL_TIP_TEXTURE_INPUT);
-    }
-    state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
-    state.add_output::<RectType>(MAIN_BOUNDS_OUTPUT);
-    state.set_code(computed_main(
-        diameter,
-        hardness,
-        angle,
-        roundness,
-        flip_x,
-        flip_y,
-        flow,
-        size_dynamics,
-        opacity_dynamics,
-        flow_dynamics,
-        angle_dynamics,
-        roundness_dynamics,
-        tilt_scale,
-        pose,
-        color_adjustment,
-        scatter,
-        brush_texture,
-        noise,
-        dual_brush,
-    ));
-
-    let expression = add_stateful_node(
-        &mut graph,
-        Point::new(300.0, 100.0),
-        CustomExpressionNode,
-        state,
-    );
-    let output_color = graph.add_node(Point::new(550.0, 50.0), OutputColorNode);
-    let output_bounds = graph.add_node(Point::new(550.0, 150.0), OutputBoundsNode);
-
-    graph.connect_slots_by_index(pixel_position, 0, expression, 0);
-    graph.connect_slots_by_index(pen_position, 0, expression, 1);
-    graph.connect_slots_by_index(foreground_color, 0, expression, 2);
-    graph.connect_slots_by_index(background_color, 0, expression, 3);
-    if let Some(pattern_texture) = pattern_texture {
-        graph.connect_slots_by_index(pattern_texture, 0, expression, 4);
-    }
-    connect_dynamics_input_nodes(&mut graph, expression, 5);
-    graph.connect_slots_by_index(stroke_time, 1, expression, 11);
-    if let Some(dual_texture) = dual_texture {
-        graph.connect_slots_by_index(dual_texture, 0, expression, 12);
-    }
-    graph.connect_slots_by_index(expression, 0, output_color, 0);
-    graph.connect_slots_by_index(expression, 1, output_bounds, 0);
-
-    Ok(graph.as_serialized()?)
-}
-
-fn sampled_main_graph(
-    sample_asset: AssetId<Image>,
-    diameter: f32,
-    angle: f32,
-    roundness: f32,
-    flip_x: bool,
-    flip_y: bool,
-    flow: f32,
-    size_dynamics: Option<Dynamics>,
-    opacity_dynamics: Option<Dynamics>,
-    flow_dynamics: Option<Dynamics>,
-    angle_dynamics: Option<Dynamics>,
-    roundness_dynamics: Option<Dynamics>,
-    tilt_scale: f32,
-    pose: BrushPose,
-    color_adjustment: Option<ColorAdjustment>,
-    scatter: Option<Scatter>,
-    brush_texture: Option<BrushTexture>,
-    pattern_asset: Option<AssetId<Image>>,
-    noise: bool,
-    dual_brush: Option<DualBrush>,
-    dual_sample_asset: Option<AssetId<Image>>,
-) -> Result<SerializableGraph> {
-    let mut graph = Graph::new(graph_resources(MAIN_GRAPH_NODES.clone()));
-    let pixel_position = graph.add_node(Point::new(0.0, 0.0), PixelPositionNode);
-    let pen_position = graph.add_node(Point::new(0.0, 100.0), PenPositionNode);
-    let foreground_color = graph.add_node(Point::new(0.0, 200.0), ForegroundColorNode);
-    let texture = add_stateful_node(
-        &mut graph,
-        Point::new(0.0, 300.0),
-        TextureNode,
-        TextureId(Some(sample_asset)),
-    );
+            TextureId(Some(tip.sample_asset)),
+        )),
+        MainTip::Computed(_) => None,
+    };
     let background_color = graph.add_node(Point::new(0.0, 400.0), BackgroundColorNode);
-    let pattern_texture = pattern_asset.map(|pattern_asset| {
+    let pattern_texture = options.pattern_asset.map(|pattern_asset| {
         add_stateful_node(
             &mut graph,
             Point::new(0.0, 450.0),
@@ -371,7 +217,7 @@ fn sampled_main_graph(
         )
     });
     let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
-    let dual_texture = dual_sample_asset.map(|sample_asset| {
+    let dual_texture = options.dual_sample_asset.map(|sample_asset| {
         add_stateful_node(
             &mut graph,
             Point::new(0.0, 700.0),
@@ -384,7 +230,9 @@ fn sampled_main_graph(
     state.add_input::<Vec2FType>(MAIN_PIXEL_POSITION_INPUT);
     state.add_input::<Vec2FType>(MAIN_PEN_POSITION_INPUT);
     state.add_input::<ColorType>(MAIN_FOREGROUND_COLOR_INPUT);
-    state.add_input::<TextureType>(MAIN_TIP_TEXTURE_INPUT);
+    if tip_texture.is_some() {
+        state.add_input::<TextureType>(MAIN_TIP_TEXTURE_INPUT);
+    }
     state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
     state.add_input::<TextureType>(MAIN_PATTERN_TEXTURE_INPUT);
     add_dynamics_input_slots(&mut state);
@@ -394,26 +242,10 @@ fn sampled_main_graph(
     }
     state.add_output::<ColorType>(MAIN_COLOR_OUTPUT);
     state.add_output::<RectType>(MAIN_BOUNDS_OUTPUT);
-    state.set_code(sampled_main(
-        diameter,
-        angle,
-        roundness,
-        flip_x,
-        flip_y,
-        flow,
-        size_dynamics,
-        opacity_dynamics,
-        flow_dynamics,
-        angle_dynamics,
-        roundness_dynamics,
-        tilt_scale,
-        pose,
-        color_adjustment,
-        scatter,
-        brush_texture,
-        noise,
-        dual_brush,
-    ));
+    state.set_code(match tip {
+        MainTip::Computed(tip) => computed_main(tip, options),
+        MainTip::Sampled(tip) => sampled_main(tip, options),
+    });
 
     let expression = add_stateful_node(
         &mut graph,
@@ -423,19 +255,26 @@ fn sampled_main_graph(
     );
     let output_color = graph.add_node(Point::new(550.0, 100.0), OutputColorNode);
     let output_bounds = graph.add_node(Point::new(550.0, 200.0), OutputBoundsNode);
+    let tip_input_offset = usize::from(tip_texture.is_some());
+    let background_input = 3 + tip_input_offset;
+    let pattern_input = background_input + 1;
+    let dynamics_input = pattern_input + 1;
+    let stroke_time_input = dynamics_input + 6;
 
     graph.connect_slots_by_index(pixel_position, 0, expression, 0);
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
     graph.connect_slots_by_index(foreground_color, 0, expression, 2);
-    graph.connect_slots_by_index(texture, 0, expression, 3);
-    graph.connect_slots_by_index(background_color, 0, expression, 4);
-    if let Some(pattern_texture) = pattern_texture {
-        graph.connect_slots_by_index(pattern_texture, 0, expression, 5);
+    if let Some(tip_texture) = tip_texture {
+        graph.connect_slots_by_index(tip_texture, 0, expression, 3);
     }
-    connect_dynamics_input_nodes(&mut graph, expression, 6);
-    graph.connect_slots_by_index(stroke_time, 1, expression, 12);
+    graph.connect_slots_by_index(background_color, 0, expression, background_input);
+    if let Some(pattern_texture) = pattern_texture {
+        graph.connect_slots_by_index(pattern_texture, 0, expression, pattern_input);
+    }
+    connect_dynamics_input_nodes(&mut graph, expression, dynamics_input);
+    graph.connect_slots_by_index(stroke_time, 1, expression, stroke_time_input);
     if let Some(dual_texture) = dual_texture {
-        graph.connect_slots_by_index(dual_texture, 0, expression, 13);
+        graph.connect_slots_by_index(dual_texture, 0, expression, stroke_time_input + 1);
     }
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);

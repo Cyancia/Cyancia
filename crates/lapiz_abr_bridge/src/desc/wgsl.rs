@@ -5,6 +5,8 @@ use lapiz_image::blend_modes::BlendMode;
 use wesl::syntax::*;
 use wesl_quote::{quote_expression, quote_statement};
 
+use crate::desc::graph::{ComputedMainTip, MainGraphOptions, SampledMainTip};
+
 pub const MAIN_PIXEL_POSITION_INPUT: &str = "pixel_position";
 pub const MAIN_PEN_POSITION_INPUT: &str = "pen_position";
 pub const MAIN_FOREGROUND_COLOR_INPUT: &str = "foreground_color";
@@ -859,27 +861,33 @@ pub fn computed_required_spacing(
     .to_string()
 }
 
-pub fn computed_main(
-    diameter: f32,
-    hardness: f32,
-    angle: f32,
-    roundness: f32,
-    flip_x: bool,
-    flip_y: bool,
-    flow: f32,
-    size_dynamics: Option<Dynamics>,
-    opacity_dynamics: Option<Dynamics>,
-    flow_dynamics: Option<Dynamics>,
-    angle_dynamics: Option<Dynamics>,
-    roundness_dynamics: Option<Dynamics>,
-    tilt_scale: f32,
-    pose: BrushPose,
-    color_adjustment: Option<ColorAdjustment>,
-    scatter: Option<Scatter>,
-    brush_texture: Option<BrushTexture>,
-    noise: bool,
-    dual_brush: Option<DualBrush>,
-) -> String {
+pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String {
+    let ComputedMainTip {
+        diameter,
+        hardness,
+        angle,
+        roundness,
+        flip_x,
+        flip_y,
+        ..
+    } = tip;
+    let MainGraphOptions {
+        flow,
+        size_dynamics,
+        opacity_dynamics,
+        flow_dynamics,
+        angle_dynamics,
+        roundness_dynamics,
+        tilt_scale,
+        pose,
+        color_adjustment,
+        scatter,
+        brush_texture,
+        noise,
+        dual_brush,
+        ..
+    } = options;
+
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
@@ -948,26 +956,32 @@ pub fn computed_main(
     .to_string()
 }
 
-pub fn sampled_main(
-    diameter: f32,
-    angle: f32,
-    roundness: f32,
-    flip_x: bool,
-    flip_y: bool,
-    flow: f32,
-    size_dynamics: Option<Dynamics>,
-    opacity_dynamics: Option<Dynamics>,
-    flow_dynamics: Option<Dynamics>,
-    angle_dynamics: Option<Dynamics>,
-    roundness_dynamics: Option<Dynamics>,
-    tilt_scale: f32,
-    pose: BrushPose,
-    color_adjustment: Option<ColorAdjustment>,
-    scatter: Option<Scatter>,
-    brush_texture: Option<BrushTexture>,
-    noise: bool,
-    dual_brush: Option<DualBrush>,
-) -> String {
+pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
+    let SampledMainTip {
+        diameter,
+        angle,
+        roundness,
+        flip_x,
+        flip_y,
+        ..
+    } = tip;
+    let MainGraphOptions {
+        flow,
+        size_dynamics,
+        opacity_dynamics,
+        flow_dynamics,
+        angle_dynamics,
+        roundness_dynamics,
+        tilt_scale,
+        pose,
+        color_adjustment,
+        scatter,
+        brush_texture,
+        noise,
+        dual_brush,
+        ..
+    } = options;
+
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();

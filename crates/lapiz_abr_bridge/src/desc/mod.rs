@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, bail, ensure};
 use lapiz_abr::{BrushTip, Descriptor, DynamicsControl, PropertyDynamics, ToolOptions, UnitFloat};
 use lapiz_assets::asset::AssetId;
-use lapiz_brush::asset::BrushPreset;
+use lapiz_brush::asset::{BrushPreset, BrushPresetMetadata};
 use lapiz_image::blend_modes::BlendMode;
 use lapiz_render::texture::Image;
 use uuid::Uuid;
 
-use crate::desc::wgsl::{
-    BrushPose, BrushTexture, ColorAdjustment, DualBrush, DualBrushTip, Dynamics, Scatter,
+use crate::desc::{
+    graph::{ComputedMainTip, MainGraphOptions, SampledMainTip},
+    wgsl::{BrushPose, BrushTexture, ColorAdjustment, DualBrush, DualBrushTip, Dynamics, Scatter},
 };
 
 pub mod graph;
@@ -490,33 +491,38 @@ pub fn parse_desc(
         (None, None)
     };
     let (dual_brush, dual_sample_asset) = parse_dual_brush(brush, sample_assets)?;
+    let main_graph_options = MainGraphOptions {
+        flow,
+        size_dynamics,
+        opacity_dynamics,
+        flow_dynamics,
+        angle_dynamics,
+        roundness_dynamics,
+        tilt_scale,
+        pose,
+        color_adjustment,
+        scatter,
+        brush_texture,
+        pattern_asset,
+        noise: brush.noise,
+        dual_brush,
+        dual_sample_asset,
+    };
 
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
             ensure!(tip.interpolation, "unsupported computed interpolation");
             graph::computed_graphs(
-                tip.diameter.value as f32,
-                (tip.hardness.value / 100.0).clamp(0.0, 1.0) as f32,
-                tip.angle.value.to_radians() as f32,
-                (tip.roundness.value / 100.0).clamp(0.001, 1.0) as f32,
-                (tip.spacing.value / 100.0).max(0.001) as f32,
-                tip.flip_x ^ brush.flip_x,
-                tip.flip_y ^ brush.flip_y,
-                flow,
-                size_dynamics,
-                opacity_dynamics,
-                flow_dynamics,
-                angle_dynamics,
-                roundness_dynamics,
-                tilt_scale,
-                pose,
-                color_adjustment,
-                scatter,
-                brush_texture,
-                pattern_asset,
-                brush.noise,
-                dual_brush,
-                dual_sample_asset,
+                ComputedMainTip {
+                    diameter: tip.diameter.value as f32,
+                    hardness: (tip.hardness.value / 100.0).clamp(0.0, 1.0) as f32,
+                    angle: tip.angle.value.to_radians() as f32,
+                    roundness: (tip.roundness.value / 100.0).clamp(0.001, 1.0) as f32,
+                    flip_x: tip.flip_x ^ brush.flip_x,
+                    flip_y: tip.flip_y ^ brush.flip_y,
+                    spacing: (tip.spacing.value / 100.0).max(0.001) as f32,
+                },
+                main_graph_options,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -526,28 +532,16 @@ pub fn parse_desc(
                 .copied()
                 .with_context(|| format!("sample not found {}", tip.id))?;
             graph::sampled_graphs(
-                sample_asset,
-                tip.diameter.value as f32,
-                tip.angle.value.to_radians() as f32,
-                (tip.roundness.value / 100.0).clamp(0.001, 1.0) as f32,
-                (tip.spacing.value / 100.0).max(0.001) as f32,
-                tip.flip_x ^ brush.flip_x,
-                tip.flip_y ^ brush.flip_y,
-                flow,
-                size_dynamics,
-                opacity_dynamics,
-                flow_dynamics,
-                angle_dynamics,
-                roundness_dynamics,
-                tilt_scale,
-                pose,
-                color_adjustment,
-                scatter,
-                brush_texture,
-                pattern_asset,
-                brush.noise,
-                dual_brush,
-                dual_sample_asset,
+                SampledMainTip {
+                    sample_asset,
+                    diameter: tip.diameter.value as f32,
+                    angle: tip.angle.value.to_radians() as f32,
+                    roundness: (tip.roundness.value / 100.0).clamp(0.001, 1.0) as f32,
+                    flip_x: tip.flip_x ^ brush.flip_x,
+                    flip_y: tip.flip_y ^ brush.flip_y,
+                    spacing: (tip.spacing.value / 100.0).max(0.001) as f32,
+                },
+                main_graph_options,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
@@ -557,7 +551,7 @@ pub fn parse_desc(
         vec![graph::opacity_postprocess_graph(opacity, paint_blend_mode)?];
 
     Ok(BrushPreset {
-        metadata: lapiz_brush::asset::BrushPresetMetadata {
+        metadata: BrushPresetMetadata {
             name: brush.name.clone(),
         },
         required_spacing_graph,
