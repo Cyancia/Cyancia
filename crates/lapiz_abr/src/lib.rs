@@ -1,3 +1,27 @@
+// DISCLAIMER
+//
+// This crate was developed exclusively through manual clean room reverse
+// engineering, and the following statements are made with respect to that
+// work:
+//
+// 1. The implementation relies solely on publicly available documentation of
+//    the Adobe Brush (ABR) file format and on other existing, independently
+//    developed implementations of that format.
+//
+// 2. Adobe Photoshop was used only as a reference for artifacts produced by
+//    hand: sample ABR files were created manually through the Photoshop user
+//    interface and examined as reference material for this crate.
+//
+// 3. No Adobe Photoshop binary, library, or other executable component was
+//    disassembled, decompiled, or otherwise inspected.
+//
+// 4. No script, tool, or automated process was used to run, probe, instrument,
+//    or debug Adobe Photoshop.
+//
+// This crate is an independent implementation of the ABR format. It contains
+// no Adobe software and is not affiliated with, endorsed by, or sponsored by
+// Adobe Inc.
+
 use anyhow::{Result, bail};
 use descriptor::BrushDescriptorRoot;
 
