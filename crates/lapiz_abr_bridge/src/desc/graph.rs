@@ -190,7 +190,7 @@ fn required_spacing_graph(
     graph.connect_slots_by_index(expression, 0, output, 0);
     connect_dynamics_input_nodes(&mut graph, expression, 0);
 
-    Ok(graph.as_serialized()?)
+    graph.as_serialized()
 }
 
 fn build_main_graph(tip: MainTip, options: MainGraphOptions) -> Result<SerializableGraph> {
@@ -279,7 +279,7 @@ fn build_main_graph(tip: MainTip, options: MainGraphOptions) -> Result<Serializa
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
-    Ok(graph.as_serialized()?)
+    graph.as_serialized()
 }
 
 pub fn opacity_postprocess_graph(opacity: f32, blend_mode: BlendMode) -> Result<SerializableGraph> {
@@ -310,7 +310,7 @@ pub fn opacity_postprocess_graph(opacity: f32, blend_mode: BlendMode) -> Result<
     graph.connect_slots_by_index(expression, 0, output_color, 0);
     graph.connect_slots_by_index(expression, 1, output_bounds, 0);
 
-    Ok(graph.as_serialized()?)
+    graph.as_serialized()
 }
 
 fn graph_resources<Data: GraphData>(

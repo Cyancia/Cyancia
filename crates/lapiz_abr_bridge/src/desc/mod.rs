@@ -298,7 +298,7 @@ pub fn parse_desc(
         BrushPose {
             pressure: brush
                 .override_pose_pressure
-                .then(|| brush.brush_pose_pressure.as_ref())
+                .then_some(brush.brush_pose_pressure.as_ref())
                 .flatten()
                 .map(|value| (value.value as f32 / 100.0).clamp(0.0, 1.0)),
             azimuth: brush
