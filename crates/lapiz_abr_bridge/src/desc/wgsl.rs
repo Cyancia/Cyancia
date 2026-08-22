@@ -25,6 +25,7 @@ pub const AZIMUTH_INPUT: &str = "azimuth";
 pub const DIRECTION_INPUT: &str = "direction";
 pub const INITIAL_DIRECTION_INPUT: &str = "initial_direction";
 pub const DAB_INDEX_INPUT: &str = "dab_index";
+pub const STROKE_DISTANCE_INPUT: &str = "stroke_distance";
 pub const STROKE_BEGIN_INPUT: &str = "stroke_begin";
 
 #[derive(Clone, Copy)]
@@ -89,7 +90,6 @@ pub struct DualBrush {
     pub flip: bool,
     pub blend_mode: BlendMode,
     pub spacing: f32,
-    pub main_spacing: f32,
     pub scatter: Option<Scatter>,
 }
 
@@ -136,6 +136,8 @@ static DIRECTION_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(DIRECTION_
 static INITIAL_DIRECTION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(INITIAL_DIRECTION_INPUT.to_string()));
 static DAB_INDEX_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(DAB_INDEX_INPUT.to_string()));
+static STROKE_DISTANCE_IDENT: LazyLock<Ident> =
+    LazyLock::new(|| Ident::new(STROKE_DISTANCE_INPUT.to_string()));
 static STROKE_BEGIN_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(STROKE_BEGIN_INPUT.to_string()));
 
@@ -365,10 +367,9 @@ fn scatter_count_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expres
 }
 
 fn dual_copy_random(random_offset: f32) -> Expression {
-    let dab_index = (*DAB_INDEX_IDENT).clone();
     quote_expression!(fract(
         sin(
-            f32(#dab_index) * 12.9898
+            f32(dual_dab_index) * 12.9898
                 + f32(dual_copy_index) * 78.233
                 + #random_offset
         ) * 43758.5453
@@ -717,14 +718,42 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let pen = (*MAIN_PEN_POSITION_IDENT).clone();
     let direction = (*DIRECTION_IDENT).clone();
-    let dab_index = (*DAB_INDEX_IDENT).clone();
+    let stroke_distance = (*STROKE_DISTANCE_IDENT).clone();
     let diameter = match dual.tip {
         DualBrushTip::Computed { diameter, .. } | DualBrushTip::Sampled { diameter, .. } => {
             diameter
         }
     };
-    let dual_spacing = (diameter * dual.spacing).max(0.001);
-    let main_spacing = dual.main_spacing.max(0.001);
+    let dual_spacing = match dual.tip {
+        DualBrushTip::Computed { .. } => {
+            let spacing = (diameter * dual.spacing).max(0.001);
+            quote_statement! {
+                dual_spacing = #spacing;
+            }
+        }
+        DualBrushTip::Sampled { .. } => {
+            let texture = (*DUAL_TIP_TEXTURE_IDENT).clone();
+            let spacing = diameter * dual.spacing;
+            quote_statement! {{
+                let dual_spacing_texture_size = vec2f(atlas_size(#texture));
+                let dual_spacing_scale = min(
+                    dual_spacing_texture_size.x,
+                    dual_spacing_texture_size.y,
+                ) / max(
+                    dual_spacing_texture_size.x,
+                    dual_spacing_texture_size.y,
+                );
+                dual_spacing = max(#spacing * dual_spacing_scale, 0.001);
+            }}
+        }
+    };
+    let along_stroke_scatter = dual
+        .scatter
+        .filter(|scatter| scatter.both_axes)
+        .and_then(|scatter| scatter.scatter_dynamics)
+        .map(|dynamics| dynamics.jitter * 0.5)
+        .unwrap_or(0.0);
+    let dual_support = diameter * (std::f32::consts::FRAC_1_SQRT_2 + along_stroke_scatter);
     let random_flip = if dual.flip {
         let random = dual_copy_random(281.917);
         quote_expression!(select(1.0, -1.0, #random < 0.5))
@@ -789,18 +818,46 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
     let blend = Ident::new(dual.blend_mode.shader_func().to_string());
 
     quote_statement! {{
-        let dual_distance_along_stroke = f32(#dab_index) * #main_spacing;
-        let dual_phase = dual_distance_along_stroke
-            - floor(dual_distance_along_stroke / #dual_spacing) * #dual_spacing;
-        let dual_stroke_center =
-            #pen - vec2f(cos(#direction), sin(#direction)) * dual_phase;
+        var dual_spacing: f32;
+        @#dual_spacing {}
+        let dual_distance_along_stroke = #stroke_distance;
+        let dual_direction = vec2f(cos(#direction), sin(#direction));
+        let dual_last_dab_index = u32(floor(dual_distance_along_stroke / dual_spacing));
+        let dual_pixel_distance = max(
+            0.0,
+            dual_distance_along_stroke + dot(#pixel - #pen, dual_direction),
+        );
+        let dual_nearest_dab_index = min(
+            dual_last_dab_index,
+            u32(round(dual_pixel_distance / dual_spacing)),
+        );
+        let dual_overlap_count = u32(ceil(#dual_support / dual_spacing)) + 1u;
+        let dual_first_dab_index = dual_nearest_dab_index
+            - min(dual_nearest_dab_index, dual_overlap_count);
+        let dual_end_dab_index = min(
+            dual_last_dab_index,
+            dual_nearest_dab_index + dual_overlap_count,
+        );
         let dual_active_copy_count = #active_copy_count;
         var dual_mask = 0.0;
-        for (var dual_copy_index = 0u; dual_copy_index < dual_active_copy_count; dual_copy_index += 1u) {
-            let dual_center = dual_stroke_center + #scatter_offset;
-            var dual_copy_mask = 0.0;
-            @#sample_dual {}
-            dual_mask = 1.0 - (1.0 - dual_mask) * (1.0 - dual_copy_mask);
+        for (
+            var dual_dab_index = dual_first_dab_index;
+            dual_dab_index <= dual_end_dab_index;
+            dual_dab_index += 1u
+        ) {
+            let dual_stroke_center = #pen + dual_direction * (
+                f32(dual_dab_index) * dual_spacing - dual_distance_along_stroke
+            );
+            for (
+                var dual_copy_index = 0u;
+                dual_copy_index < dual_active_copy_count;
+                dual_copy_index += 1u
+            ) {
+                let dual_center = dual_stroke_center + #scatter_offset;
+                var dual_copy_mask = 0.0;
+                @#sample_dual {}
+                dual_mask = 1.0 - (1.0 - dual_mask) * (1.0 - dual_copy_mask);
+            }
         }
         let dual_color = vec4f(vec3f(dual_mask), 1.0);
         let mask_color = vec4f(vec3f(tip_mask), 1.0);

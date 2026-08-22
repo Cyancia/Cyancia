@@ -13,7 +13,7 @@ use lapiz_brush::{
         ForegroundColorNode, GraphDataWithInitialPenInput, GraphDataWithPenInput,
         InitialDrawDirectionNode, OutputBoundsNode, OutputColorNode, OutputRequiredSpacingNode,
         PenAngleNode, PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode,
-        StrokeBoundsNode,
+        StrokeBoundsNode, StrokeDistanceNode,
     },
 };
 use lapiz_image::blend_modes::BlendMode;
@@ -38,8 +38,8 @@ use crate::desc::wgsl::{
     MAIN_FOREGROUND_COLOR_INPUT, MAIN_PATTERN_TEXTURE_INPUT, MAIN_PEN_POSITION_INPUT,
     MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT, POSTPROCESS_INPUT_COLOR,
     POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT,
-    Scatter, TILT_INPUT, computed_main, computed_required_spacing, opacity_postprocess,
-    sampled_main, sampled_required_spacing,
+    STROKE_DISTANCE_INPUT, Scatter, TILT_INPUT, computed_main, computed_required_spacing,
+    opacity_postprocess, sampled_main, sampled_required_spacing,
 };
 
 pub fn add_stateful_node<Data, T>(
@@ -235,6 +235,9 @@ fn build_main_graph(tip: MainTip, options: MainGraphOptions) -> Result<Serializa
             TextureId(Some(pattern_asset)),
         )
     });
+    let stroke_distance = options
+        .dual_brush
+        .map(|_| graph.add_node(Point::new(0.0, 600.0), StrokeDistanceNode));
     let stroke_time = graph.add_node(Point::new(0.0, 650.0), TimeNode);
     let dual_texture = options.dual_sample_asset.map(|sample_asset| {
         add_stateful_node(
@@ -255,6 +258,9 @@ fn build_main_graph(tip: MainTip, options: MainGraphOptions) -> Result<Serializa
     state.add_input::<ColorType>(MAIN_BACKGROUND_COLOR_INPUT);
     state.add_input::<TextureType>(MAIN_PATTERN_TEXTURE_INPUT);
     add_dynamics_input_slots(&mut state);
+    if stroke_distance.is_some() {
+        state.add_input::<F32Type>(STROKE_DISTANCE_INPUT);
+    }
     state.add_input::<F32Type>(STROKE_BEGIN_INPUT);
     if dual_texture.is_some() {
         state.add_input::<TextureType>(DUAL_TIP_TEXTURE_INPUT);
@@ -278,7 +284,8 @@ fn build_main_graph(tip: MainTip, options: MainGraphOptions) -> Result<Serializa
     let background_input = 3 + tip_input_offset;
     let pattern_input = background_input + 1;
     let dynamics_input = pattern_input + 1;
-    let stroke_time_input = dynamics_input + 6;
+    let stroke_distance_input = dynamics_input + 6;
+    let stroke_time_input = stroke_distance_input + usize::from(stroke_distance.is_some());
 
     graph.connect_slots_by_index(pixel_position, 0, expression, 0);
     graph.connect_slots_by_index(pen_position, 0, expression, 1);
@@ -291,6 +298,9 @@ fn build_main_graph(tip: MainTip, options: MainGraphOptions) -> Result<Serializa
         graph.connect_slots_by_index(pattern_texture, 0, expression, pattern_input);
     }
     connect_dynamics_input_nodes(&mut graph, expression, dynamics_input);
+    if let Some(stroke_distance) = stroke_distance {
+        graph.connect_slots_by_index(stroke_distance, 0, expression, stroke_distance_input);
+    }
     graph.connect_slots_by_index(stroke_time, 1, expression, stroke_time_input);
     if let Some(dual_texture) = dual_texture {
         graph.connect_slots_by_index(dual_texture, 0, expression, stroke_time_input + 1);

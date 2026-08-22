@@ -37,6 +37,7 @@ struct ComputedPenInput {
     draw_direction_angle: f32,
     pressure: f32,
     dab_index: u32,
+    stroke_distance: f32,
     time: Time,
 }
 
@@ -47,6 +48,7 @@ struct PenInputSampler {
     has_initial_input: u32,
     next_dab_index: u32,
     distance_to_next_dab: f32,
+    stroke_distance: f32,
 }
 
 struct PenInput {

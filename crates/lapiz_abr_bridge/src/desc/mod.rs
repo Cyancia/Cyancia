@@ -68,11 +68,6 @@ fn parse_dual_brush(
         BrushTip::DBrush(tip) => tip.spacing.value as f32 / 100.0,
     }
     .max(0.001);
-    let main_spacing = match &brush.brush {
-        BrushTip::Computed(tip) => tip.diameter.value * tip.spacing.value / 100.0,
-        BrushTip::Sampled(tip) => tip.diameter.value * tip.spacing.value / 100.0,
-        BrushTip::DBrush(tip) => tip.diameter.value * tip.spacing.value / 100.0,
-    } as f32;
     let scatter = if dual.use_scatter {
         let scatter_dynamics = dual
             .scatter_dynamics
@@ -141,7 +136,6 @@ fn parse_dual_brush(
             flip: dual.flip,
             blend_mode: parse_blend_mode(dual.blend_mode.unwrap_or(lapiz_abr::BlendMode::Multiply)),
             spacing,
-            main_spacing,
             scatter,
         }),
         sample_asset,

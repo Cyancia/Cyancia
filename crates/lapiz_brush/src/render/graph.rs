@@ -396,6 +396,47 @@ impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for DabIndexNod
 }
 
 #[derive(Default, Clone)]
+pub struct StrokeDistanceNode;
+
+#[stateless]
+impl<Data: GraphDataWithPenInput> StatelessCommonGraphNode<Data> for StrokeDistanceNode {
+    fn name(&self) -> &'static str {
+        "Stroke Distance"
+    }
+
+    fn header_hue_chroma(&self) -> (f32, f32) {
+        random_oklch_hue_chroma!(StrokeDistanceNode)
+    }
+
+    fn create_inputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultInputSlot> {
+        vec![]
+    }
+
+    fn create_outputs(
+        &self,
+        _ctx: GraphNodeCreateSlotsContext<'_, Data>,
+    ) -> Vec<GraphDefaultOutputSlot> {
+        vec![GraphDefaultOutputSlot::new::<F32Type>(
+            "Stroke Distance".into(),
+        )]
+    }
+
+    fn generate_code(
+        &self,
+        mut ctx: GraphNodeCodeGenContext<'_, Data>,
+    ) -> Result<String, GraphNodeCodeGenError> {
+        Ok(format!(
+            "let {} = {}.stroke_distance;",
+            ctx.get_output(0)?,
+            Data::pen_input_field()
+        ))
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct InitialPenPositionNode;
 
 #[stateless]

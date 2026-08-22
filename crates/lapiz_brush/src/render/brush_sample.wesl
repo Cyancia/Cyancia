@@ -46,7 +46,7 @@ fn bezier_t_for_arc_length(table: ptr<function, array<f32, BEZIER_SAMPLES + 1u>>
     return mix(lo_t, hi_t, (arc_goal - lo_arc) / (hi_arc - lo_arc));
 }
 
-fn compute_pen_input(last: PenInput, current: PenInput, p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32, dab_index: u32) -> ComputedPenInput {
+fn compute_pen_input(last: PenInput, current: PenInput, p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f, t: f32, dab_index: u32, stroke_distance: f32) -> ComputedPenInput {
     let position = bezier_eval(p0, p1, p2, p3, t);
     let pressure = mix(last.pressure, current.pressure, t);
     let tilt = vec2f(
@@ -60,7 +60,7 @@ fn compute_pen_input(last: PenInput, current: PenInput, p0: vec2f, p1: vec2f, p2
     let time = Time(mix(last.time.now, current.time.now, t), last.time.stroke_begin);
     let draw_direction_vec = bezier_tangent_eval(p0, p1, p2, p3, t);
     let draw_direction_angle = atan2(draw_direction_vec.y, draw_direction_vec.x);
-    return ComputedPenInput(position, draw_direction_vec, tilt, angle, draw_direction_angle, pressure, dab_index, time);
+    return ComputedPenInput(position, draw_direction_vec, tilt, angle, draw_direction_angle, pressure, dab_index, stroke_distance, time);
 }
 
 @compute
@@ -83,6 +83,7 @@ fn main() {
         p3,
         1.0,
         input_sampler.next_dab_index,
+        input_sampler.stroke_distance,
     );
 
     if input_sampler.has_last_sample == 0 {
@@ -123,6 +124,7 @@ fn main() {
             p3,
             t,
             input_sampler.next_dab_index,
+            input_sampler.stroke_distance + target_arc,
         );
         let spacing = compute_required_spacing(interpolated);
         if spacing <= 0.0 {
@@ -142,6 +144,7 @@ fn main() {
     }
 
     input_sampler.distance_to_next_dab = target_arc - total_arc;
+    input_sampler.stroke_distance += total_arc;
     input_sampler.last_input = new_input;
     if output_samples.n_samples > 0u {
         input_sampler.last_sample = output_samples.samples[output_samples.n_samples - 1u];

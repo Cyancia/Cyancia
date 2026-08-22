@@ -33,7 +33,7 @@ use crate::{
         InitialPenPressureNode, InitialPenTiltNode, LayerPixelColorNode, OutputBoundsNode,
         OutputColorNode, OutputRequiredSpacingNode, PasteTextureNode, PenAngleNode,
         PenPositionNode, PenPressureNode, PenTiltNode, PixelPositionNode, SelectionMaskNode,
-        StrokeBoundsNode,
+        StrokeBoundsNode, StrokeDistanceNode,
     },
 };
 
@@ -521,6 +521,7 @@ fn main_graph_nodes() -> GraphNodeRegistry<BrushMainGraphData> {
     nodes.register::<PenTiltNode>();
     nodes.register::<DrawDirectionNode>();
     nodes.register::<DabIndexNode>();
+    nodes.register::<StrokeDistanceNode>();
     nodes.register::<InitialPenPositionNode>();
     nodes.register::<InitialPenPressureNode>();
     nodes.register::<InitialPenAngleNode>();
