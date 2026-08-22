@@ -293,11 +293,9 @@ fn dynamics_factor(dynamics: Dynamics, random_offset: f32, pose: BrushPose) -> E
     let minimum = dynamics.minimum;
     let random = dab_random(random_offset);
 
-    quote_expression!(mix(
-        mix(#minimum, 1.0, #control),
-        #minimum,
-        #jitter * #random,
-    ))
+    quote_expression!(
+        mix(#minimum, 1.0, #control) * (1.0 - #jitter * #random)
+    )
 }
 
 fn color_dynamics_factor(dynamics: Dynamics, per_tip: bool, pose: BrushPose) -> Expression {
@@ -309,11 +307,9 @@ fn color_dynamics_factor(dynamics: Dynamics, per_tip: bool, pose: BrushPose) -> 
     } else {
         stroke_random(89.417)
     };
-    quote_expression!(mix(
-        mix(#minimum, 1.0, #control),
-        #minimum,
-        #jitter * #random,
-    ))
+    quote_expression!(
+        mix(#minimum, 1.0, #control) * (1.0 - #jitter * #random)
+    )
 }
 
 fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expression {
@@ -436,9 +432,10 @@ fn size_diameter_statement(
         };
     };
     let factor = dynamics_factor(dynamics, 78.233, pose);
+    let minimum = dynamics.minimum;
 
     quote_statement! {
-        tip_diameter = #diameter * #factor;
+        tip_diameter = #diameter * clamp(#factor, #minimum, 1.0);
     }
 }
 
@@ -476,10 +473,11 @@ fn tip_roundness_statement(
     let random = dab_random(91.417);
 
     quote_statement! {{
-        tip_roundness = mix(
-            mix(#minimum, #roundness, #control),
+        tip_roundness = clamp(
+            mix(#minimum, #roundness, #control)
+                * (1.0 - #jitter * #random),
             #minimum,
-            #jitter * #random,
+            #roundness,
         );
         roundness_angle = #angle;
     }}
@@ -691,11 +689,10 @@ fn texture_mask_statement(
             let minimum = dynamics.minimum;
             let jitter = dynamics.jitter;
             let random = dab_random(197.731);
-            quote_expression!(mix(
-                mix(#minimum, #depth, #control),
-                #minimum,
-                #jitter * #random,
-            ))
+            quote_expression!(
+                mix(#minimum, #depth, #control)
+                    * (1.0 - #jitter * #random)
+            )
         }
         None => quote_expression!(#depth * 1.0),
     };
