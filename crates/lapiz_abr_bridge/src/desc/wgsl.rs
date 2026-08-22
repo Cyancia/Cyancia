@@ -7,6 +7,10 @@ use wesl_quote::{quote_expression, quote_statement};
 
 use crate::desc::graph::{ComputedMainTip, MainGraphOptions, SampledMainTip};
 
+pub const USER_SIZE: &str = "user_size";
+pub const USER_OPACITY: &str = "user_opacity";
+pub const USER_FLOW: &str = "user_flow";
+
 pub const MAIN_PIXEL_POSITION_INPUT: &str = "pixel_position";
 pub const MAIN_PEN_POSITION_INPUT: &str = "pen_position";
 pub const MAIN_FOREGROUND_COLOR_INPUT: &str = "foreground_color";
@@ -105,6 +109,10 @@ pub struct ColorAdjustment {
 }
 
 // TODO: This is really ugly, can we avoid this?
+static USER_SIZE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(USER_SIZE.to_string()));
+static USER_OPACITY_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(USER_OPACITY.to_string()));
+static USER_FLOW_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(USER_FLOW.to_string()));
+
 static MAIN_PIXEL_POSITION_IDENT: LazyLock<Ident> =
     LazyLock::new(|| Ident::new(MAIN_PIXEL_POSITION_INPUT.to_string()));
 static MAIN_PEN_POSITION_IDENT: LazyLock<Ident> =
@@ -376,11 +384,7 @@ fn dual_copy_random(random_offset: f32) -> Expression {
     ))
 }
 
-fn dual_scatter_offset_expression(
-    scatter: Option<Scatter>,
-    pose: BrushPose,
-    diameter: f32,
-) -> Expression {
+fn dual_scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expression {
     let Some(scatter) = scatter else {
         return quote_expression!(vec2f(0.0));
     };
@@ -396,7 +400,7 @@ fn dual_scatter_offset_expression(
                 cos(#first_random * render::math::TAU),
                 sin(#first_random * render::math::TAU),
             ) * #second_random
-                * #diameter
+                * dual_diameter
                 * #factor
         )
     } else {
@@ -404,7 +408,7 @@ fn dual_scatter_offset_expression(
         quote_expression!(
             vec2f(-sin(#direction), cos(#direction))
                 * (#first_random * 2.0 - 1.0)
-                * #diameter
+                * dual_diameter
                 * #factor
         )
     }
@@ -425,21 +429,19 @@ fn dual_scatter_count_expression(scatter: Option<Scatter>, pose: BrushPose) -> E
     ))
 }
 
-fn size_diameter_statement(
-    diameter: f32,
-    dynamics: Option<Dynamics>,
-    pose: BrushPose,
-) -> Statement {
+fn size_diameter_statement(dynamics: Option<Dynamics>, pose: BrushPose) -> Statement {
+    let user_size = (*USER_SIZE_IDENT).clone();
     let Some(dynamics) = dynamics else {
         return quote_statement! {
-            tip_diameter = #diameter;
+            tip_diameter = clamp(#user_size, 0.1, 1000.0);
         };
     };
     let factor = dynamics_factor(dynamics, 78.233, pose);
     let minimum = dynamics.minimum;
 
     quote_statement! {
-        tip_diameter = #diameter * clamp(#factor, #minimum, 1.0);
+        tip_diameter = clamp(#user_size, 0.1, 1000.0)
+            * clamp(#factor, #minimum, 1.0);
     }
 }
 
@@ -711,7 +713,7 @@ fn texture_mask_statement(
     }}
 }
 
-fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
+fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose, main_diameter: f32) -> Statement {
     let Some(dual) = dual else {
         return quote_statement! {{}};
     };
@@ -726,14 +728,14 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
     };
     let dual_spacing = match dual.tip {
         DualBrushTip::Computed { .. } => {
-            let spacing = (diameter * dual.spacing).max(0.001);
+            let spacing = dual.spacing;
             quote_statement! {
-                dual_spacing = #spacing;
+                dual_spacing = max(dual_diameter * #spacing, 0.001);
             }
         }
         DualBrushTip::Sampled { .. } => {
             let texture = (*DUAL_TIP_TEXTURE_IDENT).clone();
-            let spacing = diameter * dual.spacing;
+            let spacing = dual.spacing;
             quote_statement! {{
                 let dual_spacing_texture_size = vec2f(atlas_size(#texture));
                 let dual_spacing_scale = min(
@@ -743,7 +745,7 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
                     dual_spacing_texture_size.x,
                     dual_spacing_texture_size.y,
                 );
-                dual_spacing = max(#spacing * dual_spacing_scale, 0.001);
+                dual_spacing = max(dual_diameter * #spacing * dual_spacing_scale, 0.001);
             }}
         }
     };
@@ -753,7 +755,7 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
         .and_then(|scatter| scatter.scatter_dynamics)
         .map(|dynamics| dynamics.jitter * 0.5)
         .unwrap_or(0.0);
-    let dual_support = diameter * (std::f32::consts::FRAC_1_SQRT_2 + along_stroke_scatter);
+    let dual_support_factor = std::f32::consts::FRAC_1_SQRT_2 + along_stroke_scatter;
     let random_flip = if dual.flip {
         let random = dual_copy_random(281.917);
         quote_expression!(select(1.0, -1.0, #random < 0.5))
@@ -771,17 +773,17 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
         } => {
             let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
             let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
-            let radius = diameter * 0.5;
-            let edge = (radius * (1.0 - hardness)).max(1.0);
             quote_statement! {{
+                let dual_radius = dual_diameter * 0.5;
+                let dual_edge = max(dual_radius * (1.0 - #hardness), 1.0);
                 let dual_delta = (#pixel - dual_center)
                     * vec2f(#flip_x * #random_flip, #flip_y);
                 let dual_distance = sdf_ellipse(
                     rotate_mat2x2(#angle) * dual_delta,
                     vec2f(0.0),
-                    vec2f(#radius, max(#radius * #roundness, 0.001)),
+                    vec2f(dual_radius, max(dual_radius * #roundness, 0.001)),
                 );
-                dual_copy_mask = 1.0 - smoothstep(-#edge, 0.0, dual_distance);
+                dual_copy_mask = 1.0 - smoothstep(-dual_edge, 0.0, dual_distance);
             }}
         }
         DualBrushTip::Sampled {
@@ -798,8 +800,8 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
                 let dual_texture_size = vec2f(atlas_size(#texture));
                 let dual_base_size = max(dual_texture_size.x, dual_texture_size.y);
                 let dual_scale = vec2f(
-                    #flip_x * #random_flip * #diameter / dual_base_size,
-                    #flip_y * #diameter * #roundness / dual_base_size,
+                    #flip_x * #random_flip * dual_diameter / dual_base_size,
+                    #flip_y * dual_diameter * #roundness / dual_base_size,
                 );
                 let dual_sample = sample_transformed_local_texture_clamp(
                     #texture,
@@ -813,11 +815,15 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
             }}
         }
     };
-    let scatter_offset = dual_scatter_offset_expression(dual.scatter, pose, diameter);
+    let scatter_offset = dual_scatter_offset_expression(dual.scatter, pose);
     let active_copy_count = dual_scatter_count_expression(dual.scatter, pose);
     let blend = Ident::new(dual.blend_mode.shader_func().to_string());
 
+    let user_size = (*USER_SIZE_IDENT).clone();
     quote_statement! {{
+        let dual_diameter = #diameter
+            * clamp(#user_size, 0.1, 1000.0)
+            / max(#main_diameter, 0.1);
         var dual_spacing: f32;
         @#dual_spacing {}
         let dual_distance_along_stroke = #stroke_distance;
@@ -831,7 +837,9 @@ fn dual_mask_statement(dual: Option<DualBrush>, pose: BrushPose) -> Statement {
             dual_last_dab_index,
             u32(round(dual_pixel_distance / dual_spacing)),
         );
-        let dual_overlap_count = u32(ceil(#dual_support / dual_spacing)) + 1u;
+        let dual_overlap_count = u32(ceil(
+            dual_diameter * #dual_support_factor / dual_spacing
+        )) + 1u;
         let dual_first_dab_index = dual_nearest_dab_index
             - min(dual_nearest_dab_index, dual_overlap_count);
         let dual_end_dab_index = min(
@@ -872,12 +880,13 @@ fn tip_color_statement(
     pose: BrushPose,
 ) -> Statement {
     let color = (*MAIN_COLOR_IDENT).clone();
+    let user_flow = (*USER_FLOW_IDENT).clone();
     let effective_flow = match flow_dynamics {
         Some(dynamics) => {
             let factor = dynamics_factor(dynamics, 19.673, pose);
-            quote_expression!(#flow * #factor)
+            quote_expression!(#flow * clamp(#user_flow, 0.0, 1.0) * #factor)
         }
-        None => quote_expression!(#flow * 1.0),
+        None => quote_expression!(#flow * clamp(#user_flow, 0.0, 1.0)),
     };
     let Some(dynamics) = opacity_dynamics else {
         return quote_statement! {{
@@ -917,13 +926,12 @@ fn tip_color_statement(
 }
 
 pub fn computed_required_spacing(
-    diameter: f32,
     spacing: f32,
     size_dynamics: Option<Dynamics>,
     pose: BrushPose,
 ) -> String {
     let required_spacing = (*REQUIRED_SPACING_IDENT).clone();
-    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
+    let size_diameter = size_diameter_statement(size_dynamics, pose);
     quote_statement! {{
         var tip_diameter: f32;
         @#size_diameter {}
@@ -933,14 +941,13 @@ pub fn computed_required_spacing(
 }
 
 pub fn sampled_required_spacing(
-    diameter: f32,
     spacing: f32,
     size_dynamics: Option<Dynamics>,
     pose: BrushPose,
 ) -> String {
     let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
     let required_spacing = (*REQUIRED_SPACING_IDENT).clone();
-    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
+    let size_diameter = size_diameter_statement(size_dynamics, pose);
     quote_statement! {{
         var tip_diameter: f32;
         @#size_diameter {}
@@ -987,7 +994,7 @@ pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String 
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let flip_jitter = flip_jitter_scale(flip_x_jitter, flip_y_jitter);
-    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
+    let size_diameter = size_diameter_statement(size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
@@ -996,7 +1003,7 @@ pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String 
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
     let noise = noise_statement(noise);
-    let dual_mask = dual_mask_statement(dual_brush, pose);
+    let dual_mask = dual_mask_statement(dual_brush, pose, diameter);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -1081,7 +1088,7 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
     let flip_jitter = flip_jitter_scale(flip_x_jitter, flip_y_jitter);
-    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
+    let size_diameter = size_diameter_statement(size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
     let tip_foreground = tip_foreground_statement(color_adjustment, pose);
@@ -1090,7 +1097,7 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
     let active_copy_count = scatter_count_expression(scatter, pose);
     let texture_mask = texture_mask_statement(brush_texture, pose, diameter, tip_angle.clone());
     let noise = noise_statement(noise);
-    let dual_mask = dual_mask_statement(dual_brush, pose);
+    let dual_mask = dual_mask_statement(dual_brush, pose, diameter);
 
     quote_statement! {{
         var tip_diameter: f32;
@@ -1145,6 +1152,7 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
 }
 
 pub fn opacity_postprocess(opacity: f32, blend_mode: BlendMode) -> String {
+    let user_opacity = (*USER_OPACITY_IDENT).clone();
     let input_color = (*POSTPROCESS_INPUT_COLOR_IDENT).clone();
     let stroke_bounds = (*POSTPROCESS_STROKE_BOUNDS_IDENT).clone();
     let color = (*MAIN_COLOR_IDENT).clone();
@@ -1154,7 +1162,7 @@ pub fn opacity_postprocess(opacity: f32, blend_mode: BlendMode) -> String {
     quote_statement! {{
         let stroke_color = vec4f(
             #input_color.rgb,
-            #input_color.a * #opacity,
+            #input_color.a * #opacity * clamp(#user_opacity, 0.0, 1.0),
         );
         #color = image::blend_modes::#blend(
             stroke_color,

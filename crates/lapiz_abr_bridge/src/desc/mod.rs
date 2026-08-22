@@ -6,6 +6,7 @@ use lapiz_assets::asset::AssetId;
 use lapiz_brush::asset::{BrushPreset, BrushPresetMetadata};
 use lapiz_image::blend_modes::BlendMode;
 use lapiz_render::texture::Image;
+use lapiz_shader_graph::save::SerializableExternalVariable;
 use uuid::Uuid;
 
 use crate::desc::{
@@ -495,6 +496,13 @@ pub fn parse_desc(
         dual_sample_asset,
     };
 
+    let base_size = match &brush.brush {
+        BrushTip::Computed(tip) => tip.diameter.value as f32,
+        BrushTip::Sampled(tip) => tip.diameter.value as f32,
+        BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
+    };
+    let external_vars = graph::external_variables(base_size);
+
     let (required_spacing_graph, main_graph) = match &brush.brush {
         BrushTip::Computed(tip) => {
             ensure!(tip.interpolation, "unsupported computed interpolation");
@@ -509,6 +517,7 @@ pub fn parse_desc(
                     spacing: (tip.spacing.value / 100.0).max(0.001) as f32,
                 },
                 main_graph_options,
+                &external_vars,
             )?
         }
         BrushTip::Sampled(tip) => {
@@ -528,13 +537,23 @@ pub fn parse_desc(
                     spacing: (tip.spacing.value / 100.0).max(0.001) as f32,
                 },
                 main_graph_options,
+                &external_vars,
             )?
         }
         BrushTip::DBrush(_) => bail!("unsupported dual brush tip in {}", brush.name),
     };
 
-    let stroke_postprocess_graphs =
-        vec![graph::opacity_postprocess_graph(opacity, paint_blend_mode)?];
+    let stroke_postprocess_graphs = vec![graph::opacity_postprocess_graph(
+        opacity,
+        paint_blend_mode,
+        &external_vars,
+    )?];
+    let serialized_external_vars = external_vars
+        .storage
+        .all()
+        .iter()
+        .map(|entry| SerializableExternalVariable::serialize(entry.value()))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(BrushPreset {
         metadata: BrushPresetMetadata {
@@ -543,6 +562,6 @@ pub fn parse_desc(
         required_spacing_graph,
         main_graph,
         stroke_postprocess_graphs,
-        external_vars: Vec::new(),
+        external_vars: serialized_external_vars,
     })
 }
