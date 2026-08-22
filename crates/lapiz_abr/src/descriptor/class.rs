@@ -455,10 +455,10 @@ pub struct Descriptor {
     pub use_tip_dynamics: bool,
     #[abr(key = "flipX")]
     #[abr(default = false)]
-    pub flip_x: bool,
+    pub flip_x_jitter: bool,
     #[abr(key = "flipY")]
     #[abr(default = false)]
-    pub flip_y: bool,
+    pub flip_y_jitter: bool,
     #[abr(key = "brushProjection")]
     #[abr(default = false)]
     pub brush_projection: bool,

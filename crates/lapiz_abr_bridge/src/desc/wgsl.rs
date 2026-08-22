@@ -208,6 +208,21 @@ fn scatter_copy_random(random_offset: f32) -> Expression {
     ))
 }
 
+fn flip_jitter_component(jitter: bool, random_offset: f32) -> Expression {
+    if jitter {
+        let random = scatter_copy_random(random_offset);
+        quote_expression!(select(1.0, -1.0, #random < 0.5))
+    } else {
+        quote_expression!(1.0)
+    }
+}
+
+fn flip_jitter_scale(flip_x_jitter: bool, flip_y_jitter: bool) -> Expression {
+    let x = flip_jitter_component(flip_x_jitter, 311.113);
+    let y = flip_jitter_component(flip_y_jitter, 317.119);
+    quote_expression!(vec2f(#x, #y))
+}
+
 fn pixel_random(random_offset: f32) -> Expression {
     let pixel = (*MAIN_PIXEL_POSITION_IDENT).clone();
     let dab_index = (*DAB_INDEX_IDENT).clone();
@@ -875,6 +890,8 @@ pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String 
         angle_dynamics,
         roundness_dynamics,
         tilt_scale,
+        flip_x_jitter,
+        flip_y_jitter,
         pose,
         color_adjustment,
         scatter,
@@ -889,6 +906,7 @@ pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String 
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
+    let flip_jitter = flip_jitter_scale(flip_x_jitter, flip_y_jitter);
     let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
@@ -922,7 +940,7 @@ pub fn computed_main(tip: ComputedMainTip, options: MainGraphOptions) -> String 
         var combined_bounds = Rect(vec2f(1000000.0), vec2f(-1000000.0));
         for (var copy_index = 0u; copy_index < active_copy_count; copy_index++) {
             let tip_center = #pen + #scatter_offset;
-            let tip_delta = (#pixel - tip_center) * vec2f(#flip_x, #flip_y);
+            let tip_delta = (#pixel - tip_center) * vec2f(#flip_x, #flip_y) * #flip_jitter;
             let tip_distance = sdf_ellipse(
                 rotate_mat2x2(#tip_angle + roundness_angle) * tip_delta,
                 vec2f(0.0),
@@ -965,6 +983,8 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
         angle_dynamics,
         roundness_dynamics,
         tilt_scale,
+        flip_x_jitter,
+        flip_y_jitter,
         pose,
         color_adjustment,
         scatter,
@@ -980,6 +1000,7 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
     let bounds = (*MAIN_BOUNDS_IDENT).clone();
     let flip_x = if flip_x { -1.0f32 } else { 1.0f32 };
     let flip_y = if flip_y { -1.0f32 } else { 1.0f32 };
+    let flip_jitter = flip_jitter_scale(flip_x_jitter, flip_y_jitter);
     let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
     let tip_roundness = tip_roundness_statement(roundness, roundness_dynamics, tilt_scale, pose);
     let tip_angle = tip_angle_expression(angle, angle_dynamics, pose);
@@ -1011,10 +1032,11 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
         var combined_bounds = Rect(vec2f(1000000.0), vec2f(-1000000.0));
         for (var copy_index = 0u; copy_index < active_copy_count; copy_index += 1u) {
             let tip_center = #pen + #scatter_offset;
+            let copy_scale = tip_scale * #flip_jitter;
             let tip_sample = sample_transformed_local_texture_clamp(
                 #texture,
                 #pixel,
-                tip_scale,
+                copy_scale,
                 #tip_angle + roundness_angle,
                 tip_center,
                 tip_anchor,
@@ -1025,7 +1047,7 @@ pub fn sampled_main(tip: SampledMainTip, options: MainGraphOptions) -> String {
             tip_mask = 1.0 - (1.0 - tip_mask) * (1.0 - copy_mask);
             let copy_bounds = filter_within_mask_bounds(
                 #texture,
-                tip_scale,
+                copy_scale,
                 #tip_angle + roundness_angle,
                 tip_center,
                 tip_anchor,

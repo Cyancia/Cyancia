@@ -97,6 +97,8 @@ pub struct MainGraphOptions {
     pub angle_dynamics: Option<Dynamics>,
     pub roundness_dynamics: Option<Dynamics>,
     pub tilt_scale: f32,
+    pub flip_x_jitter: bool,
+    pub flip_y_jitter: bool,
     pub pose: BrushPose,
     pub color_adjustment: Option<ColorAdjustment>,
     pub scatter: Option<Scatter>,
