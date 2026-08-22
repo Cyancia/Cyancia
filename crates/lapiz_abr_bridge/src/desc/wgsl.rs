@@ -332,9 +332,10 @@ fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expre
         let second_random = scatter_copy_random(149.819);
         quote_expression!(
             vec2f(
-                #first_random * 2.0 - 1.0,
-                #second_random * 2.0 - 1.0,
-            ) * tip_diameter
+                cos(#first_random * render::math::TAU),
+                sin(#first_random * render::math::TAU),
+            ) * #second_random
+                * tip_diameter
                 * #factor
         )
     } else {
@@ -391,9 +392,10 @@ fn dual_scatter_offset_expression(
         let second_random = dual_copy_random(251.173);
         quote_expression!(
             vec2f(
-                #first_random * 2.0 - 1.0,
-                #second_random * 2.0 - 1.0,
-            ) * #diameter
+                cos(#first_random * render::math::TAU),
+                sin(#first_random * render::math::TAU),
+            ) * #second_random
+                * #diameter
                 * #factor
         )
     } else {
@@ -848,7 +850,10 @@ fn tip_color_statement(
             accumulated_color.rgb,
             max(
                 previous_color.a,
-                min(accumulated_color.a, tip_mask * #opacity_factor),
+                min(
+                    accumulated_color.a,
+                    tip_foreground.a * #opacity_factor,
+                ),
             ),
         );
     }}
@@ -883,7 +888,8 @@ pub fn sampled_required_spacing(
         var tip_diameter: f32;
         @#size_diameter {}
         let tip_texture_size = vec2f(atlas_size(#texture));
-        let spacing_scale = tip_texture_size.x / max(tip_texture_size.x, tip_texture_size.y);
+        let spacing_scale = min(tip_texture_size.x, tip_texture_size.y)
+            / max(tip_texture_size.x, tip_texture_size.y);
         #required_spacing = max(tip_diameter * #spacing * spacing_scale, 0.001);
     }}
     .to_string()
