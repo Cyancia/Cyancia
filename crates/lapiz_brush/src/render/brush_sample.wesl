@@ -1,5 +1,5 @@
 import package::brush_types::{PenInput, ComputedPenInput, PenInputSampler, OutputSamples, StrokeInfo, Time, CanvasResources};
-import render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angle};
+import render::math::{URect, unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_angle};
 
 @group(0) @binding(0) var<storage> new_input: PenInput;
 @group(0) @binding(1) var<storage, read_write> input_sampler: PenInputSampler;
@@ -7,10 +7,17 @@ import render::math::{unsigned_div_ceil, bezier_eval, bezier_tangent_eval, mix_a
 @group(0) @binding(3) var<storage, read_write> bounds_eval_dispatch: vec3u;
 @group(0) @binding(4) var<storage> canvas_resources: CanvasResources;
 @group(0) @binding(5) var<storage, read_write> initial_pen_input: ComputedPenInput;
+@group(0) @binding(6) var textures: texture_2d<f32>;
+@group(0) @binding(7) var<storage> texture_bounds: array<URect>;
 
 //CODEGENFLAG_EXTERNAL_VARIABLE_BINDINGS
 
 const BEZIER_SAMPLES: u32 = 32u;
+
+fn atlas_size(local_index: u32) -> vec2u {
+    let bounds = texture_bounds[local_index];
+    return bounds.max - bounds.min;
+}
 
 fn compute_required_spacing(graph_input: ComputedPenInput) -> f32 {
     //CODEGENFLAG_COMPUTED_GRAPH_REQUIRED_SPACING

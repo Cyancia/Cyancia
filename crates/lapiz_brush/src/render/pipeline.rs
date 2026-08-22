@@ -46,6 +46,8 @@ impl BrushInputSamplingPipeline {
                 binding_types::storage_buffer::<UVec4>(false),
                 binding_types::storage_buffer_read_only::<CanvasResources>(false),
                 binding_types::storage_buffer::<ComputedPenInput>(false),
+                binding_types::texture_2d(TextureSampleType::Float { filterable: false }),
+                binding_types::storage_buffer_read_only::<URect>(false),
             ),
         )
         .to_vec();
@@ -96,6 +98,8 @@ impl BrushInputSamplingPipeline {
             bounds_eval_dispatch.as_entire_binding(),
             resources.canvas_resources.as_entire_binding(),
             initial_pen_input.binding().unwrap(),
+            resources.referenced_textures.texture_view(),
+            resources.referenced_textures.atlas_bounds_buffer_binding(),
         ))
         .to_vec();
         entries.extend(resources.external_var_bindings());

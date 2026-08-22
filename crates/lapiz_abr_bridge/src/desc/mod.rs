@@ -74,7 +74,7 @@ fn parse_dual_brush(
         BrushTip::DBrush(tip) => tip.diameter.value * tip.spacing.value / 100.0,
     } as f32;
     let scatter = if dual.use_scatter {
-        let dynamics = dual
+        let scatter_dynamics = dual
             .scatter_dynamics
             .as_ref()
             .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("dual scatter dynamics"))
@@ -93,13 +93,8 @@ fn parse_dual_brush(
             dual.scatter_count
         );
         Some(Scatter {
-            amount: dual
-                .spacing
-                .as_ref()
-                .and_then(UnitFloat::as_percentage_01)
-                .unwrap_or(0.0),
             both_axes: dual.scatter_both_axes,
-            dynamics,
+            scatter_dynamics,
             count: count as u32,
             count_dynamics,
         })
@@ -175,7 +170,7 @@ fn parse_dynamics(
     Ok(Dynamics {
         control,
         fade_steps: dynamics.fade_steps,
-        jitter: (dynamics.jitter.value as f32 / 100.0).clamp(0.0, 1.0),
+        jitter: (dynamics.jitter.value as f32 / 100.0).max(0.0),
         minimum: minimum.max(dynamics_minimum).clamp(0.0, 1.0),
     })
 }
@@ -384,7 +379,7 @@ pub fn parse_desc(
         foreground_color,
     });
     let scatter = if brush.use_scatter {
-        let dynamics = brush
+        let scatter_dynamics = brush
             .scatter_dynamics
             .as_ref()
             .map(|dynamics| parse_dynamics(dynamics, false, 0.0).context("scatter dynamics"))
@@ -403,13 +398,8 @@ pub fn parse_desc(
             brush.scatter_count
         );
         Some(Scatter {
-            amount: brush
-                .scatter_spacing
-                .as_ref()
-                .and_then(UnitFloat::as_percentage_01)
-                .unwrap_or(0.0),
             both_axes: brush.scatter_both_axes,
-            dynamics,
+            scatter_dynamics,
             count: count as u32,
             count_dynamics,
         })

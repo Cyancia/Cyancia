@@ -45,9 +45,8 @@ pub struct BrushPose {
 
 #[derive(Clone, Copy)]
 pub struct Scatter {
-    pub amount: f32,
     pub both_axes: bool,
-    pub dynamics: Option<Dynamics>,
+    pub scatter_dynamics: Option<Dynamics>,
     pub count: u32,
     pub count_dynamics: Option<Dynamics>,
 }
@@ -312,16 +311,23 @@ fn color_dynamics_factor(dynamics: Dynamics, per_tip: bool, pose: BrushPose) -> 
     )
 }
 
+fn scatter_dynamics_factor(dynamics: Dynamics, pose: BrushPose) -> Expression {
+    let control = dynamics_control(dynamics, pose);
+    let amount = dynamics.jitter * 0.5;
+    let minimum = dynamics.minimum;
+    quote_expression!(#amount * mix(#minimum, 1.0, #control))
+}
+
 fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expression {
     let Some(scatter) = scatter else {
         return quote_expression!(vec2f(0.0));
     };
-    let factor = match scatter.dynamics {
-        Some(dynamics) => dynamics_factor(dynamics, 103.927, pose),
-        None => quote_expression!(1.0),
+    let factor = match scatter.scatter_dynamics {
+        Some(dynamics) => scatter_dynamics_factor(dynamics, pose),
+        None => quote_expression!(0.0),
     };
-    let amount = scatter.amount;
     let first_random = scatter_copy_random(127.413);
+
     if scatter.both_axes {
         let second_random = scatter_copy_random(149.819);
         quote_expression!(
@@ -329,7 +335,6 @@ fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expre
                 #first_random * 2.0 - 1.0,
                 #second_random * 2.0 - 1.0,
             ) * tip_diameter
-                * #amount
                 * #factor
         )
     } else {
@@ -338,7 +343,6 @@ fn scatter_offset_expression(scatter: Option<Scatter>, pose: BrushPose) -> Expre
             vec2f(-sin(#direction), cos(#direction))
                 * (#first_random * 2.0 - 1.0)
                 * tip_diameter
-                * #amount
                 * #factor
         )
     }
@@ -378,11 +382,10 @@ fn dual_scatter_offset_expression(
     let Some(scatter) = scatter else {
         return quote_expression!(vec2f(0.0));
     };
-    let factor = match scatter.dynamics {
-        Some(dynamics) => dynamics_factor(dynamics, 229.731, pose),
-        None => quote_expression!(1.0),
+    let factor = match scatter.scatter_dynamics {
+        Some(dynamics) => scatter_dynamics_factor(dynamics, pose),
+        None => quote_expression!(0.0),
     };
-    let amount = scatter.amount;
     let first_random = dual_copy_random(239.117);
     if scatter.both_axes {
         let second_random = dual_copy_random(251.173);
@@ -391,7 +394,6 @@ fn dual_scatter_offset_expression(
                 #first_random * 2.0 - 1.0,
                 #second_random * 2.0 - 1.0,
             ) * #diameter
-                * #amount
                 * #factor
         )
     } else {
@@ -400,7 +402,6 @@ fn dual_scatter_offset_expression(
             vec2f(-sin(#direction), cos(#direction))
                 * (#first_random * 2.0 - 1.0)
                 * #diameter
-                * #amount
                 * #factor
         )
     }
@@ -865,6 +866,25 @@ pub fn computed_required_spacing(
         var tip_diameter: f32;
         @#size_diameter {}
         #required_spacing = max(tip_diameter * #spacing, 0.001);
+    }}
+    .to_string()
+}
+
+pub fn sampled_required_spacing(
+    diameter: f32,
+    spacing: f32,
+    size_dynamics: Option<Dynamics>,
+    pose: BrushPose,
+) -> String {
+    let texture = (*MAIN_TIP_TEXTURE_IDENT).clone();
+    let required_spacing = (*REQUIRED_SPACING_IDENT).clone();
+    let size_diameter = size_diameter_statement(diameter, size_dynamics, pose);
+    quote_statement! {{
+        var tip_diameter: f32;
+        @#size_diameter {}
+        let tip_texture_size = vec2f(atlas_size(#texture));
+        let spacing_scale = tip_texture_size.x / max(tip_texture_size.x, tip_texture_size.y);
+        #required_spacing = max(tip_diameter * #spacing * spacing_scale, 0.001);
     }}
     .to_string()
 }

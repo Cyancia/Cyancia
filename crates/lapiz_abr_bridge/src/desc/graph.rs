@@ -39,7 +39,7 @@ use crate::desc::wgsl::{
     MAIN_PIXEL_POSITION_INPUT, MAIN_TIP_TEXTURE_INPUT, POSTPROCESS_INPUT_COLOR,
     POSTPROCESS_STROKE_BOUNDS_INPUT, PRESSURE_INPUT, REQUIRED_SPACING_OUTPUT, STROKE_BEGIN_INPUT,
     Scatter, TILT_INPUT, computed_main, computed_required_spacing, opacity_postprocess,
-    sampled_main,
+    sampled_main, sampled_required_spacing,
 };
 
 pub fn add_stateful_node<Data, T>(
@@ -146,6 +146,7 @@ pub fn computed_graphs(
         tip.spacing,
         options.size_dynamics,
         options.pose,
+        None,
     )?;
     let main_graph = build_main_graph(MainTip::Computed(tip), options)?;
     Ok((required_spacing_graph, main_graph))
@@ -160,6 +161,7 @@ pub fn sampled_graphs(
         tip.spacing,
         options.size_dynamics,
         options.pose,
+        Some(tip.sample_asset),
     )?;
     let main_graph = build_main_graph(MainTip::Sampled(tip), options)?;
     Ok((required_spacing_graph, main_graph))
@@ -170,17 +172,23 @@ fn required_spacing_graph(
     spacing: f32,
     size_dynamics: Option<Dynamics>,
     pose: BrushPose,
+    sample_asset: Option<AssetId<Image>>,
 ) -> Result<SerializableGraph> {
     let mut graph = Graph::new(graph_resources(REQUIRED_SPACING_GRAPH_NODES.clone()));
     let mut state = CustomExpressionNodeState::default();
+    let input_offset = if sample_asset.is_some() {
+        state.add_input::<TextureType>(MAIN_TIP_TEXTURE_INPUT);
+        1
+    } else {
+        0
+    };
     add_dynamics_input_slots(&mut state);
     state.add_output::<F32Type>(REQUIRED_SPACING_OUTPUT);
-    state.set_code(computed_required_spacing(
-        diameter,
-        spacing,
-        size_dynamics,
-        pose,
-    ));
+    state.set_code(if sample_asset.is_some() {
+        sampled_required_spacing(diameter, spacing, size_dynamics, pose)
+    } else {
+        computed_required_spacing(diameter, spacing, size_dynamics, pose)
+    });
 
     let expression = add_stateful_node(
         &mut graph,
@@ -188,9 +196,18 @@ fn required_spacing_graph(
         CustomExpressionNode,
         state,
     );
+    if let Some(sample_asset) = sample_asset {
+        let texture = add_stateful_node(
+            &mut graph,
+            Point::new(0.0, 300.0),
+            TextureNode,
+            TextureId(Some(sample_asset)),
+        );
+        graph.connect_slots_by_index(texture, 0, expression, 0);
+    }
     let output = graph.add_node(Point::new(300.0, 100.0), OutputRequiredSpacingNode);
     graph.connect_slots_by_index(expression, 0, output, 0);
-    connect_dynamics_input_nodes(&mut graph, expression, 0);
+    connect_dynamics_input_nodes(&mut graph, expression, input_offset);
 
     graph.as_serialized()
 }
