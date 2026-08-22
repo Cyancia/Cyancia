@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use anyhow::{Context, Result, bail, ensure};
 use image::{DynamicImage, ImageBuffer, Luma};
 use uuid::Uuid;
@@ -27,6 +29,21 @@ pub struct Sample {
     pub depth: u16,
     pub compression: u8,
     pub pixel_data: Vec<u8>,
+}
+
+impl Debug for Sample {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sample")
+            .field("id", &self.id)
+            .field("top", &self.top)
+            .field("left", &self.left)
+            .field("bottom", &self.bottom)
+            .field("right", &self.right)
+            .field("depth", &self.depth)
+            .field("compression", &self.compression)
+            .field("pixel_data", &format!("{} bytes", self.pixel_data.len()))
+            .finish()
+    }
 }
 
 impl Sample {

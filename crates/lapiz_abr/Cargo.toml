@@ -13,3 +13,6 @@ anyhow.workspace = true
 lapiz_abr_derive.workspace = true
 image.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+clap.workspace = true

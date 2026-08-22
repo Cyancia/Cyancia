@@ -1,11 +1,3 @@
-mod cursor;
-mod descriptor;
-mod header;
-mod hierarchy;
-mod pattern;
-mod rle;
-mod sample;
-
 use anyhow::{Result, bail};
 use descriptor::BrushDescriptorRoot;
 
@@ -22,6 +14,15 @@ pub use lapiz_abr_derive::{AbrClass, AbrEnum, AbrIntegerEnum, AbrObject};
 pub use pattern::{ColorMode, Pattern, PatternChannel};
 pub use sample::{Sample, SampleImage};
 
+mod cursor;
+mod descriptor;
+mod header;
+mod hierarchy;
+mod pattern;
+mod rle;
+mod sample;
+
+#[derive(Debug)]
 pub struct Abr {
     pub header: AbrHeader,
     pub descriptors: Vec<Descriptor>,

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use anyhow::{Context, Result, bail, ensure};
 use image::{DynamicImage, ImageBuffer, Luma, Rgb, Rgba};
 use uuid::Uuid;
@@ -10,6 +12,20 @@ pub enum ColorMode {
     Rgb,
 }
 
+impl Debug for ColorMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gray => write!(f, "Gray"),
+            Self::Indexed { table } => f
+                .debug_struct("Indexed")
+                .field("table", &format!("{} bytes", table.len()))
+                .finish(),
+            Self::Rgb => write!(f, "Rgb"),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Pattern {
     pub id: Uuid,
     pub name: String,
@@ -32,6 +48,20 @@ pub struct PatternChannel {
     pub right: u32,
     pub compression: u8,
     pub pixel_data: Vec<u8>,
+}
+
+impl Debug for PatternChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PatternChannel")
+            .field("depth", &self.depth)
+            .field("top", &self.top)
+            .field("left", &self.left)
+            .field("bottom", &self.bottom)
+            .field("right", &self.right)
+            .field("compression", &self.compression)
+            .field("pixel_data", &format!("{} bytes", self.pixel_data.len()))
+            .finish()
+    }
 }
 
 impl Pattern {

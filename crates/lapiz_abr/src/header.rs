@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 
 use crate::cursor::Cursor;
 
+#[derive(Debug)]
 pub struct AbrHeader {
     pub major: u16,
     pub subversion: u16,

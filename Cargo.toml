@@ -93,6 +93,7 @@ bevy_math = { version = "0.18", git = "https://github.com/443eb9/bevy.git", bran
 bitflags = "2"
 bytemuck = { version = "1", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
 dashmap = "6"
 downcast-rs = "2"
 dyn-clone = "1"
