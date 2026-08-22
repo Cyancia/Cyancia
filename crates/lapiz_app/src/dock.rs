@@ -921,7 +921,7 @@ impl Dock<Theme, Renderer> for BrushPresetDock {
             })
             .collect::<Vec<Element<'a, _, Theme, Renderer>>>();
 
-        column(buttons).spacing(2).into()
+        scrollable(column(buttons).spacing(2)).into()
     }
 
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {

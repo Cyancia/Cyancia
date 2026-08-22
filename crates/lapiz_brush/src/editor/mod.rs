@@ -164,10 +164,12 @@ impl WindowView for BrushEditor {
                     button("New Function").on_press(BrushEditorMessage::NewFunction),
                 ]
                 .spacing(4),
-                text("Brushes"),
-                column(brush_buttons).spacing(2),
-                text("Functions"),
-                column(function_buttons).spacing(2),
+                scrollable(column![
+                    text("Brushes"),
+                    column(brush_buttons).spacing(2),
+                    text("Functions"),
+                    column(function_buttons).spacing(2),
+                ])
             ]
             .spacing(6),
         )
