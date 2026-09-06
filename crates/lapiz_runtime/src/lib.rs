@@ -25,6 +25,10 @@ pub mod plugin;
 pub mod service;
 pub mod windows;
 
+pub struct ApplicationTheme(pub Theme);
+
+impl Service for ApplicationTheme {}
+
 pub enum ApplicationState {
     Adding,
     Built,
@@ -91,9 +95,11 @@ impl Application {
 
 impl Default for Application {
     fn default() -> Self {
+        let mut runtime = Runtime::default();
+        runtime.add_service_instance(ApplicationTheme(Theme::Dark));
         Self {
             state: ApplicationState::Adding,
-            runtime: RefCell::new(Runtime::default()),
+            runtime: RefCell::new(runtime),
             plugins: VecDeque::new(),
         }
     }
@@ -144,6 +150,10 @@ impl Program for Application {
             rt,
             Task::batch([window_task, deadlock_detect_task.discard()]),
         )
+    }
+
+    fn theme(&self, state: &Self::State, _window: window::Id) -> Option<Self::Theme> {
+        Some(state.services.service::<ApplicationTheme>().0.clone())
     }
 
     fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {

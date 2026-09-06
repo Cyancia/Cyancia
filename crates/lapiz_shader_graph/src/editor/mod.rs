@@ -23,12 +23,13 @@ use iced_graphics::{
     gradient::Linear,
 };
 use iced_widget::{
-    button, column, container,
+    column, container,
     core::{Rectangle, Widget, mouse::Cursor},
     overlay::menu,
     row, stack, text,
 };
 use indexmap::IndexMap;
+use lapiz_widgets::{button::Button, label::Label};
 use uuid::Uuid;
 
 use crate::{
@@ -146,15 +147,15 @@ impl<'a, Data: GraphData> From<GraphEditor<'a, Data>>
                 .into_iter()
                 .nth(comp.subgraph_index)
                 .unwrap();
-            button(node.data.name())
+            Button::new(Label::new(node.data.name()))
                 .on_press(GraphEditorMessage::Editor(
                     GraphEditorEditorMessage::BackToSubgraphOrMain(Some(index)),
                 ))
                 .into()
         });
-        let main_graph_path = button("Main Graph").on_press(GraphEditorMessage::Editor(
-            GraphEditorEditorMessage::BackToSubgraphOrMain(None),
-        ));
+        let main_graph_path = Button::new(Label::new("Main Graph")).on_press(
+            GraphEditorMessage::Editor(GraphEditorEditorMessage::BackToSubgraphOrMain(None)),
+        );
         let path_breadcrumb = row![main_graph_path].extend(subgraph_path);
         stack!(editor_view, path_breadcrumb).into()
     }

@@ -1,7 +1,10 @@
-use iced_core::{Element, Padding, Pixels};
+use iced_core::{Element, Padding, Pixels, Theme, text};
+use iced_wgpu::Renderer;
 use iced_widget::{Column, column};
 
-pub struct Form<'a, Message, Theme, Renderer> {
+use crate::label::Label;
+
+pub struct Form<'a, Message> {
     items: Vec<(
         Element<'a, Message, Theme, Renderer>,
         Element<'a, Message, Theme, Renderer>,
@@ -10,27 +13,27 @@ pub struct Form<'a, Message, Theme, Renderer> {
     spacing: Pixels,
 }
 
-impl<'a, Message, Theme, Renderer> Default for Form<'a, Message, Theme, Renderer> {
+impl<'a, Message> Default for Form<'a, Message> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a, Message, Theme, Renderer> Form<'a, Message, Theme, Renderer> {
+impl<'a, Message> Form<'a, Message> {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
             padding: Padding::default(),
-            spacing: Pixels(2.0),
+            spacing: Pixels(6.0),
         }
     }
 
-    pub fn push<L, V>(mut self, label: L, value: V) -> Self
+    pub fn push<V>(mut self, label: impl text::IntoFragment<'a>, value: V) -> Self
     where
-        L: Into<Element<'a, Message, Theme, Renderer>>,
+        Message: 'a,
         V: Into<Element<'a, Message, Theme, Renderer>>,
     {
-        self.items.push((label.into(), value.into()));
+        self.items.push((Label::new(label).into(), value.into()));
         self
     }
 
@@ -53,14 +56,8 @@ impl<'a, Message, Theme, Renderer> Form<'a, Message, Theme, Renderer> {
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Form<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a,
-    Theme: 'a,
-    Renderer: iced_core::Renderer + 'a,
-{
-    fn from(form: Form<'a, Message, Theme, Renderer>) -> Element<'a, Message, Theme, Renderer> {
+impl<'a, Message: 'a> From<Form<'a, Message>> for Element<'a, Message, Theme, Renderer> {
+    fn from(form: Form<'a, Message>) -> Element<'a, Message, Theme, Renderer> {
         let Form {
             items,
             padding,

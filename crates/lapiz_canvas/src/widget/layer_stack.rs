@@ -6,7 +6,7 @@ use iced_core::{
     mouse, renderer,
     widget::Tree,
 };
-use iced_widget::{PickList, TextInput, button, checkbox, column, container, row, stack, text};
+use iced_widget::{button, column, row, stack};
 use indexmap::IndexMap;
 use lapiz_image::{
     composite::BlendFunctionRegistry,
@@ -21,8 +21,15 @@ use lapiz_image::{
     tile::GpuTileStorage,
 };
 use lapiz_widgets::{
+    button::Button,
+    checkbox::Checkbox,
+    combo_box::selection as pick_list,
     drag_drop_column::{DragDropColumn, DragDropInfo},
+    icon,
+    label::Label,
+    panel::{Panel, Style as PanelStyle},
     spin_slider::SpinSlider,
+    text_input::TextInput,
 };
 
 use crate::{CCanvas, command::LayerPropertyChangeCommand};
@@ -397,7 +404,7 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
 
             if let Some(visible) = properties.get_visible() {
                 children.push(
-                    checkbox(visible)
+                    Checkbox::new(visible)
                         .on_toggle(move |checked| {
                             on_message(LayerStackMessage::LayerPropertyChanged(property_command(
                                 canvas,
@@ -416,8 +423,8 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
                     .on_submit(on_message(LayerStackMessage::RenameCommit(layer_id)))
                     .into()
             } else {
-                text(name)
-                    .size(14)
+                Label::new(name)
+                    .size(12)
                     .width(Length::Fill)
                     .font(if is_active {
                         Font {
@@ -448,9 +455,10 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
                     move |p| p.set_locked(!locked),
                 ));
                 children.push(
-                    button(text("L"))
-                        .width(28)
-                        .height(28)
+                    Button::new(icon::lock().size(10))
+                        .width(18)
+                        .height(18)
+                        .padding(4)
                         .style(property_button_style(locked))
                         .on_press(on_message(message))
                         .into(),
@@ -471,9 +479,10 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
                     move |p| p.set_disabled_channels(channels),
                 ));
                 children.push(
-                    button(text("α"))
-                        .width(28)
-                        .height(28)
+                    Button::new(icon::opacity().size(10))
+                        .width(18)
+                        .height(18)
+                        .padding(4)
                         .style(property_button_style(
                             channels.is_channel_disabled(alpha_index),
                         ))
@@ -487,9 +496,10 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
                     p.set_locked_channels(channels)
                 });
                 children.push(
-                    button(text("A"))
-                        .width(28)
-                        .height(28)
+                    Button::new(icon::alpha_lock().size(10))
+                        .width(18)
+                        .height(18)
+                        .padding(4)
                         .style(property_button_style(
                             channels.is_channel_locked(alpha_index),
                         ))
@@ -498,19 +508,17 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
                 );
             }
 
-            let content = container(
+            let content = Panel::new(
                 row(children)
-                    .spacing(4)
+                    .spacing(3)
                     .align_y(Alignment::Center)
-                    .padding(4)
-                    .height(40),
+                    .padding([3, 5])
+                    .height(30),
             )
             .width(Length::Fill)
-            .style(move |theme: &iced_core::Theme| container::Style {
+            .style(move |theme: &iced_core::Theme| PanelStyle {
                 background: if is_selected {
-                    Some(iced_core::Background::Color(
-                        theme.extended_palette().primary.weak.color,
-                    ))
+                    Some(theme.extended_palette().primary.weak.color.into())
                 } else {
                     None
                 },
@@ -519,7 +527,8 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
 
             let menu = move || {
                 column![
-                    button(text("Rename"))
+                    Button::new(Label::new("Rename"))
+                        .width(Length::Fill)
                         .on_press(on_message(LayerStackMessage::RenameLayer(layer_id)))
                 ]
                 .into()
@@ -568,7 +577,7 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
         if let Some(blend) = active_layer.get_blend_function() {
             let all = view.blend_functions.all_ids().cloned().collect::<Vec<_>>();
             params.push(
-                PickList::new(all, Some(blend), move |id| {
+                pick_list(all, Some(blend), move |id| {
                     let message = property_command(canvas, active_id, active_layer, |p| {
                         p.set_blend_function(id.clone())
                     });
@@ -601,7 +610,7 @@ impl<'a, Message: Clone + 'a> From<LayerStackView<'a, Message>>
                     .height(Length::Shrink)
                     .into()
             } else {
-                container(column(params).spacing(4.0)).padding(8.0).into()
+                Panel::new(column(params).spacing(4.0)).padding(6.0).into()
             };
 
         column![params, list_with_overlay]

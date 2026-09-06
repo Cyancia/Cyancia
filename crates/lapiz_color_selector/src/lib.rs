@@ -4,7 +4,7 @@ use glam::{Vec2, Vec3};
 use iced_core::{Element, Length, Point, Rectangle, Theme};
 use iced_runtime::Task;
 use iced_wgpu::Renderer;
-use iced_widget::{Row, column, radio, text};
+use iced_widget::{Row, column, text};
 use lapiz_color::{
     Color,
     model::{
@@ -15,7 +15,7 @@ use lapiz_color::{
 };
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::Services;
-use lapiz_widgets::{fluent_builder::When, spin_slider::SpinSlider};
+use lapiz_widgets::{fluent_builder::When, radio::Radio, spin_slider::SpinSlider};
 use moxcms::ColorProfile;
 use parse_display::Display;
 
@@ -343,7 +343,7 @@ impl<'a, Message: 'a> From<ColorSelector<'a, Message>> for Element<'a, Message, 
                 .when(config.show_primary_channel_lock, |r| {
                     let model = config.model;
                     let channel = config.channel;
-                    r.push(radio("", true, locked.then_some(true), move |_| {
+                    r.push(Radio::new("", true, locked.then_some(true), move |_| {
                         ColorSelectorMessage::PrimaryChannelLock(model, channel)
                     }))
                 })
@@ -352,7 +352,7 @@ impl<'a, Message: 'a> From<ColorSelector<'a, Message>> for Element<'a, Message, 
 
         let presets_selector =
             Row::with_children(state.presets.iter().enumerate().map(|(index, preset)| {
-                radio(
+                Radio::new(
                     preset.name.clone(),
                     index,
                     Some(state.selected_preset),

@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use iced_core::{Element, Length, keyboard, window};
 use iced_futures::Subscription;
 use iced_runtime::Task;
-use iced_widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+use iced_widget::{column, container, row, text};
 use lapiz_assets::{AssetAppExt, asset::AssetHandle};
 use lapiz_runtime::{
     Services,
@@ -18,7 +18,10 @@ use lapiz_shader_graph::{
         variable::GraphLiteral,
     },
 };
-use lapiz_widgets::fluent_builder::When;
+use lapiz_widgets::{
+    button::Button, combo_box::selection as pick_list, fluent_builder::When, label::Label,
+    panel::Panel, scrollable::Scrollable, text_input::TextInput,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -122,15 +125,19 @@ impl WindowView for FilterEditor {
                     .get()
                     .map(|preset| preset.metadata.name.clone())
                     .unwrap_or_else(|_| "<loading>".to_string());
-                button(text(name))
+                Button::new(Label::new(name))
                     .width(Length::Fill)
+                    .activated(item.selected)
                     .on_press(FilterEditorMessage::SelectFilter(index))
                     .into()
             });
-        let sidebar = container(
+        let sidebar = Panel::new(
             column![
-                row![button("New Filter").on_press(FilterEditorMessage::NewFilter)].spacing(4),
-                text("Filters"),
+                row![
+                    Button::new(Label::new("New Filter")).on_press(FilterEditorMessage::NewFilter)
+                ]
+                .spacing(4),
+                Label::new("Filters").strong(),
                 column(filter_buttons).spacing(2),
             ]
             .spacing(6),
@@ -139,19 +146,24 @@ impl WindowView for FilterEditor {
         .width(220);
 
         let Some(selected) = self.selected.as_ref() else {
-            return row![sidebar, container(text("Select a filter")).padding(12)];
+            return row![
+                sidebar,
+                Panel::new(Label::new("Select a filter")).padding(12)
+            ];
         };
 
         let title = row![
-            text_input("Filter name", &self.filter_name_buffer)
+            TextInput::new("Filter name", &self.filter_name_buffer)
                 .on_input(FilterEditorMessage::FilterNameChanged)
                 .width(Length::Fill),
-            button(if self.dirty { "Save *" } else { "Save" }).on_press(FilterEditorMessage::Save),
+            Button::new(Label::new(if self.dirty { "Save *" } else { "Save" }))
+                .primary()
+                .on_press(FilterEditorMessage::Save),
         ]
         .spacing(6);
 
         let group_name = row![
-            text_input("Group name", &self.group_name_buffer)
+            TextInput::new("Group name", &self.group_name_buffer)
                 .on_input(FilterEditorMessage::GroupNameChanged)
                 .width(Length::Fill),
         ]
@@ -161,7 +173,7 @@ impl WindowView for FilterEditor {
             title,
             group_name,
             row![
-                container(
+                Panel::new(
                     Element::from(GraphEditor::new(
                         &selected.instance.groups()[selected.viewing_group].graph,
                         &self.graph_editor_state,
@@ -170,16 +182,16 @@ impl WindowView for FilterEditor {
                 )
                 .width(Length::Fill)
                 .height(Length::Fill),
-                container(self.view_group_controls(selected))
+                Panel::new(self.view_group_controls(selected))
                     .padding(4)
                     .width(220),
-                container(self.view_variables(selected)).padding(4),
+                Panel::new(self.view_variables(selected)).padding(4),
             ]
             .height(Length::Fill),
         ]
         .spacing(6);
 
-        row![sidebar, container(content).padding(8).width(Length::Fill)]
+        row![sidebar, Panel::new(content).padding(8).width(Length::Fill)]
     }
 
     fn update(
@@ -361,31 +373,37 @@ impl FilterEditor {
     ) -> Element<'a, FilterEditorMessage, GraphTheme, GraphRenderer> {
         let group_count = selected.instance.groups().len();
         let mut graph_list =
-            column![button("Add Group").on_press(FilterEditorMessage::AddGroup),].spacing(3);
+            column![Button::new(Label::new("Add Group")).on_press(FilterEditorMessage::AddGroup),]
+                .spacing(3);
 
         for index in 0..group_count {
             let group = &selected.instance.groups()[index];
             let is_current = index == selected.viewing_group;
             let controls = row![
-                button(text(if is_current {
+                Button::new(Label::new(if is_current {
                     format!("{}  <", group.name)
                 } else {
                     group.name.clone()
                 }))
                 .width(Length::Fill)
+                .activated(is_current)
                 .on_press(FilterEditorMessage::SwitchGroup(index)),
-                button("Delete").on_press_maybe(
+                Button::new(Label::new("Delete")).danger().on_press_maybe(
                     (group_count > 1).then_some(FilterEditorMessage::RemoveGroup(index)),
                 ),
             ]
             .spacing(2)
             .when(index > 0, |controls| {
-                controls
-                    .push(button("↑").on_press(FilterEditorMessage::MoveGroup { index, up: true }))
+                controls.push(
+                    Button::new(Label::new("↑"))
+                        .on_press(FilterEditorMessage::MoveGroup { index, up: true }),
+                )
             })
             .when(index + 1 < group_count, |controls| {
-                controls
-                    .push(button("↓").on_press(FilterEditorMessage::MoveGroup { index, up: false }))
+                controls.push(
+                    Button::new(Label::new("↓"))
+                        .on_press(FilterEditorMessage::MoveGroup { index, up: false }),
+                )
             });
             graph_list = graph_list.push(controls);
         }
@@ -423,7 +441,7 @@ impl FilterEditor {
 
         column![
             text("Shader Groups"),
-            scrollable(graph_list).height(Length::Fill),
+            Scrollable::new(graph_list).height(Length::Fill),
             container(row![
                 column![
                     text("Input source"),
@@ -461,12 +479,14 @@ impl FilterEditor {
             .map(|(id, variable)| {
                 column![
                     row![
-                        text_input("Variable name", &variable.name)
+                        TextInput::new("Variable name", &variable.name)
                             .on_input(move |name| {
                                 FilterEditorMessage::RenameExternalVariable(id, name)
                             })
                             .width(Length::Fill),
-                        button("Delete").on_press(FilterEditorMessage::RemoveExternalVariable(id)),
+                        Button::new(Label::new("Delete"))
+                            .danger()
+                            .on_press(FilterEditorMessage::RemoveExternalVariable(id)),
                     ]
                     .spacing(3),
                     variable
@@ -488,15 +508,15 @@ impl FilterEditor {
             .collect::<Vec<_>>();
         let variables = column![
             text("Variables"),
-            scrollable(column(variable_rows).spacing(6)).height(Length::Fill),
-            text_input("New variable name", &self.new_external_name)
+            Scrollable::new(column(variable_rows).spacing(6)).height(Length::Fill),
+            TextInput::new("New variable name", &self.new_external_name)
                 .on_input(FilterEditorMessage::ExternalNameChanged),
             pick_list(
                 types,
                 self.new_external_type,
                 FilterEditorMessage::ExternalTypeChanged,
             ),
-            button("Add Variable").on_press_maybe(
+            Button::new(Label::new("Add Variable")).on_press_maybe(
                 (!self.new_external_name.is_empty() && self.new_external_type.is_some())
                     .then_some(FilterEditorMessage::CreateExternalVariable),
             ),

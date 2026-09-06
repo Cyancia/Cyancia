@@ -147,8 +147,19 @@ where
         }
 
         let state = tree.state.downcast_mut::<State>();
-        let Some(pointer) = cursor.position() else {
-            return;
+        let pointer = match event {
+            Event::Mouse(mouse::Event::CursorMoved { position }) => *position,
+            _ => match cursor.land().position() {
+                Some(position) => position,
+                None if matches!(
+                    event,
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+                ) && state.action != Action::Idle =>
+                {
+                    state.pointer
+                }
+                None => return,
+            },
         };
         state.pointer = pointer;
 

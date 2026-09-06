@@ -532,7 +532,7 @@ where
 
                 shell.capture_event();
             }
-            Event::Mouse(mouse::Event::CursorMoved { .. })
+            Event::Mouse(mouse::Event::CursorMoved { position })
                 if matches!(
                     state.interaction,
                     SpinSliderState::Pressing {
@@ -540,9 +540,6 @@ where
                     } | SpinSliderState::Dragging { .. }
                 ) =>
             {
-                let Some(position) = cursor.position() else {
-                    return;
-                };
                 let value = self.percentage_to_value((position.x - field.x) / field.width);
                 state.interaction = SpinSliderState::Dragging { value };
                 if value != self.value
@@ -940,19 +937,16 @@ impl Catalog for iced_core::Theme {
 
 pub fn default(theme: &iced_core::Theme, status: Status) -> Style {
     let palette = theme.extended_palette();
-    let value_bar = match status {
-        Status::Hovered | Status::Editing => palette.primary.strong.color,
-        Status::Dragged => palette.primary.weak.color,
-        Status::Disabled | Status::Active => palette.primary.base.color,
-    };
-    let background = match status {
-        Status::Editing => palette.background.weak.color,
-        _ => palette.background.base.color,
-    };
+    let value_bar = palette.primary.base.color.scale_alpha(match status {
+        Status::Hovered | Status::Editing => 0.22,
+        Status::Dragged => 0.28,
+        Status::Disabled => 0.08,
+        Status::Active => 0.16,
+    });
     Style {
-        background: background.into(),
+        background: palette.background.base.color.into(),
         value_bar: value_bar.into(),
-        button_background: palette.background.weak.color.into(),
+        button_background: theme.extended_palette().background.weakest.color.into(),
         border_color: palette.background.strong.color,
         text_color: None,
     }

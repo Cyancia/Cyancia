@@ -24,6 +24,42 @@ impl DockState {
         }
     }
 
+    pub fn open_in_group(&mut self, target: &DockId, dock: DockId) -> Option<pane_grid::Pane> {
+        let panes = self.panes.as_mut()?;
+        let (pane, group) = panes
+            .iter_mut()
+            .find(|(_, group)| group.iter().any(|id| id == target))?;
+        group.add_dock(dock.clone());
+        group.set_active(dock);
+        Some(*pane)
+    }
+
+    pub fn open_split(
+        &mut self,
+        target: &DockId,
+        result_edge: pane_grid::Edge,
+        ratio: f32,
+        dock: DockId,
+    ) -> Option<pane_grid::Pane> {
+        let panes = self.panes.as_mut()?;
+        let target_pane = panes
+            .iter()
+            .find(|(_, group)| group.iter().any(|id| id == target))
+            .map(|(pane, _)| *pane)?;
+        let mut group = DockGroupData::new();
+        group.add_dock(dock);
+        let axis = match result_edge {
+            pane_grid::Edge::Top | pane_grid::Edge::Bottom => pane_grid::Axis::Horizontal,
+            pane_grid::Edge::Left | pane_grid::Edge::Right => pane_grid::Axis::Vertical,
+        };
+        let (new_pane, split) = panes.split(axis, target_pane, group)?;
+        if matches!(result_edge, pane_grid::Edge::Top | pane_grid::Edge::Left) {
+            panes.swap(target_pane, new_pane);
+        }
+        panes.resize(split, ratio.clamp(0.1, 0.9));
+        Some(new_pane)
+    }
+
     pub fn open_group(&mut self, group: DockGroupData) -> pane_grid::Pane {
         if let Some(state) = self.panes.as_mut() {
             let (pane, target) = state.iter_mut().next().unwrap();

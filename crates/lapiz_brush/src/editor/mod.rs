@@ -3,7 +3,7 @@ use std::sync::Arc;
 use iced_core::{Element, Length, keyboard, window};
 use iced_futures::Subscription;
 use iced_runtime::Task;
-use iced_widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+use iced_widget::{column, row, text};
 use lapiz_assets::{AssetAppExt, asset::AssetHandle};
 use lapiz_runtime::{
     Services,
@@ -25,7 +25,10 @@ use lapiz_shader_graph::{
     },
     save::{SerializableGraph, SerializableGraphFunction},
 };
-use lapiz_widgets::fluent_builder::When;
+use lapiz_widgets::{
+    button::Button, combo_box::selection as pick_list, fluent_builder::When, label::Label,
+    panel::Panel, scrollable::Scrollable, text_input::TextInput,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -141,8 +144,9 @@ impl WindowView for BrushEditor {
             .enumerate()
             .map(|(index, item)| {
                 let name = item.brush.get().unwrap().metadata.name.clone();
-                button(text(name))
+                Button::new(Label::new(name))
                     .width(Length::Fill)
+                    .activated(item.selected)
                     .on_press(BrushEditorMessage::SelectBrush(index))
                     .into()
             });
@@ -152,22 +156,24 @@ impl WindowView for BrushEditor {
             .iter()
             .enumerate()
             .map(|(index, item)| {
-                button(text(item.name.clone()))
+                Button::new(Label::new(item.name.clone()))
                     .width(Length::Fill)
+                    .activated(item.selected)
                     .on_press(BrushEditorMessage::SelectFunction(index))
                     .into()
             });
-        let sidebar = container(
+        let sidebar = Panel::new(
             column![
                 row![
-                    button("New Brush").on_press(BrushEditorMessage::NewBrush),
-                    button("New Function").on_press(BrushEditorMessage::NewFunction),
+                    Button::new(Label::new("New Brush")).on_press(BrushEditorMessage::NewBrush),
+                    Button::new(Label::new("New Function"))
+                        .on_press(BrushEditorMessage::NewFunction),
                 ]
                 .spacing(4),
-                scrollable(column![
-                    text("Brushes"),
+                Scrollable::new(column![
+                    Label::new("Brushes").strong(),
                     column(brush_buttons).spacing(2),
-                    text("Functions"),
+                    Label::new("Functions").strong(),
                     column(function_buttons).spacing(2),
                 ])
             ]
@@ -179,15 +185,17 @@ impl WindowView for BrushEditor {
         let Some(selected) = self.selected.as_ref() else {
             return row![
                 sidebar,
-                container(text("Select a brush or function")).padding(12),
+                Panel::new(Label::new("Select a brush or function")).padding(12),
             ];
         };
 
         let title = row![
-            text_input("Name", &self.name_buffer)
+            TextInput::new("Name", &self.name_buffer)
                 .on_input(BrushEditorMessage::NameChanged)
                 .width(Length::Fill),
-            button(if self.dirty { "Save *" } else { "Save" }).on_press(BrushEditorMessage::Save),
+            Button::new(Label::new(if self.dirty { "Save *" } else { "Save" }))
+                .primary()
+                .on_press(BrushEditorMessage::Save),
         ]
         .spacing(6);
 
@@ -205,7 +213,7 @@ impl WindowView for BrushEditor {
             .into(),
         };
 
-        row![sidebar, container(content).padding(8).width(Length::Fill)]
+        row![sidebar, Panel::new(content).padding(8).width(Length::Fill)]
     }
 
     fn update(
@@ -343,10 +351,12 @@ impl BrushEditor {
         brush: &'a SelectedBrush,
     ) -> Element<'a, BrushEditorMessage, GraphTheme, GraphRenderer> {
         let title = row![
-            text_input("Name", &self.name_buffer)
+            TextInput::new("Name", &self.name_buffer)
                 .on_input(BrushEditorMessage::NameChanged)
                 .width(Length::Fill),
-            button(if self.dirty { "Save *" } else { "Save" }).on_press(BrushEditorMessage::Save),
+            Button::new(Label::new(if self.dirty { "Save *" } else { "Save" }))
+                .primary()
+                .on_press(BrushEditorMessage::Save),
         ]
         .spacing(6);
 
@@ -368,35 +378,40 @@ impl BrushEditor {
             };
 
         let mut graph_list = column![
-            button("Required Spacing").width(Length::Fill).on_press(
-                BrushEditorMessage::SwitchGraph(BrushPresetGraph::RequiredSpacing)
-            ),
-            button("Main")
+            Button::new(Label::new("Required Spacing"))
+                .width(Length::Fill)
+                .on_press(BrushEditorMessage::SwitchGraph(
+                    BrushPresetGraph::RequiredSpacing
+                )),
+            Button::new(Label::new("Main"))
                 .width(Length::Fill)
                 .on_press(BrushEditorMessage::SwitchGraph(BrushPresetGraph::Main)),
-            button("New Postprocess").on_press(BrushEditorMessage::NewStrokePostprocess),
+            Button::new(Label::new("New Postprocess"))
+                .on_press(BrushEditorMessage::NewStrokePostprocess),
         ]
         .spacing(3);
         let graph_count = brush.instance.stroke_postprocess_graphs().len();
         for index in 0..graph_count {
             let controls = row![
-                button(text(format!("Postprocess {index}")))
+                Button::new(Label::new(format!("Postprocess {index}")))
                     .width(Length::Fill)
                     .on_press(BrushEditorMessage::SwitchGraph(
                         BrushPresetGraph::StrokePostprocess { index },
                     )),
-                button("Delete").on_press(BrushEditorMessage::RemoveStrokePostprocess(index)),
+                Button::new(Label::new("Delete"))
+                    .danger()
+                    .on_press(BrushEditorMessage::RemoveStrokePostprocess(index)),
             ]
             .spacing(2)
             .when(index > 0, |controls| {
                 controls.push(
-                    button("↑")
+                    Button::new(Label::new("↑"))
                         .on_press(BrushEditorMessage::MoveStrokePostprocess { index, up: true }),
                 )
             })
             .when(index + 1 < graph_count, |controls| {
                 controls.push(
-                    button("↓")
+                    Button::new(Label::new("↓"))
                         .on_press(BrushEditorMessage::MoveStrokePostprocess { index, up: false }),
                 )
             });
@@ -409,12 +424,14 @@ impl BrushEditor {
             .map(|(id, variable)| {
                 column![
                     row![
-                        text_input("Variable name", &variable.name)
+                        TextInput::new("Variable name", &variable.name)
                             .on_input(move |name| {
                                 BrushEditorMessage::RenameExternalVariable(id, name)
                             })
                             .width(Length::Fill),
-                        button("Delete").on_press(BrushEditorMessage::RemoveExternalVariable(id)),
+                        Button::new(Label::new("Delete"))
+                            .danger()
+                            .on_press(BrushEditorMessage::RemoveExternalVariable(id)),
                     ]
                     .spacing(3),
                     variable
@@ -436,15 +453,15 @@ impl BrushEditor {
             .collect::<Vec<_>>();
         let variables = column![
             text("Variables"),
-            scrollable(column(variable_rows).spacing(6)).height(Length::Fill),
-            text_input("New variable name", &self.new_external_name)
+            Scrollable::new(column(variable_rows).spacing(6)).height(Length::Fill),
+            TextInput::new("New variable name", &self.new_external_name)
                 .on_input(BrushEditorMessage::ExternalNameChanged),
             pick_list(
                 types,
                 self.new_external_type,
                 BrushEditorMessage::ExternalTypeChanged,
             ),
-            button("Add Variable").on_press_maybe(
+            Button::new(Label::new("Add Variable")).on_press_maybe(
                 (!self.new_external_name.is_empty() && self.new_external_type.is_some())
                     .then_some(BrushEditorMessage::CreateExternalVariable),
             ),
@@ -455,11 +472,12 @@ impl BrushEditor {
         column![
             title,
             row![
-                container(graph.map(BrushEditorMessage::Graph))
+                Panel::new(graph.map(BrushEditorMessage::Graph))
+                    .transparent()
                     .width(Length::Fill)
                     .height(Length::Fill),
-                container(graph_list).padding(4).width(220),
-                container(variables).padding(4),
+                Panel::new(graph_list).padding(4).width(220),
+                Panel::new(variables).padding(4),
             ]
             .height(Length::Fill),
         ]

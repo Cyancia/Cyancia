@@ -4,6 +4,8 @@ use iced_runtime::Task;
 use lapiz_assets::AssetAppExt;
 use lapiz_runtime::{Application, Services, plugin::Plugin, service::Service};
 use lapiz_utils::wrapper;
+use parse_display::Display;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     edit::{PasteIntoNewLayerAction, RedoAction, UndoAction},
@@ -25,7 +27,7 @@ pub mod selection;
 pub mod window;
 
 wrapper! {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
     pub ActionId : Arc<str>
 }
 

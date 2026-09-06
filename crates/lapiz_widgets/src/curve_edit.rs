@@ -1,25 +1,26 @@
 use glam::Vec2;
+use iced_core::Renderer as _;
 use iced_core::{
     Background, Border, Clipboard, Color, Element, Event, Layout, Length, Point, Rectangle, Shell,
-    Size, Widget,
+    Size, Theme, Widget,
     keyboard::{self, key},
     layout,
     mouse::{self, Cursor},
     renderer::{self, Quad},
     widget::{self, tree},
 };
-use iced_graphics::geometry::{Frame, Path, Stroke};
+use iced_graphics::geometry::{Frame, Path, Renderer as _, Stroke};
+use iced_wgpu::Renderer;
 use lapiz_math::curve::CubicCurve;
+
+use crate::callback::{CallbackWith, publish_with};
 
 const MIN_POINT_GAP: f32 = 0.001;
 
-pub struct CurveEdit<'a, Message, Theme = iced_core::Theme>
-where
-    Theme: Catalog,
-{
+pub struct CurveEdit<'a, Message> {
     curve: CubicCurve,
-    on_change: Option<Box<dyn Fn(CubicCurve) -> Message + 'a>>,
-    on_release: Option<Box<dyn Fn(CubicCurve) -> Message + 'a>>,
+    change: CallbackWith<'a, CubicCurve, Message>,
+    release: CallbackWith<'a, CubicCurve, Message>,
     width: Length,
     height: Length,
     grid_resolution: usize,
@@ -28,18 +29,15 @@ where
     curve_stroke_width: f32,
     grid_stroke_width: f32,
     control_point_stroke_width: f32,
-    class: Theme::Class<'a>,
+    class: <Theme as Catalog>::Class<'a>,
 }
 
-impl<'a, Message, Theme> CurveEdit<'a, Message, Theme>
-where
-    Theme: Catalog,
-{
+impl<'a, Message> CurveEdit<'a, Message> {
     pub fn new(curve: CubicCurve) -> Self {
         Self {
             curve,
-            on_change: None,
-            on_release: None,
+            change: None,
+            release: None,
             width: Length::Fill,
             height: Length::Fill,
             grid_resolution: 4,
@@ -48,19 +46,12 @@ where
             curve_stroke_width: 1.5,
             grid_stroke_width: 0.5,
             control_point_stroke_width: 1.0,
-            class: Theme::default(),
+            class: <Theme as Catalog>::default(),
         }
     }
 
-    pub fn on_change(mut self, callback: impl Fn(CubicCurve) -> Message + 'a) -> Self {
-        self.on_change = Some(Box::new(callback));
-        self
-    }
-
-    pub fn on_release(mut self, callback: impl Fn(CubicCurve) -> Message + 'a) -> Self {
-        self.on_release = Some(Box::new(callback));
-        self
-    }
+    crate::callback_methods!(change, CubicCurve);
+    crate::callback_methods!(release, CubicCurve);
 
     pub fn width(mut self, width: impl Into<Length>) -> Self {
         self.width = width.into();
@@ -73,16 +64,13 @@ where
     }
 
     #[must_use]
-    pub fn style(mut self, style: impl Fn(&Theme, Status) -> Style + 'a) -> Self
-    where
-        Theme::Class<'a>: From<StyleFn<'a, Theme>>,
-    {
-        self.class = (Box::new(style) as StyleFn<'a, Theme>).into();
+    pub fn style(mut self, style: impl Fn(&Theme, Status) -> Style + 'a) -> Self {
+        self.class = Box::new(style);
         self
     }
 
     #[must_use]
-    pub fn class(mut self, class: impl Into<Theme::Class<'a>>) -> Self {
+    pub fn class(mut self, class: impl Into<<Theme as Catalog>::Class<'a>>) -> Self {
         self.class = class.into();
         self
     }
@@ -113,11 +101,7 @@ where
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for CurveEdit<'_, Message, Theme>
-where
-    Theme: Catalog,
-    Renderer: iced_core::Renderer + iced_graphics::geometry::Renderer,
-{
+impl<Message> Widget<Message, Theme, Renderer> for CurveEdit<'_, Message> {
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<CurveEditState>()
     }
@@ -177,7 +161,7 @@ where
                     state.selected_index = Some(index);
                     state.dragging = true;
                     state.drag_curve = None;
-                } else if let Some(on_change) = &self.on_change {
+                } else if self.change.is_some() {
                     let mut points = self.curve.control_points().to_vec();
                     let index = points.partition_point(|point| point.x < normalized.x);
                     let min = index
@@ -189,22 +173,21 @@ where
                     state.selected_index = Some(index);
                     state.dragging = true;
                     state.drag_curve = Some(curve.clone());
-                    shell.publish(on_change(curve));
+                    if let Some(message) = publish_with(&mut self.change, curve) {
+                        shell.publish(message);
+                    }
                 }
 
                 shell.request_redraw();
                 shell.capture_event();
             }
-            Event::Mouse(mouse::Event::CursorMoved { .. }) if state.dragging => {
-                let Some(position) = cursor.position() else {
-                    return;
-                };
+            Event::Mouse(mouse::Event::CursorMoved { position }) if state.dragging => {
                 let index = state
                     .selected_index
                     .expect("dragging without a selected point");
                 let mut points = self.curve.control_points().to_vec();
 
-                let normalized = screen_to_normalized(position, bounds);
+                let normalized = screen_to_normalized(*position, bounds);
                 let min = index
                     .checked_sub(1)
                     .map_or(0.0, |previous| points[previous].x + MIN_POINT_GAP);
@@ -215,8 +198,8 @@ where
 
                 let curve = CubicCurve::new(points);
                 state.drag_curve = Some(curve.clone());
-                if let Some(on_change) = &self.on_change {
-                    shell.publish(on_change(curve));
+                if let Some(message) = publish_with(&mut self.change, curve) {
+                    shell.publish(message);
                 }
                 shell.capture_event();
             }
@@ -226,8 +209,8 @@ where
                     .drag_curve
                     .take()
                     .unwrap_or_else(|| self.curve.clone());
-                if let Some(on_release) = &self.on_release {
-                    shell.publish(on_release(curve));
+                if let Some(message) = publish_with(&mut self.release, curve) {
+                    shell.publish(message);
                 }
                 shell.capture_event();
             }
@@ -247,8 +230,8 @@ where
                 state.selected_index = None;
                 state.dragging = false;
                 state.drag_curve = None;
-                if let Some(on_change) = &self.on_change {
-                    shell.publish(on_change(CubicCurve::new(points)));
+                if let Some(message) = publish_with(&mut self.change, CubicCurve::new(points)) {
+                    shell.publish(message);
                 }
                 shell.capture_event();
             }
@@ -370,14 +353,8 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<CurveEdit<'a, Message, Theme>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a,
-    Theme: Catalog + 'a,
-    Renderer: iced_core::Renderer + iced_graphics::geometry::Renderer + 'a,
-{
-    fn from(widget: CurveEdit<'a, Message, Theme>) -> Self {
+impl<'a, Message: 'a> From<CurveEdit<'a, Message>> for Element<'a, Message, Theme, Renderer> {
+    fn from(widget: CurveEdit<'a, Message>) -> Self {
         Element::new(widget)
     }
 }

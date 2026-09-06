@@ -100,8 +100,8 @@ impl<'a, Message> TabRowWidget<'a, Message> {
     ) -> Self {
         Self {
             group_data,
-            font_size: Pixels(14.0),
-            padding: 8.0,
+            font_size: Pixels(11.0),
+            padding: 7.0,
             on_action: Box::new(on_action),
             title_drag_deadband: 0.0,
             title_of: Box::new(|id| id.to_string()),
@@ -211,6 +211,24 @@ where
             crate::style::DockStatus::Active,
         );
         let ts = &dock_style.tab_bar;
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds,
+                ..Default::default()
+            },
+            ts.background,
+        );
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds: Rectangle {
+                    y: bounds.y + bounds.height - 1.0,
+                    height: 1.0,
+                    ..bounds
+                },
+                ..Default::default()
+            },
+            ts.inactive_tab.border.color,
+        );
 
         let active = self.group_data.active();
         let drag_target = if let TabAction::Dragging { index: _ } = state.action {
@@ -247,6 +265,29 @@ where
                 },
                 tab_style.background,
             );
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: tab_rect.x + tab_rect.width - 1.0,
+                        width: 1.0,
+                        ..tab_rect
+                    },
+                    ..Default::default()
+                },
+                ts.inactive_tab.border.color,
+            );
+            if is_active {
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: Rectangle {
+                            height: 2.0,
+                            ..tab_rect
+                        },
+                        ..Default::default()
+                    },
+                    tab_style.border.color,
+                );
+            }
 
             // Title text
             renderer.fill_text(

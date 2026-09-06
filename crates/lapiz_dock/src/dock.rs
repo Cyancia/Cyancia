@@ -564,8 +564,16 @@ fn direction_cursor(dir: window::Direction) -> mouse::Interaction {
 
 /// Transparent overlay that intercepts mouse presses near window edges/corners
 /// and emits a resize-direction message so the caller can call `drag_resize`.
-struct ResizeHandleOverlay<'a, Message> {
+pub struct ResizeHandleOverlay<'a, Message> {
     on_resize: Box<dyn Fn(window::Direction) -> Message + 'a>,
+}
+
+impl<'a, Message> ResizeHandleOverlay<'a, Message> {
+    pub fn new(on_resize: impl Fn(window::Direction) -> Message + 'a) -> Self {
+        Self {
+            on_resize: Box::new(on_resize),
+        }
+    }
 }
 
 impl<'a, Message, Theme, Renderer> iced_core::Widget<Message, Theme, Renderer>

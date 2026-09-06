@@ -1,9 +1,11 @@
 use iced_core::{
-    Clipboard, Element, Event, Layout, Length, Point, Rectangle, Shell, Size, Vector, Widget,
+    Clipboard, Element, Event, Layout, Length, Point, Rectangle, Shell, Size, Theme, Vector,
+    Widget,
     layout::{Limits, Node},
     mouse, overlay, renderer,
     widget::{Operation, Tree},
 };
+use iced_wgpu::Renderer;
 
 pub enum Anchor {
     TopLeft,
@@ -14,16 +16,13 @@ pub enum Anchor {
     BottomRight,
 }
 
-pub struct Popover<'a, Message, Theme, Renderer> {
+pub struct Popover<'a, Message> {
     trigger: Element<'a, Message, Theme, Renderer>,
     content: Option<Element<'a, Message, Theme, Renderer>>,
     anchor: Anchor,
 }
 
-impl<'a, Message, Theme, Renderer> Popover<'a, Message, Theme, Renderer>
-where
-    Renderer: iced_core::Renderer,
-{
+impl<'a, Message> Popover<'a, Message> {
     pub fn new(trigger: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
             trigger: trigger.into(),
@@ -38,18 +37,14 @@ where
         self
     }
 
-    /// Offsets the floating panel relative to the trigger's top-left corner.
-    pub fn offset(mut self, anchor: Anchor) -> Self {
+    /// Anchors the floating panel relative to the trigger.
+    pub fn anchor(mut self, anchor: Anchor) -> Self {
         self.anchor = anchor;
         self
     }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Popover<'a, Message, Theme, Renderer>
-where
-    Renderer: iced_core::Renderer,
-{
+impl<Message> Widget<Message, Theme, Renderer> for Popover<'_, Message> {
     fn children(&self) -> Vec<Tree> {
         let mut children = vec![Tree::new(&self.trigger)];
         if let Some(content) = &self.content {
@@ -196,30 +191,20 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Popover<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Renderer: iced_core::Renderer + 'a,
-    Theme: 'a,
-    Message: 'a,
-{
-    fn from(popover: Popover<'a, Message, Theme, Renderer>) -> Self {
+impl<'a, Message: 'a> From<Popover<'a, Message>> for Element<'a, Message, Theme, Renderer> {
+    fn from(popover: Popover<'a, Message>) -> Self {
         Element::new(popover)
     }
 }
 
-struct Overlay<'a, 'b, Message, Theme, Renderer> {
+struct Overlay<'a, 'b, Message> {
     position: Point,
     offset: Vector,
     content: &'b mut Element<'a, Message, Theme, Renderer>,
     tree: &'b mut Tree,
 }
 
-impl<'a, 'b, Message, Theme, Renderer> overlay::Overlay<Message, Theme, Renderer>
-    for Overlay<'a, 'b, Message, Theme, Renderer>
-where
-    Renderer: iced_core::Renderer,
-{
+impl<'a, 'b, Message> overlay::Overlay<Message, Theme, Renderer> for Overlay<'a, 'b, Message> {
     fn layout(&mut self, renderer: &Renderer, bounds: Size) -> Node {
         let limits = Limits::new(Size::ZERO, Size::new(bounds.width, f32::INFINITY));
         let node = self

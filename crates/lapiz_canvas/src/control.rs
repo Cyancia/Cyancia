@@ -70,4 +70,15 @@ impl CanvasTransform {
         let widget = self.window_to_in_widget(point)?;
         Some(self.pixel_to_widget.inverse().transform_point2(widget))
     }
+
+    pub fn zoom(&self) -> f32 {
+        self.pixel_to_widget.x_axis.truncate().length()
+    }
+
+    pub fn rotation(&self) -> f32 {
+        self.pixel_to_widget
+            .x_axis
+            .y
+            .atan2(self.pixel_to_widget.x_axis.x)
+    }
 }

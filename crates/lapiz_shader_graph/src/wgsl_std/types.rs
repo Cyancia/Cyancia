@@ -5,9 +5,9 @@ use bevy_math::Rect;
 use encase::{DynamicUniformBuffer, ShaderType};
 use glam::{Vec2, Vec4};
 use iced_core::Element;
-use iced_widget::{checkbox, column, space};
+use iced_widget::{column, space};
 use lapiz_utils::random_oklch_hue_chroma;
-use lapiz_widgets::spin_slider::SpinSlider;
+use lapiz_widgets::{checkbox::Checkbox, spin_slider::SpinSlider};
 use serde::{Deserialize, Serialize};
 use wgpu::QueueWriteBufferView;
 
@@ -227,7 +227,9 @@ impl GraphValueType for BoolType {
         &self,
         data: &Self::AssociatedLiteralType,
     ) -> Element<'static, Self::Message, GraphTheme, GraphRenderer> {
-        checkbox(*data).on_toggle(std::convert::identity).into()
+        Checkbox::new(*data)
+            .on_toggle(std::convert::identity)
+            .into()
     }
 
     fn update_literal(&self, data: &mut Self::AssociatedLiteralType, message: Self::Message) {

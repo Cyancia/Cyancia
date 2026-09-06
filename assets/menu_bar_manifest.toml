@@ -1,0 +1,53 @@
+[[categories]]
+title = "File"
+items = [
+    "OpenFileAction",
+    "Separator",
+    "SaveFileAction",
+]
+
+[[categories]]
+title = "Edit"
+items = [
+    "UndoAction",
+    "RedoAction",
+    "Separator",
+    "PasteIntoNewLayerAction",
+]
+
+[[categories]]
+title = "Layer"
+items = [
+    "CreateNewLayerAction",
+    "GroupSelectedLayersAction",
+    "Separator",
+    "MoveLayerUpAction",
+    "MoveLayerDownAction",
+    "DeleteSelectedLayersAction",
+]
+
+[[categories]]
+title = "Select"
+items = [
+    "SelectPreviousLayerAction",
+    "SelectNextLayerAction",
+    "Separator",
+    "DeleteSelectionAction",
+]
+
+[[categories]]
+title = "Filter"
+items = [
+    "ToggleFilterPanelAction",
+]
+
+[[categories]]
+title = "Window"
+items = [
+    "OpenBrushEditorAction",
+    "ToggleFilterPanelAction",
+    "Separator",
+    { title = "Theme", items = [
+        # Injected in runtime
+    ] }
+]

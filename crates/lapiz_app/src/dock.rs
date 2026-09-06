@@ -6,13 +6,13 @@ use iced::{
     event::listen_with,
     keyboard::{self, Modifiers},
     mouse,
-    widget::{Space, button, column, text},
+    widget::Space,
     window,
 };
 use iced_core::Point;
 use iced_runtime::task;
 use iced_wgpu::Renderer;
-use iced_widget::{container, scrollable, space, stack};
+use iced_widget::{space, stack};
 use lapiz_assets::AssetAppExt;
 use lapiz_brush::{asset::BrushPreset, tool::BrushServicesExt, widget::BrushPresetListDelegate};
 use lapiz_canvas::{
@@ -47,8 +47,17 @@ use lapiz_image::{
 use lapiz_input::{key::KeyboardState, mouse::PressedMouseState};
 use lapiz_render::render_context::RenderContextAppExt;
 use lapiz_runtime::{Services, event::Event};
-use lapiz_tools::ErasedToolFunctionMessage;
+use lapiz_tools::{ErasedToolFunctionMessage, ToolId};
 use lapiz_utils::log_err::LogErr;
+use lapiz_widgets::{
+    button::{Button, Status as ButtonStatus, Style as ButtonStyle},
+    divider::Divider,
+    flex::Flex,
+    icon::{self, Icon, Style as IconStyle},
+    label::Label,
+    panel::Panel,
+    scrollable::Scrollable,
+};
 use moxcms::ColorProfile;
 
 #[derive(Clone)]
@@ -63,7 +72,7 @@ pub enum ColorSelectorDockMessage {
     BackgroundColorChanged(BackgroundColorChanged),
 }
 
-pub const COLOR_SELECTOR_DOCK_ID: &str = "color_selector";
+pub const COLOR_SELECTOR_DOCK_ID: &str = "Color";
 
 pub struct ColorSelectorDock {
     selector: ColorSelectorState,
@@ -181,19 +190,29 @@ impl Dock<Theme, Renderer> for ColorSelectorDock {
                 .view()
                 .map(ColorSelectorDockMessage::ConfigEditor)
         } else {
-            column![
-                scrollable(ColorSelector::new(
+            Flex::column([
+                Scrollable::new(ColorSelector::new(
                     &self.selector,
-                    ColorSelectorDockMessage::ColorSelector
+                    ColorSelectorDockMessage::ColorSelector,
                 ))
                 .width(Length::Fill)
-                .height(Length::Fill),
-                button("Settings").on_press(ColorSelectorDockMessage::OpenSettings),
-            ]
+                .height(Length::Fill)
+                .into(),
+                Button::new(Label::new("Settings"))
+                    .width(Length::Fill)
+                    .on_press(ColorSelectorDockMessage::OpenSettings)
+                    .into(),
+            ])
+            .gap(4)
+            .height(Length::Fill)
             .into()
         };
 
-        container(content).padding(2).into()
+        Panel::new(content)
+            .padding(4)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {
@@ -560,11 +579,13 @@ impl Dock<Theme, Renderer> for LayersDock {
     }
 }
 
-pub const TOOL_OPTIONS_DOCK_ID: &str = "tool_options";
-pub const BRUSH_PRESETS_DOCK_ID: &str = "brush_presets";
+pub const TOOL_OPTIONS_DOCK_ID: &str = "Tool Options";
+pub const TOOL_BOX_DOCK_ID: &str = "Tools";
+pub const BRUSH_PRESETS_DOCK_ID: &str = "Brush Presets";
 
 pub fn construct_canvas_dock_id(canvas: CanvasId) -> String {
-    format!("canvas_dock_{}", canvas)
+    let id = canvas.to_string();
+    format!("Canvas · {}", &id[..8.min(id.len())])
 }
 
 pub struct CanvasDock {
@@ -834,25 +855,21 @@ impl Dock<Theme, iced_wgpu::Renderer> for ToolOptionsDock {
             return space().into();
         };
 
-        let indicator = text(format!(
-            "Tool: {} | override: {}",
-            tool_proxy
-                .current_tool()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "-".into()),
-            tool_proxy
-                .override_tool()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "-".into()),
-        ));
-
         let Some(widget) = tool_proxy.tool_option_widget(services) else {
-            return column![indicator].into();
+            return Panel::new(Label::new("No options for this tool").muted())
+                .padding(8)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
         };
 
-        column![indicator, widget.map(ToolOptionsDockMessage::ToolFunction)]
-            .spacing(4)
-            .into()
+        Panel::new(Scrollable::new(
+            widget.map(ToolOptionsDockMessage::ToolFunction),
+        ))
+        .padding(4)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {
@@ -863,6 +880,160 @@ impl Dock<Theme, iced_wgpu::Renderer> for ToolOptionsDock {
                 })
                 .unwrap_or_else(Task::none)
                 .map(ToolOptionsDockMessage::ToolFunction),
+        }
+    }
+}
+
+pub struct ToolBoxDock;
+
+pub enum ToolBoxDockMessage {
+    Switch(ToolId),
+    ToolFunction(ErasedToolFunctionMessage),
+}
+
+impl ToolBoxDock {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Dock<Theme, Renderer> for ToolBoxDock {
+    type Message = ToolBoxDockMessage;
+
+    fn id(&self) -> DockId {
+        DockId::new(TOOL_BOX_DOCK_ID.into())
+    }
+
+    fn view<'a>(
+        &'a self,
+        _window_id: window::Id,
+        services: &'a Services,
+    ) -> Element<'a, Self::Message, Theme, Renderer> {
+        let active_tool = services
+            .current_tool_proxy()
+            .and_then(|proxy| proxy.current_tool())
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        let tool_button = |id: &'static str, glyph: Icon<'a>| {
+            let selected = active_tool == id;
+            let glyph = glyph.size(12).style(move |theme, _| {
+                let p = theme.extended_palette();
+                IconStyle {
+                    color: Some(if selected {
+                        p.primary.base.text
+                    } else {
+                        p.background.weak.text
+                    }),
+                }
+            });
+            Button::new(glyph)
+                .width(28)
+                .height(28)
+                .padding(8)
+                .style(move |theme, status| {
+                    let p = theme.extended_palette();
+                    let hovered = matches!(status, ButtonStatus::Hovered | ButtonStatus::Pressed);
+                    ButtonStyle {
+                        background: Some(
+                            if selected {
+                                p.primary.base.color
+                            } else if hovered {
+                                p.primary.weak.color
+                            } else {
+                                iced::Color::TRANSPARENT
+                            }
+                            .into(),
+                        ),
+                        text_color: if selected {
+                            p.primary.base.text
+                        } else {
+                            p.background.weak.text
+                        },
+                        border: iced::Border {
+                            radius: 0.0.into(),
+                            width: if selected { 1.0 } else { 0.0 },
+                            color: p.primary.base.color,
+                        },
+                        ..Default::default()
+                    }
+                })
+                .on_press(ToolBoxDockMessage::Switch(ToolId::new(id.into())))
+                .into()
+        };
+        let separator = || {
+            Flex::row([Divider::horizontal(1).into()])
+                .height(7)
+                .padding([3, 0])
+                .into()
+        };
+        let content = Flex::column([
+            Flex::row([
+                tool_button("pan_tool", icon::hand()),
+                tool_button("rotate_tool", icon::refresh()),
+            ])
+            .gap(1)
+            .into(),
+            Flex::row([
+                tool_button("zoom_tool", icon::zoom()),
+                tool_button("free_transform_tool", icon::transform()),
+            ])
+            .gap(1)
+            .into(),
+            separator(),
+            Flex::row([
+                tool_button("brush_tool", icon::brush()),
+                tool_button("bucket_tool", icon::fill()),
+            ])
+            .gap(1)
+            .into(),
+            Flex::row([
+                tool_button("rectangular_selection_tool", icon::rect_select()),
+                tool_button("elliptical_selection_tool", icon::ellipse_select()),
+            ])
+            .gap(1)
+            .into(),
+            Flex::row([
+                tool_button("freehand_selection_tool", icon::lasso()),
+                tool_button("polygon_selection_tool", icon::poly_lasso()),
+            ])
+            .gap(1)
+            .into(),
+            Flex::row([
+                tool_button("magic_wand_selection_tool", icon::magic_wand()),
+                tool_button("perspective_transform_tool", icon::perspective()),
+            ])
+            .gap(1)
+            .into(),
+            separator(),
+            Flex::row([
+                tool_button("liquify_tool", icon::smudge()),
+                Space::new().width(28).height(28).into(),
+            ])
+            .gap(1)
+            .into(),
+        ])
+        .width(Length::Fill)
+        .gap(0)
+        .padding(4);
+
+        Scrollable::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {
+        match message {
+            ToolBoxDockMessage::Switch(tool) => services
+                .update_current_tool_proxy(|proxy, services| proxy.switch_tool(tool, services))
+                .unwrap_or_else(Task::none)
+                .map(ToolBoxDockMessage::ToolFunction),
+            ToolBoxDockMessage::ToolFunction(message) => services
+                .update_current_tool_proxy(|proxy, services| {
+                    proxy.handle_message(message, services)
+                })
+                .unwrap_or_else(Task::none)
+                .map(ToolBoxDockMessage::ToolFunction),
         }
     }
 }
@@ -904,24 +1075,18 @@ impl Dock<Theme, Renderer> for BrushPresetDock {
             .iter()
             .enumerate()
             .map(|(index, item)| {
-                let mut brush_button = button(text(item.name.clone()))
+                Button::new(Label::new(item.name.clone()))
                     .width(Length::Fill)
-                    .on_press(BrushPresetDockMessage::SelectBrush(index));
-                if item.selected {
-                    brush_button = brush_button.style(move |theme: &Theme, _| {
-                        let palette = theme.extended_palette();
-                        button::Style {
-                            background: Some(palette.primary.strong.color.into()),
-                            text_color: palette.primary.strong.text,
-                            ..Default::default()
-                        }
-                    });
-                }
-                brush_button.into()
+                    .activated(item.selected)
+                    .on_press(BrushPresetDockMessage::SelectBrush(index))
+                    .into()
             })
             .collect::<Vec<Element<'a, _, Theme, Renderer>>>();
 
-        scrollable(column(buttons).spacing(2)).into()
+        Scrollable::new(Flex::column(buttons).gap(2).padding(4))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn update(&mut self, message: Self::Message, services: &mut Services) -> Task<Self::Message> {

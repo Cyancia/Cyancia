@@ -4,7 +4,7 @@ use anyhow::Result;
 use iced_core::{Alignment, Length, Size, Theme, keyboard, window};
 use iced_futures::Subscription;
 use iced_runtime::Task;
-use iced_widget::{Space, button, column, container, row, scrollable, text};
+use iced_widget::{Space, column, row};
 use lapiz_assets::{AssetAppExt, asset::AssetHandle};
 use lapiz_canvas::{
     CCanvas, CanvasAppExt, CanvasId, CanvasUndoStackAppExt, command::TileReplaceCommand,
@@ -29,6 +29,7 @@ use lapiz_shader_graph::graph::{
     external::ExternalVariableId, slot::ErasedGraphLiteralUpdateMessage,
 };
 use lapiz_undo::BatchedUndoCommand;
+use lapiz_widgets::{button::Button, label::Label, panel::Panel, scrollable::Scrollable};
 
 use crate::{asset::FilterPreset, instance::FilterInstance, render::FilterRenderer};
 
@@ -131,22 +132,22 @@ impl WindowView for FilterPanel {
                     .get()
                     .map(|f| f.metadata.name.clone())
                     .unwrap_or_else(|_| "<loading>".to_string());
-                button(text(name))
+                Button::new(Label::new(name))
                     .width(Length::Fill)
                     .on_press(FilterPanelMessage::FilterSelected(index))
                     .into()
             })
             .collect::<Vec<_>>();
 
-        let sidebar = container(
+        let sidebar = Panel::new(
             column![
-                text("Filters"),
-                scrollable(column(filter_list).spacing(2))
+                Label::new("Filters").strong(),
+                Scrollable::new(column(filter_list).spacing(2))
                     .width(Length::Fill)
                     .height(Length::Fill),
                 row![
-                    button("New Filter").on_press(FilterPanelMessage::NewFilter),
-                    button("Edit Filter").on_press(FilterPanelMessage::EditFilter),
+                    Button::new(Label::new("New Filter")).on_press(FilterPanelMessage::NewFilter),
+                    Button::new(Label::new("Edit Filter")).on_press(FilterPanelMessage::EditFilter),
                 ]
                 .spacing(4),
             ]
@@ -160,7 +161,7 @@ impl WindowView for FilterPanel {
                 .iter_external_vars()
                 .map(|(id, variable)| {
                     row![
-                        text(variable.name.clone()).width(Length::Fill),
+                        Label::new(variable.name.clone()).width(Length::Fill),
                         variable
                             .value
                             .ty()
@@ -172,18 +173,18 @@ impl WindowView for FilterPanel {
                 })
                 .collect::<Vec<_>>();
             if variable_rows.is_empty() {
-                column![text("No external variables.")].spacing(6)
+                column![Label::new("No external variables.").muted()].spacing(6)
             } else {
                 column![
-                    text("Parameters"),
-                    scrollable(column(variable_rows).spacing(6))
+                    Label::new("Parameters").strong(),
+                    Scrollable::new(column(variable_rows).spacing(6))
                         .width(Length::Fill)
                         .height(Length::Fill),
                 ]
                 .spacing(6)
             }
         } else {
-            column![text("Select a filter to adjust its parameters.")]
+            column![Label::new("Select a filter to adjust its parameters.").muted()]
         };
 
         let ok_enabled = self.selected.is_some() && !self.rendering;
@@ -191,9 +192,9 @@ impl WindowView for FilterPanel {
 
         let footer = row![
             Space::new().width(Length::Fill),
-            button("Cancel").on_press(FilterPanelMessage::Cancel),
-            button(ok_label)
-                .style(button::primary)
+            Button::new(Label::new("Cancel")).on_press(FilterPanelMessage::Cancel),
+            Button::new(Label::new(ok_label))
+                .primary()
                 .on_press_maybe(ok_enabled.then_some(FilterPanelMessage::Confirm)),
         ]
         .align_y(Alignment::Center)
@@ -201,7 +202,7 @@ impl WindowView for FilterPanel {
         .padding(16);
 
         column![
-            row![sidebar, container(params).padding(8).width(Length::Fill)].height(Length::Fill),
+            row![sidebar, Panel::new(params).padding(8).width(Length::Fill)].height(Length::Fill),
             footer,
         ]
         .width(Length::Fill)

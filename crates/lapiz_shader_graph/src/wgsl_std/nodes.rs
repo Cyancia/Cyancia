@@ -14,15 +14,22 @@ use iced_core::{
     Clipboard, Event, Layout, Length, Rectangle, Shell, Size, Widget, layout, mouse, renderer,
     widget::{Operation, Tree, tree},
 };
-use iced_widget::{button, column, container, pick_list, row, text, text_editor, text_input};
+use iced_widget::{column, container, row, text, text_editor, text_input};
 use indexmap::IndexMap;
 use lapiz_math::curve::CubicCurve;
 use lapiz_utils::{random_oklch_hue_chroma, wrapper};
-use lapiz_widgets::{curve_edit::CurveEdit, fluent_builder::When, popover::Popover};
+use lapiz_widgets::{
+    button::Button, combo_box::selection as pick_list, curve_edit::CurveEdit, fluent_builder::When,
+    label::Label, popover::Popover,
+};
 use parking_lot::Mutex;
 use parse_display::Display;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+fn button<'a, Message: 'a>(label: impl Into<String>) -> Button<'a, Message> {
+    Button::new(Label::new(label.into()))
+}
 
 use crate::{
     GraphElement, GraphRenderer, GraphTheme,
@@ -1859,7 +1866,9 @@ impl<Data: GraphData> GraphNode<Data> for GraphInputNode {
             .collect::<Vec<_>>();
         ctx.view_all_slots_with_header(
             column![
-                text_input("Name", &state.name).on_input(GraphInputNodeMessage::NameChanged),
+                text_input("Name", &state.name)
+                    .style(lapiz_widgets::text_input::default)
+                    .on_input(GraphInputNodeMessage::NameChanged),
                 pick_list(types, state.ty, GraphInputNodeMessage::TypeChanged).width(Length::Fill),
             ]
             .spacing(2),
@@ -1967,7 +1976,9 @@ impl<Data: GraphData> GraphNode<Data> for GraphOutputNode {
             .collect::<Vec<_>>();
         ctx.view_all_slots_with_header(
             column![
-                text_input("Name", &state.name).on_input(GraphOutputNodeMessage::NameChanged),
+                text_input("Name", &state.name)
+                    .style(lapiz_widgets::text_input::default)
+                    .on_input(GraphOutputNodeMessage::NameChanged),
                 pick_list(types, state.ty, GraphOutputNodeMessage::TypeChanged).width(Length::Fill),
             ]
             .spacing(2),
@@ -2900,6 +2911,7 @@ fn repeat_schema_editor_view<Data: GraphData>(
             let id = local.id;
             column![
                 text_input("Variable Name", &local.name)
+                    .style(lapiz_widgets::text_input::default)
                     .on_input(move |name| { RepeatNodeMessage::EditorRenameLocal(id, name) }),
                 row![
                     pick_list(
@@ -3031,7 +3043,7 @@ impl<Data: GraphData> GraphNode<Data> for RepeatNode {
         state: &Self::State,
         ctx: GraphNodeViewContext<'_, Data>,
     ) -> GraphElement<'static, Self::Message> {
-        let trigger = button(text("Edit")).on_press(RepeatNodeMessage::ToggleEditor);
+        let trigger = button("Edit").on_press(RepeatNodeMessage::ToggleEditor);
         let content = state
             .schema_draft
             .as_ref()
@@ -3681,12 +3693,16 @@ fn custom_expression_variable_rows<Data: GraphData>(
             let id = variable.id;
             column![
                 row![
-                    text_input("Slot Name", &variable.display_name).on_input(move |name| {
-                        CustomExpressionNodeMessage::ChangeDisplayName(kind, id, name)
-                    }),
-                    text_input("WGSL Name", &variable.name).on_input(move |name| {
-                        CustomExpressionNodeMessage::ChangeName(kind, id, name)
-                    }),
+                    text_input("Slot Name", &variable.display_name)
+                        .style(lapiz_widgets::text_input::default)
+                        .on_input(move |name| {
+                            CustomExpressionNodeMessage::ChangeDisplayName(kind, id, name)
+                        }),
+                    text_input("WGSL Name", &variable.name)
+                        .style(lapiz_widgets::text_input::default)
+                        .on_input(move |name| {
+                            CustomExpressionNodeMessage::ChangeName(kind, id, name)
+                        }),
                 ]
                 .spacing(4),
                 row![
@@ -3844,7 +3860,7 @@ impl<Data: GraphData> GraphNode<Data> for CustomExpressionNode {
         state: &'a Self::State,
         ctx: GraphNodeViewContext<'_, Data>,
     ) -> GraphElement<'a, Self::Message> {
-        let trigger = button(text("Edit")).on_press(CustomExpressionNodeMessage::ToggleEditor);
+        let trigger = button("Edit").on_press(CustomExpressionNodeMessage::ToggleEditor);
         let content = state
             .draft
             .as_ref()

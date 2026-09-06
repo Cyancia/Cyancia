@@ -73,7 +73,7 @@ impl Serialize for KeySequence {
     where
         S: serde::Serializer,
     {
-        let string = self.to_string();
+        let string = self.unparse();
         string.serialize(serializer)
     }
 }
@@ -173,10 +173,8 @@ impl KeySequence {
 
         Ok(KeySequence { key, modifiers })
     }
-}
 
-impl std::fmt::Display for KeySequence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    pub fn unparse(&self) -> String {
         let mut parts = Vec::new();
         if self.modifiers.contains(Modifiers::CTRL) {
             parts.push("ctrl");
@@ -193,7 +191,38 @@ impl std::fmt::Display for KeySequence {
         if let Some(key) = self.key {
             parts.push(key_name(key));
         }
-        write!(f, "{}", parts.join("-"))
+        parts.join("-")
+    }
+}
+
+impl std::fmt::Display for KeySequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+        if self.modifiers.contains(Modifiers::CTRL) {
+            parts.push("Ctrl");
+        }
+        if self.modifiers.contains(Modifiers::ALT) {
+            parts.push("Alt");
+        }
+        if self.modifiers.contains(Modifiers::SHIFT) {
+            parts.push("Shift");
+        }
+        if self.modifiers.contains(Modifiers::LOGO) {
+            parts.push("Super");
+        }
+        let mut display = parts.join("+");
+        if let Some(key) = self.key {
+            let name = key_name(key);
+            let mut chars = name.chars();
+            if let Some(first) = chars.next() {
+                if !parts.is_empty() {
+                    display.push('+');
+                }
+                display.extend(first.to_uppercase());
+                display.push_str(chars.as_str());
+            }
+        }
+        write!(f, "{}", display)
     }
 }
 
